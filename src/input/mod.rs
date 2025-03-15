@@ -1786,6 +1786,17 @@ impl State {
                     }
                 }
             }
+            Action::TriggerGlobalShortcut(app_id, id) => {
+                if let Some(shortcut) = self
+                    .niri
+                    .hyprland_global_shortcuts_state
+                    .shortcut(app_id, id)
+                {
+                    let timestamp = get_monotonic_time();
+                    shortcut.press(timestamp);
+                    shortcut.release(timestamp);
+                }
+            }
         }
     }
 

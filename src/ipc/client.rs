@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::iter::Peekable;
 use std::slice;
 
@@ -5,8 +6,8 @@ use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
-    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response,
-    Transform, Window,
+    Event, GlobalShortcut, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged,
+    Request, Response, Transform, Window,
 };
 use serde_json::json;
 
@@ -29,6 +30,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Windows => Request::Windows,
         Msg::Layers => Request::Layers,
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
+        Msg::GlobalShortcuts => Request::GlobalShortcuts,
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
     };
@@ -361,6 +363,45 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!("{is_active}{idx} {name}");
             }
         }
+        Msg::GlobalShortcuts => {
+            let Response::GlobalShortcuts(shortcuts) = response else {
+                bail!("unexpected response: expected GlobalShortcuts, got {response:?}");
+            };
+
+            if json {
+                let response =
+                    serde_json::to_string(&shortcuts).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+
+            if shortcuts.is_empty() {
+                println!("No global shortcuts.");
+                return Ok(());
+            }
+
+            for (app_id, shortcuts) in shortcuts.iter().fold(HashMap::new(), |mut map, shortcut| {
+                map.entry(shortcut.app_id.clone())
+                    .or_default()
+                    .push(shortcut);
+                map
+            }) {
+                println!("App ID \"{app_id}\":");
+
+                for GlobalShortcut {
+                    id,
+                    app_id: _,
+                    description,
+                    trigger_description,
+                } in shortcuts
+                {
+                    println!("  Global shortcut \"{id}\":");
+                    println!("    Description: {description}");
+                    println!("    Trigger Description: {trigger_description}");
+                    println!();
+                }
+            }
+        }
         Msg::EventStream => {
             let Response::Handled = response else {
                 bail!("unexpected response: expected Handled, got {response:?}");
@@ -413,6 +454,9 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     }
                     Event::KeyboardLayoutSwitched { idx } => {
                         println!("Keyboard layout switched: {idx}");
+                    }
+                    Event::GlobalShortcutsChanged { global_shortcuts } => {
+                        println!("Global shortcuts changed: {global_shortcuts:?}");
                     }
                 }
             }

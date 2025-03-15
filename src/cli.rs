@@ -71,6 +71,8 @@ pub enum Msg {
     Layers,
     /// Get the configured keyboard layouts.
     KeyboardLayouts,
+    /// List registered global shortcuts.
+    GlobalShortcuts,
     /// Print information about the focused output.
     FocusedOutput,
     /// Print information about the focused window.
