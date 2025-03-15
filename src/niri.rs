@@ -379,6 +379,10 @@ pub struct Niri {
     // Screencast output for each mapped window.
     #[cfg(feature = "xdp-gnome-screencast")]
     pub mapped_cast_output: HashMap<Window, Output>,
+
+    /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub dynamic_cast_id_for_portal: MappedId,
 }
 
 #[derive(Debug)]
@@ -510,6 +514,8 @@ pub enum CenterCoords {
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum CastTarget {
+    // Dynamic cast before selecting anything.
+    Nothing,
     Output(WeakOutput),
     Window { id: u64 },
 }
@@ -1623,6 +1629,29 @@ impl State {
         };
 
         match &cast.target {
+            CastTarget::Nothing => {
+                // Matches what we create the dynamic source with.
+                let size = Size::from((1, 1));
+                let scale = Scale::from(1.);
+
+                match cast.ensure_size(size) {
+                    Ok(CastSizeChange::Ready) => (),
+                    Ok(CastSizeChange::Pending) => return,
+                    Err(err) => {
+                        warn!("error updating stream size, stopping screencast: {err:?}");
+                        let session_id = cast.session_id;
+                        self.niri.stop_cast(session_id);
+                        return;
+                    }
+                }
+
+                self.backend.with_primary_renderer(|renderer| {
+                    let elements: &[MonitorRenderElement<_>] = &[];
+                    if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
+                        cast.last_frame_time = get_monotonic_time();
+                    }
+                });
+            }
             CastTarget::Output(weak) => {
                 if let Some(output) = weak.upgrade() {
                     self.niri.queue_redraw(&output);
@@ -1673,6 +1702,57 @@ impl State {
         }
     }
 
+    #[cfg(not(feature = "xdp-gnome-screencast"))]
+    pub fn set_dynamic_cast_target(&mut self, _target: CastTarget) {}
+
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub fn set_dynamic_cast_target(&mut self, target: CastTarget) {
+        let _span = tracy_client::span!("State::set_dynamic_cast_target");
+
+        let mut refresh = None;
+        match &target {
+            // Leave refresh as is when clearing. Chances are, the next refresh will match it,
+            // then we'll avoid reconfiguring.
+            CastTarget::Nothing => (),
+            CastTarget::Output(output) => {
+                if let Some(output) = output.upgrade() {
+                    refresh = Some(output.current_mode().unwrap().refresh as u32);
+                }
+            }
+            CastTarget::Window { id } => {
+                let mut windows = self.niri.layout.windows();
+                if let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == *id) {
+                    if let Some(output) = self.niri.mapped_cast_output.get(&mapped.window) {
+                        refresh = Some(output.current_mode().unwrap().refresh as u32);
+                    }
+                }
+            }
+        }
+
+        let mut to_redraw = Vec::new();
+        let mut to_stop = Vec::new();
+        for cast in &mut self.niri.casts {
+            if !cast.dynamic_target {
+                continue;
+            }
+
+            if let Some(refresh) = refresh {
+                if let Err(err) = cast.set_refresh(refresh) {
+                    warn!("error changing cast FPS: {err:?}");
+                    to_stop.push(cast.session_id);
+                    continue;
+                }
+            }
+
+            cast.target = target.clone();
+            to_redraw.push(cast.stream_id);
+        }
+
+        for id in to_redraw {
+            self.redraw_cast(id);
+        }
+    }
+
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn on_screen_cast_msg(&mut self, msg: ScreenCastToNiri) {
         use smithay::reexports::gbm::Modifier;
@@ -1712,6 +1792,7 @@ impl State {
                     }
                 };
 
+                let mut dynamic_target = false;
                 let (target, size, refresh, alpha) = match target {
                     StreamTargetId::Output { name } => {
                         let global_space = &self.niri.global_space;
@@ -1727,6 +1808,15 @@ impl State {
                         let size = transform.transform_size(mode.size);
                         let refresh = mode.refresh as u32;
                         (CastTarget::Output(output.downgrade()), size, refresh, false)
+                    }
+                    StreamTargetId::Window { id }
+                        if id == self.niri.dynamic_cast_id_for_portal.get() =>
+                    {
+                        dynamic_target = true;
+
+                        // All dynamic casts start as Nothing to avoid surprises and exposing
+                        // sensitive info.
+                        (CastTarget::Nothing, Size::from((1, 1)), 1000, true)
                     }
                     StreamTargetId::Window { id } => {
                         let Some(window) = self.niri.layout.windows().find_map(|(_, mapped)| {
@@ -1776,6 +1866,7 @@ impl State {
                     session_id,
                     stream_id,
                     target,
+                    dynamic_target,
                     size,
                     refresh,
                     alpha,
@@ -1850,6 +1941,15 @@ impl State {
         let _span = tracy_client::span!("GetWindows");
 
         let mut windows = HashMap::new();
+
+        #[cfg(feature = "xdp-gnome-screencast")]
+        windows.insert(
+            self.niri.dynamic_cast_id_for_portal.get(),
+            gnome_shell_introspect::WindowProperties {
+                title: String::from("niri Dynamic Cast Target"),
+                app_id: String::from("rs.bxt.niri"),
+            },
+        );
 
         self.niri.layout.with_windows(|mapped, _, _| {
             let id = mapped.id().get();
@@ -2260,6 +2360,9 @@ impl Niri {
 
             #[cfg(feature = "xdp-gnome-screencast")]
             mapped_cast_output: HashMap::new(),
+
+            #[cfg(feature = "xdp-gnome-screencast")]
+            dynamic_cast_id_for_portal: MappedId::next(),
         };
 
         niri.reset_pointer_inactivity_timer();
@@ -4598,15 +4701,29 @@ impl Niri {
         let _span = tracy_client::span!("Niri::stop_casts_for_target");
 
         // This is O(N^2) but it shouldn't be a problem I think.
-        let ids: Vec<_> = self
-            .casts
-            .iter()
-            .filter(|cast| cast.target == target)
-            .map(|cast| cast.session_id)
-            .collect();
+        let mut saw_dynamic = false;
+        let mut ids = Vec::new();
+        for cast in &self.casts {
+            if cast.target != target {
+                continue;
+            }
+
+            if cast.dynamic_target {
+                saw_dynamic = true;
+                continue;
+            }
+
+            ids.push(cast.session_id);
+        }
 
         for id in ids {
             self.stop_cast(id);
+        }
+
+        // We don't stop dynamic casts, instead we switch them to Nothing.
+        if saw_dynamic {
+            self.event_loop
+                .insert_idle(|state| state.set_dynamic_cast_target(CastTarget::Nothing));
         }
     }
 
