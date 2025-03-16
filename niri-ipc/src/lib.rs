@@ -996,19 +996,20 @@ pub struct Window {
     ///
     /// If the window isn't floating then it is in the tiling layout.
     pub is_floating: bool,
+    /// Position and size related properties of the Window.
+    pub location: WindowLocation,
+}
+
+/// Position and size related properties of a Window
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct WindowLocation {
     /// Location of the window within a workspace in terms of (column index, tile index in column).
     ///
     /// Unset for floating windows.
-    pub tile_coordinates: Option<(usize, usize)>,
-    /// Size of the tile this window is in, if applicable.
-    ///
-    /// Unset for floating windows and for windows being dragged with a mouse.
-    pub tile_size: Option<(f64, f64)>,
-    /// Location of the tile relative to the top-left corner of the workspace scrollbox itself.
-    /// [x,y,width,height].
-    ///
-    /// This is NOT set within niri state, but gets computed client-side within `niri msg windows`
-    pub geometry: Option<[f64; 4]>,
+    pub tile_pos_in_scrolling_layout: Option<(usize, usize)>,
+    /// Size of the tile this window is in.
+    pub tile_size: (f64, f64),
 }
 
 /// Output configuration change result.
@@ -1169,25 +1170,12 @@ pub enum Event {
         /// Id of the newly focused window, or `None` if no window is now focused.
         id: Option<u64>,
     },
-    /// Resize multiple windows at once. Some operations can cause many resizes at once, and they
-    /// are grouped together to avoid spamming events.
+    /// Apply changes to the tile location and/or size of one or more windows.
     ///
-    /// Example: resizing a window in a column with many windows resizes each window.
-    BatchResizeTiles {
-        /// Pairs consisting of an id and the new size of each window.
-        id_size_pairs: Vec<(u64, (f64, f64))>,
-    },
-    /// One or more windows' colums were changed together. For example, opening a window to the
-    /// left of a group of windows would cause all of them to shift over by one column.
-    ///
-    /// NOTE: Do not emit this in conjunction with setting the value any other way,
-    ///       as it could result in an invalid column value if applied on top of an updated value.
-    BatchShiftColumns {
-        /// Ids of all windows that were shifted by the same number of columns.
-        /// Ignore if empty, but that shouldn't really happen.
-        ids: Vec<u64>,
-        /// The amount of columns (and direction) to shift by.
-        change_col: i32,
+    /// Note that this does not trigger for a window's physical location changing.
+    WindowsLocationsChanged {
+        /// Pairs consisting of a window id and new position/size information for the window.
+        changes: Vec<(u64, WindowLocation)>,
     },
     /// The configured keyboard layouts have changed.
     KeyboardLayoutsChanged {

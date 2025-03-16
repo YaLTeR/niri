@@ -132,27 +132,12 @@ impl EventStreamStatePart for WindowsState {
             Event::WindowsChanged { windows } => {
                 self.windows = windows.into_iter().map(|win| (win.id, win)).collect();
             }
-            Event::BatchShiftColumns { ids, change_col } => {
-                for id in ids {
+            Event::WindowsLocationsChanged { changes } => {
+                for (id, update) in changes {
                     let Some(w) = self.windows.get_mut(&id) else {
-                        continue; // unreachable!()
+                        continue; // should never be reached
                     };
-                    let Some((x, y)) = w.tile_coordinates else {
-                        continue; // unreachable!()
-                    };
-
-                    w.tile_coordinates = Some(((x as i32 + change_col) as usize, y));
-                }
-            }
-            Event::BatchResizeTiles { id_size_pairs } => {
-                for (id, size) in id_size_pairs {
-                    let Some(w) = self.windows.get_mut(&id) else {
-                        continue; // unreachable!()
-                    };
-
-                    // resize should only change, and never put a new size when it was None
-                    // assert!(w.tile_size.is_some());
-                    w.tile_size = Some(size);
+                    w.location = update;
                 }
             }
             Event::WindowOpenedOrChanged { window } => {
