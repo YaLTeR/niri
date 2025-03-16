@@ -1630,24 +1630,8 @@ impl State {
 
         match &cast.target {
             CastTarget::Nothing => {
-                // Matches what we create the dynamic source with.
-                let size = Size::from((1, 1));
-                let scale = Scale::from(1.);
-
-                match cast.ensure_size(size) {
-                    Ok(CastSizeChange::Ready) => (),
-                    Ok(CastSizeChange::Pending) => return,
-                    Err(err) => {
-                        warn!("error updating stream size, stopping screencast: {err:?}");
-                        let session_id = cast.session_id;
-                        self.niri.stop_cast(session_id);
-                        return;
-                    }
-                }
-
                 self.backend.with_primary_renderer(|renderer| {
-                    let elements: &[MonitorRenderElement<_>] = &[];
-                    if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
+                    if cast.dequeue_buffer_and_clear(renderer) {
                         cast.last_frame_time = get_monotonic_time();
                     }
                 });

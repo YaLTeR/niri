@@ -45,7 +45,7 @@ use zbus::object_server::SignalEmitter;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode};
 use crate::niri::{CastTarget, State};
-use crate::render_helpers::render_to_dmabuf;
+use crate::render_helpers::{clear_dmabuf, render_to_dmabuf};
 use crate::utils::get_monotonic_time;
 
 // Give a 0.1 ms allowance for presentation time errors.
@@ -860,6 +860,42 @@ impl Cast {
             elements.iter().rev(),
         ) {
             warn!("error rendering to dmabuf: {err:?}");
+            return false;
+        }
+
+        for (data, (stride, offset)) in
+            zip(buffer.datas_mut(), zip(dmabuf.strides(), dmabuf.offsets()))
+        {
+            let chunk = data.chunk_mut();
+            *chunk.size_mut() = 1;
+            *chunk.stride_mut() = stride as i32;
+            *chunk.offset_mut() = offset;
+
+            trace!(
+                "pw buffer: fd = {}, stride = {stride}, offset = {offset}",
+                data.as_raw().fd
+            );
+        }
+
+        true
+    }
+
+    pub fn dequeue_buffer_and_clear(&mut self, renderer: &mut GlesRenderer) -> bool {
+        // Clear out the damage tracker if we're in Ready state.
+        if let CastState::Ready { damage_tracker, .. } = &mut *self.state.borrow_mut() {
+            *damage_tracker = None;
+        };
+
+        let Some(mut buffer) = self.stream.dequeue_buffer() else {
+            warn!("no available buffer in pw stream, skipping clear");
+            return false;
+        };
+
+        let fd = buffer.datas_mut()[0].as_raw().fd;
+        let dmabuf = &self.dmabufs.borrow()[&fd];
+
+        if let Err(err) = clear_dmabuf(renderer, dmabuf.clone()) {
+            warn!("error clearing dmabuf: {err:?}");
             return false;
         }
 
