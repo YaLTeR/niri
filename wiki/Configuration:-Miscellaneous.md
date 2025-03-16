@@ -40,7 +40,7 @@ Add lines like this to spawn processes at niri startup.
 
 `spawn-at-startup` accepts a path to the program binary as the first argument, followed by arguments to the program.
 
-This option works the same way as the `spawn` key binding action, so please read about all its subtleties on the [key bindings](./Configuration:-Key-Bindings.md) page.
+This option works the same way as the [`spawn` key binding action](./Configuration:-Key-Bindings.md#spawn), so please read about all its subtleties there.
 
 ```kdl
 spawn-at-startup "waybar"
@@ -170,5 +170,4 @@ hotkey-overlay {
 }
 ```
 
-You can customize which binds the hotkey overlay shows using the `hotkey-overlay-title` property.
-Check the [key bindings](./Configuration:-Key-Bindings.md) wiki page for details.
+You can customize which binds the hotkey overlay shows using the [`hotkey-overlay-title` property](./Configuration:-Key-Bindings.md#custom-hotkey-overlay-titles).

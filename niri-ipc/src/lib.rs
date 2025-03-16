@@ -249,6 +249,14 @@ pub enum Action {
     FocusColumnRightOrFirst {},
     /// Focus the next column to the left, looping if at start.
     FocusColumnLeftOrLast {},
+    /// Focus a column by index.
+    FocusColumn {
+        /// Index of the column to focus.
+        ///
+        /// The index starts from 1 for the first column.
+        #[cfg_attr(feature = "clap", arg())]
+        index: usize,
+    },
     /// Focus the window or the monitor above.
     FocusWindowOrMonitorUp {},
     /// Focus the window or the monitor below.
@@ -293,6 +301,14 @@ pub enum Action {
     MoveColumnLeftOrToMonitorLeft {},
     /// Move the focused column to the right or to the monitor to the right.
     MoveColumnRightOrToMonitorRight {},
+    /// Move the focused column to a specific index on its workspace.
+    MoveColumnToIndex {
+        /// New index for the column.
+        ///
+        /// The index starts from 1 for the first column.
+        #[cfg_attr(feature = "clap", arg())]
+        index: usize,
+    },
     /// Move the focused window down in a column.
     MoveWindowDown {},
     /// Move the focused window up in a column.
@@ -688,6 +704,32 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Set the dynamic cast target to a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Set the dynamic cast target to the focused window")
+    )]
+    SetDynamicCastWindow {
+        /// Id of the window to target.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Set the dynamic cast target to a monitor.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Set the dynamic cast target to the focused monitor")
+    )]
+    SetDynamicCastMonitor {
+        /// Name of the output to target.
+        ///
+        /// If `None`, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
+    /// Clear the dynamic cast target, making it show nothing.
+    ClearDynamicCastTarget {},
 }
 
 /// Change in window or column size.

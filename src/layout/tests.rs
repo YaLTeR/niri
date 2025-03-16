@@ -374,6 +374,7 @@ enum Op {
     FocusColumnLast,
     FocusColumnRightOrFirst,
     FocusColumnLeftOrLast,
+    FocusColumn(#[proptest(strategy = "1..=5usize")] usize),
     FocusWindowOrMonitorUp(#[proptest(strategy = "1..=2u8")] u8),
     FocusWindowOrMonitorDown(#[proptest(strategy = "1..=2u8")] u8),
     FocusColumnOrMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
@@ -398,6 +399,7 @@ enum Op {
     MoveColumnToLast,
     MoveColumnLeftOrToMonitorLeft(#[proptest(strategy = "1..=2u8")] u8),
     MoveColumnRightOrToMonitorRight(#[proptest(strategy = "1..=2u8")] u8),
+    MoveColumnToIndex(#[proptest(strategy = "1..=5usize")] usize),
     MoveWindowDown,
     MoveWindowUp,
     MoveWindowDownOrToWorkspaceDown,
@@ -907,6 +909,7 @@ impl Op {
             Op::FocusColumnLast => layout.focus_column_last(),
             Op::FocusColumnRightOrFirst => layout.focus_column_right_or_first(),
             Op::FocusColumnLeftOrLast => layout.focus_column_left_or_last(),
+            Op::FocusColumn(index) => layout.focus_column(index),
             Op::FocusWindowOrMonitorUp(id) => {
                 let name = format!("output{id}");
                 let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
@@ -973,6 +976,7 @@ impl Op {
 
                 layout.move_column_right_or_to_output(&output);
             }
+            Op::MoveColumnToIndex(index) => layout.move_column_to_index(index),
             Op::MoveWindowDown => layout.move_down(),
             Op::MoveWindowUp => layout.move_up(),
             Op::MoveWindowDownOrToWorkspaceDown => layout.move_down_or_to_workspace_down(),

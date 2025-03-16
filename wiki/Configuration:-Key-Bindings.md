@@ -313,7 +313,7 @@ Actions for taking screenshots.
 - `screenshot`: opens the built-in interactive screenshot UI.
 - `screenshot-screen`, `screenshow-window`: takes a screenshot of the focused screen or window respectively.
 
-The screenshot is both stored to the clipboard and saved to disk, according to the [`screenshot-path` option](./Configuration:-Miscellaneous.md).
+The screenshot is both stored to the clipboard and saved to disk, according to the [`screenshot-path` option](./Configuration:-Miscellaneous#screenshot-path).
 
 <sup>Since: 25.02</sup> You can disable saving to disk for a specific bind with the `write-to-disk=false` property:
 

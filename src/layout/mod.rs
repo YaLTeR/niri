@@ -1837,6 +1837,13 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    pub fn move_column_to_index(&mut self, index: usize) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.move_column_to_index(index);
+    }
+
     pub fn move_down(&mut self) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
@@ -1951,6 +1958,13 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         workspace.focus_column_left_or_last();
+    }
+
+    pub fn focus_column(&mut self, index: usize) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.focus_column(index);
     }
 
     pub fn focus_window_up_or_output(&mut self, output: &Output) -> bool {

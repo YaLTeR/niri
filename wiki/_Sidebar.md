@@ -4,6 +4,7 @@
 * [Important Software](./Important-Software.md)
 * [Floating Windows](./Floating-Windows.md)
 * [Tabs](./Tabs.md)
+* [Screencasting](./Screencasting.md)
 * [Layer‐Shell Components](./Layer%E2%80%90Shell-Components.md)
 * [IPC, `niri msg`](./IPC.md)
 * [Application-Specific Issues](./Application-Issues.md)
@@ -28,8 +29,8 @@
 * [Debug Options](./Configuration:-Debug-Options.md)
 
 ## Development
-* [Design Principles](./Design-Principles.md)
-* [Developing niri](./Developing-niri.md)
-* [Fractional Layout](./Fractional-Layout.md)
-* [Redraw Loop](./Redraw-Loop.md)
-* [Animation Timing](./Animation-Timing.md)
+* [Design Principles](./Development:-Design-Principles.md)
+* [Developing niri](./Development:-Developing-niri.md)
+* [Fractional Layout](./Development:-Fractional-Layout.md)
+* [Redraw Loop](./Development:-Redraw-Loop.md)
+* [Animation Timing](./Development:-Animation-Timing.md)

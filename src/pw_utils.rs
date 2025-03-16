@@ -36,7 +36,7 @@ use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::output::{Output, OutputModeSource, WeakOutput};
+use smithay::output::{Output, OutputModeSource};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
@@ -44,8 +44,8 @@ use smithay::utils::{Physical, Scale, Size, Transform};
 use zbus::object_server::SignalEmitter;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode};
-use crate::niri::State;
-use crate::render_helpers::render_to_dmabuf;
+use crate::niri::{CastTarget, State};
+use crate::render_helpers::{clear_dmabuf, render_to_dmabuf};
 use crate::utils::get_monotonic_time;
 
 // Give a 0.1 ms allowance for presentation time errors.
@@ -60,16 +60,18 @@ pub struct PipeWire {
 
 pub enum PwToNiri {
     StopCast { session_id: usize },
-    Redraw(CastTarget),
+    Redraw { stream_id: usize },
     FatalError,
 }
 
 pub struct Cast {
     pub session_id: usize,
+    pub stream_id: usize,
     pub stream: Stream,
     _listener: StreamListener<()>,
     pub is_active: Rc<Cell<bool>>,
     pub target: CastTarget,
+    pub dynamic_target: bool,
     formats: FormatSet,
     state: Rc<RefCell<CastState>>,
     refresh: Rc<Cell<u32>>,
@@ -106,12 +108,6 @@ pub enum CastState {
 pub enum CastSizeChange {
     Ready,
     Pending,
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub enum CastTarget {
-    Output(WeakOutput),
-    Window { id: u64 },
 }
 
 macro_rules! make_params {
@@ -189,7 +185,9 @@ impl PipeWire {
         gbm: GbmDevice<DrmDeviceFd>,
         formats: FormatSet,
         session_id: usize,
+        stream_id: usize,
         target: CastTarget,
+        dynamic_target: bool,
         size: Size<i32, Physical>,
         refresh: u32,
         alpha: bool,
@@ -204,10 +202,9 @@ impl PipeWire {
                 warn!("error sending StopCast to niri: {err:?}");
             }
         };
-        let target_ = target.clone();
         let to_niri_ = self.to_niri.clone();
         let redraw = move || {
-            if let Err(err) = to_niri_.send(PwToNiri::Redraw(target_.clone())) {
+            if let Err(err) = to_niri_.send(PwToNiri::Redraw { stream_id }) {
                 warn!("error sending Redraw to niri: {err:?}");
             }
         };
@@ -651,10 +648,12 @@ impl PipeWire {
 
         let cast = Cast {
             session_id,
+            stream_id,
             stream,
             _listener: listener,
             is_active,
             target,
+            dynamic_target,
             formats,
             state,
             refresh,
@@ -861,6 +860,42 @@ impl Cast {
             elements.iter().rev(),
         ) {
             warn!("error rendering to dmabuf: {err:?}");
+            return false;
+        }
+
+        for (data, (stride, offset)) in
+            zip(buffer.datas_mut(), zip(dmabuf.strides(), dmabuf.offsets()))
+        {
+            let chunk = data.chunk_mut();
+            *chunk.size_mut() = 1;
+            *chunk.stride_mut() = stride as i32;
+            *chunk.offset_mut() = offset;
+
+            trace!(
+                "pw buffer: fd = {}, stride = {stride}, offset = {offset}",
+                data.as_raw().fd
+            );
+        }
+
+        true
+    }
+
+    pub fn dequeue_buffer_and_clear(&mut self, renderer: &mut GlesRenderer) -> bool {
+        // Clear out the damage tracker if we're in Ready state.
+        if let CastState::Ready { damage_tracker, .. } = &mut *self.state.borrow_mut() {
+            *damage_tracker = None;
+        };
+
+        let Some(mut buffer) = self.stream.dequeue_buffer() else {
+            warn!("no available buffer in pw stream, skipping clear");
+            return false;
+        };
+
+        let fd = buffer.datas_mut()[0].as_raw().fd;
+        let dmabuf = &self.dmabufs.borrow()[&fd];
+
+        if let Err(err) = clear_dmabuf(renderer, dmabuf.clone()) {
+            warn!("error clearing dmabuf: {err:?}");
             return false;
         }
 

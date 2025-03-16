@@ -43,7 +43,7 @@ use crate::input::resize_grab::ResizeGrab;
 use crate::input::touch_move_grab::TouchMoveGrab;
 use crate::input::touch_resize_grab::TouchResizeGrab;
 use crate::input::{PointerOrTouchStartData, DOUBLE_CLICK_TIME};
-use crate::niri::{PopupGrabState, State};
+use crate::niri::{CastTarget, PopupGrabState, State};
 use crate::utils::transaction::Transaction;
 use crate::utils::{
     get_monotonic_time, output_matches_name, send_scale_transform, update_tiled_state, ResizeEdge,
@@ -647,11 +647,9 @@ impl XdgShellHandler for State {
         let window = mapped.window.clone();
         let output = output.cloned();
 
-        #[cfg(feature = "xdp-gnome-screencast")]
-        self.niri
-            .stop_casts_for_target(crate::pw_utils::CastTarget::Window {
-                id: mapped.id().get(),
-            });
+        self.niri.stop_casts_for_target(CastTarget::Window {
+            id: mapped.id().get(),
+        });
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri.layout.store_unmap_snapshot(renderer, &window);

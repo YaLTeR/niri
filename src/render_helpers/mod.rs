@@ -309,6 +309,19 @@ pub fn render_to_shm(
     .context("expected shm buffer, but didn't get one")?
 }
 
+pub fn clear_dmabuf(renderer: &mut GlesRenderer, mut dmabuf: Dmabuf) -> anyhow::Result<SyncPoint> {
+    let size = dmabuf.size();
+    let size = size.to_logical(1, Transform::Normal).to_physical(1);
+    let mut target = renderer.bind(&mut dmabuf).context("error binding dmabuf")?;
+    let mut frame = renderer
+        .render(&mut target, size, Transform::Normal)
+        .context("error starting frame")?;
+    frame
+        .clear(Color32F::TRANSPARENT, &[Rectangle::from_size(size)])
+        .context("error clearing")?;
+    frame.finish().context("error finishing frame")
+}
+
 fn render_elements(
     renderer: &mut GlesRenderer,
     target: &mut GlesTarget,

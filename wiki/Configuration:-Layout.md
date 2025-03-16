@@ -208,7 +208,7 @@ layout {
 > `default-column-width {}` causes niri to send a (0, H) size in the initial configure request.
 >
 > This is a bit [unclearly defined](https://gitlab.freedesktop.org/wayland/wayland-protocols/-/issues/155) in the Wayland protocol, so some clients may misinterpret it.
-> Either way, `default-column-width {}` is most useful for specific windows, in form of a [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules) with the same syntax.
+> Either way, `default-column-width {}` is most useful for specific windows, in form of a [window rule](./Configuration:-Window-Rules.md#default-column-width) with the same syntax.
 
 ### `preset-window-heights`
 
@@ -249,10 +249,10 @@ The difference is that the focus ring is drawn only around the active window, wh
 > That is, they will show up through semitransparent windows.
 > This is because windows using client-side decorations can have an arbitrary shape.
 >
-> If you don't like that, you should uncomment the `prefer-no-csd` setting at the [top level](./Configuration:-Miscellaneous.md) of the config.
+> If you don't like that, you should uncomment the [`prefer-no-csd` setting](./Configuration:-Miscellaneous.md#prefer-no-csd) at the top level of the config.
 > Niri will draw focus rings and borders *around* windows that agree to omit their client-side decorations.
 >
-> Alternatively, you can override this behavior with the `draw-border-with-background` [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules).
+> Alternatively, you can override this behavior with the [`draw-border-with-background` window rule](./Configuration:-Window-Rules.md#draw-border-with-background).
 
 Focus ring and border have the following options.
 
@@ -312,7 +312,7 @@ Similarly to colors, you can set `active-gradient` and `inactive-gradient`, whic
 
 Gradients are rendered the same as CSS [`linear-gradient(angle, from, to)`](https://developer.mozilla.org/en-US/docs/Web/CSS/gradient/linear-gradient).
 The angle works the same as in `linear-gradient`, and is optional, defaulting to `180` (top-to-bottom gradient).
-You can use any CSS linear-gradient tool on the web to set these up, like [this one](https://www.css-gradient.com/).
+You can use any CSS linear-gradient tool on the web to set these up, like [css-gradient.com](https://www.css-gradient.com/).
 
 ```kdl
 layout {
@@ -388,7 +388,7 @@ These will also remove client-side shadows if the window draws any.
 
 `inactive-color` lets you override the shadow color for inactive windows; by default, a more transparent `color` is used.
 
-Shadow drawing will follow the window corner radius set with the `geometry-corner-radius` [window rule](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules).
+Shadow drawing will follow the window corner radius set with the [`geometry-corner-radius` window rule](./Configuration:-Window-Rules.md#geometry-corner-radius).
 
 > [!NOTE]
 > Currently, shadow drawing only supports matching radius for all corners. If you set `geometry-corner-radius` to four values instead of one, the first (top-left) corner radius will be used for shadows.

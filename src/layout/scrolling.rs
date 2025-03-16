@@ -1491,6 +1491,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.activate_column(self.columns.len() - 1);
     }
 
+    pub fn focus_column(&mut self, index: usize) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.activate_column(index.saturating_sub(1).min(self.columns.len() - 1));
+    }
+
     pub fn focus_window_in_column(&mut self, index: u8) {
         if self.columns.is_empty() {
             return;
@@ -1573,6 +1581,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         self.columns[self.active_column_idx].focus_bottom()
+    }
+
+    pub fn move_column_to_index(&mut self, index: usize) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.move_column_to(index.saturating_sub(1).min(self.columns.len() - 1));
     }
 
     fn move_column_to(&mut self, new_idx: usize) {
@@ -1711,8 +1727,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
             if source_tile_was_active {
                 // Make sure the previous (target) column is activated so the animation looks right.
-                self.activate_prev_column_on_removal =
-                    Some(self.view_offset.stationary() + offset.x);
+                //
+                // However, if it was already going to be activated, leave the offset as is. This
+                // improves the workflow that has become common with tabbed columns: open a new
+                // window, then immediately consume it left as a new tab.
+                self.activate_prev_column_on_removal
+                    .get_or_insert(self.view_offset.stationary() + offset.x);
             }
 
             offset.x += self.columns[source_col_idx].render_offset().x;

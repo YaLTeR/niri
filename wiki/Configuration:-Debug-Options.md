@@ -4,7 +4,7 @@ Niri has several options that are only useful for debugging, or are experimental
 They are not meant for normal use.
 
 > [!CAUTION]
-> These options are **not** covered by the [config breaking change policy](./Configuration:-Overview.md).
+> These options are **not** covered by the [config breaking change policy](./Configuration:-Overview.md#breaking-change-policy).
 > They can change or stop working at any point with little notice.
 
 Here are all the options at a glance:

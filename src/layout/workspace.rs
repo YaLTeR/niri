@@ -850,6 +850,13 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn focus_column(&mut self, index: usize) {
+        if self.floating_is_active.get() {
+            self.focus_tiling();
+        }
+        self.scrolling.focus_column(index);
+    }
+
     pub fn focus_window_in_column(&mut self, index: u8) {
         if self.floating_is_active.get() {
             return;
@@ -963,6 +970,13 @@ impl<W: LayoutElement> Workspace<W> {
             return;
         }
         self.scrolling.move_column_to_last();
+    }
+
+    pub fn move_column_to_index(&mut self, index: usize) {
+        if self.floating_is_active.get() {
+            return;
+        }
+        self.scrolling.move_column_to_index(index);
     }
 
     pub fn move_down(&mut self) -> bool {

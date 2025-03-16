@@ -62,6 +62,8 @@ static STREAM_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone)]
 pub struct Stream {
+    id: usize,
+    session_id: usize,
     target: StreamTarget,
     cursor_mode: CursorMode,
     was_started: Arc<AtomicBool>,
@@ -93,6 +95,7 @@ struct StreamParameters {
 pub enum ScreenCastToNiri {
     StartCast {
         session_id: usize,
+        stream_id: usize,
         target: StreamTargetId,
         cursor_mode: CursorMode,
         signal_ctx: SignalEmitter<'static>,
@@ -149,7 +152,7 @@ impl Session {
         debug!("start");
 
         for (stream, iface) in &*self.streams.lock().unwrap() {
-            stream.start(self.id, iface.signal_emitter().clone());
+            stream.start(iface.signal_emitter().clone());
         }
     }
 
@@ -204,16 +207,20 @@ impl Session {
             return Err(fdo::Error::Failed("monitor is disabled".to_owned()));
         }
 
-        let path = format!(
-            "/org/gnome/Mutter/ScreenCast/Stream/u{}",
-            STREAM_ID.fetch_add(1, Ordering::SeqCst)
-        );
+        let stream_id = STREAM_ID.fetch_add(1, Ordering::SeqCst);
+        let path = format!("/org/gnome/Mutter/ScreenCast/Stream/u{stream_id}");
         let path = OwnedObjectPath::try_from(path).unwrap();
 
         let cursor_mode = properties.cursor_mode.unwrap_or_default();
 
         let target = StreamTarget::Output(output);
-        let stream = Stream::new(target, cursor_mode, self.to_niri.clone());
+        let stream = Stream::new(
+            stream_id,
+            self.id,
+            target,
+            cursor_mode,
+            self.to_niri.clone(),
+        );
         match server.at(&path, stream.clone()).await {
             Ok(true) => {
                 let iface = server.interface(&path).await.unwrap();
@@ -237,10 +244,8 @@ impl Session {
     ) -> fdo::Result<OwnedObjectPath> {
         debug!(?properties, "record_window");
 
-        let path = format!(
-            "/org/gnome/Mutter/ScreenCast/Stream/u{}",
-            STREAM_ID.fetch_add(1, Ordering::SeqCst)
-        );
+        let stream_id = STREAM_ID.fetch_add(1, Ordering::SeqCst);
+        let path = format!("/org/gnome/Mutter/ScreenCast/Stream/u{stream_id}");
         let path = OwnedObjectPath::try_from(path).unwrap();
 
         let cursor_mode = properties.cursor_mode.unwrap_or_default();
@@ -248,7 +253,13 @@ impl Session {
         let target = StreamTarget::Window {
             id: properties.window_id,
         };
-        let stream = Stream::new(target, cursor_mode, self.to_niri.clone());
+        let stream = Stream::new(
+            stream_id,
+            self.id,
+            target,
+            cursor_mode,
+            self.to_niri.clone(),
+        );
         match server.at(&path, stream.clone()).await {
             Ok(true) => {
                 let iface = server.interface(&path).await.unwrap();
@@ -350,11 +361,15 @@ impl Drop for Session {
 
 impl Stream {
     fn new(
+        id: usize,
+        session_id: usize,
         target: StreamTarget,
         cursor_mode: CursorMode,
         to_niri: calloop::channel::Sender<ScreenCastToNiri>,
     ) -> Self {
         Self {
+            id,
+            session_id,
             target,
             cursor_mode,
             was_started: Arc::new(AtomicBool::new(false)),
@@ -362,13 +377,14 @@ impl Stream {
         }
     }
 
-    fn start(&self, session_id: usize, ctxt: SignalEmitter<'static>) {
+    fn start(&self, ctxt: SignalEmitter<'static>) {
         if self.was_started.load(Ordering::SeqCst) {
             return;
         }
 
         let msg = ScreenCastToNiri::StartCast {
-            session_id,
+            session_id: self.session_id,
+            stream_id: self.id,
             target: self.target.make_id(),
             cursor_mode: self.cursor_mode,
             signal_ctx: ctxt,
