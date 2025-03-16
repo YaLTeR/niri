@@ -234,7 +234,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           show-progress: false
-      - uses: lycheeverse/lychee-action@v2.0.2 # don't bump until this is fixed: https://github.com/lycheeverse/lychee/issues/1574
+      - uses: lycheeverse/lychee-action@v2.0.2 # later versions break fragment checks. don't bump until this is fixed: https://github.com/lycheeverse/lychee/issues/1574
         with:
           args: --offline --include-fragments 'wiki/*.md'
 
