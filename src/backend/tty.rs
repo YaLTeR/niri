@@ -526,7 +526,7 @@ impl Tty {
 
             let mut renderer = self
                 .gpu_manager
-                .single_renderer(&render_node)
+                .single_renderer(&self.primary_render_node)
                 .context("error creating renderer")?;
 
             if let Err(err) = renderer.bind_wl_display(&niri.display_handle) {
