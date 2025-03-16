@@ -228,9 +228,21 @@ jobs:
       - run: nix flake check
         continue-on-error: true
 
+  check-links:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+      - uses: lycheeverse/lychee-action@v2.0.2 # later versions break fragment checks. don't bump until this is fixed: https://github.com/lycheeverse/lychee/issues/1574
+        with:
+          args: --offline --include-fragments 'wiki/*.md'
+
   publish-wiki:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    needs:
+      - build
+      - check-links
     permissions:
       contents: write
     runs-on: ubuntu-24.04

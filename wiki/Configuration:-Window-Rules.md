@@ -657,7 +657,7 @@ window-rule {
 
 Set a scroll factor for all scroll events sent to a window.
 
-This will be multiplied with the scroll factor set for your input device in the [input section](/wiki/Configuration:-Input.md#pointing-devices).
+This will be multiplied with the scroll factor set for your input device in the [input section](./Configuration:-Input.md#pointing-devices).
 
 ```kdl
 // Make scrolling in Firefox a bit slower.
