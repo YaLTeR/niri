@@ -229,7 +229,6 @@ jobs:
         continue-on-error: true
 
   check-links:
-    needs: build
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -241,7 +240,9 @@ jobs:
 
   publish-wiki:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: check-links
+    needs:
+      - build
+      - check-links
     permissions:
       contents: write
     runs-on: ubuntu-24.04
