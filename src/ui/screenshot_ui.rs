@@ -39,6 +39,12 @@ const TEXT_SHOW_P: &str =
     "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
      Press <span face='mono' bgcolor='#2C2C2C'> P </span> to show the pointer.";
 
+/// How many pixels the move commands move the selection.
+const DIRECTIONAL_MOVE_PX: i32 = 50;
+
+/// Minimum size for screenshot selection in pixels, only applies to keybinds.
+const MIN_SELECTION_SIZE: i32 = 10;
+
 // Ideally the screenshot UI should support cross-output selections. However, that poses some
 // technical challenges when the outputs have different scales and such. So, this implementation
 // allows only single-output selections for now.
@@ -236,6 +242,118 @@ impl ScreenshotUi {
 
     pub fn is_open(&self) -> bool {
         matches!(self, ScreenshotUi::Open { .. })
+    }
+
+    pub fn move_left(&mut self) {
+        if let Self::Open { selection, .. } = self {
+            selection.1.x -= DIRECTIONAL_MOVE_PX;
+            selection.2.x -= DIRECTIONAL_MOVE_PX;
+            self.update_buffers();
+        }
+    }
+
+    pub fn move_right(&mut self) {
+        if let Self::Open { selection, .. } = self {
+            selection.1.x += DIRECTIONAL_MOVE_PX;
+            selection.2.x += DIRECTIONAL_MOVE_PX;
+            self.update_buffers();
+        }
+    }
+
+    pub fn move_up(&mut self) {
+        if let Self::Open { selection, .. } = self {
+            selection.1.y -= DIRECTIONAL_MOVE_PX;
+            selection.2.y -= DIRECTIONAL_MOVE_PX;
+            self.update_buffers();
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        if let Self::Open { selection, .. } = self {
+            selection.1.y += DIRECTIONAL_MOVE_PX;
+            selection.2.y += DIRECTIONAL_MOVE_PX;
+            self.update_buffers();
+        }
+    }
+
+    pub fn resize_left(&mut self) {
+        if let Self::Open { selection, .. } = self {
+            let new_x = selection.1.x - DIRECTIONAL_MOVE_PX;
+            if selection.2.x - new_x >= MIN_SELECTION_SIZE {
+                selection.1.x = new_x;
+                self.update_buffers();
+            }
+        }
+    }
+
+    pub fn resize_right(&mut self) {
+        if let Self::Open { selection, .. } = self {
+            let new_x = selection.2.x + DIRECTIONAL_MOVE_PX;
+            if new_x - selection.1.x >= MIN_SELECTION_SIZE {
+                selection.2.x = new_x;
+                self.update_buffers();
+            }
+        }
+    }
+
+    pub fn resize_up(&mut self) {
+        if let Self::Open { selection, .. } = self {
+            let new_y = selection.1.y - DIRECTIONAL_MOVE_PX;
+            if selection.2.y - new_y >= MIN_SELECTION_SIZE {
+                selection.1.y = new_y;
+                self.update_buffers();
+            }
+        }
+    }
+
+    pub fn resize_down(&mut self) {
+        if let Self::Open { selection, .. } = self {
+            let new_y = selection.2.y + DIRECTIONAL_MOVE_PX;
+            if new_y - selection.1.y >= MIN_SELECTION_SIZE {
+                selection.2.y = new_y;
+                self.update_buffers();
+            }
+        }
+    }
+
+    pub fn resize_inward_left(&mut self) {
+        if let Self::Open { selection, .. } = self {
+            let new_x = selection.2.x - DIRECTIONAL_MOVE_PX;
+            if new_x >= selection.1.x + MIN_SELECTION_SIZE {
+                selection.2.x = new_x;
+                self.update_buffers();
+            }
+        }
+    }
+
+    pub fn resize_inward_right(&mut self) {
+        if let Self::Open { selection, .. } = self {
+            let new_x = selection.1.x + DIRECTIONAL_MOVE_PX;
+            if new_x <= selection.2.x - MIN_SELECTION_SIZE {
+                selection.1.x = new_x;
+                self.update_buffers();
+            }
+        }
+    }
+
+    pub fn resize_inward_up(&mut self) {
+        if let Self::Open { selection, .. } = self {
+            let new_y = selection.2.y - DIRECTIONAL_MOVE_PX;
+            if new_y >= selection.1.y + MIN_SELECTION_SIZE {
+                selection.2.y = new_y;
+                self.update_buffers();
+            }
+        }
+    }
+
+    pub fn resize_inward_down(&mut self) {
+        if let Self::Open { selection, .. } = self {
+            let new_y = selection.1.y + DIRECTIONAL_MOVE_PX;
+            if new_y <= selection.2.y - MIN_SELECTION_SIZE {
+                selection.1.y = new_y;
+                self.update_buffers();
+            }
+        }
     }
 
     pub fn advance_animations(&mut self) {}
