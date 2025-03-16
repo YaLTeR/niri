@@ -9,7 +9,7 @@ Apparently, VSCode currently unconditionally queries the X server for a keymap.
 > [!NOTE]
 > Both of these issues seem to be fixed in the nightly build of WezTerm.
 
-There's [a bug](https://github.com/wez/wezterm/issues/4708) in WezTerm that it waits for a zero-sized Wayland configure event, so its window never shows up in niri. To work around it, put this window rule in the niri config (included in the default config):
+There's [a bug](https://github.com/wezterm/wezterm/issues/4708) in WezTerm that it waits for a zero-sized Wayland configure event, so its window never shows up in niri. To work around it, put this window rule in the niri config (included in the default config):
 
 ```kdl
 window-rule {
@@ -20,7 +20,7 @@ window-rule {
 
 This empty default column width lets WezTerm pick its own initial width which makes it show up properly.
 
-There's [another bug](https://github.com/wez/wezterm/issues/6472) in WezTerm that causes it to choose a wrong size when it's in a tiled state, and prevent resizing it.
+There's [another bug](https://github.com/wezterm/wezterm/issues/6472) in WezTerm that causes it to choose a wrong size when it's in a tiled state, and prevent resizing it.
 Niri puts windows in the tiled state with [`prefer-no-csd`](./Configuration:-Miscellaneous.md#prefer-no-csd).
 So if you hit this problem, comment out `prefer-no-csd` in the niri config and restart WezTerm.
 

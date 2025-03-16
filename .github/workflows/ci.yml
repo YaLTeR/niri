@@ -227,10 +227,21 @@ jobs:
 
       - run: nix flake check
         continue-on-error: true
+  check-links:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Link Checker
+        id: lychee
+        uses: lycheeverse/lychee-action@f87f0a62993c2647717456af92593666acb3a500 # lychee v0.16.1 seems to work well for our case at the moment
+        with:
+          args: --offline --include-fragments 'wiki/*.md'
 
   publish-wiki:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    needs: check-links
     permissions:
       contents: write
     runs-on: ubuntu-24.04
