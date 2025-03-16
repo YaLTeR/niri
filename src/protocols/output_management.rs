@@ -619,10 +619,13 @@ where
                     return;
                 };
 
-                new_config.mode = Some(niri_ipc::ConfiguredMode {
-                    width: mode.width,
-                    height: mode.height,
-                    refresh: Some(mode.refresh_rate as f64 / 1000.),
+                new_config.mode = Some(niri_config::Mode {
+                    custom: false,
+                    mode: niri_ipc::ConfiguredMode {
+                        width: mode.width,
+                        height: mode.height,
+                        refresh: Some(mode.refresh_rate as f64 / 1000.),
+                    },
                 });
             }
             zwlr_output_configuration_head_v1::Request::SetCustomMode {
@@ -630,7 +633,6 @@ where
                 height,
                 refresh,
             } => {
-                // FIXME: Support custom mode
                 let (width, height, refresh): (u16, u16, u32) =
                     match (width.try_into(), height.try_into(), refresh.try_into()) {
                         (Ok(width), Ok(height), Ok(refresh)) => (width, height, refresh),
@@ -640,24 +642,13 @@ where
                         }
                     };
 
-                let Some(current_config) = g_state.current_state.get(output_id) else {
-                    warn!("SetMode: output missing from the current config");
-                    return;
-                };
-
-                let Some(mode) = current_config.modes.iter().find(|m| {
-                    m.width == width
-                        && m.height == height
-                        && (refresh == 0 || m.refresh_rate == refresh)
-                }) else {
-                    warn!("SetCustomMode: no matching mode");
-                    return;
-                };
-
-                new_config.mode = Some(niri_ipc::ConfiguredMode {
-                    width: mode.width,
-                    height: mode.height,
-                    refresh: Some(mode.refresh_rate as f64 / 1000.),
+                new_config.mode = Some(niri_config::Mode {
+                    custom: true,
+                    mode: niri_ipc::ConfiguredMode {
+                        width,
+                        height,
+                        refresh: Some(refresh as f64 / 1000.),
+                    },
                 });
             }
             zwlr_output_configuration_head_v1::Request::SetPosition { x, y } => {

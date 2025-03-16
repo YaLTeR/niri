@@ -371,6 +371,14 @@ pub struct Percent(pub f64);
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Outputs(pub Vec<Output>);
 
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Mode {
+    #[knuffel(property, default)]
+    pub custom: bool,
+    #[knuffel(argument, str)]
+    pub mode: ConfiguredMode,
+}
+
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Output {
     #[knuffel(child)]
@@ -383,8 +391,8 @@ pub struct Output {
     pub transform: Transform,
     #[knuffel(child)]
     pub position: Option<Position>,
-    #[knuffel(child, unwrap(argument, str))]
-    pub mode: Option<ConfiguredMode>,
+    #[knuffel(child)]
+    pub mode: Option<Mode>,
     #[knuffel(child)]
     pub variable_refresh_rate: Option<Vrr>,
     #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
@@ -3664,6 +3672,15 @@ mod tests {
                 background-color "rgba(25, 25, 102, 1.0)"
             }
 
+            output "eDP-2" {
+                scale 2
+                transform "flipped-90"
+                position x=10 y=20
+                mode custom=true "1920x1080@144"
+                variable-refresh-rate on-demand=true
+                background-color "rgba(25, 25, 102, 1.0)"
+            }
+
             layout {
                 focus-ring {
                     width 5
@@ -3992,12 +4009,54 @@ mod tests {
                             },
                         ),
                         mode: Some(
-                            ConfiguredMode {
-                                width: 1920,
-                                height: 1080,
-                                refresh: Some(
-                                    144.0,
-                                ),
+                            Mode {
+                                custom: false,
+                                mode: ConfiguredMode {
+                                    width: 1920,
+                                    height: 1080,
+                                    refresh: Some(
+                                        144.0,
+                                    ),
+                                },
+                            },
+                        ),
+                        variable_refresh_rate: Some(
+                            Vrr {
+                                on_demand: true,
+                            },
+                        ),
+                        background_color: Color {
+                            r: 0.09803922,
+                            g: 0.09803922,
+                            b: 0.4,
+                            a: 1.0,
+                        },
+                    },
+                    Output {
+                        off: false,
+                        name: "eDP-2",
+                        scale: Some(
+                            FloatOrInt(
+                                2.0,
+                            ),
+                        ),
+                        transform: Flipped90,
+                        position: Some(
+                            Position {
+                                x: 10,
+                                y: 20,
+                            },
+                        ),
+                        mode: Some(
+                            Mode {
+                                custom: true,
+                                mode: ConfiguredMode {
+                                    width: 1920,
+                                    height: 1080,
+                                    refresh: Some(
+                                        144.0,
+                                    ),
+                                },
                             },
                         ),
                         variable_refresh_rate: Some(

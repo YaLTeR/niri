@@ -73,6 +73,15 @@ output "eDP-1" {
 }
 ```
 
+<sup>Since: unreleased</sup> A custom mode can be activated by setting `custom=true`, in which case the refresh rate is mandatory.
+
+```kdl
+/// Set a custom mode not offered by the connected display
+output "HDMI-A-1" {
+    mode custom=true "2560x1440@143.912"
+}
+```
+
 ### `scale`
 
 Set the scale of the monitor.
