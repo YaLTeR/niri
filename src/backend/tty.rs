@@ -339,7 +339,31 @@ impl Tty {
     }
 
     pub fn init(&mut self, niri: &mut Niri) {
+        // Initialize the primary node first as later nodes might
+        // depend on the primary render node beeing available.
+        let mut primary_node_initialized = false;
+        if let Some((primary_device_id, primary_device_path)) = self
+            .udev_dispatcher
+            .clone()
+            .as_source_ref()
+            .device_list()
+            .find(|&(device_id, _)| device_id == self.primary_node.dev_id())
+        {
+            primary_node_initialized = self
+                .device_added(primary_device_id, primary_device_path, niri)
+                .inspect_err(|err| warn!("error initializing the primary device: {err:?}"))
+                .is_ok();
+        };
+
+        if !primary_node_initialized {
+            warn!("failed to pre-initialize primary node, display only devices might not work");
+        }
+
         for (device_id, path) in self.udev_dispatcher.clone().as_source_ref().device_list() {
+            if primary_node_initialized && device_id == self.primary_node.dev_id() {
+                continue;
+            }
+
             if let Err(err) = self.device_added(device_id, path, niri) {
                 warn!("error adding device: {err:?}");
             }
