@@ -221,6 +221,18 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Toggle windowed (fake) fullscreen on a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Toggle windowed (fake) fullscreen on the focused window")
+    )]
+    ToggleWindowedFullscreen {
+        /// Id of the window to toggle windowed fullscreen of.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Focus a window by id.
     FocusWindow {
         /// Id of the window to focus.

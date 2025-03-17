@@ -244,6 +244,13 @@ pub trait LayoutElement {
         Some(requested)
     }
 
+    fn is_pending_windowed_fullscreen(&self) -> bool {
+        false
+    }
+    fn request_windowed_fullscreen(&mut self, value: bool) {
+        let _ = value;
+    }
+
     fn is_child_of(&self, parent: &Self) -> bool;
 
     fn rules(&self) -> &ResolvedWindowRules;
@@ -3458,6 +3465,20 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn set_fullscreen(&mut self, id: &W::Id, is_fullscreen: bool) {
+        // Check if this is a request to unset the windowed fullscreen state.
+        if !is_fullscreen {
+            let mut handled = false;
+            self.with_windows_mut(|window, _| {
+                if window.id() == id && window.is_pending_windowed_fullscreen() {
+                    window.request_windowed_fullscreen(false);
+                    handled = true;
+                }
+            });
+            if handled {
+                return;
+            }
+        }
+
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.tile.window().id() == id {
                 return;
@@ -3485,6 +3506,26 @@ impl<W: LayoutElement> Layout<W> {
                 return;
             }
         }
+    }
+
+    pub fn toggle_windowed_fullscreen(&mut self, id: &W::Id) {
+        let (_, window) = self.windows().find(|(_, win)| win.id() == id).unwrap();
+        if window.is_pending_fullscreen() {
+            // Remove the real fullscreen.
+            for ws in self.workspaces_mut() {
+                if ws.has_window(id) {
+                    ws.set_fullscreen(id, false);
+                    break;
+                }
+            }
+        }
+
+        // This will switch is_pending_fullscreen() to false right away.
+        self.with_windows_mut(|window, _| {
+            if window.id() == id {
+                window.request_windowed_fullscreen(!window.is_pending_windowed_fullscreen());
+            }
+        });
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, output: &Output, is_touchpad: bool) {

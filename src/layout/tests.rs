@@ -29,6 +29,8 @@ struct TestWindowInner {
     pending_fullscreen: Cell<bool>,
     pending_activated: Cell<bool>,
     is_fullscreen: Cell<bool>,
+    is_windowed_fullscreen: Cell<bool>,
+    is_pending_windowed_fullscreen: Cell<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +74,8 @@ impl TestWindow {
             pending_fullscreen: Cell::new(false),
             pending_activated: Cell::new(false),
             is_fullscreen: Cell::new(false),
+            is_windowed_fullscreen: Cell::new(false),
+            is_pending_windowed_fullscreen: Cell::new(false),
         }))
     }
 
@@ -98,6 +102,13 @@ impl TestWindow {
 
         if self.0.is_fullscreen.get() != self.0.pending_fullscreen.get() {
             self.0.is_fullscreen.set(self.0.pending_fullscreen.get());
+            changed = true;
+        }
+
+        if self.0.is_windowed_fullscreen.get() != self.0.is_pending_windowed_fullscreen.get() {
+            self.0
+                .is_windowed_fullscreen
+                .set(self.0.is_pending_windowed_fullscreen.get());
             changed = true;
         }
 
@@ -144,6 +155,10 @@ impl LayoutElement for TestWindow {
     ) {
         self.0.requested_size.set(Some(size));
         self.0.pending_fullscreen.set(is_fullscreen);
+
+        if is_fullscreen {
+            self.0.is_pending_windowed_fullscreen.set(false);
+        }
     }
 
     fn min_size(&self) -> Size<i32, Logical> {
@@ -191,15 +206,31 @@ impl LayoutElement for TestWindow {
     fn set_floating(&mut self, _floating: bool) {}
 
     fn is_fullscreen(&self) -> bool {
+        if self.0.is_windowed_fullscreen.get() {
+            return false;
+        }
+
         self.0.is_fullscreen.get()
     }
 
     fn is_pending_fullscreen(&self) -> bool {
+        if self.0.is_pending_windowed_fullscreen.get() {
+            return false;
+        }
+
         self.0.pending_fullscreen.get()
     }
 
     fn requested_size(&self) -> Option<Size<i32, Logical>> {
         self.0.requested_size.get()
+    }
+
+    fn is_pending_windowed_fullscreen(&self) -> bool {
+        self.0.is_pending_windowed_fullscreen.get()
+    }
+
+    fn request_windowed_fullscreen(&mut self, value: bool) {
+        self.0.is_pending_windowed_fullscreen.set(value);
     }
 
     fn is_child_of(&self, parent: &Self) -> bool {
@@ -374,6 +405,7 @@ enum Op {
         window: usize,
         is_fullscreen: bool,
     },
+    ToggleWindowedFullscreen(#[proptest(strategy = "1..=5usize")] usize),
     FocusColumnLeft,
     FocusColumnRight,
     FocusColumnFirst,
@@ -901,13 +933,25 @@ impl Op {
                 layout.remove_window(&id, Transaction::new());
             }
             Op::FullscreenWindow(id) => {
+                if !layout.has_window(&id) {
+                    return;
+                }
                 layout.toggle_fullscreen(&id);
             }
             Op::SetFullscreenWindow {
                 window,
                 is_fullscreen,
             } => {
+                if !layout.has_window(&window) {
+                    return;
+                }
                 layout.set_fullscreen(&window, is_fullscreen);
+            }
+            Op::ToggleWindowedFullscreen(id) => {
+                if !layout.has_window(&id) {
+                    return;
+                }
+                layout.toggle_windowed_fullscreen(&id);
             }
             Op::FocusColumnLeft => layout.focus_left(),
             Op::FocusColumnRight => layout.focus_right(),
@@ -3185,6 +3229,37 @@ fn unfullscreen_with_large_border() {
         ..Default::default()
     };
     check_ops_with_options(options, &ops);
+}
+
+#[test]
+fn fullscreen_to_windowed_fullscreen() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::FullscreenWindow(0),
+        Op::Communicate(0), // Make sure it goes into fullscreen.
+        Op::ToggleWindowedFullscreen(0),
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn windowed_fullscreen_to_fullscreen() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::FullscreenWindow(0),
+        Op::Communicate(0),              // Commit fullscreen state.
+        Op::ToggleWindowedFullscreen(0), // Switch is_fullscreen() to false.
+        Op::FullscreenWindow(0),         // Switch is_fullscreen() back to true.
+    ];
+
+    check_ops(&ops);
 }
 
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
