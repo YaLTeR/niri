@@ -143,13 +143,19 @@ pub struct Mapped {
     /// its fullscreen size. Then turning on is_windowed_fullscreen will both keep the
     /// fullscreen state, and keep the size (since it matches), resulting in no configure.
     ///
-    /// So we work around this by "committing" is_pending_windowed_fullscreen to
-    /// is_windowed_fullscreen on receiving any actual window commit, and whenever
-    /// is_pending_windowed_fullscreen changes, we mark the window as needs_configure. This does
-    /// mean some unnecessary delays in some cases, but it also means being able to better
-    /// synchronize our windowed fullscreen state to the real window updates, so that's good I
-    /// guess.
+    /// So we work around this by emulating a configure-ack/commit cycle through
+    /// is_pending_windowed_fullscreen and uncommited_windowed_fullscreen. We ensure we send actual
+    /// configures in all cases through needs_configure. This can result in unnecessary configures
+    /// (like in the example above), but in most cases there will be a configure anyway to change
+    /// the Fullscreen state and/or the size. What this gives us is being able to synchronize our
+    /// windowed fullscreen state to the real window updates to avoid any flickering.
     is_pending_windowed_fullscreen: bool,
+
+    /// Pending windowed fullscreen updates.
+    ///
+    /// These have been "sent" to the window in form of configures, but the window hadn't committed
+    /// in response yet.
+    uncommited_windowed_fullscreen: Vec<(Serial, bool)>,
 }
 
 niri_render_elements! {
@@ -241,6 +247,7 @@ impl Mapped {
             last_interactive_resize_start: Cell::new(None),
             is_windowed_fullscreen: false,
             is_pending_windowed_fullscreen: false,
+            uncommited_windowed_fullscreen: Vec::new(),
         }
     }
 
@@ -498,6 +505,10 @@ impl Mapped {
 
     pub fn update_tiled_state(&self, prefer_no_csd: bool) {
         update_tiled_state(self.toplevel(), prefer_no_csd, self.rules.tiled_state);
+    }
+
+    pub fn is_windowed_fullscreen(&self) -> bool {
+        self.is_windowed_fullscreen
     }
 }
 
@@ -966,6 +977,18 @@ impl LayoutElement for Mapped {
             if let Some(RequestSizeOnce::WaitingForConfigure) = self.request_size_once {
                 self.request_size_once = Some(RequestSizeOnce::WaitingForCommit(serial));
             }
+
+            // If is_pending_windowed_fullscreen changed compared to the last value that we "sent"
+            // to the window, store the configure serial.
+            let last_sent_windowed_fullscreen = self
+                .uncommited_windowed_fullscreen
+                .last()
+                .map(|(_, value)| *value)
+                .unwrap_or(self.is_windowed_fullscreen);
+            if last_sent_windowed_fullscreen != self.is_pending_windowed_fullscreen {
+                self.uncommited_windowed_fullscreen
+                    .push((serial, self.is_pending_windowed_fullscreen));
+            }
         } else {
             self.interactive_resize = match self.interactive_resize.take() {
                 // We probably started and stopped resizing in the same loop cycle without anything
@@ -1180,11 +1203,15 @@ impl LayoutElement for Mapped {
             }
         }
 
-        // HACK: this is not really accurate because the commit might be for an earlier serial than
-        // when we requested windowed fullscren. But we don't actually care much, since this is
-        // entirely compositor state. We're only tying it to configure/commit as a workaround to
-        // the rest of the code expecting that fullscreen doesn't suddenly just change in the
-        // middle of something.
-        self.is_windowed_fullscreen = self.is_pending_windowed_fullscreen;
+        // "Commit" our "acked" pending windowed fullscreen state.
+        self.uncommited_windowed_fullscreen
+            .retain_mut(|(serial, value)| {
+                if commit_serial.is_no_older_than(serial) {
+                    self.is_windowed_fullscreen = *value;
+                    false
+                } else {
+                    true
+                }
+            });
     }
 }
