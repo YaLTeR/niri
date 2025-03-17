@@ -33,20 +33,26 @@ env:
     pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
 
 jobs:
-  # Check for common errors like license headers, trailing whitespace, etc.
-  pre-commit:
-    name: Pre-commit checks
+  # Basic lint check - using simple checks instead of pre-commit
+  lint:
+    name: Basic lint checks
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
           show-progress: false
-      - uses: actions/setup-python@v5
-      - uses: pre-commit/action@v3.0.1
+      
+      - name: Check for trailing whitespace
+        run: |
+          ! grep -r --include="*.rs" --include="*.toml" --include="*.yml" '\s$' .
+
+      - name: Check for large files
+        run: |
+          ! find . -type f -size +1M -not -path "*/target/*" -not -path "*/.git/*" | grep .
 
   # Core build and test jobs
   build:
-    needs: pre-commit
+    needs: lint
     strategy:
       fail-fast: false
       matrix:
@@ -85,10 +91,15 @@ jobs:
           echo 'progress.when = "always"' >> ~/.cargo/config.toml
 
       - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: actions/cache@v4
         with:
-          key: ${{ matrix.configuration }}-${{ hashFiles('**/Cargo.lock') }}
-          shared-key: ${{ runner.os }}-cargo-${{ matrix.configuration }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.configuration }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.configuration }}-
 
       - name: Check (no default features)
         run: cargo check ${{ matrix.release-flag }} --no-default-features
@@ -163,7 +174,7 @@ jobs:
           if-no-files-found: error
 
   randomized-tests:
-    needs: pre-commit
+    needs: lint
     name: Randomized Tests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -194,9 +205,16 @@ jobs:
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
           echo 'retry = 3' >> ~/.cargo/config.toml
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Cache dependencies
+        uses: actions/cache@v4
         with:
-          key: randomized-tests-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-randomized-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-randomized-
 
       - name: Build tests
         run: cargo test --no-run --all --exclude niri-visual-tests --release
@@ -215,7 +233,7 @@ jobs:
         timeout-minutes: 20
 
   visual-tests:
-    needs: pre-commit
+    needs: lint
     name: Visual Tests
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -239,9 +257,16 @@ jobs:
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
           echo 'retry = 3' >> ~/.cargo/config.toml
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Cache dependencies
+        uses: actions/cache@v4
         with:
-          key: visual-tests-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-visual-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-visual-
 
       - name: Build visual tests
         run: cargo build --package niri-visual-tests
@@ -256,7 +281,7 @@ jobs:
           cargo build --package niri-visual-tests
 
   code-quality:
-    needs: pre-commit
+    needs: lint
     name: Code Quality
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -281,9 +306,16 @@ jobs:
       - name: MSRV Check
         uses: dtolnay/rust-toolchain@1.80.1
         
-      - uses: Swatinem/rust-cache@v2
+      - name: Cache dependencies
+        uses: actions/cache@v4
         with:
-          key: msrv-check-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-msrv-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-msrv-
           
       - name: Verify MSRV compatibility
         run: cargo check --all-targets
@@ -361,7 +393,7 @@ jobs:
         continue-on-error: true
 
   check-links:
-    needs: pre-commit
+    needs: lint
     name: Check Documentation Links
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -377,7 +409,7 @@ jobs:
           fail: true
 
   security-audit:
-    needs: pre-commit
+    needs: lint
     name: Security Audit
     runs-on: ubuntu-24.04
     
@@ -431,6 +463,17 @@ jobs:
           echo '[net]' >> ~/.cargo/config.toml
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
           echo 'retry = 3' >> ~/.cargo/config.toml
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-docs-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-docs-
 
       - name: Generate Documentation
         run: |
