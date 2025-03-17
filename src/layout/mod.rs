@@ -1189,6 +1189,11 @@ impl<W: LayoutElement> Layout<W> {
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if move_.tile.window().id() == window {
+                // Do this before calling update_window() so it can get up-to-date info.
+                if let Some(serial) = serial {
+                    move_.tile.window_mut().on_commit(serial);
+                }
+
                 move_.tile.update_window();
                 return;
             }
