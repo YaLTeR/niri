@@ -3457,24 +3457,10 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        match &mut self.monitor_set {
-            MonitorSet::Normal { monitors, .. } => {
-                for mon in monitors {
-                    for ws in &mut mon.workspaces {
-                        if ws.has_window(window) {
-                            ws.set_fullscreen(window, is_fullscreen);
-                            return;
-                        }
-                    }
-                }
-            }
-            MonitorSet::NoOutputs { workspaces, .. } => {
-                for ws in workspaces {
-                    if ws.has_window(window) {
-                        ws.set_fullscreen(window, is_fullscreen);
-                        return;
-                    }
-                }
+        for ws in self.workspaces_mut() {
+            if ws.has_window(window) {
+                ws.set_fullscreen(window, is_fullscreen);
+                return;
             }
         }
     }
@@ -3486,24 +3472,10 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        match &mut self.monitor_set {
-            MonitorSet::Normal { monitors, .. } => {
-                for mon in monitors {
-                    for ws in &mut mon.workspaces {
-                        if ws.has_window(window) {
-                            ws.toggle_fullscreen(window);
-                            return;
-                        }
-                    }
-                }
-            }
-            MonitorSet::NoOutputs { workspaces, .. } => {
-                for ws in workspaces {
-                    if ws.has_window(window) {
-                        ws.toggle_fullscreen(window);
-                        return;
-                    }
-                }
+        for ws in self.workspaces_mut() {
+            if ws.has_window(window) {
+                ws.toggle_fullscreen(window);
+                return;
             }
         }
     }
