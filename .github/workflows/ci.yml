@@ -2,12 +2,24 @@ name: CI
 
 on:
   push:
+    branches: ['main']
+    paths-ignore:
+      - '**.md'
+      - 'wiki/**'
+      - 'docs/**'
   pull_request:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 1 * *' # Monthly
+    - cron: '0 0 1 * *' # Monthly scheduled runs
+
+# Concurrency group to ensure only one workflow runs at a time per ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
   RUN_SLOW_TESTS: 1
   DEPS_APT: |
     curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev \
@@ -19,7 +31,20 @@ env:
     pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
 
 jobs:
+  # Check for common errors like license headers, trailing whitespace, etc.
+  pre-commit:
+    name: Pre-commit checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+      - uses: actions/setup-python@v5
+      - uses: pre-commit/action@v3.0.1
+
+  # Core build and test jobs
   build:
+    needs: pre-commit
     strategy:
       fail-fast: false
       matrix:
@@ -30,40 +55,45 @@ jobs:
 
     name: Test - ${{ matrix.configuration }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           show-progress: false
+          fetch-depth: 1
 
       - name: Install dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y ${{ env.DEPS_APT }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.configuration }}
+          key: ${{ matrix.configuration }}-${{ hashFiles('**/Cargo.lock') }}
+          shared-key: ${{ runner.os }}-cargo-${{ matrix.configuration }}
 
       - name: Check (no default features)
         run: cargo check ${{ matrix.release-flag }} --no-default-features
+        timeout-minutes: 5
 
-      - name: Check (just dbus)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features --features dbus
+      - name: Feature matrix checks
+        run: |
+          echo "Checking individual features..."
+          cargo check ${{ matrix.release-flag }} --no-default-features --features dbus
+          cargo check ${{ matrix.release-flag }} --no-default-features --features systemd
+          cargo check ${{ matrix.release-flag }} --no-default-features --features dinit
+          cargo check ${{ matrix.release-flag }} --no-default-features --features xdp-gnome-screencast
+        timeout-minutes: 10
 
-      - name: Check (just systemd)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features --features systemd
-
-      - name: Check (just dinit)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features --features dinit
-
-      - name: Check (just xdp-gnome-screencast)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features --features xdp-gnome-screencast
-
-      - name: Check
+      - name: Check (all features)
         run: cargo check ${{ matrix.release-flag }}
+        timeout-minutes: 5
 
       - name: Build (with profiling)
         run: cargo build ${{ matrix.release-flag }} --features profile-with-tracy
@@ -71,14 +101,28 @@ jobs:
       - name: Build tests
         run: cargo test --no-run --all --exclude niri-visual-tests ${{ matrix.release-flag }}
 
-      - name: Test
+      - name: Run tests
         run: cargo test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture
+        timeout-minutes: 10
+        env:
+          RUST_BACKTRACE: 1
+
+      - name: Upload artifacts (release only)
+        if: matrix.configuration == 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: niri-release-binaries
+          path: |
+            target/release/niri
+            target/release/niri-*
+          retention-days: 7
+          if-no-files-found: error
 
   randomized-tests:
-    strategy:
-      fail-fast: false
+    needs: pre-commit
     name: Randomized Tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     env:
       RUST_BACKTRACE: 1
@@ -100,18 +144,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: randomized-tests-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build tests
         run: cargo test --no-run --all --exclude niri-visual-tests --release
 
-      - name: Test
+      - name: Run randomized tests
         run: cargo test --all --exclude niri-visual-tests --release
+        timeout-minutes: 20
 
   visual-tests:
-    strategy:
-      fail-fast: false
+    needs: pre-commit
     name: Visual Tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -126,16 +173,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: visual-tests-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build
+      - name: Build visual tests
         run: cargo build --package niri-visual-tests
 
-  msrv:
-    strategy:
-      fail-fast: false
-    name: MSRV
+  code-quality:
+    needs: pre-commit
+    name: Code Quality
     runs-on: ubuntu-24.04
-
+    timeout-minutes: 15
+    
     steps:
       - uses: actions/checkout@v4
         with:
@@ -146,91 +195,68 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
-      - uses: dtolnay/rust-toolchain@1.80.1
-
+      - name: MSRV Check
+        uses: dtolnay/rust-toolchain@1.80.1
+        
       - uses: Swatinem/rust-cache@v2
-
-      - run: cargo check --all-targets
-
-  clippy:
-    strategy:
-      fail-fast: false
-    name: Clippy
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
         with:
-          show-progress: false
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
-
-      - uses: dtolnay/rust-toolchain@stable
+          key: msrv-check-${{ hashFiles('**/Cargo.lock') }}
+          
+      - name: Verify MSRV compatibility
+        run: cargo check --all-targets
+      
+      # Use stable for clippy
+      - name: Setup Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-
-      - uses: Swatinem/rust-cache@v2
-
+          
       - name: Run Clippy
-        run: cargo clippy --all --all-targets
-
-  rustfmt:
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
-
-      - uses: dtolnay/rust-toolchain@nightly
+        run: cargo clippy --all --all-targets -- -D warnings
+        
+      # Use nightly for rustfmt
+      - name: Setup Rust nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
-
+          
       - name: Run Rustfmt
         run: cargo fmt --all -- --check
 
-  fedora:
+  platform-compatibility:
+    needs: build
+    name: Platform Compatibility
     runs-on: ubuntu-24.04
-    container: fedora:41
-
+    timeout-minutes: 30
+    
     steps:
       - uses: actions/checkout@v4
         with:
           show-progress: false
 
-      - name: Install dependencies
-        run: |
-          sudo dnf update -y
-          sudo dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
-
-      - uses: Swatinem/rust-cache@v2
-
-      - run: cargo build --all
-
-  nix:
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
+      - name: Fedora build
+        uses: docker://fedora:41
         with:
-          show-progress: false
-
-      - name: Check flake inputs
-        uses: DeterminateSystems/flake-checker-action@v4
-        continue-on-error: true
+          entrypoint: |
+            sh -c "dnf update -y && dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel && cargo build --all"
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v3
+        uses: DeterminateSystems/nix-installer-action@v9
         continue-on-error: true
 
-      - run: nix flake check
+      - name: Check flake inputs
+        uses: DeterminateSystems/flake-checker-action@v5
+        continue-on-error: true
+
+      - name: Nix flake check
+        run: nix flake check
         continue-on-error: true
 
   check-links:
+    needs: pre-commit
+    name: Check Documentation Links
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -239,16 +265,34 @@ jobs:
 
       - uses: lycheeverse/lychee-action@v2.0.2
         with:
-          args: --offline --include-fragments 'wiki/*.md'
+          args: '--offline --include-fragments --no-progress --timeout 30 "wiki/*.md" "**/*.md"'
+          fail: true
+
+  security-audit:
+    needs: pre-commit
+    name: Security Audit
+    runs-on: ubuntu-24.04
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+      
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      
+      - name: Run cargo-audit
+        run: cargo audit
 
   publish-wiki:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs:
-      - build
-      - check-links
+    needs: [build, check-links]
     permissions:
       contents: write
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
 
     steps:
       - uses: actions/checkout@v4
@@ -259,10 +303,12 @@ jobs:
       - uses: Andrew-Chen-Wang/github-wiki-action@b7e552d7cb0fa7f83e459012ffc6840fd87bcb83
 
   rustdoc:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     permissions:
       contents: write
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -272,14 +318,29 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Generate Documentation
-        run: cargo doc --no-deps -p niri-ipc
+        run: |
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --all-features
 
       - run: cp ./resources/rustdoc-index.html ./target/doc/index.html
 
       - name: Deploy Documentation
-        if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./target/doc
           force_orphan: true
+          
+  # Summary job that runs after everything else to report final status
+  ci-completion:
+    if: always()
+    needs: [build, randomized-tests, visual-tests, code-quality, platform-compatibility, check-links, security-audit]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: CI Status
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "::error::CI workflow failed"
+            exit 1
+          else
+            echo "::notice::All CI checks passed successfully"
+          fi
