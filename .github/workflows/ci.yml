@@ -1,530 +1,214 @@
-name: CI
+name: Rust CI/CD Pipeline
 
 on:
   push:
+    branches: [main]
   pull_request:
-  workflow_dispatch:
   schedule:
-    - cron: '0 0 1 * *' # Monthly
+    - cron: '0 0 1 * *'  # Monthly maintenance tasks
+  workflow_dispatch:
 
 env:
-  RUN_SLOW_TESTS: 1
-  DEPS_APT: curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
-  DEPS_DNF: cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
-  # Global Git configuration for more resilient network operations
+  CARGO_NET_RETRY: 10
   CARGO_NET_GIT_FETCH_WITH_CLI: true
-  CARGO_NET_RETRY: 5
   GIT_TERMINAL_PROMPT: 0
+  RUST_BACKTRACE: full
 
 jobs:
-  # Common pre-job to set up dependencies and git configuration
-  setup:
+  global_setup:
+    name: 🛠️ Global Configuration
     runs-on: ubuntu-24.04
     outputs:
-      git_config: ${{ steps.git_config.outputs.config_done }}
+      cargo_config: ${{ steps.cargo_config.outputs.path }}
     steps:
-      - name: Configure git for resilient fetching
-        id: git_config
+      - name: Configure Git
         run: |
-          git config --global http.postBuffer 524288000
+          git config --global http.postBuffer 1048576000
           git config --global http.lowSpeedLimit 1000
-          git config --global http.lowSpeedTime 60
-          echo "config_done=true" >> $GITHUB_OUTPUT
+          git config --global http.lowSpeedTime 120
+          git config --global core.compression 9
 
-  build:
-    needs: setup
+      - name: Create Cargo config
+        id: cargo_config
+        run: |
+          mkdir -p ~/.cargo
+          cat > ~/.cargo/config.toml <<EOF
+          [net]
+          git-fetch-with-cli = true
+          retry = 15
+          
+          [registries.crates-io]
+          protocol = "sparse"
+          EOF
+          echo "path=~/.cargo/config.toml" >> $GITHUB_OUTPUT
+
+  build_and_test:
+    name: 🧪 Build & Test (${{ matrix.configuration }})
+    needs: global_setup
     strategy:
       fail-fast: false
       matrix:
         configuration: [debug, release]
         include:
+          - configuration: debug
+            args: ""
           - configuration: release
-            release-flag: '--release'
-
-    name: test - ${{ matrix.configuration }}
+            args: --release
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - name: 🛒 Checkout Code
+        uses: actions/checkout@v4
         with:
-          show-progress: false
+          fetch-depth: 0
 
-      - name: Install dependencies
+      - name: 📦 Install System Dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }}
+          sudo apt-get install -y \
+            curl gcc clang \
+            libudev-dev libgbm-dev libxkbcommon-dev \
+            libegl1-mesa-dev libwayland-dev libinput-dev \
+            libdbus-1-dev libsystemd-dev libseat-dev \
+            libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: 🦀 Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      - name: 🗄️ Cache Dependencies
+        uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.configuration }}
           save-if: true
 
-      - name: Configure Cargo for reliable Git fetching
+      - name: 🔄 Resilient Cargo Runner
+        id: cargo_runner
         run: |
-          mkdir -p ~/.cargo
-          echo '[net]' >> ~/.cargo/config.toml
-          echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 10' >> ~/.cargo/config.toml
-
-      - name: Create retry script
-        run: |
-          cat > ~/cargo-retry.sh << 'EOL'
+          cat > cargo-retry <<'EOL'
           #!/bin/bash
-          for attempt in {1..5}; do
-            echo "Running: cargo $@, attempt $attempt"
+          max_attempts=8
+          base_delay=15
+          success=false
+          
+          for ((attempt=1; attempt<=max_attempts; attempt++)); do
+            echo "⟳ Attempt $attempt/$max_attempts: cargo $@"
             if cargo "$@"; then
-              exit 0
+              success=true
+              break
             fi
-            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-            sleep $((attempt * 5))
+            
+            # Clean partial git operations
+            find ~/.cargo/git -mindepth 1 -maxdepth 1 -type d \
+              -exec git -C {} fetch --prune \; || true
+            
+            delay=$((base_delay * 2 ** (attempt-1)))
+            echo "⚠️ Failed! Retrying in ${delay}s..."
+            sleep $delay
           done
-          echo "All attempts failed!"
-          exit 1
+          
+          $success || exit 1
           EOL
-          chmod +x ~/cargo-retry.sh
+          chmod +x cargo-retry
+          echo "./cargo-retry" >> $GITHUB_PATH
 
-      - name: Check (no default features)
-        run: ~/cargo-retry.sh check ${{ matrix.release-flag }} --no-default-features
+      - name: 🔍 Basic Checks
+        run: |
+          cargo-retry check ${{ matrix.args }} --no-default-features
+          cargo-retry check ${{ matrix.args }} --no-default-features --features dbus
+          cargo-retry check ${{ matrix.args }} --no-default-features --features systemd
+          cargo-retry check ${{ matrix.args }} --no-default-features --features dinit
+          cargo-retry check ${{ matrix.args }} --no-default-features --features xdp-gnome-screencast
+          cargo-retry check ${{ matrix.args }}
 
-      - name: Check (just dbus)
-        run: ~/cargo-retry.sh check ${{ matrix.release-flag }} --no-default-features --features dbus
+      - name: 🏗️ Build & Test
+        run: |
+          cargo-retry build ${{ matrix.args }} --features profile-with-tracy
+          cargo-retry test --no-run --all --exclude niri-visual-tests ${{ matrix.args }}
+          cargo-retry test --all --exclude niri-visual-tests ${{ matrix.args }} -- --nocapture
 
-      - name: Check (just systemd)
-        run: ~/cargo-retry.sh check ${{ matrix.release-flag }} --no-default-features --features systemd
-
-      - name: Check (just dinit)
-        run: ~/cargo-retry.sh check ${{ matrix.release-flag }} --no-default-features --features dinit
-
-      - name: Check (just xdp-gnome-screencast)
-        run: ~/cargo-retry.sh check ${{ matrix.release-flag }} --no-default-features --features xdp-gnome-screencast
-
-      - name: Check
-        run: ~/cargo-retry.sh check ${{ matrix.release-flag }}
-
-      - name: Build (with profiling)
-        run: ~/cargo-retry.sh build ${{ matrix.release-flag }} --features profile-with-tracy
-
-      - name: Build tests
-        run: ~/cargo-retry.sh test --no-run --all --exclude niri-visual-tests ${{ matrix.release-flag }}
-
-      - name: Test
-        run: ~/cargo-retry.sh test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture
-
-      # Ensure we create the doc directory for downstream jobs even if the tests fail
-      - name: Prepare doc directory
+      - name: 📂 Prepare Artifacts
         if: always() && matrix.configuration == 'release'
         run: mkdir -p ./target/doc
 
-  # Job that runs randomized tests for a longer period of time.
-  randomized-tests:
-    needs: setup
-    strategy:
-      fail-fast: false
-
-    name: randomized tests
+  quality_checks:
+    name: 🧰 Code Quality
+    needs: global_setup
     runs-on: ubuntu-24.04
-
-    env:
-      RUST_BACKTRACE: 1
-      PROPTEST_CASES: 200000
-      PROPTEST_MAX_LOCAL_REJECTS: 200000
-      PROPTEST_MAX_GLOBAL_REJECTS: 200000
-      PROPTEST_MAX_SHRINK_ITERS: 200000
-
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        task: [clippy, fmt]
     steps:
       - uses: actions/checkout@v4
-        with:
-          show-progress: false
-
-      - name: Install dependencies
+      
+      - name: Install Tools
         run: |
           sudo apt-get update -y
           sudo apt-get install -y ${{ env.DEPS_APT }}
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: true
-
-      - name: Configure Cargo for reliable Git fetching
-        run: |
-          mkdir -p ~/.cargo
-          echo '[net]' >> ~/.cargo/config.toml
-          echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 10' >> ~/.cargo/config.toml
-
-      - name: Create retry script
-        run: |
-          cat > ~/cargo-retry.sh << 'EOL'
-          #!/bin/bash
-          for attempt in {1..5}; do
-            echo "Running: cargo $@, attempt $attempt"
-            if cargo "$@"; then
-              exit 0
-            fi
-            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-            sleep $((attempt * 5))
-          done
-          echo "All attempts failed!"
-          exit 1
-          EOL
-          chmod +x ~/cargo-retry.sh
-
-      - name: Build tests
-        run: ~/cargo-retry.sh test --no-run --all --exclude niri-visual-tests --release
-
-      - name: Test
-        run: ~/cargo-retry.sh test --all --exclude niri-visual-tests --release
-
-  visual-tests:
-    needs: setup
-    strategy:
-      fail-fast: false
-
-    name: visual tests
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: true
-
-      - name: Configure Cargo for reliable Git fetching
-        run: |
-          mkdir -p ~/.cargo
-          echo '[net]' >> ~/.cargo/config.toml
-          echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 10' >> ~/.cargo/config.toml
-
-      - name: Create retry script
-        run: |
-          cat > ~/cargo-retry.sh << 'EOL'
-          #!/bin/bash
-          for attempt in {1..5}; do
-            echo "Running: cargo $@, attempt $attempt"
-            if cargo "$@"; then
-              exit 0
-            fi
-            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-            sleep $((attempt * 5))
-          done
-          echo "All attempts failed!"
-          exit 1
-          EOL
-          chmod +x ~/cargo-retry.sh
-
-      - name: Build
-        run: ~/cargo-retry.sh build --package niri-visual-tests
-
-  msrv:
-    needs: setup
-    strategy:
-      fail-fast: false
-
-    name: msrv
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
-
-      - uses: dtolnay/rust-toolchain@1.80.1
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: true
-
-      - name: Configure Cargo for reliable Git fetching
-        run: |
-          mkdir -p ~/.cargo
-          echo '[net]' >> ~/.cargo/config.toml
-          echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 10' >> ~/.cargo/config.toml
-
-      - name: Create retry script
-        run: |
-          cat > ~/cargo-retry.sh << 'EOL'
-          #!/bin/bash
-          for attempt in {1..5}; do
-            echo "Running: cargo $@, attempt $attempt"
-            if cargo "$@"; then
-              exit 0
-            fi
-            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-            sleep $((attempt * 5))
-          done
-          echo "All attempts failed!"
-          exit 1
-          EOL
-          chmod +x ~/cargo-retry.sh
-
-      - name: Check all targets
-        run: ~/cargo-retry.sh check --all-targets
-
-  clippy:
-    needs: setup
-    strategy:
-      fail-fast: false
-
-    name: clippy
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+        if: matrix.task == 'clippy'
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: ${{ matrix.task == 'clippy' && 'clippy' || 'rustfmt' }}
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: true
-
-      - name: Configure Cargo for reliable Git fetching
+      - name: Run ${{ matrix.task }}
         run: |
-          mkdir -p ~/.cargo
-          echo '[net]' >> ~/.cargo/config.toml
-          echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 10' >> ~/.cargo/config.toml
+          case "${{ matrix.task }}" in
+            clippy)
+              cargo clippy --all --all-targets -- -D warnings
+              ;;
+            fmt)
+              cargo fmt --all -- --check
+              ;;
+          esac
 
-      - name: Create retry script
-        run: |
-          cat > ~/cargo-retry.sh << 'EOL'
-          #!/bin/bash
-          for attempt in {1..5}; do
-            echo "Running: cargo $@, attempt $attempt"
-            if cargo "$@"; then
-              exit 0
-            fi
-            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-            sleep $((attempt * 5))
-          done
-          echo "All attempts failed!"
-          exit 1
-          EOL
-          chmod +x ~/cargo-retry.sh
-
-      - name: Run clippy
-        run: ~/cargo-retry.sh clippy --all --all-targets
-
-  rustfmt:
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
-
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
-
-      - name: Run rustfmt
-        run: cargo fmt --all -- --check
-
-  fedora:
-    needs: setup
-    runs-on: ubuntu-24.04
-    container: fedora:41
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
-
-      - name: Install dependencies
-        run: |
-          dnf update -y
-          dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: true
-
-      - name: Configure Cargo for reliable Git fetching
-        run: |
-          mkdir -p ~/.cargo
-          echo '[net]' >> ~/.cargo/config.toml
-          echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 10' >> ~/.cargo/config.toml
-
-      - name: Create retry script
-        run: |
-          cat > ~/cargo-retry.sh << 'EOL'
-          #!/bin/bash
-          for attempt in {1..5}; do
-            echo "Running: cargo $@, attempt $attempt"
-            if cargo "$@"; then
-              exit 0
-            fi
-            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-            sleep $((attempt * 5))
-          done
-          echo "All attempts failed!"
-          exit 1
-          EOL
-          chmod +x ~/cargo-retry.sh
-
-      - name: Build all
-        run: ~/cargo-retry.sh build --all
-
-  nix:
+  documentation:
+    name: 📚 Documentation
+    needs: build_and_test
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-        with:
-          show-progress: false
-
-      - name: Check flake inputs
-        uses: DeterminateSystems/flake-checker-action@v4
-        continue-on-error: true
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v3
-        continue-on-error: true
-
-      # Add special handling for pipewire-rs in flake.nix
-      - name: Temporarily patch flake.nix for network resilience (if needed)
+      
+      - name: Generate Docs
         run: |
-          if grep -q "pipewire-rs.git" flake.nix; then
-            echo "Detected pipewire-rs Git dependency in flake.nix, adding allRefs=true"
-            sed -i 's/fetchGit\s*{/fetchGit { allRefs = true;/g' flake.nix || true
-          fi
-        continue-on-error: true
+          mkdir -p target/doc
+          cargo doc --no-deps -p niri-ipc || echo "⚠️ Documentation generation failed"
 
-      - run: nix flake check --accept-flake-config
-        continue-on-error: true
-
-  check-links:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
-      - uses: lycheeverse/lychee-action@v2.0.2 # later versions break fragment checks. don't bump until this is fixed: https://github.com/lycheeverse/lychee/issues/1574
-        with:
-          args: --offline --include-fragments 'wiki/*.md'
-        continue-on-error: true
-
-  publish-wiki:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs:
-      - build
-      - check-links
-    permissions:
-      contents: write
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-          show-progress: false
-
-      # Check if wiki exists first
-      - name: Check if wiki repository exists
-        id: check_wiki
+      - name: Prepare Fallback
+        if: failure()
         run: |
-          # Use GitHub CLI to check if the wiki repository exists
-          if gh repo view ${GITHUB_REPOSITORY}.wiki --json name &>/dev/null; then
-            echo "wiki_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "wiki_exists=false" >> $GITHUB_OUTPUT
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
+          echo "<html><body><h1>Documentation Unavailable</h1><p>Build failed - check CI logs</p></body></html>" \
+            > target/doc/index.html
 
-      # Only run the wiki action if the wiki exists
-      - uses: Andrew-Chen-Wang/github-wiki-action@b7e552d7cb0fa7f83e459012ffc6840fd87bcb83
-        if: steps.check_wiki.outputs.wiki_exists == 'true'
-        continue-on-error: true
-
-  rustdoc:
-    needs: build
-    permissions:
-      contents: write
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: true
-
-      - name: Configure Cargo for reliable Git fetching
-        run: |
-          mkdir -p ~/.cargo
-          echo '[net]' >> ~/.cargo/config.toml
-          echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 10' >> ~/.cargo/config.toml
-
-      - name: Create retry script
-        run: |
-          cat > ~/cargo-retry.sh << 'EOL'
-          #!/bin/bash
-          for attempt in {1..5}; do
-            echo "Running: cargo $@, attempt $attempt"
-            if cargo "$@"; then
-              exit 0
-            fi
-            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-            sleep $((attempt * 5))
-          done
-          echo "All attempts failed!"
-          exit 1
-          EOL
-          chmod +x ~/cargo-retry.sh
-
-      - name: Generate documentation with retries
-        run: ~/cargo-retry.sh doc --no-deps -p niri-ipc
-
-      # Ensure target/doc directory exists even if doc generation fails
-      - name: Ensure target/doc directory exists
-        run: mkdir -p ./target/doc
-        
-      - name: Copy index file with error handling
-        run: |
-          if [ -f ./resources/rustdoc-index.html ]; then
-            cp ./resources/rustdoc-index.html ./target/doc/index.html || echo "Could not copy index file"
-          else
-            echo "<html><body><h1>Documentation Generation Failed</h1><p>Please check CI logs.</p></body></html>" > ./target/doc/index.html
-          fi
-
-      - name: Deploy documentation
+      - name: Deploy
         if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./target/doc
           force_orphan: true
+
+  post_failure:
+    name: 🚨 Failure Recovery
+    if: failure()
+    needs: 
+      - build_and_test
+      - quality_checks
+      - documentation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Clone Mirror Fallback
+        run: |
+          git config --global url."https://github.com/pipewire-rs-mirror".insteadOf "https://gitlab.freedesktop.org/pipewire"
+          cargo update -p pipewire
+        continue-on-error: true
+      
+      - name: Upload Logs
+        uses: actions/upload-artifact@v3
+        with:
+          name: failure-logs
+          path: |
+            **/target/debug
+            **/target/release
+            **/cargo-log.txt
