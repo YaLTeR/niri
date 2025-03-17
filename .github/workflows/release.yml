@@ -13,6 +13,10 @@ concurrency:
 
 env:
   RUN_SLOW_TESTS: 1
+  # Global Git configuration for more resilient network operations
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
+  CARGO_NET_RETRY: 10
+  GIT_TERMINAL_PROMPT: 0
 
 jobs:
   prepare-release:
@@ -29,6 +33,7 @@ jobs:
       - name: Check for unreplaced "Since:" in the wiki
         run: |
           if grep --recursive 'Since: next release' wiki; then
+            echo "Warning: Found 'Since: next release' in wiki. Please update version references."
             exit 1
           fi
 
@@ -39,20 +44,100 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Create vendored dependencies archive
+      - name: Configure git for resilient fetching
         run: |
-          mkdir .cargo
-          cargo vendor --locked > .cargo/config.toml
+          git config --global http.postBuffer 524288000
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 60
+
+      - name: Configure Cargo for reliable Git fetching
+        run: |
+          mkdir -p ~/.cargo
+          echo '[net]' >> ~/.cargo/config.toml
+          echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
+          echo 'retry = 10' >> ~/.cargo/config.toml
+
+      # Function to run cargo commands with retries
+      - name: Create retry function
+        run: |
+          function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }
+          echo 'function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }' >> ~/.bashrc
+          echo 'export -f cargo_with_retry' >> ~/.bashrc
+          source ~/.bashrc
+
+      # Retry the vendor step until successful or max attempts reached
+      - name: Create vendored dependencies archive with retries
+        run: |
+          mkdir -p .cargo
+          
+          # Try vendoring multiple times with increasing timeouts
+          for attempt in {1..5}; do
+            echo "Vendoring dependencies, attempt $attempt"
+            if cargo vendor --locked > .cargo/config.toml; then
+              echo "Vendoring succeeded"
+              break
+            fi
+            
+            if [ $attempt -eq 5 ]; then
+              echo "Vendoring failed after 5 attempts"
+              exit 1
+            fi
+            
+            echo "Vendoring failed, retrying in $((attempt * 10)) seconds..."
+            sleep $((attempt * 10))
+          done
+          
+          # Package the vendored dependencies
           tar cJf niri-${{ github.event.inputs.version }}-vendored-dependencies.tar.xz vendor/
+          
+          # Verify the archive was created correctly
+          if [ ! -f "niri-${{ github.event.inputs.version }}-vendored-dependencies.tar.xz" ]; then
+            echo "Failed to create vendored dependencies archive"
+            exit 1
+          fi
+          
+          echo "Successfully created vendored dependencies archive"
 
       - name: Build
-        run: cargo build --all --frozen --release
+        run: source ~/.bashrc && cargo_with_retry build --all --frozen --release
 
       - name: Build tests
-        run: cargo test --no-run --all --frozen --release
+        run: source ~/.bashrc && cargo_with_retry test --no-run --all --frozen --release
 
       - name: Test
-        run: cargo test --all --frozen --release -- --nocapture
+        run: source ~/.bashrc && cargo_with_retry test --all --frozen --release -- --nocapture
+
+      - name: Verify release artifacts
+        run: |
+          if [ ! -f "niri-${{ github.event.inputs.version }}-vendored-dependencies.tar.xz" ]; then
+            echo "Vendored dependencies archive is missing"
+            exit 1
+          fi
+          
+          ls -la niri-${{ github.event.inputs.version }}-vendored-dependencies.tar.xz
+          echo "Release artifacts successfully prepared"
 
       - name: Draft release
         uses: softprops/action-gh-release@v2
