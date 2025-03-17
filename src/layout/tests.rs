@@ -28,6 +28,7 @@ struct TestWindowInner {
     max_size: Size<i32, Logical>,
     pending_fullscreen: Cell<bool>,
     pending_activated: Cell<bool>,
+    is_fullscreen: Cell<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,10 +71,13 @@ impl TestWindow {
             max_size: params.min_max_size.1,
             pending_fullscreen: Cell::new(false),
             pending_activated: Cell::new(false),
+            is_fullscreen: Cell::new(false),
         }))
     }
 
     fn communicate(&self) -> bool {
+        let mut changed = false;
+
         if let Some(size) = self.0.requested_size.get() {
             assert!(size.w >= 0);
             assert!(size.h >= 0);
@@ -88,11 +92,16 @@ impl TestWindow {
 
             if self.0.bbox.get() != new_bbox {
                 self.0.bbox.set(new_bbox);
-                return true;
+                changed = true;
             }
         }
 
-        false
+        if self.0.is_fullscreen.get() != self.0.pending_fullscreen.get() {
+            self.0.is_fullscreen.set(self.0.pending_fullscreen.get());
+            changed = true;
+        }
+
+        changed
     }
 }
 
@@ -182,7 +191,7 @@ impl LayoutElement for TestWindow {
     fn set_floating(&mut self, _floating: bool) {}
 
     fn is_fullscreen(&self) -> bool {
-        false
+        self.0.is_fullscreen.get()
     }
 
     fn is_pending_fullscreen(&self) -> bool {
@@ -3154,6 +3163,28 @@ fn disable_tabbed_mode_in_fullscreen() {
     ];
 
     check_ops(&ops);
+}
+
+#[test]
+fn unfullscreen_with_large_border() {
+    let ops = [
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::FullscreenWindow(0),
+        Op::Communicate(0),
+        Op::FullscreenWindow(0),
+    ];
+
+    let options = Options {
+        border: niri_config::Border {
+            off: false,
+            width: niri_config::FloatOrInt(10000.),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    check_ops_with_options(options, &ops);
 }
 
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
