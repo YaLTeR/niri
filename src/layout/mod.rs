@@ -3457,31 +3457,31 @@ impl<W: LayoutElement> Layout<W> {
         res
     }
 
-    pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
+    pub fn set_fullscreen(&mut self, id: &W::Id, is_fullscreen: bool) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if move_.tile.window().id() == window {
+            if move_.tile.window().id() == id {
                 return;
             }
         }
 
         for ws in self.workspaces_mut() {
-            if ws.has_window(window) {
-                ws.set_fullscreen(window, is_fullscreen);
+            if ws.has_window(id) {
+                ws.set_fullscreen(id, is_fullscreen);
                 return;
             }
         }
     }
 
-    pub fn toggle_fullscreen(&mut self, window: &W::Id) {
+    pub fn toggle_fullscreen(&mut self, id: &W::Id) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if move_.tile.window().id() == window {
+            if move_.tile.window().id() == id {
                 return;
             }
         }
 
         for ws in self.workspaces_mut() {
-            if ws.has_window(window) {
-                ws.toggle_fullscreen(window);
+            if ws.has_window(id) {
+                ws.toggle_fullscreen(id);
                 return;
             }
         }
