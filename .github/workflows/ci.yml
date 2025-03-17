@@ -13,9 +13,6 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: true
   GIT_TERMINAL_PROMPT: 0
   RUST_BACKTRACE: full
-  SCCACHE_CACHE_SIZE: 2G
-  SCCACHE_DIR: /home/runner/.cache/sccache
-  RUSTC_WRAPPER: sccache
   DEPS_APT: curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
   DEPS_DNF: cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
 
@@ -80,50 +77,20 @@ jobs:
           key: ${{ matrix.configuration }}
           save-if: true
 
-      - name: 🔄 Resilient Cargo Runner
-        id: cargo_runner
-        run: |
-          cat > cargo-retry <<'EOL'
-          #!/bin/bash
-          max_attempts=8
-          base_delay=15
-          success=false
-          
-          for ((attempt=1; attempt<=max_attempts; attempt++)); do
-            echo "⟳ Attempt $attempt/$max_attempts: cargo $@"
-            if cargo "$@"; then
-              success=true
-              break
-            fi
-            
-            # Clean partial git operations
-            find ~/.cargo/git -mindepth 1 -maxdepth 1 -type d \
-              -exec git -C {} fetch --prune \; || true
-            
-            delay=$((base_delay * 2 ** (attempt-1)))
-            echo "⚠️ Failed! Retrying in ${delay}s..."
-            sleep $delay
-          done
-          
-          $success || exit 1
-          EOL
-          chmod +x cargo-retry
-          echo "./cargo-retry" >> $GITHUB_PATH
-
       - name: 🔍 Basic Checks
         run: |
-          cargo-retry check ${{ matrix.args }} --no-default-features
-          cargo-retry check ${{ matrix.args }} --no-default-features --features dbus
-          cargo-retry check ${{ matrix.args }} --no-default-features --features systemd
-          cargo-retry check ${{ matrix.args }} --no-default-features --features dinit
-          cargo-retry check ${{ matrix.args }} --no-default-features --features xdp-gnome-screencast
-          cargo-retry check ${{ matrix.args }}
+          cargo check ${{ matrix.args }} --no-default-features
+          cargo check ${{ matrix.args }} --no-default-features --features dbus
+          cargo check ${{ matrix.args }} --no-default-features --features systemd
+          cargo check ${{ matrix.args }} --no-default-features --features dinit
+          cargo check ${{ matrix.args }} --no-default-features --features xdp-gnome-screencast
+          cargo check ${{ matrix.args }}
 
       - name: 🏗️ Build & Test
         run: |
-          cargo-retry build ${{ matrix.args }} --features profile-with-tracy
-          cargo-retry test --no-run --all --exclude niri-visual-tests ${{ matrix.args }}
-          cargo-retry test --all --exclude niri-visual-tests ${{ matrix.args }} -- --nocapture
+          cargo build ${{ matrix.args }} --features profile-with-tracy
+          cargo test --no-run --all --exclude niri-visual-tests ${{ matrix.args }}
+          cargo test --all --exclude niri-visual-tests ${{ matrix.args }} -- --nocapture
 
       - name: 📂 Prepare Artifacts
         if: always() && matrix.configuration == 'release'
@@ -246,8 +213,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo dnf update -y
-          sudo dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
+          dnf update -y
+          dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
 
       - uses: Swatinem/rust-cache@v2
       - name: Build All
@@ -305,7 +272,7 @@ jobs:
       - name: Create Index
         run: |
           mkdir -p target/doc
-          cp ./resources/rustdoc-index.html ./target/doc/index.html || echo "<html><body><h1>Documentation for niri-ipc</h1></body></html>" > target/doc/index.html
+          cp ./resources/rustdoc-index.html ./target/doc/index.html 2>/dev/null || echo "<html><body><h1>Documentation for niri-ipc</h1></body></html>" > target/doc/index.html
       
       - name: Deploy
         if: github.ref == 'refs/heads/main'
@@ -347,7 +314,7 @@ jobs:
         continue-on-error: true
       
       - name: Upload Logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: failure-logs
           path: |
