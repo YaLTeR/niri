@@ -280,6 +280,10 @@ jobs:
           sleep 5
           cargo build --package niri-visual-tests
 
+      - name: Run visual tests
+        run: cargo test --package niri-visual-tests -- --nocapture
+        timeout-minutes: 10
+
   code-quality:
     needs: lint
     name: Code Quality
@@ -424,7 +428,7 @@ jobs:
           tool: cargo-audit
       
       - name: Run cargo-audit
-        run: cargo audit --retries 3
+        run: cargo audit
 
   publish-wiki:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
