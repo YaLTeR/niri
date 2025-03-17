@@ -2337,6 +2337,8 @@ impl<W: LayoutElement> Layout<W> {
                     assert_eq!(self.clock, move_.tile.clock);
                     assert!(!move_.tile.window().is_pending_fullscreen());
 
+                    move_.tile.verify_invariants();
+
                     let scale = move_.output.current_scale().fractional_scale();
                     let options = Options::clone(&self.options).adjusted_for_scale(scale);
                     assert_eq!(
