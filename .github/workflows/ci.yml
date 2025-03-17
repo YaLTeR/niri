@@ -68,62 +68,49 @@ jobs:
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
           echo 'retry = 10' >> ~/.cargo/config.toml
 
-      # Function to run cargo commands with retries
-      - name: Create retry function
+      - name: Create retry script
         run: |
-          function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }
-          echo 'function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }' >> ~/.bashrc
-          echo 'export -f cargo_with_retry' >> ~/.bashrc
-          source ~/.bashrc
+          cat > ~/cargo-retry.sh << 'EOL'
+          #!/bin/bash
+          for attempt in {1..5}; do
+            echo "Running: cargo $@, attempt $attempt"
+            if cargo "$@"; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+            sleep $((attempt * 5))
+          done
+          echo "All attempts failed!"
+          exit 1
+          EOL
+          chmod +x ~/cargo-retry.sh
 
       - name: Check (no default features)
-        run: source ~/.bashrc && cargo_with_retry check ${{ matrix.release-flag }} --no-default-features
+        run: ~/cargo-retry.sh check ${{ matrix.release-flag }} --no-default-features
 
       - name: Check (just dbus)
-        run: source ~/.bashrc && cargo_with_retry check ${{ matrix.release-flag }} --no-default-features --features dbus
+        run: ~/cargo-retry.sh check ${{ matrix.release-flag }} --no-default-features --features dbus
 
       - name: Check (just systemd)
-        run: source ~/.bashrc && cargo_with_retry check ${{ matrix.release-flag }} --no-default-features --features systemd
+        run: ~/cargo-retry.sh check ${{ matrix.release-flag }} --no-default-features --features systemd
 
       - name: Check (just dinit)
-        run: source ~/.bashrc && cargo_with_retry check ${{ matrix.release-flag }} --no-default-features --features dinit
+        run: ~/cargo-retry.sh check ${{ matrix.release-flag }} --no-default-features --features dinit
 
       - name: Check (just xdp-gnome-screencast)
-        run: source ~/.bashrc && cargo_with_retry check ${{ matrix.release-flag }} --no-default-features --features xdp-gnome-screencast
+        run: ~/cargo-retry.sh check ${{ matrix.release-flag }} --no-default-features --features xdp-gnome-screencast
 
       - name: Check
-        run: source ~/.bashrc && cargo_with_retry check ${{ matrix.release-flag }}
+        run: ~/cargo-retry.sh check ${{ matrix.release-flag }}
 
       - name: Build (with profiling)
-        run: source ~/.bashrc && cargo_with_retry build ${{ matrix.release-flag }} --features profile-with-tracy
+        run: ~/cargo-retry.sh build ${{ matrix.release-flag }} --features profile-with-tracy
 
       - name: Build tests
-        run: source ~/.bashrc && cargo_with_retry test --no-run --all --exclude niri-visual-tests ${{ matrix.release-flag }}
+        run: ~/cargo-retry.sh test --no-run --all --exclude niri-visual-tests ${{ matrix.release-flag }}
 
       - name: Test
-        run: source ~/.bashrc && cargo_with_retry test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture
+        run: ~/cargo-retry.sh test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture
 
       # Ensure we create the doc directory for downstream jobs even if the tests fail
       - name: Prepare doc directory
@@ -169,41 +156,28 @@ jobs:
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
           echo 'retry = 10' >> ~/.cargo/config.toml
 
-      # Function to run cargo commands with retries
-      - name: Create retry function
+      - name: Create retry script
         run: |
-          function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }
-          echo 'function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }' >> ~/.bashrc
-          echo 'export -f cargo_with_retry' >> ~/.bashrc
-          source ~/.bashrc
+          cat > ~/cargo-retry.sh << 'EOL'
+          #!/bin/bash
+          for attempt in {1..5}; do
+            echo "Running: cargo $@, attempt $attempt"
+            if cargo "$@"; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+            sleep $((attempt * 5))
+          done
+          echo "All attempts failed!"
+          exit 1
+          EOL
+          chmod +x ~/cargo-retry.sh
 
       - name: Build tests
-        run: source ~/.bashrc && cargo_with_retry test --no-run --all --exclude niri-visual-tests --release
+        run: ~/cargo-retry.sh test --no-run --all --exclude niri-visual-tests --release
 
       - name: Test
-        run: source ~/.bashrc && cargo_with_retry test --all --exclude niri-visual-tests --release
+        run: ~/cargo-retry.sh test --all --exclude niri-visual-tests --release
 
   visual-tests:
     needs: setup
@@ -236,38 +210,25 @@ jobs:
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
           echo 'retry = 10' >> ~/.cargo/config.toml
 
-      # Function to run cargo commands with retries
-      - name: Create retry function
+      - name: Create retry script
         run: |
-          function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }
-          echo 'function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }' >> ~/.bashrc
-          echo 'export -f cargo_with_retry' >> ~/.bashrc
-          source ~/.bashrc
+          cat > ~/cargo-retry.sh << 'EOL'
+          #!/bin/bash
+          for attempt in {1..5}; do
+            echo "Running: cargo $@, attempt $attempt"
+            if cargo "$@"; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+            sleep $((attempt * 5))
+          done
+          echo "All attempts failed!"
+          exit 1
+          EOL
+          chmod +x ~/cargo-retry.sh
 
       - name: Build
-        run: source ~/.bashrc && cargo_with_retry build --package niri-visual-tests
+        run: ~/cargo-retry.sh build --package niri-visual-tests
 
   msrv:
     needs: setup
@@ -300,38 +261,25 @@ jobs:
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
           echo 'retry = 10' >> ~/.cargo/config.toml
 
-      # Function to run cargo commands with retries
-      - name: Create retry function
+      - name: Create retry script
         run: |
-          function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }
-          echo 'function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }' >> ~/.bashrc
-          echo 'export -f cargo_with_retry' >> ~/.bashrc
-          source ~/.bashrc
+          cat > ~/cargo-retry.sh << 'EOL'
+          #!/bin/bash
+          for attempt in {1..5}; do
+            echo "Running: cargo $@, attempt $attempt"
+            if cargo "$@"; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+            sleep $((attempt * 5))
+          done
+          echo "All attempts failed!"
+          exit 1
+          EOL
+          chmod +x ~/cargo-retry.sh
 
       - name: Check all targets
-        run: source ~/.bashrc && cargo_with_retry check --all-targets
+        run: ~/cargo-retry.sh check --all-targets
 
   clippy:
     needs: setup
@@ -366,38 +314,25 @@ jobs:
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
           echo 'retry = 10' >> ~/.cargo/config.toml
 
-      # Function to run cargo commands with retries
-      - name: Create retry function
+      - name: Create retry script
         run: |
-          function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }
-          echo 'function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }' >> ~/.bashrc
-          echo 'export -f cargo_with_retry' >> ~/.bashrc
-          source ~/.bashrc
+          cat > ~/cargo-retry.sh << 'EOL'
+          #!/bin/bash
+          for attempt in {1..5}; do
+            echo "Running: cargo $@, attempt $attempt"
+            if cargo "$@"; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+            sleep $((attempt * 5))
+          done
+          echo "All attempts failed!"
+          exit 1
+          EOL
+          chmod +x ~/cargo-retry.sh
 
       - name: Run clippy
-        run: source ~/.bashrc && cargo_with_retry clippy --all --all-targets
+        run: ~/cargo-retry.sh clippy --all --all-targets
 
   rustfmt:
     runs-on: ubuntu-24.04
@@ -440,54 +375,25 @@ jobs:
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
           echo 'retry = 10' >> ~/.cargo/config.toml
 
-      # Function to run cargo commands with retries
-      - name: Create retry function
+      - name: Create retry script
         run: |
-          function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }
-          echo 'function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }' >> ~/.bashrc
-          echo 'export -f cargo_with_retry' >> ~/.bashrc || true
-          # Ensure bash is available
-          which bash && source ~/.bashrc || echo "No bash available, using fallback retry method"
+          cat > ~/cargo-retry.sh << 'EOL'
+          #!/bin/bash
+          for attempt in {1..5}; do
+            echo "Running: cargo $@, attempt $attempt"
+            if cargo "$@"; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+            sleep $((attempt * 5))
+          done
+          echo "All attempts failed!"
+          exit 1
+          EOL
+          chmod +x ~/cargo-retry.sh
 
       - name: Build all
-        run: |
-          if [ -f ~/.bashrc ]; then
-            source ~/.bashrc && cargo_with_retry build --all
-          else
-            # Fallback if bash isn't available
-            for attempt in {1..5}; do
-              echo "Running: cargo build --all, attempt $attempt"
-              if cargo build --all; then
-                exit 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            exit 1
-          fi
+        run: ~/cargo-retry.sh build --all
 
   nix:
     runs-on: ubuntu-24.04
@@ -583,38 +489,25 @@ jobs:
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
           echo 'retry = 10' >> ~/.cargo/config.toml
 
-      # Function to run cargo commands with retries
-      - name: Create retry function
+      - name: Create retry script
         run: |
-          function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }
-          echo 'function cargo_with_retry() {
-            for attempt in {1..5}; do
-              echo "Running: cargo $@, attempt $attempt"
-              if cargo "$@"; then
-                return 0
-              fi
-              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
-              sleep $((attempt * 5))
-            done
-            echo "All attempts failed!"
-            return 1
-          }' >> ~/.bashrc
-          echo 'export -f cargo_with_retry' >> ~/.bashrc
-          source ~/.bashrc
+          cat > ~/cargo-retry.sh << 'EOL'
+          #!/bin/bash
+          for attempt in {1..5}; do
+            echo "Running: cargo $@, attempt $attempt"
+            if cargo "$@"; then
+              exit 0
+            fi
+            echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+            sleep $((attempt * 5))
+          done
+          echo "All attempts failed!"
+          exit 1
+          EOL
+          chmod +x ~/cargo-retry.sh
 
       - name: Generate documentation with retries
-        run: source ~/.bashrc && cargo_with_retry doc --no-deps -p niri-ipc
+        run: ~/cargo-retry.sh doc --no-deps -p niri-ipc
 
       # Ensure target/doc directory exists even if doc generation fails
       - name: Ensure target/doc directory exists
