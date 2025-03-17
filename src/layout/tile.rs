@@ -758,10 +758,13 @@ impl<W: LayoutElement> Tile<W> {
             .request_size(self.view_size.to_i32_round(), true, animate, transaction);
     }
 
-    pub fn min_size(&self) -> Size<f64, Logical> {
+    pub fn min_size_nonfullscreen(&self) -> Size<f64, Logical> {
         let mut size = self.window.min_size().to_f64();
 
-        if let Some(width) = self.effective_border_width() {
+        // Can't go through effective_border_width() because we might be fullscreen.
+        if !self.border.is_off() {
+            let width = self.border.width();
+
             size.w = f64::max(1., size.w);
             size.h = f64::max(1., size.h);
 
@@ -772,10 +775,13 @@ impl<W: LayoutElement> Tile<W> {
         size
     }
 
-    pub fn max_size(&self) -> Size<f64, Logical> {
+    pub fn max_size_nonfullscreen(&self) -> Size<f64, Logical> {
         let mut size = self.window.max_size().to_f64();
 
-        if let Some(width) = self.effective_border_width() {
+        // Can't go through effective_border_width() because we might be fullscreen.
+        if !self.border.is_off() {
+            let width = self.border.width();
+
             if size.w > 0. {
                 size.w += width * 2.;
             }

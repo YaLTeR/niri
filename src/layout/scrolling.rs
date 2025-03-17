@@ -4018,14 +4018,18 @@ impl<W: LayoutElement> Column<W> {
         let min_size: Vec<_> = self
             .tiles
             .iter()
-            .map(Tile::min_size)
+            .map(Tile::min_size_nonfullscreen)
             .map(|mut size| {
                 size.w = size.w.max(1.);
                 size.h = size.h.max(1.);
                 size
             })
             .collect();
-        let max_size: Vec<_> = self.tiles.iter().map(Tile::max_size).collect();
+        let max_size: Vec<_> = self
+            .tiles
+            .iter()
+            .map(Tile::max_size_nonfullscreen)
+            .collect();
 
         // Compute the column width.
         let min_width = min_size
@@ -4517,7 +4521,7 @@ impl<W: LayoutElement> Column<W> {
                 .iter()
                 .enumerate()
                 .filter(|(idx, _)| *idx != tile_idx)
-                .map(|(_, tile)| f64::max(1., tile.min_size().h) + gaps)
+                .map(|(_, tile)| f64::max(1., tile.min_size_nonfullscreen().h) + gaps)
                 .sum::<f64>()
         };
         let height_left = working_size - extra_size - gaps - min_height_taken - gaps;
@@ -4947,7 +4951,7 @@ impl<W: LayoutElement> Column<W> {
             let requested_size = tile.window().requested_size().unwrap();
             let requested_tile_height =
                 tile.tile_height_for_window_height(f64::from(requested_size.h));
-            let min_tile_height = f64::max(1., tile.min_size().h);
+            let min_tile_height = f64::max(1., tile.min_size_nonfullscreen().h);
 
             if !self.is_fullscreen
                 && self.scale.round() == self.scale
