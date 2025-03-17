@@ -120,6 +120,36 @@ pub struct Mapped {
     ///
     /// Used for double-resize-click tracking.
     last_interactive_resize_start: Cell<Option<(Duration, ResizeEdge)>>,
+
+    /// Whether this window is in windowed (fake) fullscreen.
+    ///
+    /// In this mode, the underlying window is told that it's fullscreen, while keeping it as
+    /// a regular, non-fullscreen tile.
+    is_windowed_fullscreen: bool,
+
+    /// Whether this window is pending to go to windowed (fake) fullscreen.
+    ///
+    /// Several places in the layout code assume that is_fullscreen() can flip only on a commit.
+    /// Which is something that we do want to flip when changing is_windowed_fullscreen. Flipping
+    /// it right away would mean remembering to call layout.update_window() after any operation
+    /// that may change is_windowed_fullscreen, which is quite tricky and error-prone, especially
+    /// for deeply nested operations.
+    ///
+    /// It's also not clear what's the best way to go about it. Ideally we'd wait for configure ack
+    /// and commit before "committing" to is_windowed_fullscreen, however, since it's not real
+    /// Wayland state, we may end up with no Wayland state change to configure at all.
+    ///
+    /// For example: when the window is in real fullscreen, but its non-fullscreen size matches
+    /// its fullscreen size. Then turning on is_windowed_fullscreen will both keep the
+    /// fullscreen state, and keep the size (since it matches), resulting in no configure.
+    ///
+    /// So we work around this by "committing" is_pending_windowed_fullscreen to
+    /// is_windowed_fullscreen on receiving any actual window commit, and whenever
+    /// is_pending_windowed_fullscreen changes, we mark the window as needs_configure. This does
+    /// mean some unnecessary delays in some cases, but it also means being able to better
+    /// synchronize our windowed fullscreen state to the real window updates, so that's good I
+    /// guess.
+    is_pending_windowed_fullscreen: bool,
 }
 
 niri_render_elements! {
@@ -209,6 +239,8 @@ impl Mapped {
             pending_transactions: Vec::new(),
             interactive_resize: None,
             last_interactive_resize_start: Cell::new(None),
+            is_windowed_fullscreen: false,
+            is_pending_windowed_fullscreen: false,
         }
     }
 
@@ -608,10 +640,21 @@ impl LayoutElement for Mapped {
         animate: bool,
         transaction: Option<Transaction>,
     ) {
+        // Going into real fullscreen resets windowed fullscreen.
+        if is_fullscreen {
+            self.is_pending_windowed_fullscreen = false;
+
+            if self.is_windowed_fullscreen {
+                // Make sure we receive a commit to update self.is_windowed_fullscreen to false
+                // later on.
+                self.needs_configure = true;
+            }
+        }
+
         let changed = self.toplevel().with_pending_state(|state| {
             let changed = state.size != Some(size);
             state.size = Some(size);
-            if is_fullscreen {
+            if is_fullscreen || self.is_pending_windowed_fullscreen {
                 state.states.set(xdg_toplevel::State::Fullscreen);
             } else {
                 state.states.unset(xdg_toplevel::State::Fullscreen);
@@ -660,7 +703,8 @@ impl LayoutElement for Mapped {
 
             let same_size = last_sent.size.unwrap_or_default() == size;
             let has_fullscreen = last_sent.states.contains(xdg_toplevel::State::Fullscreen);
-            (same_size && !has_fullscreen).then_some(last_serial)
+            let same_fullscreen = has_fullscreen == self.is_pending_windowed_fullscreen;
+            (same_size && same_fullscreen).then_some(last_serial)
         });
 
         if let Some(serial) = already_sent {
@@ -687,7 +731,9 @@ impl LayoutElement for Mapped {
         let changed = self.toplevel().with_pending_state(|state| {
             let changed = state.size != Some(size);
             state.size = Some(size);
-            state.states.unset(xdg_toplevel::State::Fullscreen);
+            if !self.is_pending_windowed_fullscreen {
+                state.states.unset(xdg_toplevel::State::Fullscreen);
+            }
             changed
         });
 
@@ -934,6 +980,10 @@ impl LayoutElement for Mapped {
     }
 
     fn is_fullscreen(&self) -> bool {
+        if self.is_windowed_fullscreen {
+            return false;
+        }
+
         with_toplevel_role(self.toplevel(), |role| {
             role.current
                 .states
@@ -942,6 +992,10 @@ impl LayoutElement for Mapped {
     }
 
     fn is_pending_fullscreen(&self) -> bool {
+        if self.is_pending_windowed_fullscreen {
+            return false;
+        }
+
         self.toplevel()
             .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen))
     }
@@ -1014,7 +1068,7 @@ impl LayoutElement for Mapped {
 
         if let Some((mut size, fullscreen)) = pending {
             // If the pending change is fullscreen, we can't use that size.
-            if fullscreen {
+            if fullscreen && !self.is_pending_windowed_fullscreen {
                 return None;
             }
 
@@ -1032,6 +1086,33 @@ impl LayoutElement for Mapped {
             // No pending size, return the current size if it's non-fullscreen.
             current_size
         }
+    }
+
+    fn is_pending_windowed_fullscreen(&self) -> bool {
+        self.is_pending_windowed_fullscreen
+    }
+
+    fn request_windowed_fullscreen(&mut self, value: bool) {
+        if self.is_pending_windowed_fullscreen == value {
+            return;
+        }
+
+        self.is_pending_windowed_fullscreen = value;
+
+        // Set the fullscreen state to match.
+        //
+        // When going from windowed to real fullscreen, we'll use request_size() which will set the
+        // fullscreen state back.
+        self.toplevel().with_pending_state(|state| {
+            if value {
+                state.states.set(xdg_toplevel::State::Fullscreen);
+            } else {
+                state.states.unset(xdg_toplevel::State::Fullscreen);
+            }
+        });
+
+        // Make sure we recieve a commit later to update self.is_windowed_fullscreen.
+        self.needs_configure = true;
     }
 
     fn is_child_of(&self, parent: &Self) -> bool {
@@ -1098,5 +1179,12 @@ impl LayoutElement for Mapped {
                 self.request_size_once = Some(RequestSizeOnce::UseWindowSize);
             }
         }
+
+        // HACK: this is not really accurate because the commit might be for an earlier serial than
+        // when we requested windowed fullscren. But we don't actually care much, since this is
+        // entirely compositor state. We're only tying it to configure/commit as a workaround to
+        // the rest of the code expecting that fullscreen doesn't suddenly just change in the
+        // middle of something.
+        self.is_windowed_fullscreen = self.is_pending_windowed_fullscreen;
     }
 }
