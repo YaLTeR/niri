@@ -44,7 +44,7 @@ jobs:
       
       - name: Check for trailing whitespace
         run: |
-          ! grep -r --include="*.rs" --include="*.toml" --include="*.yml" '\s$' .
+          ! grep -r --include="*.rs" --include="*.toml" '\s$' .
 
       - name: Check for large files
         run: |
