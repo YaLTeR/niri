@@ -29,6 +29,8 @@ jobs:
           git config --global http.lowSpeedLimit 1000
           git config --global http.lowSpeedTime 120
           git config --global core.compression 9
+          git config --global url."https://github.com/pipewire-rs-mirror".insteadOf "https://gitlab.freedesktop.org/pipewire"
+
       - name: Create Cargo config
         id: cargo_config
         run: |
@@ -157,19 +159,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           show-progress: false
-      
+
       - name: Install Tools
         run: |
           sudo apt-get update -y
           sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
         if: matrix.task == 'clippy'
-      
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: ${{ matrix.task == 'clippy' && 'clippy' || 'rustfmt' }}
-      
+
       - uses: Swatinem/rust-cache@v2
-      
+
       - name: Run ${{ matrix.task }}
         run: |
           case "${{ matrix.task }}" in
@@ -262,18 +264,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           show-progress: false
-      
+
       - uses: dtolnay/rust-toolchain@stable
-      
+
       - name: Generate Docs
         run: |
           cargo doc --no-deps -p niri-ipc || echo "⚠️ Documentation generation failed"
-      
+
       - name: Create Index
         run: |
           mkdir -p target/doc
           cp ./resources/rustdoc-index.html ./target/doc/index.html 2>/dev/null || echo "<html><body><h1>Documentation for niri-ipc</h1></body></html>" > target/doc/index.html
-      
+
       - name: Deploy
         if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
@@ -299,7 +301,7 @@ jobs:
   post_failure:
     name: 🚨 Failure Recovery
     if: failure()
-    needs: 
+    needs:
       - build_and_test
       - quality_checks
       - documentation
@@ -312,7 +314,7 @@ jobs:
           git config --global url."https://github.com/pipewire-rs-mirror".insteadOf "https://gitlab.freedesktop.org/pipewire"
           cargo update -p pipewire
         continue-on-error: true
-      
+
       - name: Upload Logs
         uses: actions/upload-artifact@v4
         with:
@@ -321,3 +323,22 @@ jobs:
             **/target/debug
             **/target/release
             **/cargo-log.txt
+
+  fallback_mirror:
+    name: 🛠️ Fallback to GitHub Mirror
+    runs-on: ubuntu-24.04
+    if: failure()
+    steps:
+      - name: Configure Git for Mirror
+        run: |
+          git config --global url."https://github.com/pipewire-rs-mirror".insteadOf "https://gitlab.freedesktop.org/pipewire"
+
+      - name: Retry Clone with Mirror
+        run: |
+          for i in {1..5}; do
+            git clone https://github.com/pipewire-rs-mirror/pipewire-rs.git && break
+            sleep $((i*2))
+          done
+
+      - name: Update Cargo Dependencies
+        run: cargo update -p pipewire
