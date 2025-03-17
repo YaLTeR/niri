@@ -4,15 +4,18 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
   schedule:
     - cron: '0 0 1 * *'  # Monthly maintenance tasks
-  workflow_dispatch:
 
 env:
   CARGO_NET_RETRY: 10
   CARGO_NET_GIT_FETCH_WITH_CLI: true
   GIT_TERMINAL_PROMPT: 0
   RUST_BACKTRACE: full
+  SCCACHE_CACHE_SIZE: 2G
+  SCCACHE_DIR: /home/runner/.cache/sccache
+  RUSTC_WRAPPER: sccache
 
 jobs:
   global_setup:
@@ -36,7 +39,6 @@ jobs:
           [net]
           git-fetch-with-cli = true
           retry = 15
-          
           [registries.crates-io]
           protocol = "sparse"
           EOF
@@ -47,13 +49,13 @@ jobs:
     needs: global_setup
     strategy:
       fail-fast: false
-      matrix:
-        configuration: [debug, release]
-        include:
-          - configuration: debug
-            args: ""
-          - configuration: release
-            args: --release
+    matrix:
+      configuration: [debug, release]
+      include:
+        - configuration: debug
+          args: ""
+        - configuration: release
+          args: --release
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -147,11 +149,11 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y ${{ env.DEPS_APT }}
         if: matrix.task == 'clippy'
-
+      
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: ${{ matrix.task == 'clippy' && 'clippy' || 'rustfmt' }}
-
+      
       - name: Run ${{ matrix.task }}
         run: |
           case "${{ matrix.task }}" in
@@ -178,8 +180,7 @@ jobs:
       - name: Prepare Fallback
         if: failure()
         run: |
-          echo "<html><body><h1>Documentation Unavailable</h1><p>Build failed - check CI logs</p></body></html>" \
-            > target/doc/index.html
+          echo "<html><body><h1>Documentation Unavailable</h1><p>Build failed - check CI logs</p></body></html>" > target/doc/index.html
 
       - name: Deploy
         if: github.ref == 'refs/heads/main'
