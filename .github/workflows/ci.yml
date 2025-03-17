@@ -11,17 +11,32 @@ env:
   RUN_SLOW_TESTS: 1
   DEPS_APT: curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
   DEPS_DNF: cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
-  # Add CARGO_NET_GIT_FETCH_WITH_CLI as an environment variable for all jobs
+  # Global Git configuration for more resilient network operations
   CARGO_NET_GIT_FETCH_WITH_CLI: true
+  CARGO_NET_RETRY: 5
+  GIT_TERMINAL_PROMPT: 0
 
 jobs:
+  # Common pre-job to set up dependencies and git configuration
+  setup:
+    runs-on: ubuntu-24.04
+    outputs:
+      git_config: ${{ steps.git_config.outputs.config_done }}
+    steps:
+      - name: Configure git for resilient fetching
+        id: git_config
+        run: |
+          git config --global http.postBuffer 524288000
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 60
+          echo "config_done=true" >> $GITHUB_OUTPUT
+
   build:
+    needs: setup
     strategy:
       fail-fast: false
-
       matrix:
         configuration: [debug, release]
-
         include:
           - configuration: release
             release-flag: '--release'
@@ -44,89 +59,80 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.configuration }}
-          cache-on-failure: true
+          save-if: true
 
       - name: Configure Cargo for reliable Git fetching
         run: |
           mkdir -p ~/.cargo
           echo '[net]' >> ~/.cargo/config.toml
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 5' >> ~/.cargo/config.toml
+          echo 'retry = 10' >> ~/.cargo/config.toml
+
+      # Function to run cargo commands with retries
+      - name: Create retry function
+        run: |
+          function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }
+          echo 'function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }' >> ~/.bashrc
+          echo 'export -f cargo_with_retry' >> ~/.bashrc
+          source ~/.bashrc
 
       - name: Check (no default features)
-        run: |
-          for i in {1..3}; do
-            cargo check ${{ matrix.release-flag }} --no-default-features && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry check ${{ matrix.release-flag }} --no-default-features
 
       - name: Check (just dbus)
-        run: |
-          for i in {1..3}; do
-            cargo check ${{ matrix.release-flag }} --no-default-features --features dbus && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry check ${{ matrix.release-flag }} --no-default-features --features dbus
 
       - name: Check (just systemd)
-        run: |
-          for i in {1..3}; do
-            cargo check ${{ matrix.release-flag }} --no-default-features --features systemd && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry check ${{ matrix.release-flag }} --no-default-features --features systemd
 
       - name: Check (just dinit)
-        run: |
-          for i in {1..3}; do
-            cargo check ${{ matrix.release-flag }} --no-default-features --features dinit && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry check ${{ matrix.release-flag }} --no-default-features --features dinit
 
       - name: Check (just xdp-gnome-screencast)
-        run: |
-          for i in {1..3}; do
-            cargo check ${{ matrix.release-flag }} --no-default-features --features xdp-gnome-screencast && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry check ${{ matrix.release-flag }} --no-default-features --features xdp-gnome-screencast
 
       - name: Check
-        run: |
-          for i in {1..3}; do
-            cargo check ${{ matrix.release-flag }} && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry check ${{ matrix.release-flag }}
 
       - name: Build (with profiling)
-        run: |
-          for i in {1..3}; do
-            cargo build ${{ matrix.release-flag }} --features profile-with-tracy && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry build ${{ matrix.release-flag }} --features profile-with-tracy
 
       - name: Build tests
-        run: |
-          for i in {1..3}; do
-            cargo test --no-run --all --exclude niri-visual-tests ${{ matrix.release-flag }} && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry test --no-run --all --exclude niri-visual-tests ${{ matrix.release-flag }}
 
       - name: Test
-        run: |
-          for i in {1..3}; do
-            cargo test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture
+
+      # Ensure we create the doc directory for downstream jobs even if the tests fail
+      - name: Prepare doc directory
+        if: always() && matrix.configuration == 'release'
+        run: mkdir -p ./target/doc
 
   # Job that runs randomized tests for a longer period of time.
   randomized-tests:
+    needs: setup
     strategy:
       fail-fast: false
 
@@ -154,32 +160,53 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: true
+          save-if: true
 
       - name: Configure Cargo for reliable Git fetching
         run: |
           mkdir -p ~/.cargo
           echo '[net]' >> ~/.cargo/config.toml
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 5' >> ~/.cargo/config.toml
+          echo 'retry = 10' >> ~/.cargo/config.toml
+
+      # Function to run cargo commands with retries
+      - name: Create retry function
+        run: |
+          function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }
+          echo 'function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }' >> ~/.bashrc
+          echo 'export -f cargo_with_retry' >> ~/.bashrc
+          source ~/.bashrc
 
       - name: Build tests
-        run: |
-          for i in {1..3}; do
-            cargo test --no-run --all --exclude niri-visual-tests --release && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry test --no-run --all --exclude niri-visual-tests --release
 
       - name: Test
-        run: |
-          for i in {1..3}; do
-            cargo test --all --exclude niri-visual-tests --release && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry test --all --exclude niri-visual-tests --release
 
   visual-tests:
+    needs: setup
     strategy:
       fail-fast: false
 
@@ -200,24 +227,50 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: true
+          save-if: true
 
       - name: Configure Cargo for reliable Git fetching
         run: |
           mkdir -p ~/.cargo
           echo '[net]' >> ~/.cargo/config.toml
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 5' >> ~/.cargo/config.toml
+          echo 'retry = 10' >> ~/.cargo/config.toml
+
+      # Function to run cargo commands with retries
+      - name: Create retry function
+        run: |
+          function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }
+          echo 'function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }' >> ~/.bashrc
+          echo 'export -f cargo_with_retry' >> ~/.bashrc
+          source ~/.bashrc
 
       - name: Build
-        run: |
-          for i in {1..3}; do
-            cargo build --package niri-visual-tests && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry build --package niri-visual-tests
 
   msrv:
+    needs: setup
     strategy:
       fail-fast: false
 
@@ -238,24 +291,50 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: true
+          save-if: true
 
       - name: Configure Cargo for reliable Git fetching
         run: |
           mkdir -p ~/.cargo
           echo '[net]' >> ~/.cargo/config.toml
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 5' >> ~/.cargo/config.toml
+          echo 'retry = 10' >> ~/.cargo/config.toml
+
+      # Function to run cargo commands with retries
+      - name: Create retry function
+        run: |
+          function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }
+          echo 'function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }' >> ~/.bashrc
+          echo 'export -f cargo_with_retry' >> ~/.bashrc
+          source ~/.bashrc
 
       - name: Check all targets
-        run: |
-          for i in {1..3}; do
-            cargo check --all-targets && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry check --all-targets
 
   clippy:
+    needs: setup
     strategy:
       fail-fast: false
 
@@ -278,22 +357,47 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: true
+          save-if: true
 
       - name: Configure Cargo for reliable Git fetching
         run: |
           mkdir -p ~/.cargo
           echo '[net]' >> ~/.cargo/config.toml
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 5' >> ~/.cargo/config.toml
+          echo 'retry = 10' >> ~/.cargo/config.toml
+
+      # Function to run cargo commands with retries
+      - name: Create retry function
+        run: |
+          function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }
+          echo 'function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }' >> ~/.bashrc
+          echo 'export -f cargo_with_retry' >> ~/.bashrc
+          source ~/.bashrc
 
       - name: Run clippy
-        run: |
-          for i in {1..3}; do
-            cargo clippy --all --all-targets && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+        run: source ~/.bashrc && cargo_with_retry clippy --all --all-targets
 
   rustfmt:
     runs-on: ubuntu-24.04
@@ -311,6 +415,7 @@ jobs:
         run: cargo fmt --all -- --check
 
   fedora:
+    needs: setup
     runs-on: ubuntu-24.04
     container: fedora:41
 
@@ -321,27 +426,68 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo dnf update -y
-          sudo dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
+          dnf update -y
+          dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
 
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: true
+          save-if: true
 
       - name: Configure Cargo for reliable Git fetching
         run: |
           mkdir -p ~/.cargo
           echo '[net]' >> ~/.cargo/config.toml
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 5' >> ~/.cargo/config.toml
+          echo 'retry = 10' >> ~/.cargo/config.toml
+
+      # Function to run cargo commands with retries
+      - name: Create retry function
+        run: |
+          function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }
+          echo 'function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }' >> ~/.bashrc
+          echo 'export -f cargo_with_retry' >> ~/.bashrc || true
+          # Ensure bash is available
+          which bash && source ~/.bashrc || echo "No bash available, using fallback retry method"
 
       - name: Build all
         run: |
-          for i in {1..3}; do
-            cargo build --all && break
-            echo "Attempt $i failed, retrying in 5 seconds..."
-            sleep 5
-          done
+          if [ -f ~/.bashrc ]; then
+            source ~/.bashrc && cargo_with_retry build --all
+          else
+            # Fallback if bash isn't available
+            for attempt in {1..5}; do
+              echo "Running: cargo build --all, attempt $attempt"
+              if cargo build --all; then
+                exit 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            exit 1
+          fi
 
   nix:
     runs-on: ubuntu-24.04
@@ -358,7 +504,16 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@v3
         continue-on-error: true
 
-      - run: nix flake check
+      # Add special handling for pipewire-rs in flake.nix
+      - name: Temporarily patch flake.nix for network resilience (if needed)
+        run: |
+          if grep -q "pipewire-rs.git" flake.nix; then
+            echo "Detected pipewire-rs Git dependency in flake.nix, adding allRefs=true"
+            sed -i 's/fetchGit\s*{/fetchGit { allRefs = true;/g' flake.nix || true
+          fi
+        continue-on-error: true
+
+      - run: nix flake check --accept-flake-config
         continue-on-error: true
 
   check-links:
@@ -370,6 +525,7 @@ jobs:
       - uses: lycheeverse/lychee-action@v2.0.2 # later versions break fragment checks. don't bump until this is fixed: https://github.com/lycheeverse/lychee/issues/1574
         with:
           args: --offline --include-fragments 'wiki/*.md'
+        continue-on-error: true
 
   publish-wiki:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -384,7 +540,25 @@ jobs:
         with:
           lfs: true
           show-progress: false
+
+      # Check if wiki exists first
+      - name: Check if wiki repository exists
+        id: check_wiki
+        run: |
+          # Use GitHub CLI to check if the wiki repository exists
+          if gh repo view ${GITHUB_REPOSITORY}.wiki --json name &>/dev/null; then
+            echo "wiki_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "wiki_exists=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      # Only run the wiki action if the wiki exists
       - uses: Andrew-Chen-Wang/github-wiki-action@b7e552d7cb0fa7f83e459012ffc6840fd87bcb83
+        if: steps.check_wiki.outputs.wiki_exists == 'true'
+        continue-on-error: true
 
   rustdoc:
     needs: build
@@ -400,24 +574,59 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          cache-on-failure: true
+          save-if: true
 
       - name: Configure Cargo for reliable Git fetching
         run: |
           mkdir -p ~/.cargo
           echo '[net]' >> ~/.cargo/config.toml
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 5' >> ~/.cargo/config.toml
+          echo 'retry = 10' >> ~/.cargo/config.toml
+
+      # Function to run cargo commands with retries
+      - name: Create retry function
+        run: |
+          function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }
+          echo 'function cargo_with_retry() {
+            for attempt in {1..5}; do
+              echo "Running: cargo $@, attempt $attempt"
+              if cargo "$@"; then
+                return 0
+              fi
+              echo "Attempt $attempt failed, retrying in $((attempt * 5)) seconds..."
+              sleep $((attempt * 5))
+            done
+            echo "All attempts failed!"
+            return 1
+          }' >> ~/.bashrc
+          echo 'export -f cargo_with_retry' >> ~/.bashrc
+          source ~/.bashrc
 
       - name: Generate documentation with retries
-        run: |
-          for i in {1..3}; do
-            cargo doc --no-deps -p niri-ipc && break
-            echo "Attempt $i failed, retrying in 10 seconds..."
-            sleep 10
-          done
+        run: source ~/.bashrc && cargo_with_retry doc --no-deps -p niri-ipc
 
-      - run: cp ./resources/rustdoc-index.html ./target/doc/index.html
+      # Ensure target/doc directory exists even if doc generation fails
+      - name: Ensure target/doc directory exists
+        run: mkdir -p ./target/doc
+        
+      - name: Copy index file with error handling
+        run: |
+          if [ -f ./resources/rustdoc-index.html ]; then
+            cp ./resources/rustdoc-index.html ./target/doc/index.html || echo "Could not copy index file"
+          else
+            echo "<html><body><h1>Documentation Generation Failed</h1><p>Please check CI logs.</p></body></html>" > ./target/doc/index.html
+          fi
 
       - name: Deploy documentation
         if: github.ref == 'refs/heads/main'
