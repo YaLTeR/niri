@@ -3999,8 +3999,16 @@ impl<W: LayoutElement> Column<W> {
 
     fn update_tile_sizes_with_transaction(&mut self, animate: bool, transaction: Transaction) {
         if self.is_fullscreen {
-            for tile in &mut self.tiles {
-                tile.request_fullscreen();
+            for (tile_idx, tile) in self.tiles.iter_mut().enumerate() {
+                // In tabbed mode, only the visible window participates in the transaction.
+                let is_active = tile_idx == self.active_tile_idx;
+                let transaction = if self.display_mode == ColumnDisplay::Tabbed && !is_active {
+                    None
+                } else {
+                    Some(transaction.clone())
+                };
+
+                tile.request_fullscreen(animate, transaction);
             }
             return;
         }

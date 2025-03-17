@@ -604,13 +604,18 @@ impl LayoutElement for Mapped {
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
+        is_fullscreen: bool,
         animate: bool,
         transaction: Option<Transaction>,
     ) {
         let changed = self.toplevel().with_pending_state(|state| {
             let changed = state.size != Some(size);
             state.size = Some(size);
-            state.states.unset(xdg_toplevel::State::Fullscreen);
+            if is_fullscreen {
+                state.states.set(xdg_toplevel::State::Fullscreen);
+            } else {
+                state.states.unset(xdg_toplevel::State::Fullscreen);
+            }
             changed
         });
 
@@ -691,15 +696,6 @@ impl LayoutElement for Mapped {
         }
 
         self.request_size_once = Some(RequestSizeOnce::WaitingForConfigure);
-    }
-
-    fn request_fullscreen(&mut self, size: Size<i32, Logical>) {
-        self.toplevel().with_pending_state(|state| {
-            state.size = Some(size);
-            state.states.set(xdg_toplevel::State::Fullscreen);
-        });
-
-        self.request_size_once = None;
     }
 
     fn min_size(&self) -> Size<i32, Logical> {

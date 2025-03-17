@@ -176,16 +176,15 @@ pub trait LayoutElement {
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
+        is_fullscreen: bool,
         animate: bool,
         transaction: Option<Transaction>,
     );
 
     /// Requests the element to change size once, clearing the request afterwards.
     fn request_size_once(&mut self, size: Size<i32, Logical>, animate: bool) {
-        self.request_size(size, animate, None);
+        self.request_size(size, false, animate, None);
     }
-
-    fn request_fullscreen(&mut self, size: Size<i32, Logical>);
 
     fn min_size(&self) -> Size<i32, Logical>;
     fn max_size(&self) -> Size<i32, Logical>;
@@ -206,12 +205,12 @@ pub trait LayoutElement {
 
     /// Whether the element is currently fullscreen.
     ///
-    /// This will *not* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
+    /// This will *not* switch immediately after a [`LayoutElement::request_size()`] call.
     fn is_fullscreen(&self) -> bool;
 
     /// Whether we're requesting the element to be fullscreen.
     ///
-    /// This *will* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
+    /// This *will* switch immediately after a [`LayoutElement::request_size()`] call.
     fn is_pending_fullscreen(&self) -> bool;
 
     /// Size previously requested through [`LayoutElement::request_size()`].
