@@ -26,7 +26,7 @@ env:
   DEPS_APT: |
     curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev \
     libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev \
-    libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
+    libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev libadwaita-1-dev
   DEPS_DNF: |
     cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel \
     wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel \
@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           show-progress: false
-      
+
       - name: Check for trailing whitespace
         run: |
           ! grep -r --include="*.rs" --include="*.toml" '\s$' .
@@ -87,8 +87,6 @@ jobs:
           echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
           echo 'retry = 3' >> ~/.cargo/config.toml
           echo 'offline = false' >> ~/.cargo/config.toml
-          echo '[term]' >> ~/.cargo/config.toml
-          echo 'progress.when = "always"' >> ~/.cargo/config.toml
 
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -101,19 +99,34 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-${{ matrix.configuration }}-
 
-      - name: Check (no default features)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features
-        timeout-minutes: 5
-        # Add network failure retries
-        continue-on-error: true
-        id: check-no-features
-
-      - name: Retry check if network failure (no default features)
-        if: steps.check-no-features.outcome == 'failure'
+      - name: Define retry function
+        shell: bash
         run: |
-          echo "Retrying after possible network failure..."
-          sleep 2
-          cargo check ${{ matrix.release-flag }} --no-default-features
+          retry_command() {
+            local command="$1"
+            local max_attempts=3
+            local attempt=1
+
+            while true; do
+              echo "Attempt #$attempt: $command"
+              if eval "$command"; then
+                echo "Command succeeded on attempt #$attempt."
+                return 0
+              else
+                if [ $attempt -lt $max_attempts ]; then
+                  echo "Command failed. Retrying in 5 seconds..."
+                  sleep 5
+                  attempt=$((attempt + 1))
+                else
+                  echo "Command failed after $max_attempts attempts."
+                  return 1
+                fi
+              fi
+            done
+          }
+
+      - name: Check (no default features)
+        run: retry_command "cargo check ${{ matrix.release-flag }} --no-default-features"
         timeout-minutes: 5
 
       - name: Feature matrix checks
@@ -121,40 +134,19 @@ jobs:
           echo "Checking individual features..."
           for feature in dbus systemd dinit xdp-gnome-screencast; do
             echo "=== Checking feature: $feature ==="
-            cargo check ${{ matrix.release-flag }} --no-default-features --features $feature || \
-            (echo "Retrying feature $feature after potential network failure..." && sleep 5 && \
-             cargo check ${{ matrix.release-flag }} --no-default-features --features $feature)
+            retry_command "cargo check ${{ matrix.release-flag }} --no-default-features --features $feature"
           done
         timeout-minutes: 10
 
       - name: Check (all features)
-        run: cargo check ${{ matrix.release-flag }}
-        timeout-minutes: 5
-        id: check-all-features
-        continue-on-error: true
-        
-      - name: Retry check if network failure (all features)
-        if: steps.check-all-features.outcome == 'failure'
-        run: |
-          echo "Retrying after possible network failure..."
-          sleep 5
-          cargo check ${{ matrix.release-flag }}
+        run: retry_command "cargo check ${{ matrix.release-flag }}"
         timeout-minutes: 5
 
       - name: Build (with profiling)
-        run: cargo build ${{ matrix.release-flag }} --features profile-with-tracy
-        id: build-with-profiling
-        continue-on-error: true
-        
-      - name: Retry build if network failure (with profiling)
-        if: steps.build-with-profiling.outcome == 'failure'
-        run: |
-          echo "Retrying build after possible network failure..."
-          sleep 5
-          cargo build ${{ matrix.release-flag }} --features profile-with-tracy
+        run: retry_command "cargo build ${{ matrix.release-flag }} --features profile-with-tracy"
 
       - name: Build tests
-        run: cargo test --no-run --all --exclude niri-visual-tests ${{ matrix.release-flag }}
+        run: retry_command "cargo test --no-run --all --exclude niri-visual-tests ${{ matrix.release-flag }}"
 
       - name: Run tests
         run: cargo test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture
@@ -216,17 +208,34 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-randomized-
 
-      - name: Build tests
-        run: cargo test --no-run --all --exclude niri-visual-tests --release
-        id: build-tests
-        continue-on-error: true
-        
-      - name: Retry build tests if network failure
-        if: steps.build-tests.outcome == 'failure'
+      - name: Define retry function
+        shell: bash
         run: |
-          echo "Retrying after possible network failure..."
-          sleep 5
-          cargo test --no-run --all --exclude niri-visual-tests --release
+          retry_command() {
+            local command="$1"
+            local max_attempts=3
+            local attempt=1
+
+            while true; do
+              echo "Attempt #$attempt: $command"
+              if eval "$command"; then
+                echo "Command succeeded on attempt #$attempt."
+                return 0
+              else
+                if [ $attempt -lt $max_attempts ]; then
+                  echo "Command failed. Retrying in 5 seconds..."
+                  sleep 5
+                  attempt=$((attempt + 1))
+                else
+                  echo "Command failed after $max_attempts attempts."
+                  return 1
+                fi
+              fi
+            done
+          }
+
+      - name: Build tests
+        run: retry_command "cargo test --no-run --all --exclude niri-visual-tests --release"
 
       - name: Run randomized tests
         run: cargo test --all --exclude niri-visual-tests --release
@@ -268,17 +277,34 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-visual-
 
-      - name: Build visual tests
-        run: cargo build --package niri-visual-tests
-        id: build-visual-tests
-        continue-on-error: true
-        
-      - name: Retry build visual tests if network failure
-        if: steps.build-visual-tests.outcome == 'failure'
+      - name: Define retry function
+        shell: bash
         run: |
-          echo "Retrying after possible network failure..."
-          sleep 5
-          cargo build --package niri-visual-tests
+          retry_command() {
+            local command="$1"
+            local max_attempts=3
+            local attempt=1
+
+            while true; do
+              echo "Attempt #$attempt: $command"
+              if eval "$command"; then
+                echo "Command succeeded on attempt #$attempt."
+                return 0
+              else
+                if [ $attempt -lt $max_attempts ]; then
+                  echo "Command failed. Retrying in 5 seconds..."
+                  sleep 5
+                  attempt=$((attempt + 1))
+                else
+                  echo "Command failed after $max_attempts attempts."
+                  return 1
+                fi
+              fi
+            done
+          }
+
+      - name: Build visual tests
+        run: retry_command "cargo build --package niri-visual-tests"
 
       - name: Run visual tests
         run: cargo test --package niri-visual-tests -- --nocapture
@@ -289,7 +315,7 @@ jobs:
     name: Code Quality
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -309,7 +335,7 @@ jobs:
 
       - name: MSRV Check
         uses: dtolnay/rust-toolchain@1.80.1
-        
+
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
@@ -320,43 +346,51 @@ jobs:
           key: ${{ runner.os }}-cargo-msrv-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-msrv-
-          
-      - name: Verify MSRV compatibility
-        run: cargo check --all-targets
-        id: msrv-check
-        continue-on-error: true
-        
-      - name: Retry MSRV check if network failure
-        if: steps.msrv-check.outcome == 'failure'
+
+      - name: Define retry function
+        shell: bash
         run: |
-          echo "Retrying MSRV check after possible network failure..."
-          sleep 5
-          cargo check --all-targets
-      
+          retry_command() {
+            local command="$1"
+            local max_attempts=3
+            local attempt=1
+
+            while true; do
+              echo "Attempt #$attempt: $command"
+              if eval "$command"; then
+                echo "Command succeeded on attempt #$attempt."
+                return 0
+              else
+                if [ $attempt -lt $max_attempts ]; then
+                  echo "Command failed. Retrying in 5 seconds..."
+                  sleep 5
+                  attempt=$((attempt + 1))
+                else
+                  echo "Command failed after $max_attempts attempts."
+                  return 1
+                fi
+              fi
+            done
+          }
+
+      - name: Verify MSRV compatibility
+        run: retry_command "cargo check --all-targets"
+
       # Use stable for clippy
       - name: Setup Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-          
+
       - name: Run Clippy
-        run: cargo clippy --all --all-targets -- -D warnings
-        id: clippy
-        continue-on-error: true
-        
-      - name: Retry Clippy if network failure
-        if: steps.clippy.outcome == 'failure'
-        run: |
-          echo "Retrying Clippy after possible network failure..."
-          sleep 5
-          cargo clippy --all --all-targets -- -D warnings
-        
+        run: retry_command "cargo clippy --all --all-targets -- -D warnings"
+
       # Use nightly for rustfmt
       - name: Setup Rust nightly toolchain
         uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
-          
+
       - name: Run Rustfmt
         run: cargo fmt --all -- --check
 
@@ -365,7 +399,7 @@ jobs:
     name: Platform Compatibility
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -377,7 +411,7 @@ jobs:
           echo '[net]' > .cargo/config.toml
           echo 'git-fetch-with-cli = true' >> .cargo/config.toml
           echo 'retry = 3' >> .cargo/config.toml
-      
+
       - name: Fedora build
         uses: docker://fedora:41
         with:
@@ -416,17 +450,17 @@ jobs:
     needs: lint
     name: Security Audit
     runs-on: ubuntu-24.04
-    
+
     steps:
       - uses: actions/checkout@v4
         with:
           show-progress: false
-      
+
       - name: Install cargo-audit
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-audit
-      
+
       - name: Run cargo-audit
         run: cargo audit
 
@@ -465,8 +499,8 @@ jobs:
         run: |
           mkdir -p ~/.cargo
           echo '[net]' >> ~/.cargo/config.toml
-          echo 'git-fetch-with-cli = true' >> ~/.cargo/config.toml
-          echo 'retry = 3' >> ~/.cargo/config.toml
+          echo 'git-fetch-with-cli = true' >> .cargo/config.toml
+          echo 'retry = 3' >> .cargo/config.toml
 
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -479,18 +513,34 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-docs-
 
+      - name: Define retry function
+        shell: bash
+        run: |
+          retry_command() {
+            local command="$1"
+            local max_attempts=3
+            local attempt=1
+
+            while true; do
+              echo "Attempt #$attempt: $command"
+              if eval "$command"; then
+                echo "Command succeeded on attempt #$attempt."
+                return 0
+              else
+                if [ $attempt -lt $max_attempts ]; then
+                  echo "Command failed. Retrying in 5 seconds..."
+                  sleep 5
+                  attempt=$((attempt + 1))
+                else
+                  echo "Command failed after $max_attempts attempts."
+                  return 1
+                fi
+              fi
+            done
+          }
+
       - name: Generate Documentation
-        run: |
-          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --all-features
-        id: generate-docs
-        continue-on-error: true
-        
-      - name: Retry documentation generation if network failure
-        if: steps.generate-docs.outcome == 'failure'
-        run: |
-          echo "Retrying documentation generation after possible network failure..."
-          sleep 5
-          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --all-features
+        run: retry_command 'RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items --all-features'
 
       - run: cp ./resources/rustdoc-index.html ./target/doc/index.html
 
@@ -500,7 +550,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./target/doc
           force_orphan: true
-          
+
   # Summary job that runs after everything else to report final status
   ci-completion:
     if: always()
