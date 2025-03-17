@@ -21,6 +21,7 @@ debug {
     force-pipewire-invalid-modifier
     dbus-interfaces-in-non-session-instances
     wait-for-frame-completion-before-queueing
+    wait-for-frame-completion-in-pipewire
     emulate-zero-presentation-time
     disable-resize-throttling
     disable-transactions
@@ -149,6 +150,22 @@ Useful for diagnosing certain synchronization and performance problems.
 ```kdl
 debug {
     wait-for-frame-completion-before-queueing
+}
+```
+
+### `wait-for-frame-completion-in-pipewire`
+
+<sup>Since: next release</sup>
+
+Wait until every screencast frame is done rendering before handing it over to PipeWire.
+
+Sometimes helps on NVIDIA to prevent glitched frames when screencasting.
+
+This debug flag will eventually be removed once we handle this properly (via explicit sync in PipeWire).
+
+```kdl
+debug {
+    wait-for-frame-completion-in-pipewire
 }
 ```
 

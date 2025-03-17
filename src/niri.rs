@@ -1630,8 +1630,12 @@ impl State {
 
         match &cast.target {
             CastTarget::Nothing => {
+                let config = self.niri.config.borrow();
+                let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
+                drop(config);
+
                 self.backend.with_primary_renderer(|renderer| {
-                    if cast.dequeue_buffer_and_clear(renderer) {
+                    if cast.dequeue_buffer_and_clear(renderer, wait_for_sync) {
                         cast.last_frame_time = get_monotonic_time();
                     }
                 });
@@ -1671,6 +1675,10 @@ impl State {
                     }
                 }
 
+                let config = self.niri.config.borrow();
+                let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
+                drop(config);
+
                 self.backend.with_primary_renderer(|renderer| {
                     // FIXME: pointer.
                     let elements = mapped
@@ -1678,7 +1686,13 @@ impl State {
                         .rev()
                         .collect::<Vec<_>>();
 
-                    if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
+                    if cast.dequeue_buffer_and_render(
+                        renderer,
+                        &elements,
+                        bbox.size,
+                        scale,
+                        wait_for_sync,
+                    ) {
                         cast.last_frame_time = get_monotonic_time();
                     }
                 });
@@ -4370,6 +4384,10 @@ impl Niri {
 
         let scale = Scale::from(output.current_scale().fractional_scale());
 
+        let config = self.config.borrow();
+        let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
+        drop(config);
+
         let mut elements = None;
         let mut casts_to_stop = vec![];
 
@@ -4401,7 +4419,7 @@ impl Niri {
                 self.render(renderer, output, true, RenderTarget::Screencast)
             });
 
-            if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
+            if cast.dequeue_buffer_and_render(renderer, elements, size, scale, wait_for_sync) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
@@ -4422,6 +4440,10 @@ impl Niri {
         let _span = tracy_client::span!("Niri::render_windows_for_screen_cast");
 
         let scale = Scale::from(output.current_scale().fractional_scale());
+
+        let config = self.config.borrow();
+        let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
+        drop(config);
 
         let mut casts_to_stop = vec![];
 
@@ -4461,7 +4483,8 @@ impl Niri {
             // FIXME: pointer.
             let elements: Vec<_> = mapped.render_for_screen_cast(renderer, scale).collect();
 
-            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
+            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale, wait_for_sync)
+            {
                 cast.last_frame_time = target_presentation_time;
             }
         }

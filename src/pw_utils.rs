@@ -821,6 +821,7 @@ impl Cast {
         elements: &[impl RenderElement<GlesRenderer>],
         size: Size<i32, Physical>,
         scale: Scale<f64>,
+        wait_for_sync: bool,
     ) -> bool {
         let CastState::Ready { damage_tracker, .. } = &mut *self.state.borrow_mut() else {
             error!("cast must be in Ready state to render");
@@ -851,7 +852,7 @@ impl Cast {
         let fd = buffer.datas_mut()[0].as_raw().fd;
         let dmabuf = &self.dmabufs.borrow()[&fd];
 
-        if let Err(err) = render_to_dmabuf(
+        match render_to_dmabuf(
             renderer,
             dmabuf.clone(),
             size,
@@ -859,8 +860,19 @@ impl Cast {
             Transform::Normal,
             elements.iter().rev(),
         ) {
-            warn!("error rendering to dmabuf: {err:?}");
-            return false;
+            Ok(sync_point) => {
+                // FIXME: implement PipeWire explicit sync, and at the very least async wait.
+                if wait_for_sync {
+                    let _span = tracy_client::span!("wait for completion");
+                    if let Err(err) = sync_point.wait() {
+                        warn!("error waiting for pw frame completion: {err:?}");
+                    }
+                }
+            }
+            Err(err) => {
+                warn!("error rendering to dmabuf: {err:?}");
+                return false;
+            }
         }
 
         for (data, (stride, offset)) in
@@ -880,7 +892,11 @@ impl Cast {
         true
     }
 
-    pub fn dequeue_buffer_and_clear(&mut self, renderer: &mut GlesRenderer) -> bool {
+    pub fn dequeue_buffer_and_clear(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        wait_for_sync: bool,
+    ) -> bool {
         // Clear out the damage tracker if we're in Ready state.
         if let CastState::Ready { damage_tracker, .. } = &mut *self.state.borrow_mut() {
             *damage_tracker = None;
@@ -894,9 +910,20 @@ impl Cast {
         let fd = buffer.datas_mut()[0].as_raw().fd;
         let dmabuf = &self.dmabufs.borrow()[&fd];
 
-        if let Err(err) = clear_dmabuf(renderer, dmabuf.clone()) {
-            warn!("error clearing dmabuf: {err:?}");
-            return false;
+        match clear_dmabuf(renderer, dmabuf.clone()) {
+            Ok(sync_point) => {
+                // FIXME: implement PipeWire explicit sync, and at the very least async wait.
+                if wait_for_sync {
+                    let _span = tracy_client::span!("wait for completion");
+                    if let Err(err) = sync_point.wait() {
+                        warn!("error waiting for pw frame completion: {err:?}");
+                    }
+                }
+            }
+            Err(err) => {
+                warn!("error clearing dmabuf: {err:?}");
+                return false;
+            }
         }
 
         for (data, (stride, offset)) in
