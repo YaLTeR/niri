@@ -16,6 +16,8 @@ env:
   SCCACHE_CACHE_SIZE: 2G
   SCCACHE_DIR: /home/runner/.cache/sccache
   RUSTC_WRAPPER: sccache
+  DEPS_APT: curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
+  DEPS_DNF: cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
 
 jobs:
   global_setup:
@@ -30,7 +32,6 @@ jobs:
           git config --global http.lowSpeedLimit 1000
           git config --global http.lowSpeedTime 120
           git config --global core.compression 9
-
       - name: Create Cargo config
         id: cargo_config
         run: |
@@ -49,13 +50,13 @@ jobs:
     needs: global_setup
     strategy:
       fail-fast: false
-    matrix:
-      configuration: [debug, release]
-      include:
-        - configuration: debug
-          args: ""
-        - configuration: release
-          args: --release
+      matrix:
+        configuration: [debug, release]
+        include:
+          - configuration: debug
+            args: ""
+          - configuration: release
+            args: --release
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -68,12 +69,7 @@ jobs:
       - name: 📦 Install System Dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y \
-            curl gcc clang \
-            libudev-dev libgbm-dev libxkbcommon-dev \
-            libegl1-mesa-dev libwayland-dev libinput-dev \
-            libdbus-1-dev libsystemd-dev libseat-dev \
-            libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
+          sudo apt-get install -y ${{ env.DEPS_APT }}
 
       - name: 🦀 Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -133,6 +129,55 @@ jobs:
         if: always() && matrix.configuration == 'release'
         run: mkdir -p ./target/doc
 
+  randomized_tests:
+    name: 🎲 Randomized Tests
+    needs: global_setup
+    runs-on: ubuntu-24.04
+    env:
+      RUST_BACKTRACE: 1
+      PROPTEST_CASES: 200000
+      PROPTEST_MAX_LOCAL_REJECTS: 200000
+      PROPTEST_MAX_GLOBAL_REJECTS: 200000
+      PROPTEST_MAX_SHRINK_ITERS: 200000
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }}
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build Tests
+        run: cargo test --no-run --all --exclude niri-visual-tests --release
+
+      - name: Run Randomized Tests
+        run: cargo test --all --exclude niri-visual-tests --release
+
+  visual_tests:
+    name: 👁️ Visual Tests
+    needs: global_setup
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build Visual Tests
+        run: cargo build --package niri-visual-tests
+
   quality_checks:
     name: 🧰 Code Quality
     needs: global_setup
@@ -143,16 +188,20 @@ jobs:
         task: [clippy, fmt]
     steps:
       - uses: actions/checkout@v4
+        with:
+          show-progress: false
       
       - name: Install Tools
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }}
+          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
         if: matrix.task == 'clippy'
       
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: ${{ matrix.task == 'clippy' && 'clippy' || 'rustfmt' }}
+      
+      - uses: Swatinem/rust-cache@v2
       
       - name: Run ${{ matrix.task }}
         run: |
@@ -165,23 +214,99 @@ jobs:
               ;;
           esac
 
-  documentation:
-    name: 📚 Documentation
-    needs: build_and_test
+  msrv:
+    name: 🔒 MSRV Check
+    needs: global_setup
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+
+      - uses: dtolnay/rust-toolchain@1.80.1
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check MSRV Compatibility
+        run: cargo check --all-targets
+
+  fedora:
+    name: 🐧 Fedora Build
+    needs: global_setup
+    runs-on: ubuntu-24.04
+    container: fedora:41
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install Dependencies
+        run: |
+          sudo dnf update -y
+          sudo dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
+
+      - uses: Swatinem/rust-cache@v2
+      - name: Build All
+        run: cargo build --all
+
+  nix:
+    name: ❄️ Nix Build
+    needs: global_setup
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Check Flake Inputs
+        uses: DeterminateSystems/flake-checker-action@v4
+        continue-on-error: true
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v3
+        continue-on-error: true
+
+      - name: Nix Flake Check
+        run: nix flake check
+        continue-on-error: true
+
+  check_links:
+    name: 🔗 Check Wiki Links
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+      - uses: lycheeverse/lychee-action@v2.0.2
+        with:
+          args: --offline --include-fragments 'wiki/*.md'
+
+  documentation:
+    name: 📚 Documentation
+    needs: [build_and_test]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+      
+      - uses: dtolnay/rust-toolchain@stable
       
       - name: Generate Docs
         run: |
-          mkdir -p target/doc
           cargo doc --no-deps -p niri-ipc || echo "⚠️ Documentation generation failed"
-
-      - name: Prepare Fallback
-        if: failure()
+      
+      - name: Create Index
         run: |
-          echo "<html><body><h1>Documentation Unavailable</h1><p>Build failed - check CI logs</p></body></html>" > target/doc/index.html
-
+          mkdir -p target/doc
+          cp ./resources/rustdoc-index.html ./target/doc/index.html || echo "<html><body><h1>Documentation for niri-ipc</h1></body></html>" > target/doc/index.html
+      
       - name: Deploy
         if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
@@ -190,6 +315,20 @@ jobs:
           publish_dir: ./target/doc
           force_orphan: true
 
+  publish_wiki:
+    name: 📖 Publish Wiki
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build_and_test, check_links]
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          show-progress: false
+      - uses: Andrew-Chen-Wang/github-wiki-action@b7e552d7cb0fa7f83e459012ffc6840fd87bcb83
+
   post_failure:
     name: 🚨 Failure Recovery
     if: failure()
@@ -197,6 +336,8 @@ jobs:
       - build_and_test
       - quality_checks
       - documentation
+      - randomized_tests
+      - visual_tests
     runs-on: ubuntu-24.04
     steps:
       - name: Clone Mirror Fallback
