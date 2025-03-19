@@ -1,8 +1,27 @@
+### Electron based applications
+
+Electron based application can work directly on Wayland, but don't accept it without configuration. Configuration differs between versions. Infromation was grabbed from [ArchWiki](https://wiki.archlinux.org/title/Wayland#Electron).
+
+For Electron (>28) you need to set environment variable:
+```kdl
+environment {
+    ELECTRON_OZONE_PLATFORM_HINT "auto"
+}
+```
+
+For previous version you need to set flags in configuration file `~/.config/electron-flags.conf`:
+```
+--enable-features=UseOzonePlatform
+--ozone-platform-hint=auto
+```
+
 ### VSCode
 
-If you're having issues with some VSCode hotkeys, try starting `Xwayland` and setting the `DISPLAY=:0` environment variable for VSCode.
-That is, still running VSCode with the Wayland backend, but with `DISPLAY` set to a running Xwayland instance.
-Apparently, VSCode currently unconditionally queries the X server for a keymap.
+To run VSCode natively via Wayland you need to put flags in `~/.config/code-flags.conf`:
+```
+--enable-features=UseOzonePlatform
+--ozone-platform-hint=auto
+```
 
 ### WezTerm
 
