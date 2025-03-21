@@ -405,6 +405,9 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WorkspacesChanged { workspaces } => {
                         println!("Workspaces changed: {workspaces:?}");
                     }
+                    Event::WorkspaceUrgencyChanged { id, urgent } => {
+                        println!("Workspace {id}: urgency changed to {urgent}");
+                    }
                     Event::WorkspaceActivated { id, focused } => {
                         let word = if focused { "focused" } else { "activated" };
                         println!("Workspace {word}: {id}");
