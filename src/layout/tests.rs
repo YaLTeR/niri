@@ -261,6 +261,10 @@ impl LayoutElement for TestWindow {
     fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
         None
     }
+
+    fn is_urgent(&self) -> bool {
+        false
+    }
 }
 
 fn arbitrary_bbox() -> impl Strategy<Value = Rectangle<i32, Logical>> {
