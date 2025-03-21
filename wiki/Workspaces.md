@@ -39,7 +39,7 @@ This is an important distinction from WMs with static workspace systems.
 In niri, workspaces *do not have indices on their own*.
 If you take the first workspace and move it further down on the monitor, `focus-workspace 1` will now put you on a different workspace (the one that was below the first workspace before you moved it).
 
-When you want to have a more permanent workspace in niri, you can create a [named workspace](./Configuration:-Named-Workspaces.md) in the config.
+When you want to have a more permanent workspace in niri, you can create a [named workspace](./Configuration:-Named-Workspaces.md) in the config or via the `set-workspace-name` action.
 You can refer to named workspaces by name, e.g. `focus-workspace "browser"`, and they won't disappear when they become empty.
 
 > [!TIP]
