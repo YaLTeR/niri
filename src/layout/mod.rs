@@ -210,6 +210,8 @@ pub trait LayoutElement {
     fn set_bounds(&self, bounds: Size<i32, Logical>);
     fn is_ignoring_opacity_window_rule(&self) -> bool;
 
+    fn is_urgent(&self) -> bool;
+
     fn configure_intent(&self) -> ConfigureIntent;
     fn send_pending_configure(&mut self);
 

@@ -131,6 +131,13 @@ impl<'a> WindowRef<'a> {
         }
     }
 
+    pub fn is_urgent(self) -> bool {
+        match self {
+            WindowRef::Unmapped(_) => false,
+            WindowRef::Mapped(mapped) => mapped.is_urgent(),
+        }
+    }
+
     pub fn is_active_in_column(self) -> bool {
         match self {
             WindowRef::Unmapped(_) => true,
