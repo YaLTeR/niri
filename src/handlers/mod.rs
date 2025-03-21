@@ -703,6 +703,11 @@ impl GammaControlHandler for State {
 }
 delegate_gamma_control!(State);
 
+pub enum ActivationContext {
+    UrgentOnly,
+    FocusIfPossible,
+}
+
 impl XdgActivationHandler for State {
     fn activation_state(&mut self) -> &mut XdgActivationState {
         &mut self.niri.activation_state
@@ -712,11 +717,11 @@ impl XdgActivationHandler for State {
         // Tokens without a serial are urgency-only. This is not specified, but it seems to be the
         // common client behavior.
         //
-        // We don't have urgency yet, so just ignore such tokens.
-        //
         // See also: https://gitlab.freedesktop.org/wayland/wayland-protocols/-/issues/150
         let Some((serial, seat)) = data.serial else {
-            return false;
+            data.user_data
+                .insert_if_missing(|| ActivationContext::UrgentOnly);
+            return true;
         };
         let Some(seat) = Seat::<State>::from_resource(&seat) else {
             return false;
@@ -731,6 +736,8 @@ impl XdgActivationHandler for State {
         // and we can remove this debug flag.
         let config = self.niri.config.borrow();
         if config.debug.honor_xdg_activation_with_invalid_serial {
+            data.user_data
+                .insert_if_missing(|| ActivationContext::FocusIfPossible);
             return true;
         }
 
@@ -738,11 +745,15 @@ impl XdgActivationHandler for State {
         // with no keyboard interactivity won't have any keyboard focus.
         let kb_last_enter = seat.get_keyboard().unwrap().last_enter();
         if kb_last_enter.is_some_and(|last_enter| serial.is_no_older_than(&last_enter)) {
+            data.user_data
+                .insert_if_missing(|| ActivationContext::FocusIfPossible);
             return true;
         }
 
         let pointer_last_enter = seat.get_pointer().unwrap().last_enter();
         if pointer_last_enter.is_some_and(|last_enter| serial.is_no_older_than(&last_enter)) {
+            data.user_data
+                .insert_if_missing(|| ActivationContext::FocusIfPossible);
             return true;
         }
 
@@ -757,10 +768,21 @@ impl XdgActivationHandler for State {
     ) {
         if token_data.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT {
             if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&surface) {
+                let Some(context) = token_data.user_data.get::<ActivationContext>() else {
+                    warn!("missing ActivationContext in token user-data");
+                    return;
+                };
                 let window = mapped.window.clone();
-                self.niri.layout.activate_window(&window);
-                self.niri.layer_shell_on_demand_focus = None;
-                self.niri.queue_redraw_all();
+                match context {
+                    ActivationContext::FocusIfPossible => {
+                        self.niri.layout.activate_window(&window);
+                        self.niri.layer_shell_on_demand_focus = None;
+                        self.niri.queue_redraw_all();
+                    }
+                    ActivationContext::UrgentOnly => {
+                        self.niri.layout.urgent_window(&window);
+                    }
+                }
             } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(&surface) {
                 unmapped.activation_token_data = Some(token_data);
             }
