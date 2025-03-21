@@ -1608,6 +1608,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.scroll_amount_to_activate(window)
     }
 
+    pub fn is_urgent(&self) -> bool {
+        self.windows().any(|win| win.is_urgent())
+    }
+
     pub fn activate_window(&mut self, window: &W::Id) -> bool {
         if self.floating.activate_window(window) {
             self.floating_is_active = FloatingActive::Yes;
