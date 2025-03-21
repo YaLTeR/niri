@@ -1,6 +1,6 @@
 ### Electron based applications
 
-Electron based application can work directly on Wayland, but don't accept it without configuration. Configuration differs between versions. Infromation was grabbed from [ArchWiki](https://wiki.archlinux.org/title/Wayland#Electron).
+Electron based applications can work directly on Wayland, but they don't accept it without configuration. Configuration differs between versions. Information was grabbed from the [ArchWiki](https://wiki.archlinux.org/title/Wayland#Electron).
 
 For Electron (>28) you need to set environment variable:
 ```kdl
