@@ -191,8 +191,10 @@ impl ResolvedWindowRules {
                 width: None,
                 active_color: None,
                 inactive_color: None,
+                urgent_color: None,
                 active_gradient: None,
                 inactive_gradient: None,
+                urgent_gradient: None,
             },
             border: BorderRule {
                 off: false,
@@ -200,8 +202,10 @@ impl ResolvedWindowRules {
                 width: None,
                 active_color: None,
                 inactive_color: None,
+                urgent_color: None,
                 active_gradient: None,
                 inactive_gradient: None,
+                urgent_gradient: None,
             },
             shadow: ShadowRule {
                 off: false,

@@ -60,8 +60,10 @@ impl Layout {
                 width: FloatOrInt(4.),
                 active_color: Color::from_rgba8_unpremul(255, 163, 72, 255),
                 inactive_color: Color::from_rgba8_unpremul(50, 50, 50, 255),
+                urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
                 active_gradient: None,
                 inactive_gradient: None,
+                urgent_gradient: None,
             },
             ..Default::default()
         };
