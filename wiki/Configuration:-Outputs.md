@@ -122,6 +122,9 @@ output "HDMI-A-1" {
 }
 ```
 
+#### Setting a Primary Monitor
+To change which output is active on startup, see [`default-output`](./Configuration:-Miscellaneous.md#default-output)
+
 #### Automatic Positioning
 
 Niri repositions outputs from scratch every time the output configuration changes (which includes monitors disconnecting and connecting).
