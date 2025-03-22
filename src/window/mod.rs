@@ -131,6 +131,13 @@ impl<'a> WindowRef<'a> {
         }
     }
 
+    pub fn is_urgent(self) -> bool {
+        match self {
+            WindowRef::Unmapped(_) => false,
+            WindowRef::Mapped(mapped) => mapped.is_urgent(),
+        }
+    }
+
     pub fn is_active_in_column(self) -> bool {
         match self {
             WindowRef::Unmapped(_) => true,
@@ -184,8 +191,10 @@ impl ResolvedWindowRules {
                 width: None,
                 active_color: None,
                 inactive_color: None,
+                urgent_color: None,
                 active_gradient: None,
                 inactive_gradient: None,
+                urgent_gradient: None,
             },
             border: BorderRule {
                 off: false,
@@ -193,8 +202,10 @@ impl ResolvedWindowRules {
                 width: None,
                 active_color: None,
                 inactive_color: None,
+                urgent_color: None,
                 active_gradient: None,
                 inactive_gradient: None,
+                urgent_gradient: None,
             },
             shadow: ShadowRule {
                 off: false,
