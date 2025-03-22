@@ -85,6 +85,10 @@ impl DBusServers {
 
             let (to_niri, from_screenshot) = calloop::channel::channel();
             let (to_screenshot, from_niri) = async_channel::unbounded();
+
+            let (to_niri_color, from_color_pick) = calloop::channel::channel();
+            let (to_color_pick, from_niri_color) = async_channel::unbounded();
+
             niri.event_loop
                 .insert_source(from_screenshot, move |event, _, state| match event {
                     calloop::channel::Event::Msg(msg) => {
@@ -93,7 +97,22 @@ impl DBusServers {
                     calloop::channel::Event::Closed => (),
                 })
                 .unwrap();
-            let screenshot = gnome_shell_screenshot::Screenshot::new(to_niri, from_niri);
+
+            niri.event_loop
+                .insert_source(from_color_pick, move |event, _, state| match event {
+                    calloop::channel::Event::Msg(msg) => {
+                        state.on_color_pick_msg(&to_color_pick, msg)
+                    }
+                    calloop::channel::Event::Closed => (),
+                })
+                .unwrap();
+
+            let screenshot = gnome_shell_screenshot::Screenshot::new(
+                to_niri,
+                from_niri,
+                to_niri_color,
+                from_niri_color,
+            );
             dbus.conn_screen_shot = try_start(screenshot);
 
             let (to_niri, from_introspect) = calloop::channel::channel();

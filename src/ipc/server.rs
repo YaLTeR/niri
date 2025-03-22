@@ -28,6 +28,7 @@ use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 
 use crate::backend::IpcOutputMap;
+use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::pick_window_grab::PickWindowGrab;
 use crate::layout::workspace::WorkspaceId;
 use crate::niri::State;
@@ -355,6 +356,28 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                 state.windows.windows.get(&id.get()).cloned()
             });
             Response::PickedWindow(window)
+        }
+        Request::PickColor => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let pointer = state.niri.seat.get_pointer().unwrap();
+                let start_data = PointerGrabStartData {
+                    focus: None,
+                    button: 0,
+                    location: pointer.current_location(),
+                };
+                let grab = PickColorGrab::new(start_data);
+                pointer.set_grab(state, grab, SERIAL_COUNTER.next_serial(), Focus::Clear);
+                state.niri.pick_color = Some(tx);
+                state
+                    .niri
+                    .cursor_manager
+                    .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
+                state.niri.queue_redraw_all();
+            });
+            let result = rx.recv().await;
+            let color = result.map_err(|_| String::from("error getting picked color"))?;
+            Response::PickedColor(color)
         }
         Request::Action(action) => {
             let (tx, rx) = async_channel::bounded(1);

@@ -48,6 +48,7 @@ use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
 pub mod backend_ext;
 pub mod move_grab;
+pub mod pick_color_grab;
 pub mod pick_window_grab;
 pub mod resize_grab;
 pub mod scroll_tracker;
@@ -377,7 +378,10 @@ impl State {
                     }
                 }
 
-                if pressed && raw == Some(Keysym::Escape) && this.niri.pick_window.is_some() {
+                if pressed
+                    && raw == Some(Keysym::Escape)
+                    && (this.niri.pick_window.is_some() || this.niri.pick_color.is_some())
+                {
                     // We window picking state so the pick window grab must be active.
                     // Unsetting it cancels window picking.
                     this.niri

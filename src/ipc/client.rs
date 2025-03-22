@@ -20,6 +20,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::FocusedWindow => Request::FocusedWindow,
         Msg::FocusedOutput => Request::FocusedOutput,
         Msg::PickWindow => Request::PickWindow,
+        Msg::PickColor => Request::PickColor,
         Msg::Action { action } => Request::Action(action.clone()),
         Msg::Output { output, action } => Request::Output {
             output: output.clone(),
@@ -268,6 +269,36 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 print_window(&window);
             } else {
                 println!("No window selected.");
+            }
+        }
+        Msg::PickColor => {
+            let Response::PickedColor(color) = response else {
+                bail!("unexpected response: expected PickedColor, got {response:?}");
+            };
+
+            if json {
+                let color = serde_json::to_string(&color).context("error formatting response")?;
+                println!("{color}");
+                return Ok(());
+            }
+
+            if let Some(color) = color {
+                println!(
+                    "Picked color: rgba({}, {}, {}, {})",
+                    (color.rgba[0] * 255.0).round(),
+                    (color.rgba[1] * 255.0).round(),
+                    (color.rgba[2] * 255.0).round(),
+                    color.rgba[3]
+                );
+                println!(
+                    "Hex: #{:02x}{:02x}{:02x}{:02x}",
+                    (color.rgba[0] * 255.0) as u8,
+                    (color.rgba[1] * 255.0) as u8,
+                    (color.rgba[2] * 255.0) as u8,
+                    (color.rgba[3] * 255.0) as u8
+                );
+            } else {
+                println!("No color was picked");
             }
         }
         Msg::Action { .. } => {

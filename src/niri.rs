@@ -113,7 +113,9 @@ use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
 #[cfg(feature = "dbus")]
-use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
+use crate::dbus::gnome_shell_screenshot::{
+    ColorPickToNiri, NiriToColorPick, NiriToScreenshot, ScreenshotToNiri,
+};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
@@ -358,6 +360,7 @@ pub struct Niri {
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
 
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
+    pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
 
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
@@ -1904,6 +1907,25 @@ impl State {
         msg: ScreenshotToNiri,
     ) {
         let ScreenshotToNiri::TakeScreenshot { include_cursor } = msg;
+        self.handle_take_screenshot(to_screenshot, include_cursor);
+    }
+
+    #[cfg(feature = "dbus")]
+    pub fn on_color_pick_msg(
+        &mut self,
+        to_color_pick: &async_channel::Sender<NiriToColorPick>,
+        msg: ColorPickToNiri,
+    ) {
+        let ColorPickToNiri::PickColor = msg;
+        self.handle_pick_color(to_color_pick);
+    }
+
+    #[cfg(feature = "dbus")]
+    fn handle_take_screenshot(
+        &mut self,
+        to_screenshot: &async_channel::Sender<NiriToScreenshot>,
+        include_cursor: bool,
+    ) {
         let _span = tracy_client::span!("TakeScreenshot");
 
         let rv = self.backend.with_primary_renderer(|renderer| {
@@ -1937,6 +1959,24 @@ impl State {
                 warn!("error sending None to screenshot: {err:?}");
             }
         }
+    }
+
+    #[cfg(feature = "dbus")]
+    fn handle_pick_color(&mut self, to_screenshot: &async_channel::Sender<NiriToColorPick>) {
+        let (tx, rx) = async_channel::bounded(1);
+        self.niri.pick_color = Some(tx);
+
+        std::thread::spawn({
+            let to_screenshot = to_screenshot.clone();
+            move || {
+                if let Ok(color_value) = rx.recv_blocking() {
+                    let msg = NiriToColorPick::ColorResult(color_value);
+                    if let Err(err) = to_screenshot.send_blocking(msg) {
+                        warn!("error sending color result to screenshot: {err:?}");
+                    }
+                }
+            }
+        });
     }
 
     #[cfg(feature = "dbus")]
@@ -2351,6 +2391,7 @@ impl Niri {
             exit_confirm_dialog,
 
             pick_window: None,
+            pick_color: None,
 
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,
