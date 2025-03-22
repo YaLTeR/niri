@@ -1,19 +1,35 @@
 //! Types for communicating with niri via IPC.
 //!
-//! After connecting to the niri socket, you can send a single [`Request`] and receive a single
-//! [`Reply`], which is a `Result` wrapping a [`Response`]. If you requested an event stream, you
-//! can keep reading [`Event`]s from the socket after the response.
+//! After connecting to the niri socket, you can send one or multiple [`Request`]s as
+//! newline-separated JSON objects, to each of which niri responds to with a (also JSON-encoded and
+//! newline-separated) [`Reply`], which is a [`Result`] wrapping a [`Response`].
 //!
-//! You can use the [`socket::Socket`] helper if you're fine with blocking communication. However,
-//! it is a fairly simple helper, so if you need async, or if you're using a different language,
-//! you are encouraged to communicate with the socket manually.
+//! <div class="warning">
+//!
+//! Note that even if you send multiple [`Request`]s at once, the `niri` event loop might still
+//! interupt the execution of these messages between executing the current and the next [`Request`].
+//! That means that if you send multiple messages at once, the compositor state might change, which
+//! could cause unexpected results.
+//!
+//! </div>
+//!
+//! If you send an [`Request::EventStream`], the socket will **stop** executing other [`Request`]s
+//! and will start sending compositor events. (That usually means you have to open one socket for
+//! sending [`Request`]s and one for listening on the [`Request::EventStream`])
+//! For details on [`Request::EventStream`], consult its documentation.
+//!
+//! If you are fine with blocking communication, you can use the included [`socket::Socket`] helper.
+//! But if you need `async` support or are using a different language,
+//! you are encouraged to open and communicate with the socket manually using the following steps:
 //!
 //! 1. Read the socket filesystem path from [`socket::SOCKET_PATH_ENV`] (`$NIRI_SOCKET`).
-//! 2. Connect to the socket and write a JSON-formatted [`Request`] on a single line. You can follow
-//!    up with a line break and a flush, or just flush and shutdown the write end of the socket.
-//! 3. Niri will respond with a single line JSON-formatted [`Reply`].
-//! 4. If you requested an event stream, niri will keep responding with JSON-formatted [`Event`]s,
-//!    on a single line each.
+//! 2. Connect to the socket and write JSON-encoded [`Request`]s each followed by a newline.
+//!    - When you are finished writing your [`Request`]s, make sure to flush the socket.
+//!    - When you are finished sending [`Request`]s to the socket in general, flush and close the
+//!      write end of the socket. The last [`Request`]'s newline is optional!
+//! 3. Niri will respond to each [`Request`] with a JSON-encoded [`Reply`] followed by a newline.
+//! 4. If you requested an event stream, niri will keep sending JSON-encoded [`Event`]s (+ newline)
+//!    until the socket is closed.
 //!
 //! ## Backwards compatibility
 //!
