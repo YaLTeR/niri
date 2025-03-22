@@ -12,6 +12,8 @@ prefer-no-csd
 
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 
+default-output null
+
 environment {
     QT_QPA_PLATFORM "wayland"
     DISPLAY null
@@ -87,6 +89,18 @@ You can also set this option to `null` to disable saving screenshots to disk.
 
 ```kdl
 screenshot-path null
+```
+
+### `default-output`
+
+Set the output to focus when niri starts.
+
+This option may be an [output identifier](./Configuration:-Outputs.md).
+
+If this option is `null` or unset, niri will start with the leftmost output focused.
+
+```kdl
+default-output "eDP-1"
 ```
 
 ### `environment`

@@ -34,6 +34,8 @@ pub use utils::RegexEq;
 pub struct Config {
     #[knuffel(child, default)]
     pub input: Input,
+    #[knuffel(child, unwrap(argument), default = None)]
+    pub default_output: Option<String>,
     #[knuffel(children(name = "output"))]
     pub outputs: Outputs,
     #[knuffel(children(name = "spawn-at-startup"))]
@@ -3745,6 +3747,8 @@ mod tests {
                 mod-key-nested "Super"
             }
 
+            default-output "eDP-1"
+
             output "eDP-1" {
                 scale 2
                 transform "flipped-90"
@@ -4074,6 +4078,9 @@ mod tests {
                     Super,
                 ),
             },
+            default_output: Some(
+                "eDP-1",
+            ),
             outputs: Outputs(
                 [
                     Output {
