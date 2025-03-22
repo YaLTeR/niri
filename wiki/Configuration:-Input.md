@@ -95,6 +95,9 @@ input {
     // warp-mouse-to-focus
     // focus-follows-mouse max-scroll-amount="0%"
     // workspace-auto-back-and-forth
+
+    // mod-key "Super"
+    // mod-key-nested "Alt"
 }
 ```
 
@@ -286,5 +289,26 @@ Niri will correctly switch to the workspace you came from, even if workspaces we
 ```kdl
 input {
     workspace-auto-back-and-forth
+}
+```
+
+#### `mod-key`, `mod-key-nested`
+
+<sup>Since: next release</sup>
+
+Customize the `Mod` key for [key bindings](./Configuration:-Key-Bindings.md).
+Only valid modifiers are allowed, e.g. `Super`, `Alt`, `Mod3`, `Mod5`, `Ctrl`, `Shift`.
+
+By default, `Mod` is equal to `Super` when running niri on a TTY, and to `Alt` when running niri as a nested winit window.
+
+> [!NOTE]
+> There are a lot of default bindings with Mod, none of them "make it through" to the underlying window.
+> You probably don't want to set `mod-key` to Ctrl or Shift, since Ctrl is commonly used for app hotkeys, and Shift is used for, well, regular typing.
+
+```kdl
+// Switch the mod keys around: use Alt normally, and Super inside a nested window.
+input {
+    mod-key "Alt"
+    mod-key-nested "Super"
 }
 ```
