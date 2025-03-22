@@ -31,6 +31,8 @@ Valid modifiers are:
 This way, you can test niri in a window without causing too many conflicts with the host compositor's key bindings.
 For this reason, most of the default keys use the `Mod` modifier.
 
+<sup>Since: next release</sup> You can customize the `Mod` key [in the `input` section of the config](./Configuration:-Input.md#mod-key-mod-key-nested).
+
 > [!TIP]
 > To find an XKB name for a particular key, you may use a program like [`wev`](https://git.sr.ht/~sircmpwn/wev).
 >
