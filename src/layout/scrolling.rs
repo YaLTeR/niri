@@ -1063,6 +1063,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let tile = column.tiles.remove(tile_idx);
         column.data.remove(tile_idx);
 
+        // If we're removing a pending-unfullscreen window, we need to clear the stored view
+        // offset. There might be other pending-unfullscreen windows in this column but that's kind
+        // of an edge case, don't think we need to handle that.
+        if column_idx == self.active_column_idx && tile.is_fullscreen() && !column.is_fullscreen {
+            self.view_offset_before_fullscreen = None;
+        }
+
         // If one window is left, reset its weight to 1.
         if column.data.len() == 1 {
             if let WindowHeight::Auto { weight } = &mut column.data[0].height {

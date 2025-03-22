@@ -3262,6 +3262,52 @@ fn windowed_fullscreen_to_fullscreen() {
     check_ops(&ops);
 }
 
+#[test]
+fn move_pending_unfullscreen_window_out_of_active_column() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FullscreenWindow(1),
+        Op::Communicate(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::ConsumeWindowIntoColumn,
+        // Window 1 is now pending unfullscreen.
+        // Moving it out should reset view_offset_before_fullscreen.
+        Op::MoveWindowToWorkspaceDown,
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn move_unfocused_pending_unfullscreen_window_out_of_active_column() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FullscreenWindow(1),
+        Op::Communicate(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::ConsumeWindowIntoColumn,
+        // Window 1 is now pending unfullscreen.
+        // Moving it out should reset view_offset_before_fullscreen.
+        Op::FocusWindowDown,
+        Op::MoveWindowToWorkspace {
+            window_id: Some(1),
+            workspace_idx: 1,
+        },
+    ];
+
+    check_ops(&ops);
+}
+
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
     if parent_id == id {
         return true;
