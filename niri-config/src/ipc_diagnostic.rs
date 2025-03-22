@@ -1,14 +1,15 @@
 use miette::{LabeledSpan, SourceCode, SourceSpan, SpanContents};
 use niri_ipc::diagnostic::{Diagnostic, Label, LineSpan, Severity, Span};
 
-pub fn convert_to_ipc(diagnostic: &dyn miette::Diagnostic) -> Diagnostic {
-    diagnostic_to_ipc(diagnostic, None)
+pub fn convert_to_ipc(diagnostic: &dyn miette::Diagnostic, line_spans: bool) -> Diagnostic {
+    diagnostic_to_ipc(diagnostic, None, line_spans)
 }
 
 /// Implementation based on [`miette::JSONReportHandler::render_report()`].
 fn diagnostic_to_ipc(
     diagnostic: &dyn miette::Diagnostic,
     parent_src: Option<&dyn SourceCode>,
+    compute_line_spans: bool,
 ) -> Diagnostic {
     let src = diagnostic.source_code().or(parent_src);
     Diagnostic {
@@ -45,12 +46,16 @@ fn diagnostic_to_ipc(
                     span: Span {
                         offset: label.offset(),
                         length: label.len(),
-                        start: line_span_from_label(src, label.inner()),
+                        start: compute_line_spans
+                            .then_some(())
+                            .and_then(|_| line_span_from_label(src, label.inner())),
                         // Because miette doesn't just give us the ending line + column for
                         // some reason.
-                        end: line_span_from_label(src, &{
-                            let label = label.inner();
-                            SourceSpan::from(label.len() + label.offset())
+                        end: compute_line_spans.then_some(()).and_then(|_| {
+                            line_span_from_label(src, &{
+                                let label = label.inner();
+                                SourceSpan::from(label.len() + label.offset())
+                            })
                         }),
                     },
                 })
@@ -60,7 +65,7 @@ fn diagnostic_to_ipc(
         related: diagnostic
             .related()
             .map(|iter| {
-                iter.map(|diagnostic| diagnostic_to_ipc(diagnostic, src))
+                iter.map(|diagnostic| diagnostic_to_ipc(diagnostic, src, compute_line_spans))
                     .collect()
             })
             .unwrap_or_default(),

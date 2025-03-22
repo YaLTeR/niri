@@ -55,6 +55,11 @@ pub enum Sub {
         /// Format config errors as JSON to stdout.
         #[arg(short, long)]
         json: bool,
+        /// Whether to compute the line number + column (0-indexed) for the diagnostics.
+        ///
+        /// Only is relevant for `--json`.
+        #[arg(long)]
+        compute_line_spans: bool,
     },
     /// Cause a panic to check if the backtraces are good.
     Panic,

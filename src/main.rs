@@ -94,7 +94,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Handle subcommands.
     if let Some(subcommand) = cli.subcommand {
         match subcommand {
-            Sub::Validate { config, json } => {
+            Sub::Validate {
+                config,
+                json,
+                compute_line_spans,
+            } => {
                 tracy_client::Client::start();
 
                 let (path, _, _) = config_path(config);
@@ -107,7 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
 
                 if json {
-                    let diagnostic = ipc_diagnostic::convert_to_ipc(&*report);
+                    let diagnostic = ipc_diagnostic::convert_to_ipc(&*report, compute_line_spans);
                     serde_json::to_writer(BufWriter::new(io::stdout()), &diagnostic)?;
                 }
 
