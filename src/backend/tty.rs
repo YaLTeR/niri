@@ -6,7 +6,7 @@ use std::num::NonZeroU64;
 use std::os::fd::AsFd;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 use std::{io, mem};
 
@@ -1243,6 +1243,12 @@ impl Tty {
             presentation_time
         };
 
+        let time = if presentation_time.is_zero() {
+            now
+        } else {
+            presentation_time
+        };
+
         let message = if presentation_time.is_zero() {
             format!("vblank on {name}, presentation time unknown")
         } else if presentation_time > now {
@@ -1282,6 +1288,54 @@ impl Tty {
             return;
         };
 
+        if let Some(vblank_throttle_timer_token) = output_state.vblank_throttle_timer_token.take() {
+            niri.event_loop.remove(vblank_throttle_timer_token);
+        }
+
+        let vblank_remaining_time =
+            output_state
+                .last_drm_vblank_timestamp
+                .and_then(|last_drm_vblank_timestamp| {
+                    let refresh_interval = output_state.frame_clock.refresh_interval()?;
+                    let vblank_diff = time.saturating_sub(last_drm_vblank_timestamp);
+                    Some(refresh_interval.saturating_sub(vblank_diff))
+                });
+
+        if let Some(vblank_remaining_time) = vblank_remaining_time.filter(|vblank_remaining_time| {
+            output_state
+                .frame_clock
+                .refresh_interval()
+                .map(|refresh_interval| *vblank_remaining_time > refresh_interval / 2)
+                .unwrap_or(false)
+        }) {
+            static WARN_ONCE: Once = Once::new();
+            WARN_ONCE.call_once(|| warn!("output running faster as expected, throttling vblanks"));
+
+            let throttled_time = if presentation_time.is_zero() {
+                Duration::ZERO
+            } else {
+                presentation_time.saturating_add(vblank_remaining_time)
+            };
+            let throttled_metadata = DrmEventMetadata {
+                sequence: meta.sequence,
+                time: DrmEventTime::Monotonic(throttled_time),
+            };
+            let timer_token = niri
+                .event_loop
+                .insert_source(
+                    Timer::from_duration(vblank_remaining_time),
+                    move |_, _, state| {
+                        let tty = state.backend.tty();
+                        tty.on_vblank(&mut state.niri, node, crtc, throttled_metadata);
+                        TimeoutAction::Drop
+                    },
+                )
+                .expect("failed to register vblank throttle timer");
+            output_state.vblank_throttle_timer_token = Some(timer_token);
+            return;
+        }
+        output_state.last_drm_vblank_timestamp = Some(time);
+
         let redraw_needed = match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
             RedrawState::WaitingForVBlank { redraw_needed } => redraw_needed,
             state @ (RedrawState::Idle
@@ -1320,12 +1374,9 @@ impl Tty {
                 let mut flags = wp_presentation_feedback::Kind::Vsync
                     | wp_presentation_feedback::Kind::HwCompletion;
 
-                let time = if presentation_time.is_zero() {
-                    now
-                } else {
+                if !presentation_time.is_zero() {
                     flags.insert(wp_presentation_feedback::Kind::HwClock);
-                    presentation_time
-                };
+                }
 
                 feedback.presented::<_, smithay::utils::Monotonic>(time, refresh, seq, flags);
 
