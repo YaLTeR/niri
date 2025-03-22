@@ -366,6 +366,7 @@ impl<W: LayoutElement> Tile<W> {
             self.animated_window_size(),
             is_active,
             !draw_border_with_background,
+            self.window.is_urgent(),
             Rectangle::new(
                 view_rect.loc - Point::from((border_width, border_width)),
                 view_rect.size,
@@ -400,6 +401,7 @@ impl<W: LayoutElement> Tile<W> {
             self.animated_tile_size(),
             is_active,
             !draw_focus_ring_with_background,
+            self.window.is_urgent(),
             view_rect,
             radius,
             self.scale,
