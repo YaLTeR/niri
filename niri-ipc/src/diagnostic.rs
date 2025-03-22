@@ -24,7 +24,7 @@ pub struct Diagnostic {
     /// Additional help about this diagnostic.
     pub help: Option<String>,
     /// Name of the file where the diagnostic occurred.
-    pub filename: String,
+    pub filename: Option<String>,
     /// Labels to apply to this diagnostic's file.
     pub labels: Vec<Label>,
     /// Additional related diagnostics.

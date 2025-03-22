@@ -36,7 +36,6 @@ fn diagnostic_to_ipc(
                     .and_then(SpanContents::name)
                     .map(ToOwned::to_owned)
             })
-            .unwrap_or_default()
         },
         labels: diagnostic
             .labels()
