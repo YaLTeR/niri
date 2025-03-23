@@ -111,6 +111,9 @@ pub struct ResolvedWindowRules {
 
     /// Multiplier for all scroll events sent to this window.
     pub scroll_factor: Option<f64>,
+
+    /// Override whether to set the Tiled xdg-toplevel state on the window.
+    pub tiled_state: Option<bool>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -217,6 +220,7 @@ impl ResolvedWindowRules {
             block_out_from: None,
             variable_refresh_rate: None,
             scroll_factor: None,
+            tiled_state: None,
         }
     }
 
@@ -334,6 +338,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.scroll_factor {
                     resolved.scroll_factor = Some(x.0);
+                }
+                if let Some(x) = rule.tiled_state {
+                    resolved.tiled_state = Some(x);
                 }
             }
 

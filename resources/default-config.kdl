@@ -25,6 +25,7 @@ input {
         tap
         // dwt
         // dwtp
+        // drag false
         // drag-lock
         natural-scroll
         // accel-speed 0.2

@@ -1,7 +1,7 @@
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::gles::{GlesFrame, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{
-    Bind, ExportMem, ImportAll, ImportMem, Offscreen, Renderer, Texture,
+    Bind, ExportMem, ImportAll, ImportMem, Offscreen, Renderer, RendererSuper, Texture,
 };
 
 use crate::backend::tty::{TtyFrame, TtyRenderer};
@@ -21,7 +21,7 @@ pub trait NiriRenderer:
     type NiriError: std::error::Error
         + Send
         + Sync
-        + From<<GlesRenderer as Renderer>::Error>
+        + From<<GlesRenderer as RendererSuper>::Error>
         + 'static;
 }
 
@@ -29,7 +29,8 @@ impl<R> NiriRenderer for R
 where
     R: ImportAll + ImportMem + ExportMem + Bind<Dmabuf> + Offscreen<GlesTexture> + AsGlesRenderer,
     R::TextureId: Texture + Clone + Send + 'static,
-    R::Error: std::error::Error + Send + Sync + From<<GlesRenderer as Renderer>::Error> + 'static,
+    R::Error:
+        std::error::Error + Send + Sync + From<<GlesRenderer as RendererSuper>::Error> + 'static,
 {
     type NiriTextureId = R::TextureId;
     type NiriError = R::Error;
@@ -53,21 +54,21 @@ impl AsGlesRenderer for TtyRenderer<'_> {
 }
 
 /// Trait for getting the underlying `GlesFrame`.
-pub trait AsGlesFrame<'frame>
+pub trait AsGlesFrame<'frame, 'buffer>
 where
     Self: 'frame,
 {
-    fn as_gles_frame(&mut self) -> &mut GlesFrame<'frame>;
+    fn as_gles_frame(&mut self) -> &mut GlesFrame<'frame, 'buffer>;
 }
 
-impl<'frame> AsGlesFrame<'frame> for GlesFrame<'frame> {
-    fn as_gles_frame(&mut self) -> &mut GlesFrame<'frame> {
+impl<'frame, 'buffer> AsGlesFrame<'frame, 'buffer> for GlesFrame<'frame, 'buffer> {
+    fn as_gles_frame(&mut self) -> &mut GlesFrame<'frame, 'buffer> {
         self
     }
 }
 
-impl<'frame> AsGlesFrame<'frame> for TtyFrame<'_, 'frame> {
-    fn as_gles_frame(&mut self) -> &mut GlesFrame<'frame> {
+impl<'frame, 'buffer> AsGlesFrame<'frame, 'buffer> for TtyFrame<'_, 'frame, 'buffer> {
+    fn as_gles_frame(&mut self) -> &mut GlesFrame<'frame, 'buffer> {
         self.as_mut()
     }
 }

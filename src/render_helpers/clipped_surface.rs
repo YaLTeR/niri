@@ -218,7 +218,7 @@ impl<R: NiriRenderer> Element for ClippedSurfaceRenderElement<R> {
 impl RenderElement<GlesRenderer> for ClippedSurfaceRenderElement<GlesRenderer> {
     fn draw(
         &self,
-        frame: &mut GlesFrame<'_>,
+        frame: &mut GlesFrame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -242,7 +242,7 @@ impl<'render> RenderElement<TtyRenderer<'render>>
 {
     fn draw(
         &self,
-        frame: &mut TtyFrame<'render, '_>,
+        frame: &mut TtyFrame<'render, '_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Bind, Binds, Key, Modifiers, SwitchBinds, Trigger};
+use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -41,13 +41,14 @@ use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::LayoutElement as _;
-use crate::niri::State;
+use crate::niri::{CastTarget, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
 pub mod backend_ext;
 pub mod move_grab;
+pub mod pick_color_grab;
 pub mod pick_window_grab;
 pub mod resize_grab;
 pub mod scroll_tracker;
@@ -59,12 +60,6 @@ pub mod touch_resize_grab;
 use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompositorMod {
-    Super,
-    Alt,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabletData {
@@ -336,7 +331,7 @@ impl State {
     }
 
     fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
-        let comp_mod = self.backend.mod_key();
+        let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
         let serial = SERIAL_COUNTER.next_serial();
         let time = Event::time_msec(&event);
@@ -383,7 +378,10 @@ impl State {
                     }
                 }
 
-                if pressed && raw == Some(Keysym::Escape) && this.niri.pick_window.is_some() {
+                if pressed
+                    && raw == Some(Keysym::Escape)
+                    && (this.niri.pick_window.is_some() || this.niri.pick_color.is_some())
+                {
                     // We window picking state so the pick window grab must be active.
                     // Unsetting it cancels window picking.
                     this.niri
@@ -399,7 +397,7 @@ impl State {
                 should_intercept_key(
                     &mut this.niri.suppressed_keys,
                     bindings,
-                    comp_mod,
+                    mod_key,
                     key_code,
                     modified,
                     raw,
@@ -565,11 +563,14 @@ impl State {
                     self.niri.do_screen_transition(renderer, delay_ms);
                 });
             }
-            Action::ScreenshotScreen(write_to_disk) => {
+            Action::ScreenshotScreen(write_to_disk, show_pointer) => {
                 let active = self.niri.layout.active_output().cloned();
                 if let Some(active) = active {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) = self.niri.screenshot(renderer, &active, write_to_disk) {
+                        if let Err(err) =
+                            self.niri
+                                .screenshot(renderer, &active, write_to_disk, show_pointer)
+                        {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
@@ -615,8 +616,8 @@ impl State {
                 self.niri.screenshot_ui.toggle_pointer();
                 self.niri.queue_redraw_all();
             }
-            Action::Screenshot => {
-                self.open_screenshot_ui();
+            Action::Screenshot(show_cursor) => {
+                self.open_screenshot_ui(show_cursor);
             }
             Action::ScreenshotWindow(write_to_disk) => {
                 let focus = self.niri.layout.focus_with_output();
@@ -683,6 +684,23 @@ impl State {
                 let window = window.map(|(_, m)| m.window.clone());
                 if let Some(window) = window {
                     self.niri.layout.toggle_fullscreen(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::ToggleWindowedFullscreen => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.toggle_windowed_fullscreen(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::ToggleWindowedFullscreenById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_windowed_fullscreen(&window);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
                 }
@@ -874,6 +892,13 @@ impl State {
             }
             Action::FocusColumnLeftOrLast => {
                 self.niri.layout.focus_column_left_or_last();
+                self.maybe_warp_cursor_to_focus();
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusColumn(index) => {
+                self.niri.layout.focus_column(index);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
@@ -1157,6 +1182,12 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::MoveColumnToIndex(idx) => {
+                self.niri.layout.move_column_to_index(idx);
+                self.maybe_warp_cursor_to_focus();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::FocusWorkspaceDown => {
                 self.niri.layout.switch_workspace_down();
                 self.maybe_warp_cursor_to_focus();
@@ -1383,6 +1414,15 @@ impl State {
                     self.niri.layer_shell_on_demand_focus = None;
                 }
             }
+            Action::FocusMonitor(output) => {
+                if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
+                    self.niri.layout.focus_output(&output);
+                    if !self.maybe_warp_cursor_to_focus_centered() {
+                        self.move_cursor_to_output(&output);
+                    }
+                    self.niri.layer_shell_on_demand_focus = None;
+                }
+            }
             Action::MoveWindowToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_to_output(None, &output, None);
@@ -1437,6 +1477,41 @@ impl State {
                     }
                 }
             }
+            Action::MoveWindowToMonitor(output) => {
+                if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
+                    self.niri.layout.move_to_output(None, &output, None);
+                    self.niri.layout.focus_output(&output);
+                    if !self.maybe_warp_cursor_to_focus_centered() {
+                        self.move_cursor_to_output(&output);
+                    }
+                }
+            }
+            Action::MoveWindowToMonitorById { id, output } => {
+                if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
+                    let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                    let window = window.map(|(_, m)| m.window.clone());
+
+                    if let Some(window) = window {
+                        let target_was_active = self
+                            .niri
+                            .layout
+                            .active_output()
+                            .is_some_and(|active| output == *active);
+
+                        self.niri
+                            .layout
+                            .move_to_output(Some(&window), &output, None);
+
+                        // If the active output changed (window was moved and focused).
+                        #[allow(clippy::collapsible_if)]
+                        if !target_was_active && self.niri.layout.active_output() == Some(&output) {
+                            if !self.maybe_warp_cursor_to_focus_centered() {
+                                self.move_cursor_to_output(&output);
+                            }
+                        }
+                    }
+                }
+            }
             Action::MoveColumnToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_column_to_output(&output);
@@ -1484,6 +1559,15 @@ impl State {
             }
             Action::MoveColumnToMonitorNext => {
                 if let Some(output) = self.niri.output_next() {
+                    self.niri.layout.move_column_to_output(&output);
+                    self.niri.layout.focus_output(&output);
+                    if !self.maybe_warp_cursor_to_focus_centered() {
+                        self.move_cursor_to_output(&output);
+                    }
+                }
+            }
+            Action::MoveColumnToMonitor(output) => {
+                if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
                     self.niri.layout.move_column_to_output(&output);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1716,6 +1800,36 @@ impl State {
                         self.niri.queue_redraw_all();
                     }
                 }
+            }
+            Action::SetDynamicCastWindow => {
+                let id = self
+                    .niri
+                    .layout
+                    .active_workspace()
+                    .and_then(|ws| ws.active_window())
+                    .map(|mapped| mapped.id().get());
+                if let Some(id) = id {
+                    self.set_dynamic_cast_target(CastTarget::Window { id });
+                }
+            }
+            Action::SetDynamicCastWindowById(id) => {
+                let layout = &self.niri.layout;
+                if layout.windows().any(|(_, mapped)| mapped.id().get() == id) {
+                    self.set_dynamic_cast_target(CastTarget::Window { id });
+                }
+            }
+            Action::SetDynamicCastMonitor(output) => {
+                let output = match output {
+                    None => self.niri.layout.active_output(),
+                    Some(name) => self.niri.output_by_name_match(&name),
+                };
+                if let Some(output) = output {
+                    let output = output.downgrade();
+                    self.set_dynamic_cast_target(CastTarget::Output(output));
+                }
+            }
+            Action::ClearDynamicCastTarget => {
+                self.set_dynamic_cast_target(CastTarget::Nothing);
             }
         }
     }
@@ -2002,6 +2116,8 @@ impl State {
 
         let button_state = event.state();
 
+        let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+
         // Ignore release events for mouse clicks that triggered a bind.
         if self.niri.suppressed_buttons.remove(&button_code) {
             return;
@@ -2012,8 +2128,6 @@ impl State {
             let modifiers = modifiers_from_state(mods);
 
             if self.niri.mods_with_mouse_binds.contains(&modifiers) {
-                let comp_mod = self.backend.mod_key();
-
                 if let Some(bind) = match button {
                     Some(MouseButton::Left) => Some(Trigger::MouseLeft),
                     Some(MouseButton::Right) => Some(Trigger::MouseRight),
@@ -2025,7 +2139,7 @@ impl State {
                 .and_then(|trigger| {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
-                    find_configured_bind(bindings, comp_mod, trigger, mods)
+                    find_configured_bind(bindings, mod_key, trigger, mods)
                 }) {
                     self.niri.suppressed_buttons.insert(button_code);
                     self.handle_bind(bind.clone());
@@ -2038,10 +2152,7 @@ impl State {
             self.niri.tablet_cursor_location = None;
 
             if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
-                let mod_down = match self.backend.mod_key() {
-                    CompositorMod::Super => mods.logo,
-                    CompositorMod::Alt => mods.alt,
-                };
+                let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                 if mod_down {
                     if let Some(output) = self.niri.output_under_cursor() {
                         self.niri.layout.activate_output(&output);
@@ -2073,10 +2184,7 @@ impl State {
 
                 // Check if we need to start an interactive move.
                 if button == Some(MouseButton::Left) && !pointer.is_grabbed() {
-                    let mod_down = match self.backend.mod_key() {
-                        CompositorMod::Super => mods.logo,
-                        CompositorMod::Alt => mods.alt,
-                    };
+                    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                     if mod_down {
                         let location = pointer.current_location();
                         let (output, pos_within_output) = self.niri.output_under(location).unwrap();
@@ -2104,10 +2212,7 @@ impl State {
                 }
                 // Check if we need to start an interactive resize.
                 else if button == Some(MouseButton::Right) && !pointer.is_grabbed() {
-                    let mod_down = match self.backend.mod_key() {
-                        CompositorMod::Super => mods.logo,
-                        CompositorMod::Alt => mods.alt,
-                    };
+                    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                     if mod_down {
                         let location = pointer.current_location();
                         let (output, pos_within_output) = self.niri.output_under(location).unwrap();
@@ -2237,6 +2342,8 @@ impl State {
 
         let source = event.source();
 
+        let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+
         // We received an event for the regular pointer, so show it now. This is also needed for
         // update_pointer_contents() below to return the real contents, necessary for the pointer
         // axis event to reach the window.
@@ -2253,17 +2360,15 @@ impl State {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
             if self.niri.mods_with_wheel_binds.contains(&modifiers) {
-                let comp_mod = self.backend.mod_key();
-
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.horizontal_wheel_tracker.accumulate(horizontal);
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
                     let bind_left =
-                        find_configured_bind(bindings, comp_mod, Trigger::WheelScrollLeft, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, mods);
                     let bind_right =
-                        find_configured_bind(bindings, comp_mod, Trigger::WheelScrollRight, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::WheelScrollRight, mods);
                     drop(config);
 
                     if let Some(right) = bind_right {
@@ -2284,9 +2389,9 @@ impl State {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
                     let bind_up =
-                        find_configured_bind(bindings, comp_mod, Trigger::WheelScrollUp, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, mods);
                     let bind_down =
-                        find_configured_bind(bindings, comp_mod, Trigger::WheelScrollDown, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods);
                     drop(config);
 
                     if let Some(down) = bind_down {
@@ -2316,8 +2421,6 @@ impl State {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
             if self.niri.mods_with_finger_scroll_binds.contains(&modifiers) {
-                let comp_mod = self.backend.mod_key();
-
                 let horizontal = horizontal_amount.unwrap_or(0.);
                 let ticks = self
                     .niri
@@ -2327,13 +2430,9 @@ impl State {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
                     let bind_left =
-                        find_configured_bind(bindings, comp_mod, Trigger::TouchpadScrollLeft, mods);
-                    let bind_right = find_configured_bind(
-                        bindings,
-                        comp_mod,
-                        Trigger::TouchpadScrollRight,
-                        mods,
-                    );
+                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollLeft, mods);
+                    let bind_right =
+                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollRight, mods);
                     drop(config);
 
                     if let Some(right) = bind_right {
@@ -2357,9 +2456,9 @@ impl State {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
                     let bind_up =
-                        find_configured_bind(bindings, comp_mod, Trigger::TouchpadScrollUp, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollUp, mods);
                     let bind_down =
-                        find_configured_bind(bindings, comp_mod, Trigger::TouchpadScrollDown, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollDown, mods);
                     drop(config);
 
                     if let Some(down) = bind_down {
@@ -2871,16 +2970,15 @@ impl State {
 
         let under = self.niri.contents_under(touch_location);
 
+        let mod_key = self.backend.mod_key(&self.niri.config.borrow());
+
         if !handle.is_grabbed() {
             if let Some((window, _)) = under.window {
                 self.niri.layout.activate_window(&window);
 
                 // Check if we need to start an interactive move.
                 let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
-                let mod_down = match self.backend.mod_key() {
-                    CompositorMod::Super => mods.logo,
-                    CompositorMod::Alt => mods.alt,
-                };
+                let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                 if mod_down {
                     let (output, pos_within_output) =
                         self.niri.output_under(touch_location).unwrap();
@@ -3013,7 +3111,7 @@ impl State {
 fn should_intercept_key(
     suppressed_keys: &mut HashSet<Keycode>,
     bindings: &Binds,
-    comp_mod: CompositorMod,
+    mod_key: ModKey,
     key_code: Keycode,
     modified: Keysym,
     raw: Option<Keysym>,
@@ -3032,7 +3130,7 @@ fn should_intercept_key(
 
     let mut final_bind = find_bind(
         bindings,
-        comp_mod,
+        mod_key,
         modified,
         raw,
         mods,
@@ -3096,7 +3194,7 @@ fn should_intercept_key(
 
 fn find_bind(
     bindings: &Binds,
-    comp_mod: CompositorMod,
+    mod_key: ModKey,
     modified: Keysym,
     raw: Option<Keysym>,
     mods: ModifiersState,
@@ -3137,22 +3235,19 @@ fn find_bind(
     }
 
     let trigger = Trigger::Keysym(raw?);
-    find_configured_bind(bindings, comp_mod, trigger, mods)
+    find_configured_bind(bindings, mod_key, trigger, mods)
 }
 
 fn find_configured_bind(
     bindings: &Binds,
-    comp_mod: CompositorMod,
+    mod_key: ModKey,
     trigger: Trigger,
     mods: ModifiersState,
 ) -> Option<Bind> {
     // Handle configured binds.
     let mut modifiers = modifiers_from_state(mods);
 
-    let (mod_down, comp_mod) = match comp_mod {
-        CompositorMod::Super => (mods.logo, Modifiers::SUPER),
-        CompositorMod::Alt => (mods.alt, Modifiers::ALT),
-    };
+    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
     if mod_down {
         modifiers |= Modifiers::COMPOSITOR;
     }
@@ -3164,8 +3259,8 @@ fn find_configured_bind(
 
         let mut bind_modifiers = bind.key.modifiers;
         if bind_modifiers.contains(Modifiers::COMPOSITOR) {
-            bind_modifiers |= comp_mod;
-        } else if bind_modifiers.contains(comp_mod) {
+            bind_modifiers |= mod_key.to_modifiers();
+        } else if bind_modifiers.contains(mod_key.to_modifiers()) {
             bind_modifiers |= Modifiers::COMPOSITOR;
         }
 
@@ -3334,6 +3429,13 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
+        if let Some(drag) = c.drag {
+            let _ = device.config_tap_set_drag_enabled(drag);
+        } else {
+            let default = device.config_tap_default_drag_enabled();
+            let _ = device.config_tap_set_drag_enabled(default);
+        }
+
         if let Some(accel_profile) = c.accel_profile {
             let _ = device.config_accel_set_profile(accel_profile.into());
         } else if let Some(default) = device.config_accel_default_profile() {
@@ -3473,6 +3575,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
         let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
         if let Some(accel_profile) = c.accel_profile {
@@ -3537,16 +3640,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
     }
 }
 
-pub fn mods_with_binds(
-    comp_mod: CompositorMod,
-    binds: &Binds,
-    triggers: &[Trigger],
-) -> HashSet<Modifiers> {
-    let comp_mod = match comp_mod {
-        CompositorMod::Super => Modifiers::SUPER,
-        CompositorMod::Alt => Modifiers::ALT,
-    };
-
+pub fn mods_with_binds(mod_key: ModKey, binds: &Binds, triggers: &[Trigger]) -> HashSet<Modifiers> {
     let mut rv = HashSet::new();
     for bind in &binds.0 {
         if !triggers.iter().any(|trigger| bind.key.trigger == *trigger) {
@@ -3556,7 +3650,7 @@ pub fn mods_with_binds(
         let mut mods = bind.key.modifiers;
         if mods.contains(Modifiers::COMPOSITOR) {
             mods.remove(Modifiers::COMPOSITOR);
-            mods.insert(comp_mod);
+            mods.insert(mod_key.to_modifiers());
         }
 
         rv.insert(mods);
@@ -3565,9 +3659,9 @@ pub fn mods_with_binds(
     rv
 }
 
-pub fn mods_with_mouse_binds(comp_mod: CompositorMod, binds: &Binds) -> HashSet<Modifiers> {
+pub fn mods_with_mouse_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifiers> {
     mods_with_binds(
-        comp_mod,
+        mod_key,
         binds,
         &[
             Trigger::MouseLeft,
@@ -3579,9 +3673,9 @@ pub fn mods_with_mouse_binds(comp_mod: CompositorMod, binds: &Binds) -> HashSet<
     )
 }
 
-pub fn mods_with_wheel_binds(comp_mod: CompositorMod, binds: &Binds) -> HashSet<Modifiers> {
+pub fn mods_with_wheel_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifiers> {
     mods_with_binds(
-        comp_mod,
+        mod_key,
         binds,
         &[
             Trigger::WheelScrollUp,
@@ -3592,9 +3686,9 @@ pub fn mods_with_wheel_binds(comp_mod: CompositorMod, binds: &Binds) -> HashSet<
     )
 }
 
-pub fn mods_with_finger_scroll_binds(comp_mod: CompositorMod, binds: &Binds) -> HashSet<Modifiers> {
+pub fn mods_with_finger_scroll_binds(mod_key: ModKey, binds: &Binds) -> HashSet<Modifiers> {
     mods_with_binds(
-        comp_mod,
+        mod_key,
         binds,
         &[
             Trigger::TouchpadScrollUp,
@@ -3628,7 +3722,7 @@ mod tests {
             hotkey_overlay_title: None,
         }]);
 
-        let comp_mod = CompositorMod::Super;
+        let comp_mod = ModKey::Super;
         let mut suppressed_keys = HashSet::new();
 
         let screenshot_ui = ScreenshotUi::new(Clock::default(), Default::default());
@@ -3866,7 +3960,7 @@ mod tests {
         assert_eq!(
             find_configured_bind(
                 &bindings,
-                CompositorMod::Super,
+                ModKey::Super,
                 Trigger::Keysym(Keysym::q),
                 ModifiersState {
                     logo: true,
@@ -3879,7 +3973,7 @@ mod tests {
         assert_eq!(
             find_configured_bind(
                 &bindings,
-                CompositorMod::Super,
+                ModKey::Super,
                 Trigger::Keysym(Keysym::q),
                 ModifiersState::default(),
             ),
@@ -3889,7 +3983,7 @@ mod tests {
         assert_eq!(
             find_configured_bind(
                 &bindings,
-                CompositorMod::Super,
+                ModKey::Super,
                 Trigger::Keysym(Keysym::h),
                 ModifiersState {
                     logo: true,
@@ -3902,7 +3996,7 @@ mod tests {
         assert_eq!(
             find_configured_bind(
                 &bindings,
-                CompositorMod::Super,
+                ModKey::Super,
                 Trigger::Keysym(Keysym::h),
                 ModifiersState::default(),
             ),
@@ -3912,7 +4006,7 @@ mod tests {
         assert_eq!(
             find_configured_bind(
                 &bindings,
-                CompositorMod::Super,
+                ModKey::Super,
                 Trigger::Keysym(Keysym::j),
                 ModifiersState {
                     logo: true,
@@ -3924,7 +4018,7 @@ mod tests {
         assert_eq!(
             find_configured_bind(
                 &bindings,
-                CompositorMod::Super,
+                ModKey::Super,
                 Trigger::Keysym(Keysym::j),
                 ModifiersState::default(),
             )
@@ -3935,7 +4029,7 @@ mod tests {
         assert_eq!(
             find_configured_bind(
                 &bindings,
-                CompositorMod::Super,
+                ModKey::Super,
                 Trigger::Keysym(Keysym::k),
                 ModifiersState {
                     logo: true,
@@ -3948,7 +4042,7 @@ mod tests {
         assert_eq!(
             find_configured_bind(
                 &bindings,
-                CompositorMod::Super,
+                ModKey::Super,
                 Trigger::Keysym(Keysym::k),
                 ModifiersState::default(),
             ),
@@ -3958,7 +4052,7 @@ mod tests {
         assert_eq!(
             find_configured_bind(
                 &bindings,
-                CompositorMod::Super,
+                ModKey::Super,
                 Trigger::Keysym(Keysym::l),
                 ModifiersState {
                     logo: true,
@@ -3972,7 +4066,7 @@ mod tests {
         assert_eq!(
             find_configured_bind(
                 &bindings,
-                CompositorMod::Super,
+                ModKey::Super,
                 Trigger::Keysym(Keysym::l),
                 ModifiersState {
                     logo: true,

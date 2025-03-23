@@ -283,7 +283,7 @@ impl Element for ShaderRenderElement {
 impl RenderElement<GlesRenderer> for ShaderRenderElement {
     fn draw(
         &self,
-        frame: &mut GlesFrame<'_>,
+        frame: &mut GlesFrame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -514,7 +514,7 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
 impl<'render> RenderElement<TtyRenderer<'render>> for ShaderRenderElement {
     fn draw(
         &self,
-        frame: &mut TtyFrame<'_, '_>,
+        frame: &mut TtyFrame<'_, '_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

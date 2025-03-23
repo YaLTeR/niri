@@ -95,11 +95,15 @@ pub struct Input {
     #[knuffel(child)]
     pub disable_power_key_handling: bool,
     #[knuffel(child)]
-    pub warp_mouse_to_focus: bool,
+    pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     #[knuffel(child)]
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
     #[knuffel(child)]
     pub workspace_auto_back_and_forth: bool,
+    #[knuffel(child, unwrap(argument, str))]
+    pub mod_key: Option<ModKey>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub mod_key_nested: Option<ModKey>,
 }
 
 #[derive(knuffel::Decode, Debug, PartialEq, Eq)]
@@ -185,6 +189,8 @@ pub struct Touchpad {
     pub dwt: bool,
     #[knuffel(child)]
     pub dwtp: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub drag: Option<bool>,
     #[knuffel(child)]
     pub drag_lock: bool,
     #[knuffel(child)]
@@ -247,6 +253,8 @@ pub struct Trackpoint {
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
     pub scroll_button: Option<u32>,
+    #[knuffel(child)]
+    pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
 }
@@ -361,8 +369,57 @@ pub struct FocusFollowsMouse {
     pub max_scroll_amount: Option<Percent>,
 }
 
+#[derive(knuffel::Decode, Debug, PartialEq, Eq, Clone, Copy)]
+pub struct WarpMouseToFocus {
+    #[knuffel(property, str)]
+    pub mode: Option<WarpMouseToFocusMode>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum WarpMouseToFocusMode {
+    CenterXy,
+    CenterXyAlways,
+}
+
+impl FromStr for WarpMouseToFocusMode {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "center-xy" => Ok(Self::CenterXy),
+            "center-xy-always" => Ok(Self::CenterXyAlways),
+            _ => Err(miette!(
+                r#"invalid mode for warp-mouse-to-focus, can be "center-xy" or "center-xy-always" (or leave unset for separate centering)"#
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Percent(pub f64);
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ModKey {
+    Ctrl,
+    Shift,
+    Alt,
+    Super,
+    IsoLevel3Shift,
+    IsoLevel5Shift,
+}
+
+impl ModKey {
+    pub fn to_modifiers(&self) -> Modifiers {
+        match self {
+            ModKey::Ctrl => Modifiers::CTRL,
+            ModKey::Shift => Modifiers::SHIFT,
+            ModKey::Alt => Modifiers::ALT,
+            ModKey::Super => Modifiers::SUPER,
+            ModKey::IsoLevel3Shift => Modifiers::ISO_LEVEL3_SHIFT,
+            ModKey::IsoLevel5Shift => Modifiers::ISO_LEVEL5_SHIFT,
+        }
+    }
+}
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Outputs(pub Vec<Output>);
@@ -1230,6 +1287,8 @@ pub struct WindowRule {
     pub default_floating_position: Option<FloatingPosition>,
     #[knuffel(child, unwrap(argument))]
     pub scroll_factor: Option<FloatOrInt<0, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub tiled_state: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
@@ -1355,6 +1414,10 @@ pub enum RelativeTo {
     TopRight,
     BottomLeft,
     BottomRight,
+    Top,
+    Bottom,
+    Left,
+    Right,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -1448,8 +1511,11 @@ pub enum Action {
     CancelScreenshot,
     #[knuffel(skip)]
     ScreenshotTogglePointer,
-    Screenshot,
-    ScreenshotScreen(#[knuffel(property(name = "write-to-disk"), default = true)] bool),
+    Screenshot(#[knuffel(property(name = "show-pointer"), default = true)] bool),
+    ScreenshotScreen(
+        #[knuffel(property(name = "write-to-disk"), default = true)] bool,
+        #[knuffel(property(name = "show-pointer"), default = true)] bool,
+    ),
     ScreenshotWindow(#[knuffel(property(name = "write-to-disk"), default = true)] bool),
     #[knuffel(skip)]
     ScreenshotWindowById {
@@ -1463,6 +1529,9 @@ pub enum Action {
     FullscreenWindow,
     #[knuffel(skip)]
     FullscreenWindowById(u64),
+    ToggleWindowedFullscreen,
+    #[knuffel(skip)]
+    ToggleWindowedFullscreenById(u64),
     #[knuffel(skip)]
     FocusWindow(u64),
     FocusWindowInColumn(#[knuffel(argument)] u8),
@@ -1473,6 +1542,7 @@ pub enum Action {
     FocusColumnLast,
     FocusColumnRightOrFirst,
     FocusColumnLeftOrLast,
+    FocusColumn(#[knuffel(argument)] usize),
     FocusWindowOrMonitorUp,
     FocusWindowOrMonitorDown,
     FocusColumnOrMonitorLeft,
@@ -1495,6 +1565,7 @@ pub enum Action {
     MoveColumnToLast,
     MoveColumnLeftOrToMonitorLeft,
     MoveColumnRightOrToMonitorRight,
+    MoveColumnToIndex(#[knuffel(argument)] usize),
     MoveWindowDown,
     MoveWindowUp,
     MoveWindowDownOrToWorkspaceDown,
@@ -1559,18 +1630,26 @@ pub enum Action {
     FocusMonitorUp,
     FocusMonitorPrevious,
     FocusMonitorNext,
+    FocusMonitor(#[knuffel(argument)] String),
     MoveWindowToMonitorLeft,
     MoveWindowToMonitorRight,
     MoveWindowToMonitorDown,
     MoveWindowToMonitorUp,
     MoveWindowToMonitorPrevious,
     MoveWindowToMonitorNext,
+    MoveWindowToMonitor(#[knuffel(argument)] String),
+    #[knuffel(skip)]
+    MoveWindowToMonitorById {
+        id: u64,
+        output: String,
+    },
     MoveColumnToMonitorLeft,
     MoveColumnToMonitorRight,
     MoveColumnToMonitorDown,
     MoveColumnToMonitorUp,
     MoveColumnToMonitorPrevious,
     MoveColumnToMonitorNext,
+    MoveColumnToMonitor(#[knuffel(argument)] String),
     SetWindowWidth(#[knuffel(argument, str)] SizeChange),
     #[knuffel(skip)]
     SetWindowWidthById {
@@ -1625,6 +1704,11 @@ pub enum Action {
     ToggleWindowRuleOpacity,
     #[knuffel(skip)]
     ToggleWindowRuleOpacityById(u64),
+    SetDynamicCastWindow,
+    #[knuffel(skip)]
+    SetDynamicCastWindowById(u64),
+    SetDynamicCastMonitor(#[knuffel(argument)] Option<String>),
+    ClearDynamicCastTarget,
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1635,10 +1719,11 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::PowerOnMonitors {} => Self::PowerOnMonitors,
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
             niri_ipc::Action::DoScreenTransition { delay_ms } => Self::DoScreenTransition(delay_ms),
-            niri_ipc::Action::Screenshot {} => Self::Screenshot,
-            niri_ipc::Action::ScreenshotScreen { write_to_disk } => {
-                Self::ScreenshotScreen(write_to_disk)
-            }
+            niri_ipc::Action::Screenshot { show_pointer } => Self::Screenshot(show_pointer),
+            niri_ipc::Action::ScreenshotScreen {
+                write_to_disk,
+                show_pointer,
+            } => Self::ScreenshotScreen(write_to_disk, show_pointer),
             niri_ipc::Action::ScreenshotWindow {
                 id: None,
                 write_to_disk,
@@ -1651,6 +1736,12 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::CloseWindow { id: Some(id) } => Self::CloseWindowById(id),
             niri_ipc::Action::FullscreenWindow { id: None } => Self::FullscreenWindow,
             niri_ipc::Action::FullscreenWindow { id: Some(id) } => Self::FullscreenWindowById(id),
+            niri_ipc::Action::ToggleWindowedFullscreen { id: None } => {
+                Self::ToggleWindowedFullscreen
+            }
+            niri_ipc::Action::ToggleWindowedFullscreen { id: Some(id) } => {
+                Self::ToggleWindowedFullscreenById(id)
+            }
             niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
             niri_ipc::Action::FocusWindowInColumn { index } => Self::FocusWindowInColumn(index),
             niri_ipc::Action::FocusWindowPrevious {} => Self::FocusWindowPrevious,
@@ -1660,6 +1751,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusColumnLast {} => Self::FocusColumnLast,
             niri_ipc::Action::FocusColumnRightOrFirst {} => Self::FocusColumnRightOrFirst,
             niri_ipc::Action::FocusColumnLeftOrLast {} => Self::FocusColumnLeftOrLast,
+            niri_ipc::Action::FocusColumn { index } => Self::FocusColumn(index),
             niri_ipc::Action::FocusWindowOrMonitorUp {} => Self::FocusWindowOrMonitorUp,
             niri_ipc::Action::FocusWindowOrMonitorDown {} => Self::FocusWindowOrMonitorDown,
             niri_ipc::Action::FocusColumnOrMonitorLeft {} => Self::FocusColumnOrMonitorLeft,
@@ -1680,6 +1772,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveColumnRight {} => Self::MoveColumnRight,
             niri_ipc::Action::MoveColumnToFirst {} => Self::MoveColumnToFirst,
             niri_ipc::Action::MoveColumnToLast {} => Self::MoveColumnToLast,
+            niri_ipc::Action::MoveColumnToIndex { index } => Self::MoveColumnToIndex(index),
             niri_ipc::Action::MoveColumnLeftOrToMonitorLeft {} => {
                 Self::MoveColumnLeftOrToMonitorLeft
             }
@@ -1760,18 +1853,27 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusMonitorUp {} => Self::FocusMonitorUp,
             niri_ipc::Action::FocusMonitorPrevious {} => Self::FocusMonitorPrevious,
             niri_ipc::Action::FocusMonitorNext {} => Self::FocusMonitorNext,
+            niri_ipc::Action::FocusMonitor { output } => Self::FocusMonitor(output),
             niri_ipc::Action::MoveWindowToMonitorLeft {} => Self::MoveWindowToMonitorLeft,
             niri_ipc::Action::MoveWindowToMonitorRight {} => Self::MoveWindowToMonitorRight,
             niri_ipc::Action::MoveWindowToMonitorDown {} => Self::MoveWindowToMonitorDown,
             niri_ipc::Action::MoveWindowToMonitorUp {} => Self::MoveWindowToMonitorUp,
             niri_ipc::Action::MoveWindowToMonitorPrevious {} => Self::MoveWindowToMonitorPrevious,
             niri_ipc::Action::MoveWindowToMonitorNext {} => Self::MoveWindowToMonitorNext,
+            niri_ipc::Action::MoveWindowToMonitor { id: None, output } => {
+                Self::MoveWindowToMonitor(output)
+            }
+            niri_ipc::Action::MoveWindowToMonitor {
+                id: Some(id),
+                output,
+            } => Self::MoveWindowToMonitorById { id, output },
             niri_ipc::Action::MoveColumnToMonitorLeft {} => Self::MoveColumnToMonitorLeft,
             niri_ipc::Action::MoveColumnToMonitorRight {} => Self::MoveColumnToMonitorRight,
             niri_ipc::Action::MoveColumnToMonitorDown {} => Self::MoveColumnToMonitorDown,
             niri_ipc::Action::MoveColumnToMonitorUp {} => Self::MoveColumnToMonitorUp,
             niri_ipc::Action::MoveColumnToMonitorPrevious {} => Self::MoveColumnToMonitorPrevious,
             niri_ipc::Action::MoveColumnToMonitorNext {} => Self::MoveColumnToMonitorNext,
+            niri_ipc::Action::MoveColumnToMonitor { output } => Self::MoveColumnToMonitor(output),
             niri_ipc::Action::SetWindowWidth { id: None, change } => Self::SetWindowWidth(change),
             niri_ipc::Action::SetWindowWidth {
                 id: Some(id),
@@ -1857,6 +1959,14 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleWindowRuleOpacity { id: Some(id) } => {
                 Self::ToggleWindowRuleOpacityById(id)
             }
+            niri_ipc::Action::SetDynamicCastWindow { id: None } => Self::SetDynamicCastWindow,
+            niri_ipc::Action::SetDynamicCastWindow { id: Some(id) } => {
+                Self::SetDynamicCastWindowById(id)
+            }
+            niri_ipc::Action::SetDynamicCastMonitor { output } => {
+                Self::SetDynamicCastMonitor(output)
+            }
+            niri_ipc::Action::ClearDynamicCastTarget {} => Self::ClearDynamicCastTarget,
         }
     }
 }
@@ -1990,6 +2100,8 @@ pub struct DebugConfig {
     pub dbus_interfaces_in_non_session_instances: bool,
     #[knuffel(child)]
     pub wait_for_frame_completion_before_queueing: bool,
+    #[knuffel(child)]
+    pub wait_for_frame_completion_in_pipewire: bool,
     #[knuffel(child)]
     pub enable_overlay_planes: bool,
     #[knuffel(child)]
@@ -3368,6 +3480,22 @@ where
     }
 }
 
+impl FromStr for ModKey {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match &*s.to_ascii_lowercase() {
+            "ctrl" | "control" => Ok(Self::Ctrl),
+            "shift" => Ok(Self::Shift),
+            "alt" => Ok(Self::Alt),
+            "super" | "win" => Ok(Self::Super),
+            "iso_level3_shift" | "mod5" => Ok(Self::IsoLevel3Shift),
+            "iso_level5_shift" | "mod3" => Ok(Self::IsoLevel5Shift),
+            _ => Err(miette!("invalid Mod key: {s}")),
+        }
+    }
+}
+
 impl FromStr for Key {
     type Err = miette::Error;
 
@@ -3549,6 +3677,7 @@ mod tests {
                     tap
                     dwt
                     dwtp
+                    drag true
                     click-method "clickfinger"
                     accel-speed 0.2
                     accel-profile "flat"
@@ -3604,6 +3733,9 @@ mod tests {
                 warp-mouse-to-focus
                 focus-follows-mouse
                 workspace-auto-back-and-forth
+
+                mod-key "Mod5"
+                mod-key-nested "Super"
             }
 
             output "eDP-1" {
@@ -3759,7 +3891,10 @@ mod tests {
                 Mod+T allow-when-locked=true { spawn "alacritty"; }
                 Mod+Q hotkey-overlay-title=null { close-window; }
                 Mod+Shift+H { focus-monitor-left; }
+                Mod+Shift+O { focus-monitor "eDP-1"; }
                 Mod+Ctrl+Shift+L { move-window-to-monitor-right; }
+                Mod+Ctrl+Alt+O { move-window-to-monitor "eDP-1"; }
+                Mod+Ctrl+Alt+P { move-column-to-monitor "DP-1"; }
                 Mod+Comma { consume-window-into-column; }
                 Mod+1 { focus-workspace 1; }
                 Mod+Shift+1 { focus-workspace "workspace-1"; }
@@ -3807,6 +3942,9 @@ mod tests {
                     tap: true,
                     dwt: true,
                     dwtp: true,
+                    drag: Some(
+                        true,
+                    ),
                     drag_lock: false,
                     natural_scroll: false,
                     click_method: Some(
@@ -3868,6 +4006,7 @@ mod tests {
                     scroll_button: Some(
                         274,
                     ),
+                    left_handed: false,
                     middle_emulation: false,
                 },
                 trackball: Trackball {
@@ -3910,13 +4049,23 @@ mod tests {
                     ),
                 },
                 disable_power_key_handling: true,
-                warp_mouse_to_focus: true,
+                warp_mouse_to_focus: Some(
+                    WarpMouseToFocus {
+                        mode: None,
+                    },
+                ),
                 focus_follows_mouse: Some(
                     FocusFollowsMouse {
                         max_scroll_amount: None,
                     },
                 ),
                 workspace_auto_back_and_forth: true,
+                mod_key: Some(
+                    IsoLevel3Shift,
+                ),
+                mod_key_nested: Some(
+                    Super,
+                ),
             },
             outputs: Outputs(
                 [
@@ -4466,6 +4615,7 @@ mod tests {
                         },
                     ),
                     scroll_factor: None,
+                    tiled_state: None,
                 },
             ],
             layer_rules: [
@@ -4595,6 +4745,24 @@ mod tests {
                     Bind {
                         key: Key {
                             trigger: Keysym(
+                                XK_o,
+                            ),
+                            modifiers: Modifiers(
+                                SHIFT | COMPOSITOR,
+                            ),
+                        },
+                        action: FocusMonitor(
+                            "eDP-1",
+                        ),
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
                                 XK_l,
                             ),
                             modifiers: Modifiers(
@@ -4602,6 +4770,42 @@ mod tests {
                             ),
                         },
                         action: MoveWindowToMonitorRight,
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_o,
+                            ),
+                            modifiers: Modifiers(
+                                CTRL | ALT | COMPOSITOR,
+                            ),
+                        },
+                        action: MoveWindowToMonitor(
+                            "eDP-1",
+                        ),
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_p,
+                            ),
+                            modifiers: Modifiers(
+                                CTRL | ALT | COMPOSITOR,
+                            ),
+                        },
+                        action: MoveColumnToMonitor(
+                            "DP-1",
+                        ),
                         repeat: true,
                         cooldown: None,
                         allow_when_locked: false,
@@ -4726,6 +4930,7 @@ mod tests {
                 preview_render: None,
                 dbus_interfaces_in_non_session_instances: false,
                 wait_for_frame_completion_before_queueing: false,
+                wait_for_frame_completion_in_pipewire: false,
                 enable_overlay_planes: false,
                 disable_cursor_plane: false,
                 disable_direct_scanout: false,

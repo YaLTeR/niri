@@ -30,6 +30,7 @@ input {
         tap
         // dwt
         // dwtp
+        // drag false
         // drag-lock
         natural-scroll
         // accel-speed 0.2
@@ -63,6 +64,7 @@ input {
         // accel-profile "flat"
         // scroll-method "on-button-down"
         // scroll-button 273
+        // left-handed
         // middle-emulation
     }
 
@@ -93,6 +95,9 @@ input {
     // warp-mouse-to-focus
     // focus-follows-mouse max-scroll-amount="0%"
     // workspace-auto-back-and-forth
+
+    // mod-key "Super"
+    // mod-key-nested "Alt"
 }
 ```
 
@@ -179,6 +184,7 @@ A few settings are common between `touchpad`, `mouse`, `trackpoint`, and `trackb
 - `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`.
   The default and supported methods vary depending on the device type.
 - `scroll-button`: <sup>Since: 0.1.10</sup> the button code used for the `on-button-down` scroll method. You can find it in `libinput debug-events`.
+- `left-handed`: if set, changes the device to left-handed mode.
 - `middle-emulation`: emulate a middle mouse click by pressing left and right mouse buttons at once.
 
 Settings specific to `touchpad`s:
@@ -186,6 +192,7 @@ Settings specific to `touchpad`s:
 - `tap`: tap-to-click.
 - `dwt`: disable-when-typing.
 - `dwtp`: disable-when-trackpointing.
+- `drag`: can be `true` or `false`, controls if tap-and-drag is enabled.
 - `drag-lock`: <sup>Since: 25.02</sup> if set, lifting the finger off for a short time while dragging will not drop the dragged item. See the [libinput documentation](https://wayland.freedesktop.org/libinput/doc/latest/tapping.html#tap-and-drag).
 - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
@@ -194,10 +201,6 @@ Settings specific to `touchpad`s:
 Settings specific to `touchpad` and `mouse`:
 
 - `scroll-factor`: <sup>Since: 0.1.10</sup> scales the scrolling speed by this value.
-
-Settings specific to `touchpad`, `mouse` and `tablet`:
-
-- `left-handed`: if set, changes the device to left-handed mode.
 
 Settings specific to `tablet`s:
 
@@ -240,11 +243,26 @@ input {
 
 Makes the mouse warp to newly focused windows.
 
-X and Y coordinates are computed separately, i.e. if moving the mouse only horizontally is enough to put it inside the newly focused window, then it will move only horizontally.
+Does not make the cursor visible if it had been hidden.
 
 ```kdl
 input {
     warp-mouse-to-focus
+}
+```
+
+By default, the cursor warps *separately* horizontally and vertically.
+I.e. if moving the mouse only horizontally is enough to put it inside the newly focused window, then the mouse will move only horizontally, and not vertically.
+
+<sup>Since: next release</sup> You can customize this with the `mode` property.
+
+- `mode="center-xy"`: warps by both X and Y coordinates together.
+So if the mouse was anywhere outside the newly focused window, it will warp to the center of the window.
+- `mode="center-xy-always"`: warps by both X and Y coordinates together, even if the mouse was already somewhere inside the newly focused window.
+
+```kdl
+input {
+    warp-mouse-to-focus mode="center-xy"
 }
 ```
 
@@ -286,5 +304,26 @@ Niri will correctly switch to the workspace you came from, even if workspaces we
 ```kdl
 input {
     workspace-auto-back-and-forth
+}
+```
+
+#### `mod-key`, `mod-key-nested`
+
+<sup>Since: next release</sup>
+
+Customize the `Mod` key for [key bindings](./Configuration:-Key-Bindings.md).
+Only valid modifiers are allowed, e.g. `Super`, `Alt`, `Mod3`, `Mod5`, `Ctrl`, `Shift`.
+
+By default, `Mod` is equal to `Super` when running niri on a TTY, and to `Alt` when running niri as a nested winit window.
+
+> [!NOTE]
+> There are a lot of default bindings with Mod, none of them "make it through" to the underlying window.
+> You probably don't want to set `mod-key` to Ctrl or Shift, since Ctrl is commonly used for app hotkeys, and Shift is used for, well, regular typing.
+
+```kdl
+// Switch the mod keys around: use Alt normally, and Super inside a nested window.
+input {
+    mod-key "Alt"
+    mod-key-nested "Super"
 }
 ```

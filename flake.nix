@@ -39,6 +39,7 @@
           rustPlatform,
           systemd,
           wayland,
+          installShellFiles,
           withDbus ? true,
           withSystemd ? true,
           withScreencastSupport ? true,
@@ -79,6 +80,7 @@
           nativeBuildInputs = [
             rustPlatform.bindgenHook
             pkg-config
+            installShellFiles
           ];
 
           buildInputs =
@@ -117,6 +119,11 @@
 
           postInstall =
             ''
+              installShellCompletion --cmd niri \
+                --bash <($out/bin/niri completions bash) \
+                --fish <($out/bin/niri completions fish) \
+                --zsh <($out/bin/niri completions zsh)
+
               install -Dm644 resources/niri.desktop -t $out/share/wayland-sessions
               install -Dm644 resources/niri-portals.conf -t $out/share/xdg-desktop-portal
             ''

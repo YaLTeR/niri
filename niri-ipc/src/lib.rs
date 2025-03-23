@@ -65,6 +65,8 @@ pub enum Request {
     FocusedWindow,
     /// Request picking a window and get its information.
     PickWindow,
+    /// Request picking a color from the screen.
+    PickColor,
     /// Perform an action.
     Action(Action),
     /// Change output configuration temporarily.
@@ -133,8 +135,18 @@ pub enum Response {
     FocusedWindow(Option<Window>),
     /// Information about the picked window.
     PickedWindow(Option<Window>),
+    /// Information about the picked color.
+    PickedColor(Option<PickedColor>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
+}
+
+/// Color picked from the screen.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PickedColor {
+    /// Color values as red, green, blue, each ranging from 0.0 to 1.0.
+    pub rgb: [f64; 3],
 }
 
 /// Actions that niri can perform.
@@ -169,7 +181,11 @@ pub enum Action {
         delay_ms: Option<u16>,
     },
     /// Open the screenshot UI.
-    Screenshot {},
+    Screenshot {
+        ///  Whether to show the mouse pointer by default in the screenshot UI.
+        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
+        show_pointer: bool,
+    },
     /// Screenshot the focused screen.
     ScreenshotScreen {
         /// Write the screenshot to disk in addition to putting it in your clipboard.
@@ -177,6 +193,10 @@ pub enum Action {
         /// The screenshot is saved according to the `screenshot-path` config setting.
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
+
+        /// Whether to include the mouse pointer in the screenshot.
+        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
+        show_pointer: bool,
     },
     /// Screenshot a window.
     #[cfg_attr(feature = "clap", clap(about = "Screenshot the focused window"))]
@@ -213,6 +233,18 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Toggle windowed (fake) fullscreen on a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Toggle windowed (fake) fullscreen on the focused window")
+    )]
+    ToggleWindowedFullscreen {
+        /// Id of the window to toggle windowed fullscreen of.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Focus a window by id.
     FocusWindow {
         /// Id of the window to focus.
@@ -241,6 +273,14 @@ pub enum Action {
     FocusColumnRightOrFirst {},
     /// Focus the next column to the left, looping if at start.
     FocusColumnLeftOrLast {},
+    /// Focus a column by index.
+    FocusColumn {
+        /// Index of the column to focus.
+        ///
+        /// The index starts from 1 for the first column.
+        #[cfg_attr(feature = "clap", arg())]
+        index: usize,
+    },
     /// Focus the window or the monitor above.
     FocusWindowOrMonitorUp {},
     /// Focus the window or the monitor below.
@@ -285,6 +325,14 @@ pub enum Action {
     MoveColumnLeftOrToMonitorLeft {},
     /// Move the focused column to the right or to the monitor to the right.
     MoveColumnRightOrToMonitorRight {},
+    /// Move the focused column to a specific index on its workspace.
+    MoveColumnToIndex {
+        /// New index for the column.
+        ///
+        /// The index starts from 1 for the first column.
+        #[cfg_attr(feature = "clap", arg())]
+        index: usize,
+    },
     /// Move the focused window down in a column.
     MoveWindowDown {},
     /// Move the focused window up in a column.
@@ -449,6 +497,12 @@ pub enum Action {
     FocusMonitorPrevious {},
     /// Focus the next monitor.
     FocusMonitorNext {},
+    /// Focus a monitor by name.
+    FocusMonitor {
+        /// Name of the output to focus.
+        #[cfg_attr(feature = "clap", arg())]
+        output: String,
+    },
     /// Move the focused window to the monitor to the left.
     MoveWindowToMonitorLeft {},
     /// Move the focused window to the monitor to the right.
@@ -461,6 +515,22 @@ pub enum Action {
     MoveWindowToMonitorPrevious {},
     /// Move the focused window to the next monitor.
     MoveWindowToMonitorNext {},
+    /// Move a window to a specific monitor.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Move the focused window to a specific monitor")
+    )]
+    MoveWindowToMonitor {
+        /// Id of the window to move.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+
+        /// The target output name.
+        #[cfg_attr(feature = "clap", arg())]
+        output: String,
+    },
     /// Move the focused column to the monitor to the left.
     MoveColumnToMonitorLeft {},
     /// Move the focused column to the monitor to the right.
@@ -473,6 +543,12 @@ pub enum Action {
     MoveColumnToMonitorPrevious {},
     /// Move the focused column to the next monitor.
     MoveColumnToMonitorNext {},
+    /// Move the focused column to a specific monitor.
+    MoveColumnToMonitor {
+        /// The target output name.
+        #[cfg_attr(feature = "clap", arg())]
+        output: String,
+    },
     /// Change the width of a window.
     #[cfg_attr(
         feature = "clap",
@@ -652,6 +728,32 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Set the dynamic cast target to a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Set the dynamic cast target to the focused window")
+    )]
+    SetDynamicCastWindow {
+        /// Id of the window to target.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Set the dynamic cast target to a monitor.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Set the dynamic cast target to the focused monitor")
+    )]
+    SetDynamicCastMonitor {
+        /// Name of the output to target.
+        ///
+        /// If `None`, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
+    /// Clear the dynamic cast target, making it show nothing.
+    ClearDynamicCastTarget {},
 }
 
 /// Change in window or column size.

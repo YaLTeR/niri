@@ -91,6 +91,7 @@ window-rule {
 
     geometry-corner-radius 12
     clip-to-geometry true
+    tiled-state true
 
     min-width 100
     max-width 200
@@ -480,7 +481,7 @@ You can block out windows from xdg-desktop-portal screencasts.
 They will be replaced with solid black rectangles.
 
 This can be useful for password managers or messenger windows, etc.
-For layer-shell notification pop-ups and the like, you can use a `block-out-from` [layer rule](./Configuration:-Layer-Rules.md).
+For layer-shell notification pop-ups and the like, you can use a [`block-out-from` layer rule](./Configuration:-Layer-Rules.md#block-out-from).
 
 ![Screenshot showing a window visible normally, but blocked out on OBS.](./img/block-out-from-screencast.png)
 
@@ -546,7 +547,7 @@ Opacity is applied to every surface of the window individually, so subsurfaces a
 
 Also, focus ring and border with background will show through semitransparent windows (see `prefer-no-csd` and the `draw-border-with-background` window rule below).
 
-Opacity can be toggled on or off for a window using the [`toggle-window-rule-opacity`](./Configuration:-Key-Bindings.md) action.
+Opacity can be toggled on or off for a window using the [`toggle-window-rule-opacity`](./Configuration:-Key-Bindings.md#toggle-window-rule-opacity) action.
 
 ```kdl
 // Make inactive windows semitransparent.
@@ -609,10 +610,11 @@ Afterward, the window will remember its last floating position.
 By default, new floating windows open at the center of the screen, and windows from the tiling layout open close to their visual screen position.
 
 The position uses logical coordinates relative to the working area.
-By default, they are relative to the top-left corner of the working area, but you can change this by setting `relative-to` to one of these values: `top-left`, `top-right`, `bottom-left`, `bottom-right`.
+By default, they are relative to the top-left corner of the working area, but you can change this by setting `relative-to` to one of these values: `top-left`, `top-right`, `bottom-left`, `bottom-right`, `top`, `bottom`, `left`, or `right`.
 
 For example, if you have a bar at the top, then `x=0 y=0` will put the top-left corner of the window directly below the bar.
 If instead you write `x=0 y=0 relative-to="top-right"`, then the top-right corner of the window will align with the top-right corner of the workspace, also directly below the bar.
+When only one side is specified (e.g. top) the window will align to the center of that side.
 
 The coordinates change direction based on `relative-to`.
 For example, by default (top-left), `x=100 y=200` will put the window 100 pixels to the right and 200 pixels down from the top-left corner.
@@ -628,13 +630,34 @@ window-rule {
 }
 ```
 
+You can use single-side `relative-to` to get a dropdown-like effect.
+
+```kdl
+// Example: a "dropdown" terminal.
+window-rule {
+    // Match by "dropdown" app ID.
+    // You need to set this app ID when running your terminal, e.g.:
+    // spawn "alacritty" "--class" "dropdown"
+    match app-id="^dropdown$"
+
+    // Open it as floating.
+    open-floating true
+    // Anchor to the top edge of the screen.
+    default-floating-position x=0 y=0 relative-to="top"
+    // Half of the screen high.
+    default-window-height { proportion 0.5; }
+    // 80% of the screen wide.
+    default-column-width { proportion 0.8; }
+}
+```
+
 #### `scroll-factor`
 
 <sup>Since: 25.02</sup>
 
 Set a scroll factor for all scroll events sent to a window.
 
-This will be multiplied with the scroll factor set for your input device in the [input](/wiki/Configuration:-Input.md) section.
+This will be multiplied with the scroll factor set for your input device in the [input section](./Configuration:-Input.md#pointing-devices).
 
 ```kdl
 // Make scrolling in Firefox a bit slower.
@@ -670,7 +693,7 @@ window-rule {
 
 Override the focus ring and border options for the window.
 
-These rules have the same options as the normal focus ring and border config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
+These rules have the same options as the normal [`focus-ring` and `border` config in the layout section](./Configuration:-Layout.md#focus-ring-and-border), so check the documentation there.
 
 However, in addition to `off` to disable the border/focus ring, this window rule has an `on` flag that enables the border/focus ring for the window even if it was otherwise disabled.
 The `on` flag has precedence over the `off` flag, in case both are set.
@@ -697,7 +720,7 @@ window-rule {
 
 Override the shadow options for the window.
 
-This rule has the same options as the normal shadow config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
+This rule has the same options as the normal [`shadow` config in the layout section](./Configuration:-Layout.md#shadow), so check the documentation there.
 
 However, in addition to `on` to enable the shadow, this window rule has an `off` flag that disables the shadow for the window even if it was otherwise enabled.
 The `on` flag has precedence over the `off` flag, in case both are set.
@@ -719,7 +742,7 @@ window-rule {
 
 Override the tab indicator options for the window.
 
-Options in this rule match the same options as the normal tab indicator config in the [layout](./Configuration:-Layout.md) section, so check the documentation there.
+Options in this rule match the same options as the normal [`tab-indicator` config in the layout section](./Configuration:-Layout.md#tab-indicator), so check the documentation there.
 
 ```kdl
 // Make KeePassXC tab have a dark red inactive color.
@@ -739,7 +762,7 @@ window-rule {
 Set the corner radius of the window.
 
 On its own, this setting will only affect the border and the focus ring—they will round their corners to match the geometry corner radius.
-If you'd like to force-round the corners of the window itself, set `clip-to-geometry true` in addition to this setting.
+If you'd like to force-round the corners of the window itself, set [`clip-to-geometry true`](#clip-to-geometry) in addition to this setting.
 
 ```kdl
 window-rule {
@@ -780,7 +803,7 @@ window-rule {
 }
 ```
 
-Enable border, set `geometry-corner-radius` and `clip-to-geometry`, and you've got a classic setup:
+Enable border, set [`geometry-corner-radius`](#geometry-corner-radius) and `clip-to-geometry`, and you've got a classic setup:
 
 ![](./img/border-radius-clip.png)
 
@@ -800,6 +823,26 @@ layout {
 window-rule {
     geometry-corner-radius 12
     clip-to-geometry true
+}
+```
+
+#### `tiled-state`
+
+<sup>Since: next release</sup>
+
+Informs the window that it is tiled.
+Usually, windows will react by becoming rectangular and hiding their client-side shadows.
+Windows that snap their size to a grid (e.g. terminals like [foot](https://codeberg.org/dnkl/foot)) will usually disable this snapping when they are tiled.
+
+By default, niri will set the tiled state to `true` together with [`prefer-no-csd`](./Configuration:-Miscellaneous.md#prefer-no-csd) in order to improve behavior for apps that don't support server-side decorations.
+You can use this window rule to override this, for example to get rectangular windows with CSD.
+
+```kdl
+// Make tiled windows rectangular while using CSD.
+window-rule {
+    match is-floating=false
+
+    tiled-state true
 }
 ```
 

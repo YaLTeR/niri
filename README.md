@@ -29,11 +29,12 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 ## Features
 
 - Built from the ground up for scrollable tiling
-- Dynamic workspaces like in GNOME
+- [Dynamic workspaces](https://github.com/YaLTeR/niri/wiki/Workspaces) like in GNOME
 - Built-in screenshot UI
 - Monitor and window screencasting through xdg-desktop-portal-gnome
     - You can [block out](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules#block-out-from) sensitive windows from screencasts
 - [Touchpad](https://github.com/YaLTeR/niri/assets/1794388/946a910e-9bec-4cd1-a923-4a9421707515) and [mouse](https://github.com/YaLTeR/niri/assets/1794388/8464e65d-4bf2-44fa-8c8e-5883355bd000) gestures
+- Group windows into [tabs](https://github.com/YaLTeR/niri/wiki/Tabs)
 - Configurable layout: gaps, borders, struts, window sizes
 - [Gradient borders](https://github.com/YaLTeR/niri/wiki/Configuration:-Layout#gradients) with Oklab and Oklch support
 - [Animations](https://github.com/YaLTeR/niri/assets/1794388/ce178da2-af9e-4c51-876f-8709c241d95e) with support for [custom shaders](https://github.com/YaLTeR/niri/assets/1794388/27a238d6-0a22-4692-b794-30dc7a626fad)

@@ -1063,6 +1063,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let tile = column.tiles.remove(tile_idx);
         column.data.remove(tile_idx);
 
+        // If we're removing a pending-unfullscreen window, we need to clear the stored view
+        // offset. There might be other pending-unfullscreen windows in this column but that's kind
+        // of an edge case, don't think we need to handle that.
+        if column_idx == self.active_column_idx && tile.is_fullscreen() && !column.is_fullscreen {
+            self.view_offset_before_fullscreen = None;
+        }
+
         // If one window is left, reset its weight to 1.
         if column.data.len() == 1 {
             if let WindowHeight::Auto { weight } = &mut column.data[0].height {
@@ -1491,6 +1498,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.activate_column(self.columns.len() - 1);
     }
 
+    pub fn focus_column(&mut self, index: usize) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.activate_column(index.saturating_sub(1).min(self.columns.len() - 1));
+    }
+
     pub fn focus_window_in_column(&mut self, index: u8) {
         if self.columns.is_empty() {
             return;
@@ -1573,6 +1588,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         self.columns[self.active_column_idx].focus_bottom()
+    }
+
+    pub fn move_column_to_index(&mut self, index: usize) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.move_column_to(index.saturating_sub(1).min(self.columns.len() - 1));
     }
 
     fn move_column_to(&mut self, new_idx: usize) {
@@ -1711,8 +1734,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
             if source_tile_was_active {
                 // Make sure the previous (target) column is activated so the animation looks right.
-                self.activate_prev_column_on_removal =
-                    Some(self.view_offset.stationary() + offset.x);
+                //
+                // However, if it was already going to be activated, leave the offset as is. This
+                // improves the workflow that has become common with tabbed columns: open a new
+                // window, then immediately consume it left as a new tab.
+                self.activate_prev_column_on_removal
+                    .get_or_insert(self.view_offset.stationary() + offset.x);
             }
 
             offset.x += self.columns[source_col_idx].render_offset().x;
@@ -3953,8 +3980,16 @@ impl<W: LayoutElement> Column<W> {
 
     fn update_tile_sizes_with_transaction(&mut self, animate: bool, transaction: Transaction) {
         if self.is_fullscreen {
-            for tile in &mut self.tiles {
-                tile.request_fullscreen();
+            for (tile_idx, tile) in self.tiles.iter_mut().enumerate() {
+                // In tabbed mode, only the visible window participates in the transaction.
+                let is_active = tile_idx == self.active_tile_idx;
+                let transaction = if self.display_mode == ColumnDisplay::Tabbed && !is_active {
+                    None
+                } else {
+                    Some(transaction.clone())
+                };
+
+                tile.request_fullscreen(animate, transaction);
             }
             return;
         }
@@ -3964,14 +3999,18 @@ impl<W: LayoutElement> Column<W> {
         let min_size: Vec<_> = self
             .tiles
             .iter()
-            .map(Tile::min_size)
+            .map(Tile::min_size_nonfullscreen)
             .map(|mut size| {
                 size.w = size.w.max(1.);
                 size.h = size.h.max(1.);
                 size
             })
             .collect();
-        let max_size: Vec<_> = self.tiles.iter().map(Tile::max_size).collect();
+        let max_size: Vec<_> = self
+            .tiles
+            .iter()
+            .map(Tile::max_size_nonfullscreen)
+            .collect();
 
         // Compute the column width.
         let min_width = min_size
@@ -4469,7 +4508,7 @@ impl<W: LayoutElement> Column<W> {
                 .iter()
                 .enumerate()
                 .filter(|(idx, _)| *idx != tile_idx)
-                .map(|(_, tile)| f64::max(1., tile.min_size().h) + gaps)
+                .map(|(_, tile)| f64::max(1., tile.min_size_nonfullscreen().h) + gaps)
                 .sum::<f64>()
         };
         let height_left = working_size - extra_size - gaps - min_height_taken - gaps;
@@ -4899,7 +4938,7 @@ impl<W: LayoutElement> Column<W> {
             let requested_size = tile.window().requested_size().unwrap();
             let requested_tile_height =
                 tile.tile_height_for_window_height(f64::from(requested_size.h));
-            let min_tile_height = f64::max(1., tile.min_size().h);
+            let min_tile_height = f64::max(1., tile.min_size_nonfullscreen().h);
 
             if !self.is_fullscreen
                 && self.scale.round() == self.scale

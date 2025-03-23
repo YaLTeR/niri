@@ -17,19 +17,25 @@ mod imp {
     use niri::render_helpers::{resources, shaders};
     use smithay::backend::egl::ffi::egl;
     use smithay::backend::egl::EGLContext;
-    use smithay::backend::renderer::gles::GlesRenderer;
-    use smithay::backend::renderer::{Color32F, Frame, Renderer, Unbind};
+    use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+    use smithay::backend::renderer::{Bind, Color32F, Frame, Offscreen, Renderer};
+    use smithay::reexports::gbm::Format as Fourcc;
     use smithay::utils::{Physical, Rectangle, Scale, Transform};
 
     use super::*;
 
     type DynMakeTestCase = Box<dyn Fn(Args) -> Box<dyn TestCase>>;
 
+    struct RendererData {
+        renderer: GlesRenderer,
+        dummy_texture: GlesTexture,
+    }
+
     #[derive(Default)]
     pub struct SmithayView {
         gl_area: gtk::GLArea,
         size: Cell<(i32, i32)>,
-        renderer: RefCell<Option<Result<GlesRenderer, ()>>>,
+        renderer: RefCell<Option<Result<RendererData, ()>>>,
         pub make_test_case: OnceCell<DynMakeTestCase>,
         test_case: RefCell<Option<Box<dyn TestCase>>>,
         pub clock: RefCell<Clock>,
@@ -125,6 +131,10 @@ mod imp {
             let Ok(renderer) = renderer else {
                 return Ok(());
             };
+            let RendererData {
+                renderer,
+                dummy_texture,
+            } = renderer;
 
             let size = self.size.get();
 
@@ -147,15 +157,44 @@ mod imp {
 
             let rect: Rectangle<i32, Physical> = Rectangle::from_size(Size::from(size));
 
-            let elements = unsafe {
-                with_framebuffer_save_restore(renderer, |renderer| {
-                    case.render(renderer, Size::from(size))
+            // Fetch GtkGLArea's framebuffer binding.
+            let mut framebuffer = 0;
+            renderer
+                .with_context(|gl| unsafe {
+                    gl.GetIntegerv(
+                        smithay::backend::renderer::gles::ffi::FRAMEBUFFER_BINDING,
+                        &mut framebuffer,
+                    );
                 })
-            }?;
+                .context("error running closure in GL context")?;
+            ensure!(framebuffer != 0, "error getting the framebuffer");
+
+            // This call will already change the framebuffer binding (offscreen elements will bind
+            // intermediate textures during rendering).
+            let elements = case.render(renderer, Size::from(size));
+
+            // HACK: there's currently no way to "just" render into an externally bound framebuffer
+            // (like we have in this case). The render() call requires a valid target. So what
+            // we'll do is use a dummy texture as a target, then swap the framebuffer binding right
+            // before rendering.
+            let mut dummy_target = renderer
+                .bind(dummy_texture)
+                .context("error binding dummy texture")?;
 
             let mut frame = renderer
-                .render(rect.size, Transform::Normal)
+                .render(&mut dummy_target, rect.size, Transform::Normal)
                 .context("error creating frame")?;
+
+            // Now that render() bound the dummy texture, change the binding underneath it back to
+            // GtkGLArea's framebuffer, to render there instead.
+            frame
+                .with_context(|gl| unsafe {
+                    gl.BindFramebuffer(
+                        smithay::backend::renderer::gles::ffi::FRAMEBUFFER,
+                        framebuffer as u32,
+                    );
+                })
+                .context("error running closure in GL context")?;
 
             frame
                 .clear(Color32F::from([0.3, 0.3, 0.3, 1.]), &[rect])
@@ -177,7 +216,7 @@ mod imp {
         }
     }
 
-    unsafe fn create_renderer() -> anyhow::Result<GlesRenderer> {
+    unsafe fn create_renderer() -> anyhow::Result<RendererData> {
         smithay::backend::egl::ffi::make_sure_egl_is_loaded()
             .context("error loading EGL symbols in Smithay")?;
 
@@ -200,40 +239,17 @@ mod imp {
 
         let mut renderer = GlesRenderer::new(egl_context).context("error creating GlesRenderer")?;
 
+        let dummy_texture = renderer
+            .create_buffer(Fourcc::Abgr8888, Size::from((1, 1)))
+            .context("error creating dummy texture")?;
+
         resources::init(&mut renderer);
         shaders::init(&mut renderer);
 
-        Ok(renderer)
-    }
-
-    unsafe fn with_framebuffer_save_restore<T>(
-        renderer: &mut GlesRenderer,
-        f: impl FnOnce(&mut GlesRenderer) -> T,
-    ) -> anyhow::Result<T> {
-        let mut framebuffer = 0;
-        renderer
-            .with_context(|gl| unsafe {
-                gl.GetIntegerv(
-                    smithay::backend::renderer::gles::ffi::FRAMEBUFFER_BINDING,
-                    &mut framebuffer,
-                );
-            })
-            .context("error running closure in GL context")?;
-        ensure!(framebuffer != 0, "error getting the framebuffer");
-
-        let rv = f(renderer);
-
-        renderer.unbind().context("error unbinding")?;
-        renderer
-            .with_context(|gl| unsafe {
-                gl.BindFramebuffer(
-                    smithay::backend::renderer::gles::ffi::FRAMEBUFFER,
-                    framebuffer as u32,
-                );
-            })
-            .context("error running closure in GL context")?;
-
-        Ok(rv)
+        Ok(RendererData {
+            renderer,
+            dummy_texture,
+        })
     }
 }
 

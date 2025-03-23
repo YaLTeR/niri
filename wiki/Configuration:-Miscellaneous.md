@@ -40,7 +40,7 @@ Add lines like this to spawn processes at niri startup.
 
 `spawn-at-startup` accepts a path to the program binary as the first argument, followed by arguments to the program.
 
-This option works the same way as the `spawn` key binding action, so please read about all its subtleties on the [key bindings](./Configuration:-Key-Bindings.md) page.
+This option works the same way as the [`spawn` key binding action](./Configuration:-Key-Bindings.md#spawn), so please read about all its subtleties there.
 
 ```kdl
 spawn-at-startup "waybar"
@@ -60,10 +60,11 @@ Additionally, clients will be informed that they are tiled, removing some rounde
 With `prefer-no-csd` set, applications that negotiate server-side decorations through the xdg-decoration protocol will have focus ring and border drawn around them *without* a solid colored background.
 
 > [!NOTE]
-> Unlike most other options, changing `prefer-no-csd` will not affect already running applications.
+> Unlike most other options, changing `prefer-no-csd` will not entirely affect already running applications.
+> It will make some windows rectangular, but won't remove the title bars.
 > This mainly has to do with niri working around a [bug in SDL2](https://github.com/libsdl-org/SDL/issues/8173) that prevents SDL2 applications from starting.
 >
-> Restart applications after changing `prefer-no-csd` in the config to apply it.
+> Restart applications after changing `prefer-no-csd` in the config to fully apply it.
 
 ```kdl
 prefer-no-csd
@@ -144,6 +145,8 @@ cursor {
 
 ### `clipboard`
 
+<sup>Since: 25.02</sup>
+
 Clipboard settings.
 
 Set the `disable-primary` flag to disable the primary clipboard (middle-click paste).
@@ -167,5 +170,4 @@ hotkey-overlay {
 }
 ```
 
-You can customize which binds the hotkey overlay shows using the `hotkey-overlay-title` property.
-Check the [key bindings](./Configuration:-Key-Bindings.md) wiki page for details.
+You can customize which binds the hotkey overlay shows using the [`hotkey-overlay-title` property](./Configuration:-Key-Bindings.md#custom-hotkey-overlay-titles).

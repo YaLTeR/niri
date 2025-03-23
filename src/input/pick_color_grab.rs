@@ -1,4 +1,7 @@
+use niri_ipc::PickedColor;
+use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::ButtonState;
+use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
     GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
@@ -6,34 +9,88 @@ use smithay::input::pointer::{
     MotionEvent, PointerGrab, PointerInnerHandle, RelativeMotionEvent,
 };
 use smithay::input::SeatHandler;
-use smithay::utils::{Logical, Point};
+use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 
 use crate::niri::State;
-use crate::window::Mapped;
+use crate::render_helpers::{render_to_vec, RenderTarget};
 
-pub struct PickWindowGrab {
+pub struct PickColorGrab {
     start_data: PointerGrabStartData<State>,
 }
 
-impl PickWindowGrab {
+impl PickColorGrab {
     pub fn new(start_data: PointerGrabStartData<State>) -> Self {
         Self { start_data }
     }
 
     fn on_ungrab(&mut self, state: &mut State) {
-        if let Some(tx) = state.niri.pick_window.take() {
+        if let Some(tx) = state.niri.pick_color.take() {
             let _ = tx.send_blocking(None);
         }
         state
             .niri
             .cursor_manager
             .set_cursor_image(CursorImageStatus::default_named());
-        // Redraw to update the cursor.
         state.niri.queue_redraw_all();
+    }
+
+    fn pick_color_at_point(location: Point<f64, Logical>, data: &mut State) -> Option<PickedColor> {
+        let (output, pos_within_output) = data.niri.output_under(location)?;
+        let output = output.clone();
+
+        data.backend
+            .with_primary_renderer(|renderer| {
+                data.niri.update_render_elements(Some(&output));
+
+                let scale = Scale::from(output.current_scale().fractional_scale());
+                // FIXME: perhaps replace floor with round once we figure out the pointer behavior
+                // at the bottom/right edges of the monitors.
+                let pos = pos_within_output.to_physical_precise_floor(scale);
+                let size = Size::<i32, Physical>::from((1, 1));
+
+                let elements = data.niri.render(
+                    renderer,
+                    &output,
+                    false,
+                    // This is an interactive operation so we can render without blocking out.
+                    RenderTarget::Output,
+                );
+
+                let pixels = match render_to_vec(
+                    renderer,
+                    size,
+                    scale,
+                    Transform::Normal,
+                    Fourcc::Abgr8888,
+                    elements.iter().rev().map(|elem| {
+                        let offset = pos.upscale(-1);
+                        RelocateRenderElement::from_element(elem, offset, Relocate::Relative)
+                    }),
+                ) {
+                    Ok(pixels) => pixels,
+                    Err(_) => return None,
+                };
+
+                if pixels.len() == 4 {
+                    let rgb = [
+                        f64::from(pixels[0]) / 255.0,
+                        f64::from(pixels[1]) / 255.0,
+                        f64::from(pixels[2]) / 255.0,
+                    ];
+                    Some(PickedColor { rgb })
+                } else {
+                    error!(
+                        "unexpected pixel data length: {} (expected 4)",
+                        pixels.len()
+                    );
+                    None
+                }
+            })
+            .flatten()
     }
 }
 
-impl PointerGrab<State> for PickWindowGrab {
+impl PointerGrab<State> for PickColorGrab {
     fn motion(
         &mut self,
         data: &mut State,
@@ -67,12 +124,9 @@ impl PointerGrab<State> for PickWindowGrab {
         // We're handling this press, don't send the release to the window.
         data.niri.suppressed_buttons.insert(event.button);
 
-        if let Some(tx) = data.niri.pick_window.take() {
-            let _ = tx.send_blocking(
-                data.niri
-                    .window_under(handle.current_location())
-                    .map(Mapped::id),
-            );
+        if let Some(tx) = data.niri.pick_color.take() {
+            let color = Self::pick_color_at_point(handle.current_location(), data);
+            let _ = tx.send_blocking(color);
         }
 
         handle.unset_grab(self, data, event.serial, event.time, true);
