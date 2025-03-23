@@ -1,5 +1,5 @@
 use miette::{LabeledSpan, SourceCode, SourceSpan, SpanContents};
-use niri_ipc::diagnostic::{Diagnostic, Label, LineSpan, Severity, Span};
+use niri_ipc::diagnostic::{Diagnostic, Label, LinePosition, Severity, Span};
 
 pub fn convert_to_ipc(diagnostic: &dyn miette::Diagnostic) -> Diagnostic {
     diagnostic_to_ipc(diagnostic, None)
@@ -78,11 +78,11 @@ fn convert_severity(value: miette::Severity) -> Severity {
 fn line_span_from_label<S: SourceCode + ?Sized>(
     code: Option<&S>,
     span: &SourceSpan,
-) -> Option<LineSpan> {
+) -> Option<LinePosition> {
     let code = code?;
     let content = code.read_span(span, 0, 0).ok()?;
-    Some(LineSpan {
+    Some(LinePosition {
         line: content.line(),
-        col: content.column(),
+        character: content.column(),
     })
 }

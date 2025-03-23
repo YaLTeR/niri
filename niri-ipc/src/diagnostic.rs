@@ -62,15 +62,21 @@ pub struct Span {
     pub offset: usize,
     /// Number of bytes this span spans.
     pub length: usize,
-    pub start: Option<LineSpan>,
-    pub end: Option<LineSpan>,
+    /// Starting line position of this span
+    pub start: Option<LinePosition>,
+    /// Ending line position of this span
+    pub end: Option<LinePosition>,
 }
 
+/// Position in a document in terms of line number + character offset.
+///
+/// Note that this counts line numbers as declared by the KDL specification:
+/// <https://kdl.dev/spec/#section-3.18>
 #[derive(Serialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub struct LineSpan {
-    /// The 0-indexed line into the file.
+pub struct LinePosition {
+    /// The 0-indexed line position in the file.
     pub line: usize,
-    /// The 0-indexed column into the file, relative to `line`.
-    pub col: usize,
+    /// The 0-indexed character offset into the file, relative to `line`.
+    pub character: usize,
 }
