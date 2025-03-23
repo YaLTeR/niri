@@ -97,7 +97,7 @@ Set the output to focus when niri starts.
 
 This option may be an [output identifier](./Configuration:-Outputs.md).
 
-If this option is `null` or unset, niri will start with the leftmost output focused.
+If this option is `null` or unset, niri will choose an output to focus after sorting them by name.
 
 ```kdl
 default-output "eDP-1"
