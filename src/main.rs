@@ -107,7 +107,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
 
                 if json {
-                    let diagnostic = ipc_diagnostic::convert_to_ipc(&*report);
+                    let diagnostic = ipc_diagnostic::convert_to_ipc(&*report)?;
                     serde_json::to_writer(BufWriter::new(io::stdout()), &diagnostic)?;
                 }
 

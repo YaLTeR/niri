@@ -63,9 +63,9 @@ pub struct Span {
     /// Number of bytes this span spans.
     pub length: usize,
     /// Starting line position of this span
-    pub start: Option<LinePosition>,
+    pub start: LinePosition,
     /// Ending line position of this span
-    pub end: Option<LinePosition>,
+    pub end: LinePosition,
 }
 
 /// Position in a document in terms of line number + character offset.

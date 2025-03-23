@@ -1,7 +1,7 @@
-use miette::{LabeledSpan, SourceCode, SourceSpan, SpanContents};
+use miette::{miette, Context, LabeledSpan, SourceCode, SourceSpan, SpanContents};
 use niri_ipc::diagnostic::{Diagnostic, Label, LinePosition, Severity, Span};
 
-pub fn convert_to_ipc(diagnostic: &dyn miette::Diagnostic) -> Diagnostic {
+pub fn convert_to_ipc(diagnostic: &dyn miette::Diagnostic) -> Result<Diagnostic, miette::Error> {
     diagnostic_to_ipc(diagnostic, None)
 }
 
@@ -9,9 +9,9 @@ pub fn convert_to_ipc(diagnostic: &dyn miette::Diagnostic) -> Diagnostic {
 fn diagnostic_to_ipc(
     diagnostic: &dyn miette::Diagnostic,
     parent_src: Option<&dyn SourceCode>,
-) -> Diagnostic {
+) -> miette::Result<Diagnostic> {
     let src = diagnostic.source_code().or(parent_src);
-    Diagnostic {
+    Ok(Diagnostic {
         message: diagnostic.to_string(),
         severity: diagnostic
             .severity()
@@ -39,32 +39,34 @@ fn diagnostic_to_ipc(
         },
         labels: diagnostic
             .labels()
-            .map(|iter| {
-                iter.map(|label| Label {
+            .into_iter()
+            .flatten()
+            .map(|label| -> miette::Result<Label> {
+                Ok(Label {
                     label: label.label().map(ToOwned::to_owned).unwrap_or_default(),
                     span: Span {
                         offset: label.offset(),
                         length: label.len(),
-                        start: line_span_from_label(src, label.inner()),
+                        start: line_position_from_label(src, label.inner())
+                            .context("start position")?,
                         // Because miette doesn't just give us the ending line + column for
                         // some reason.
-                        end: line_span_from_label(src, &{
+                        end: line_position_from_label(src, &{
                             let label = label.inner();
                             SourceSpan::from(label.len() + label.offset())
-                        }),
+                        })
+                        .context("end position")?,
                     },
                 })
-                .collect()
             })
-            .unwrap_or_default(),
+            .collect::<miette::Result<_>>()?,
         related: diagnostic
             .related()
-            .map(|iter| {
-                iter.map(|diagnostic| diagnostic_to_ipc(diagnostic, src))
-                    .collect()
-            })
-            .unwrap_or_default(),
-    }
+            .into_iter()
+            .flatten()
+            .map(|diagnostic| diagnostic_to_ipc(diagnostic, src))
+            .collect::<miette::Result<_>>()?,
+    })
 }
 
 fn convert_severity(value: miette::Severity) -> Severity {
@@ -75,13 +77,13 @@ fn convert_severity(value: miette::Severity) -> Severity {
     }
 }
 
-fn line_span_from_label<S: SourceCode + ?Sized>(
+fn line_position_from_label<S: SourceCode + ?Sized>(
     code: Option<&S>,
     span: &SourceSpan,
-) -> Option<LinePosition> {
-    let code = code?;
-    let content = code.read_span(span, 0, 0).ok()?;
-    Some(LinePosition {
+) -> miette::Result<LinePosition> {
+    let code = code.ok_or_else(|| miette!("missing source code"))?;
+    let content = code.read_span(span, 0, 0)?;
+    Ok(LinePosition {
         line: content.line(),
         character: content.column(),
     })
