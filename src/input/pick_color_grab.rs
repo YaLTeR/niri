@@ -120,6 +120,9 @@ impl PointerGrab<State> for PickColorGrab {
             return;
         }
 
+        // We're handling this press, don't send the release to the window.
+        data.niri.suppressed_buttons.insert(event.button);
+
         if let Some(tx) = data.niri.pick_color.take() {
             let color = Self::pick_color_at_point(handle.current_location(), data);
             let _ = tx.send_blocking(color);

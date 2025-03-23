@@ -60,16 +60,22 @@ impl PointerGrab<State> for PickWindowGrab {
         handle: &mut PointerInnerHandle<'_, State>,
         event: &ButtonEvent,
     ) {
-        if event.state == ButtonState::Pressed {
-            if let Some(tx) = data.niri.pick_window.take() {
-                let _ = tx.send_blocking(
-                    data.niri
-                        .window_under(handle.current_location())
-                        .map(Mapped::id),
-                );
-            }
-            handle.unset_grab(self, data, event.serial, event.time, true);
+        if event.state != ButtonState::Pressed {
+            return;
         }
+
+        // We're handling this press, don't send the release to the window.
+        data.niri.suppressed_buttons.insert(event.button);
+
+        if let Some(tx) = data.niri.pick_window.take() {
+            let _ = tx.send_blocking(
+                data.niri
+                    .window_under(handle.current_location())
+                    .map(Mapped::id),
+            );
+        }
+
+        handle.unset_grab(self, data, event.serial, event.time, true);
     }
 
     fn axis(
