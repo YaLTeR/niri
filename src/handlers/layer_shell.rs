@@ -1,4 +1,3 @@
-use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::delegate_layer_shell;
 use smithay::desktop::{layer_map_for_output, LayerSurface, PopupKind, WindowSurfaceType};
 use smithay::output::Output;
@@ -13,7 +12,7 @@ use smithay::wayland::shell::xdg::PopupSurface;
 
 use crate::layer::{MappedLayer, ResolvedLayerRules};
 use crate::niri::State;
-use crate::utils::send_scale_transform;
+use crate::utils::{is_mapped, send_scale_transform};
 
 impl WlrLayerShellHandler for State {
     fn shell_state(&mut self) -> &mut WlrLayerShellState {
@@ -120,14 +119,7 @@ impl State {
                 .unwrap();
 
             if initial_configure_sent {
-                let is_mapped =
-                    with_renderer_surface_state(surface, |state| state.buffer().is_some())
-                        .unwrap_or_else(|| {
-                            error!("no renderer surface state even though we use commit handler");
-                            false
-                        });
-
-                if is_mapped {
+                if is_mapped(surface) {
                     let was_unmapped = self.niri.unmapped_layer_surfaces.remove(surface);
 
                     // Resolve rules for newly mapped layer surfaces.

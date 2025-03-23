@@ -45,7 +45,6 @@ use niri_config::{
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
 use scrolling::{Column, ColumnWidth, InsertHint, InsertPosition};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
-use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -59,6 +58,7 @@ use self::workspace::{OutputId, Workspace};
 use crate::animation::Clock;
 use crate::layout::scrolling::ScrollDirection;
 use crate::niri_render_elements;
+use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -92,6 +92,9 @@ pub const RESIZE_ANIMATION_THRESHOLD: f64 = 10.;
 
 /// Pointer needs to move this far to pull a window from the layout.
 const INTERACTIVE_MOVE_START_THRESHOLD: f64 = 256. * 256.;
+
+/// Opacity of interactively moved tiles targeting the scrolling layout.
+const INTERACTIVE_MOVE_ALPHA: f64 = 0.75;
 
 /// Size-relative units.
 pub struct SizeFrac;
@@ -173,16 +176,15 @@ pub trait LayoutElement {
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
+        is_fullscreen: bool,
         animate: bool,
         transaction: Option<Transaction>,
     );
 
     /// Requests the element to change size once, clearing the request afterwards.
     fn request_size_once(&mut self, size: Size<i32, Logical>, animate: bool) {
-        self.request_size(size, animate, None);
+        self.request_size(size, false, animate, None);
     }
-
-    fn request_fullscreen(&mut self, size: Size<i32, Logical>);
 
     fn min_size(&self) -> Size<i32, Logical>;
     fn max_size(&self) -> Size<i32, Logical>;
@@ -191,7 +193,7 @@ pub trait LayoutElement {
     fn set_preferred_scale_transform(&self, scale: output::Scale, transform: Transform);
     fn output_enter(&self, output: &Output);
     fn output_leave(&self, output: &Output);
-    fn set_offscreen_element_id(&self, id: Option<Id>);
+    fn set_offscreen_data(&self, data: Option<OffscreenData>);
     fn set_activated(&mut self, active: bool);
     fn set_active_in_column(&mut self, active: bool);
     fn set_floating(&mut self, floating: bool);
@@ -203,12 +205,12 @@ pub trait LayoutElement {
 
     /// Whether the element is currently fullscreen.
     ///
-    /// This will *not* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
+    /// This will *not* switch immediately after a [`LayoutElement::request_size()`] call.
     fn is_fullscreen(&self) -> bool;
 
     /// Whether we're requesting the element to be fullscreen.
     ///
-    /// This *will* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
+    /// This *will* switch immediately after a [`LayoutElement::request_size()`] call.
     fn is_pending_fullscreen(&self) -> bool;
 
     /// Size previously requested through [`LayoutElement::request_size()`].
@@ -240,6 +242,13 @@ pub trait LayoutElement {
             requested.h = current.h;
         }
         Some(requested)
+    }
+
+    fn is_pending_windowed_fullscreen(&self) -> bool {
+        false
+    }
+    fn request_windowed_fullscreen(&mut self, value: bool) {
+        let _ = value;
     }
 
     fn is_child_of(&self, parent: &Self) -> bool;
@@ -1187,6 +1196,11 @@ impl<W: LayoutElement> Layout<W> {
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if move_.tile.window().id() == window {
+                // Do this before calling update_window() so it can get up-to-date info.
+                if let Some(serial) = serial {
+                    move_.tile.window_mut().on_commit(serial);
+                }
+
                 move_.tile.update_window();
                 return;
             }
@@ -1827,6 +1841,13 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
+    pub fn move_column_to_index(&mut self, index: usize) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.move_column_to_index(index);
+    }
+
     pub fn move_down(&mut self) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
@@ -1941,6 +1962,13 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         workspace.focus_column_left_or_last();
+    }
+
+    pub fn focus_column(&mut self, index: usize) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.focus_column(index);
     }
 
     pub fn focus_window_up_or_output(&mut self, output: &Output) -> bool {
@@ -2319,6 +2347,9 @@ impl<W: LayoutElement> Layout<W> {
                 }
                 InteractiveMoveState::Moving(move_) => {
                     assert_eq!(self.clock, move_.tile.clock);
+                    assert!(!move_.tile.window().is_pending_fullscreen());
+
+                    move_.tile.verify_invariants();
 
                     let scale = move_.output.current_scale().fractional_scale();
                     let options = Options::clone(&self.options).adjusted_for_scale(scale);
@@ -2334,6 +2365,34 @@ impl<W: LayoutElement> Layout<W> {
                     // Tile position must be rounded to physical pixels.
                     assert_abs_diff_eq!(tile_pos.x, rounded_pos.x, epsilon = 1e-5);
                     assert_abs_diff_eq!(tile_pos.y, rounded_pos.y, epsilon = 1e-5);
+
+                    if let Some(alpha) = &move_.tile.alpha_animation {
+                        if move_.is_floating {
+                            assert_eq!(
+                                alpha.anim.to(),
+                                1.,
+                                "interactively moved floating tile can animate alpha only to 1"
+                            );
+
+                            assert!(
+                                !alpha.hold_after_done,
+                                "interactively moved floating tile \
+                                 cannot have held alpha animation"
+                            );
+                        } else {
+                            assert_ne!(
+                                alpha.anim.to(),
+                                1.,
+                                "interactively moved scrolling tile must animate alpha to not 1"
+                            );
+
+                            assert!(
+                                alpha.hold_after_done,
+                                "interactively moved scrolling tile \
+                                 must have held alpha animation"
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -3005,6 +3064,21 @@ impl<W: LayoutElement> Layout<W> {
                     size.h = ensure_min_max_size_maybe_zero(size.h, min_size.h, max_size.h);
 
                     win.request_size_once(size, true);
+
+                    // Animate the tile back to opaque.
+                    move_.tile.animate_alpha(
+                        INTERACTIVE_MOVE_ALPHA,
+                        1.,
+                        self.options.animations.window_movement.0,
+                    );
+                } else {
+                    // Animate the tile back to semitransparent.
+                    move_.tile.animate_alpha(
+                        1.,
+                        INTERACTIVE_MOVE_ALPHA,
+                        self.options.animations.window_movement.0,
+                    );
+                    move_.tile.hold_alpha_animation_after_done();
                 }
 
                 return;
@@ -3390,62 +3464,68 @@ impl<W: LayoutElement> Layout<W> {
         res
     }
 
-    pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
-        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if move_.tile.window().id() == window {
+    pub fn set_fullscreen(&mut self, id: &W::Id, is_fullscreen: bool) {
+        // Check if this is a request to unset the windowed fullscreen state.
+        if !is_fullscreen {
+            let mut handled = false;
+            self.with_windows_mut(|window, _| {
+                if window.id() == id && window.is_pending_windowed_fullscreen() {
+                    window.request_windowed_fullscreen(false);
+                    handled = true;
+                }
+            });
+            if handled {
                 return;
             }
         }
 
-        match &mut self.monitor_set {
-            MonitorSet::Normal { monitors, .. } => {
-                for mon in monitors {
-                    for ws in &mut mon.workspaces {
-                        if ws.has_window(window) {
-                            ws.set_fullscreen(window, is_fullscreen);
-                            return;
-                        }
-                    }
-                }
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == id {
+                return;
             }
-            MonitorSet::NoOutputs { workspaces, .. } => {
-                for ws in workspaces {
-                    if ws.has_window(window) {
-                        ws.set_fullscreen(window, is_fullscreen);
-                        return;
-                    }
-                }
+        }
+
+        for ws in self.workspaces_mut() {
+            if ws.has_window(id) {
+                ws.set_fullscreen(id, is_fullscreen);
+                return;
             }
         }
     }
 
-    pub fn toggle_fullscreen(&mut self, window: &W::Id) {
+    pub fn toggle_fullscreen(&mut self, id: &W::Id) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if move_.tile.window().id() == window {
+            if move_.tile.window().id() == id {
                 return;
             }
         }
 
-        match &mut self.monitor_set {
-            MonitorSet::Normal { monitors, .. } => {
-                for mon in monitors {
-                    for ws in &mut mon.workspaces {
-                        if ws.has_window(window) {
-                            ws.toggle_fullscreen(window);
-                            return;
-                        }
-                    }
-                }
+        for ws in self.workspaces_mut() {
+            if ws.has_window(id) {
+                ws.toggle_fullscreen(id);
+                return;
             }
-            MonitorSet::NoOutputs { workspaces, .. } => {
-                for ws in workspaces {
-                    if ws.has_window(window) {
-                        ws.toggle_fullscreen(window);
-                        return;
-                    }
+        }
+    }
+
+    pub fn toggle_windowed_fullscreen(&mut self, id: &W::Id) {
+        let (_, window) = self.windows().find(|(_, win)| win.id() == id).unwrap();
+        if window.is_pending_fullscreen() {
+            // Remove the real fullscreen.
+            for ws in self.workspaces_mut() {
+                if ws.has_window(id) {
+                    ws.set_fullscreen(id, false);
+                    break;
                 }
             }
         }
+
+        // This will switch is_pending_fullscreen() to false right away.
+        self.with_windows_mut(|window, _| {
+            if window.id() == id {
+                window.request_windowed_fullscreen(!window.is_pending_windowed_fullscreen());
+            }
+        });
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, output: &Output, is_touchpad: bool) {
@@ -3773,6 +3853,16 @@ impl<W: LayoutElement> Layout<W> {
                     is_floating = unfullscreen_to_floating;
                 }
 
+                // Animate to semitransparent.
+                if !is_floating {
+                    tile.animate_alpha(
+                        1.,
+                        INTERACTIVE_MOVE_ALPHA,
+                        self.options.animations.window_movement.0,
+                    );
+                    tile.hold_alpha_animation_after_done();
+                }
+
                 let mut data = InteractiveMoveData {
                     tile,
                     output,
@@ -3869,7 +3959,7 @@ impl<W: LayoutElement> Layout<W> {
             return;
         }
 
-        let Some(InteractiveMoveState::Moving(move_)) = self.interactive_move.take() else {
+        let Some(InteractiveMoveState::Moving(mut move_)) = self.interactive_move.take() else {
             unreachable!()
         };
 
@@ -3878,6 +3968,13 @@ impl<W: LayoutElement> Layout<W> {
             for ws in self.workspaces_mut() {
                 ws.dnd_scroll_gesture_end();
             }
+
+            // Also animate the tile back to opaque.
+            move_.tile.animate_alpha(
+                INTERACTIVE_MOVE_ALPHA,
+                1.,
+                self.options.animations.window_movement.0,
+            );
         }
 
         match &mut self.monitor_set {

@@ -1,134 +1,264 @@
-use smithay::backend::allocator::Fourcc;
-use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
-use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
-use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
-use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer};
-use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
-use smithay::utils::{Buffer, Physical, Rectangle, Scale, Transform};
+use std::cell::RefCell;
 
-use super::primary_gpu_texture::PrimaryGpuTextureRenderElement;
-use super::render_to_texture;
-use super::renderer::AsGlesFrame;
-use super::texture::{TextureBuffer, TextureRenderElement};
+use anyhow::Context as _;
+use smithay::backend::allocator::Fourcc;
+use smithay::backend::renderer::damage::OutputDamageTracker;
+use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
+use smithay::backend::renderer::element::{
+    Element, Id, Kind, RenderElement, RenderElementStates, UnderlyingStorage,
+};
+use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture};
+use smithay::backend::renderer::sync::SyncPoint;
+use smithay::backend::renderer::utils::{
+    CommitCounter, DamageBag, DamageSet, DamageSnapshot, OpaqueRegions,
+};
+use smithay::backend::renderer::{
+    Bind as _, Color32F, Frame as _, Offscreen as _, Renderer, Texture as _,
+};
+use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
+
+use super::encompassing_geo;
+use super::renderer::AsGlesFrame as _;
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
-/// Renders elements into an off-screen buffer.
+/// Buffer for offscreen rendering.
 #[derive(Debug)]
+pub struct OffscreenBuffer {
+    id: Id,
+
+    /// The cached texture buffer.
+    ///
+    /// Lazily created when `render` is called. Recreated when necessary.
+    inner: RefCell<Option<Inner>>,
+}
+
+#[derive(Debug)]
+struct Inner {
+    /// The texture with offscreened contents.
+    texture: GlesTexture,
+    /// Id of the renderer that the texture comes from.
+    renderer_id: usize,
+    /// Scale of the texture.
+    scale: Scale<f64>,
+    /// Damage tracker for drawing to the texture.
+    damage: OutputDamageTracker,
+    /// Damage of this offscreen element itself facing outside.
+    outer_damage: DamageBag<i32, Buffer>,
+}
+
+#[derive(Debug, Clone)]
 pub struct OffscreenRenderElement {
-    // The texture, if rendering succeeded.
-    texture: Option<PrimaryGpuTextureRenderElement>,
-    // The fallback buffer in case the rendering fails.
-    fallback: SolidColorRenderElement,
+    id: Id,
+    texture: GlesTexture,
+    renderer_id: usize,
+    scale: Scale<f64>,
+    damage: DamageSnapshot<i32, Buffer>,
+    offset: Point<f64, Logical>,
+    src_size: Size<i32, Buffer>,
+    alpha: f32,
+    kind: Kind,
+}
+
+#[derive(Debug)]
+pub struct OffscreenData {
+    /// Id of the offscreen element.
+    pub id: Id,
+    /// States for the render into the offscreen buffer.
+    pub states: RenderElementStates,
+}
+
+impl OffscreenBuffer {
+    pub fn render(
+        &self,
+        renderer: &mut GlesRenderer,
+        scale: Scale<f64>,
+        elements: &[impl RenderElement<GlesRenderer>],
+    ) -> anyhow::Result<(OffscreenRenderElement, SyncPoint, OffscreenData)> {
+        let _span = tracy_client::span!("OffscreenBuffer::render");
+
+        let geo = encompassing_geo(scale, elements.iter());
+        let elements = Vec::from_iter(elements.iter().map(|ele| {
+            RelocateRenderElement::from_element(ele, geo.loc.upscale(-1), Relocate::Relative)
+        }));
+
+        let src_size = geo.size;
+        let src_size = src_size.to_logical(1).to_buffer(1, Transform::Normal);
+        let offset = geo.loc.to_f64().to_logical(scale);
+
+        let mut inner = self.inner.borrow_mut();
+
+        // Check if we need to create or recreate the texture.
+        let size_string;
+        let mut reason = "";
+        if let Some(Inner {
+            texture,
+            renderer_id,
+            ..
+        }) = inner.as_mut()
+        {
+            let old_size = texture.size();
+            if old_size.w < src_size.w || old_size.h < src_size.h {
+                size_string = format!(
+                    "size increased from {} × {} to {} × {}",
+                    old_size.w, old_size.h, src_size.w, src_size.h
+                );
+                reason = &size_string;
+
+                *inner = None;
+            } else if !texture.is_unique_reference() {
+                reason = "not unique";
+
+                *inner = None;
+            } else if *renderer_id != renderer.id() {
+                reason = "renderer id changed";
+
+                *inner = None;
+            }
+        } else {
+            reason = "first render";
+        }
+
+        let inner = if let Some(inner) = inner.as_mut() {
+            inner
+        } else {
+            trace!("creating new texture: {reason}");
+            let span = tracy_client::span!("creating offscreen buffer");
+            span.emit_text(reason);
+
+            let texture: GlesTexture = renderer
+                .create_buffer(Fourcc::Abgr8888, src_size)
+                .context("error creating texture")?;
+
+            let buffer_size = src_size.to_logical(1, Transform::Normal).to_physical(1);
+            let damage = OutputDamageTracker::new(buffer_size, scale, Transform::Normal);
+
+            inner.insert(Inner {
+                texture,
+                renderer_id: renderer.id(),
+                scale,
+                damage,
+                outer_damage: DamageBag::default(),
+            })
+        };
+
+        // When leaving the old texture as is, its size might be bigger than src_size.
+        let texture_size = inner.texture.size();
+        let buffer_size = texture_size.to_logical(1, Transform::Normal).to_physical(1);
+
+        // Recreate the damage tracker if the scale changes. We already recreate it for buffer size
+        // changes, and transform is always Normal.
+        if inner.scale != scale {
+            inner.scale = scale;
+
+            trace!("recreating damage tracker due to scale change");
+            inner.damage = OutputDamageTracker::new(buffer_size, scale, Transform::Normal);
+            inner.outer_damage = DamageBag::default();
+        }
+
+        let res = {
+            let mut target = renderer.bind(&mut inner.texture)?;
+            inner.damage.render_output(
+                renderer,
+                &mut target,
+                1,
+                &elements,
+                Color32F::TRANSPARENT,
+            )?
+        };
+
+        // Add the resulting damage to the outer tracker.
+        if let Some(damage) = res.damage {
+            // OutputDamageTracker gives us Physical coordinate space, but it's actually the Buffer
+            // space because we were rendering to a texture.
+            let size = buffer_size.to_logical(1);
+            let damage = damage
+                .iter()
+                .map(|rect| rect.to_logical(1).to_buffer(1, Transform::Normal, &size));
+            inner.outer_damage.add(damage);
+        }
+
+        let elem = OffscreenRenderElement {
+            id: self.id.clone(),
+            texture: inner.texture.clone(),
+            renderer_id: inner.renderer_id,
+            scale,
+            damage: inner.outer_damage.snapshot(),
+            offset,
+            src_size,
+            alpha: 1.,
+            kind: Kind::Unspecified,
+        };
+
+        let data = OffscreenData {
+            id: self.id.clone(),
+            states: res.states,
+        };
+
+        Ok((elem, res.sync, data))
+    }
+}
+
+impl Default for OffscreenBuffer {
+    fn default() -> Self {
+        OffscreenBuffer {
+            inner: RefCell::new(None),
+            id: Id::new(),
+        }
+    }
 }
 
 impl OffscreenRenderElement {
-    pub fn new(
-        renderer: &mut GlesRenderer,
-        scale: i32,
-        elements: &[impl RenderElement<GlesRenderer>],
-        result_alpha: f32,
-    ) -> Self {
-        let _span = tracy_client::span!("OffscreenRenderElement::new");
+    pub fn texture(&self) -> &GlesTexture {
+        &self.texture
+    }
 
-        let geo = elements
-            .iter()
-            .map(|ele| ele.geometry(Scale::from(f64::from(scale))))
-            .reduce(|a, b| a.merge(b))
-            .unwrap_or_default();
-        let logical_size = geo.size.to_logical(scale);
+    pub fn offset(&self) -> Point<f64, Logical> {
+        self.offset
+    }
 
-        let fallback_buffer = SolidColorBuffer::new(logical_size, [1., 0., 0., 1.]);
-        let fallback = SolidColorRenderElement::from_buffer(
-            &fallback_buffer,
-            geo.loc,
-            Scale::from(scale as f64),
-            result_alpha,
-            Kind::Unspecified,
-        );
+    pub fn with_alpha(mut self, alpha: f32) -> Self {
+        self.alpha = alpha;
+        self
+    }
 
-        let elements = elements.iter().rev().map(|ele| {
-            RelocateRenderElement::from_element(ele, (-geo.loc.x, -geo.loc.y), Relocate::Relative)
-        });
+    pub fn with_offset(mut self, offset: Point<f64, Logical>) -> Self {
+        self.offset = offset;
+        self
+    }
 
-        match render_to_texture(
-            renderer,
-            geo.size,
-            Scale::from(scale as f64),
-            Transform::Normal,
-            Fourcc::Abgr8888,
-            elements,
-        ) {
-            Ok((texture, _sync_point)) => {
-                let buffer = TextureBuffer::from_texture(
-                    renderer,
-                    texture,
-                    scale as f64,
-                    Transform::Normal,
-                    Vec::new(),
-                );
-                let element = TextureRenderElement::from_texture_buffer(
-                    buffer,
-                    geo.loc.to_f64().to_logical(scale as f64),
-                    result_alpha,
-                    None,
-                    None,
-                    Kind::Unspecified,
-                );
-                Self {
-                    texture: Some(PrimaryGpuTextureRenderElement(element)),
-                    fallback,
-                }
-            }
-            Err(err) => {
-                warn!("error off-screening elements: {err:?}");
-                Self {
-                    texture: None,
-                    fallback,
-                }
-            }
-        }
+    pub fn logical_size(&self) -> Size<f64, Logical> {
+        self.src_size
+            .to_f64()
+            .to_logical(self.scale, Transform::Normal)
+    }
+
+    fn damage_since(&self, commit: Option<CommitCounter>) -> DamageSet<i32, Buffer> {
+        self.damage
+            .damage_since(commit)
+            .unwrap_or_else(|| DamageSet::from_slice(&[Rectangle::from_size(self.texture.size())]))
     }
 }
 
 impl Element for OffscreenRenderElement {
     fn id(&self) -> &Id {
-        if let Some(texture) = &self.texture {
-            texture.id()
-        } else {
-            self.fallback.id()
-        }
+        &self.id
     }
 
     fn current_commit(&self) -> CommitCounter {
-        if let Some(texture) = &self.texture {
-            texture.current_commit()
-        } else {
-            self.fallback.current_commit()
-        }
+        self.damage.current_commit()
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        if let Some(texture) = &self.texture {
-            texture.geometry(scale)
-        } else {
-            self.fallback.geometry(scale)
-        }
+        let logical_geo = Rectangle::new(self.offset, self.logical_size());
+        logical_geo.to_physical_precise_round(scale)
     }
 
     fn transform(&self) -> Transform {
-        if let Some(texture) = &self.texture {
-            texture.transform()
-        } else {
-            self.fallback.transform()
-        }
+        Transform::Normal
     }
 
     fn src(&self) -> Rectangle<f64, Buffer> {
-        if let Some(texture) = &self.texture {
-            texture.src()
-        } else {
-            self.fallback.src()
-        }
+        Rectangle::from_size(self.src_size).to_f64()
     }
 
     fn damage_since(
@@ -136,116 +266,90 @@ impl Element for OffscreenRenderElement {
         scale: Scale<f64>,
         commit: Option<CommitCounter>,
     ) -> DamageSet<i32, Physical> {
-        if let Some(texture) = &self.texture {
-            texture.damage_since(scale, commit)
-        } else {
-            self.fallback.damage_since(scale, commit)
-        }
+        let texture_size = self.texture.size().to_f64();
+        let src = self.src();
+
+        self.damage_since(commit)
+            .into_iter()
+            .filter_map(|region| {
+                let mut region = region.to_f64().intersection(src)?;
+
+                region.loc -= src.loc;
+                region.upscale(texture_size / src.size);
+
+                let logical = region.to_logical(self.scale, Transform::Normal, &src.size);
+                Some(logical.to_physical_precise_up(scale))
+            })
+            .collect()
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
-        if let Some(texture) = &self.texture {
-            texture.opaque_regions(scale)
-        } else {
-            self.fallback.opaque_regions(scale)
-        }
+    fn opaque_regions(&self, _scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+        OpaqueRegions::default()
     }
 
     fn alpha(&self) -> f32 {
-        if let Some(texture) = &self.texture {
-            texture.alpha()
-        } else {
-            self.fallback.alpha()
-        }
+        self.alpha
     }
 
     fn kind(&self) -> Kind {
-        if let Some(texture) = &self.texture {
-            texture.kind()
-        } else {
-            self.fallback.kind()
-        }
+        self.kind
     }
 }
 
 impl RenderElement<GlesRenderer> for OffscreenRenderElement {
     fn draw(
         &self,
-        frame: &mut GlesFrame<'_>,
+        frame: &mut GlesFrame<'_, '_>,
         src: Rectangle<f64, Buffer>,
-        dst: Rectangle<i32, Physical>,
+        dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        let gles_frame = frame.as_gles_frame();
-        if let Some(texture) = &self.texture {
-            RenderElement::<GlesRenderer>::draw(
-                texture,
-                gles_frame,
-                src,
-                dst,
-                damage,
-                opaque_regions,
-            )?;
-        } else {
-            RenderElement::<GlesRenderer>::draw(
-                &self.fallback,
-                gles_frame,
-                src,
-                dst,
-                damage,
-                opaque_regions,
-            )?;
+        if frame.id() != self.renderer_id {
+            warn!("trying to render texture from different renderer");
+            return Ok(());
         }
-        Ok(())
+
+        frame.render_texture_from_to(
+            &self.texture,
+            src,
+            dest,
+            damage,
+            opaque_regions,
+            Transform::Normal,
+            self.alpha,
+            None,
+            &[],
+        )
     }
 
-    fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
-        if let Some(texture) = &self.texture {
-            texture.underlying_storage(renderer)
-        } else {
-            self.fallback.underlying_storage(renderer)
-        }
+    fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
+        // If scanout for things other than Wayland buffers is implemented, this will need to take
+        // the target GPU into account.
+        None
     }
 }
 
 impl<'render> RenderElement<TtyRenderer<'render>> for OffscreenRenderElement {
     fn draw(
         &self,
-        frame: &mut TtyFrame<'_, '_>,
+        frame: &mut TtyFrame<'_, '_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
         let gles_frame = frame.as_gles_frame();
-        if let Some(texture) = &self.texture {
-            RenderElement::<GlesRenderer>::draw(
-                texture,
-                gles_frame,
-                src,
-                dst,
-                damage,
-                opaque_regions,
-            )?;
-        } else {
-            RenderElement::<GlesRenderer>::draw(
-                &self.fallback,
-                gles_frame,
-                src,
-                dst,
-                damage,
-                opaque_regions,
-            )?;
-        }
+        RenderElement::<GlesRenderer>::draw(&self, gles_frame, src, dst, damage, opaque_regions)?;
         Ok(())
     }
 
-    fn underlying_storage(&self, renderer: &mut TtyRenderer<'render>) -> Option<UnderlyingStorage> {
-        if let Some(texture) = &self.texture {
-            texture.underlying_storage(renderer)
-        } else {
-            self.fallback.underlying_storage(renderer)
-        }
+    fn underlying_storage(
+        &self,
+        _renderer: &mut TtyRenderer<'render>,
+    ) -> Option<UnderlyingStorage> {
+        // If scanout for things other than Wayland buffers is implemented, this will need to take
+        // the target GPU into account.
+        None
     }
 }

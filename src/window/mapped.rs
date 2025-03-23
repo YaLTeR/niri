@@ -1,9 +1,9 @@
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::time::{Duration, Instant};
 
 use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
-use smithay::backend::renderer::element::{Id, Kind};
+use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::space::SpaceElement as _;
 use smithay::desktop::{PopupManager, Window};
@@ -24,9 +24,9 @@ use crate::layout::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
     LayoutElementRenderSnapshot,
 };
-use crate::niri::WindowOffscreenId;
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
+use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -35,7 +35,8 @@ use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
-    get_credentials_for_surface, send_scale_transform, with_toplevel_role, ResizeEdge,
+    get_credentials_for_surface, send_scale_transform, update_tiled_state, with_toplevel_role,
+    ResizeEdge,
 };
 
 #[derive(Debug)]
@@ -71,6 +72,11 @@ pub struct Mapped {
     /// resizes immediately, without waiting for a 1 second throttled callback.
     needs_frame_callback: bool,
 
+    /// Data of the offscreen element rendered in place of this window.
+    ///
+    /// If `None`, then the window is not offscreened.
+    offscreen_data: RefCell<Option<OffscreenData>>,
+
     /// Whether this window has the keyboard focus.
     is_focused: bool,
 
@@ -95,7 +101,7 @@ pub struct Mapped {
     /// Serials of commits that should be animated.
     animate_serials: Vec<Serial>,
 
-    /// Snapshot right before an animated commit.
+    /// Snapshot right before an animated commit, without popups.
     animation_snapshot: Option<LayoutElementRenderSnapshot>,
 
     /// State for the logic to request a size once (for floating windows).
@@ -115,6 +121,42 @@ pub struct Mapped {
     /// Used for double-resize-click tracking.
     last_interactive_resize_start: Cell<Option<(Duration, ResizeEdge)>>,
 
+    /// Whether this window is in windowed (fake) fullscreen.
+    ///
+    /// In this mode, the underlying window is told that it's fullscreen, while keeping it as
+    /// a regular, non-fullscreen tile.
+    is_windowed_fullscreen: bool,
+
+    /// Whether this window is pending to go to windowed (fake) fullscreen.
+    ///
+    /// Several places in the layout code assume that is_fullscreen() can flip only on a commit.
+    /// Which is something that we do want to flip when changing is_windowed_fullscreen. Flipping
+    /// it right away would mean remembering to call layout.update_window() after any operation
+    /// that may change is_windowed_fullscreen, which is quite tricky and error-prone, especially
+    /// for deeply nested operations.
+    ///
+    /// It's also not clear what's the best way to go about it. Ideally we'd wait for configure ack
+    /// and commit before "committing" to is_windowed_fullscreen, however, since it's not real
+    /// Wayland state, we may end up with no Wayland state change to configure at all.
+    ///
+    /// For example: when the window is in real fullscreen, but its non-fullscreen size matches
+    /// its fullscreen size. Then turning on is_windowed_fullscreen will both keep the
+    /// fullscreen state, and keep the size (since it matches), resulting in no configure.
+    ///
+    /// So we work around this by emulating a configure-ack/commit cycle through
+    /// is_pending_windowed_fullscreen and uncommited_windowed_fullscreen. We ensure we send actual
+    /// configures in all cases through needs_configure. This can result in unnecessary configures
+    /// (like in the example above), but in most cases there will be a configure anyway to change
+    /// the Fullscreen state and/or the size. What this gives us is being able to synchronize our
+    /// windowed fullscreen state to the real window updates to avoid any flickering.
+    is_pending_windowed_fullscreen: bool,
+
+    /// Pending windowed fullscreen updates.
+    ///
+    /// These have been "sent" to the window in form of configures, but the window hadn't committed
+    /// in response yet.
+    uncommited_windowed_fullscreen: Vec<(Serial, bool)>,
+
     /// Most recent time the window had the focus.
     most_recent_focus: Option<Instant>,
 }
@@ -133,7 +175,7 @@ static MAPPED_ID_COUNTER: IdCounter = IdCounter::new();
 pub struct MappedId(u64);
 
 impl MappedId {
-    fn next() -> MappedId {
+    pub fn next() -> MappedId {
         MappedId(MAPPED_ID_COUNTER.next())
     }
 
@@ -191,6 +233,7 @@ impl Mapped {
             need_to_recompute_rules: false,
             needs_configure: false,
             needs_frame_callback: false,
+            offscreen_data: RefCell::new(None),
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
@@ -205,6 +248,9 @@ impl Mapped {
             pending_transactions: Vec::new(),
             interactive_resize: None,
             last_interactive_resize_start: Cell::new(None),
+            is_windowed_fullscreen: false,
+            is_pending_windowed_fullscreen: false,
+            uncommited_windowed_fullscreen: Vec::new(),
             most_recent_focus: None,
         }
     }
@@ -256,6 +302,10 @@ impl Mapped {
         self.credentials.as_ref()
     }
 
+    pub fn offscreen_data(&self) -> Ref<Option<OffscreenData>> {
+        self.offscreen_data.borrow()
+    }
+
     pub fn is_focused(&self) -> bool {
         self.is_focused
     }
@@ -294,6 +344,7 @@ impl Mapped {
         self.need_to_recompute_rules = true;
     }
 
+    /// Renders a snapshot of the window without popups.
     fn render_snapshot(&self, renderer: &mut GlesRenderer) -> LayoutElementRenderSnapshot {
         let _span = tracy_client::span!("Mapped::render_snapshot");
 
@@ -313,17 +364,6 @@ impl Mapped {
         let mut contents = vec![];
 
         let surface = self.toplevel().wl_surface();
-        for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
-            let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
-
-            render_snapshot_from_surface_tree(
-                renderer,
-                popup.wl_surface(),
-                buf_pos + offset.to_f64(),
-                &mut contents,
-            );
-        }
-
         render_snapshot_from_surface_tree(renderer, surface, buf_pos, &mut contents);
 
         RenderSnapshot {
@@ -474,6 +514,14 @@ impl Mapped {
         };
         self.window.send_frame(output, time, throttle, should_send);
     }
+
+    pub fn update_tiled_state(&self, prefer_no_csd: bool) {
+        update_tiled_state(self.toplevel(), prefer_no_csd, self.rules.tiled_state);
+    }
+
+    pub fn is_windowed_fullscreen(&self) -> bool {
+        self.is_windowed_fullscreen
+    }
 }
 
 impl Drop for Mapped {
@@ -611,13 +659,29 @@ impl LayoutElement for Mapped {
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
+        is_fullscreen: bool,
         animate: bool,
         transaction: Option<Transaction>,
     ) {
+        // Going into real fullscreen resets windowed fullscreen.
+        if is_fullscreen {
+            self.is_pending_windowed_fullscreen = false;
+
+            if self.is_windowed_fullscreen {
+                // Make sure we receive a commit to update self.is_windowed_fullscreen to false
+                // later on.
+                self.needs_configure = true;
+            }
+        }
+
         let changed = self.toplevel().with_pending_state(|state| {
             let changed = state.size != Some(size);
             state.size = Some(size);
-            state.states.unset(xdg_toplevel::State::Fullscreen);
+            if is_fullscreen || self.is_pending_windowed_fullscreen {
+                state.states.set(xdg_toplevel::State::Fullscreen);
+            } else {
+                state.states.unset(xdg_toplevel::State::Fullscreen);
+            }
             changed
         });
 
@@ -662,7 +726,8 @@ impl LayoutElement for Mapped {
 
             let same_size = last_sent.size.unwrap_or_default() == size;
             let has_fullscreen = last_sent.states.contains(xdg_toplevel::State::Fullscreen);
-            (same_size && !has_fullscreen).then_some(last_serial)
+            let same_fullscreen = has_fullscreen == self.is_pending_windowed_fullscreen;
+            (same_size && same_fullscreen).then_some(last_serial)
         });
 
         if let Some(serial) = already_sent {
@@ -689,7 +754,9 @@ impl LayoutElement for Mapped {
         let changed = self.toplevel().with_pending_state(|state| {
             let changed = state.size != Some(size);
             state.size = Some(size);
-            state.states.unset(xdg_toplevel::State::Fullscreen);
+            if !self.is_pending_windowed_fullscreen {
+                state.states.unset(xdg_toplevel::State::Fullscreen);
+            }
             changed
         });
 
@@ -698,15 +765,6 @@ impl LayoutElement for Mapped {
         }
 
         self.request_size_once = Some(RequestSizeOnce::WaitingForConfigure);
-    }
-
-    fn request_fullscreen(&mut self, size: Size<i32, Logical>) {
-        self.toplevel().with_pending_state(|state| {
-            state.size = Some(size);
-            state.states.set(xdg_toplevel::State::Fullscreen);
-        });
-
-        self.request_size_once = None;
     }
 
     fn min_size(&self) -> Size<i32, Logical> {
@@ -764,12 +822,24 @@ impl LayoutElement for Mapped {
         self.window.output_leave(output)
     }
 
-    fn set_offscreen_element_id(&self, id: Option<Id>) {
-        let data = self
-            .window
-            .user_data()
-            .get_or_insert(WindowOffscreenId::default);
-        data.0.replace(id);
+    fn set_offscreen_data(&self, data: Option<OffscreenData>) {
+        let Some(data) = data else {
+            self.offscreen_data.replace(None);
+            return;
+        };
+
+        let mut offscreen_data = self.offscreen_data.borrow_mut();
+        match &mut *offscreen_data {
+            None => {
+                *offscreen_data = Some(data);
+            }
+            Some(existing) => {
+                // Replace the id, amend existing element states. This is necessary to handle
+                // multiple layers of offscreen (e.g. resize animation + alpha animation).
+                existing.id = data.id;
+                existing.states.states.extend(data.states.states);
+            }
+        }
     }
 
     fn set_activated(&mut self, active: bool) {
@@ -919,6 +989,18 @@ impl LayoutElement for Mapped {
             if let Some(RequestSizeOnce::WaitingForConfigure) = self.request_size_once {
                 self.request_size_once = Some(RequestSizeOnce::WaitingForCommit(serial));
             }
+
+            // If is_pending_windowed_fullscreen changed compared to the last value that we "sent"
+            // to the window, store the configure serial.
+            let last_sent_windowed_fullscreen = self
+                .uncommited_windowed_fullscreen
+                .last()
+                .map(|(_, value)| *value)
+                .unwrap_or(self.is_windowed_fullscreen);
+            if last_sent_windowed_fullscreen != self.is_pending_windowed_fullscreen {
+                self.uncommited_windowed_fullscreen
+                    .push((serial, self.is_pending_windowed_fullscreen));
+            }
         } else {
             self.interactive_resize = match self.interactive_resize.take() {
                 // We probably started and stopped resizing in the same loop cycle without anything
@@ -933,6 +1015,10 @@ impl LayoutElement for Mapped {
     }
 
     fn is_fullscreen(&self) -> bool {
+        if self.is_windowed_fullscreen {
+            return false;
+        }
+
         with_toplevel_role(self.toplevel(), |role| {
             role.current
                 .states
@@ -941,6 +1027,10 @@ impl LayoutElement for Mapped {
     }
 
     fn is_pending_fullscreen(&self) -> bool {
+        if self.is_pending_windowed_fullscreen {
+            return false;
+        }
+
         self.toplevel()
             .with_pending_state(|state| state.states.contains(xdg_toplevel::State::Fullscreen))
     }
@@ -1013,7 +1103,7 @@ impl LayoutElement for Mapped {
 
         if let Some((mut size, fullscreen)) = pending {
             // If the pending change is fullscreen, we can't use that size.
-            if fullscreen {
+            if fullscreen && !self.is_pending_windowed_fullscreen {
                 return None;
             }
 
@@ -1031,6 +1121,33 @@ impl LayoutElement for Mapped {
             // No pending size, return the current size if it's non-fullscreen.
             current_size
         }
+    }
+
+    fn is_pending_windowed_fullscreen(&self) -> bool {
+        self.is_pending_windowed_fullscreen
+    }
+
+    fn request_windowed_fullscreen(&mut self, value: bool) {
+        if self.is_pending_windowed_fullscreen == value {
+            return;
+        }
+
+        self.is_pending_windowed_fullscreen = value;
+
+        // Set the fullscreen state to match.
+        //
+        // When going from windowed to real fullscreen, we'll use request_size() which will set the
+        // fullscreen state back.
+        self.toplevel().with_pending_state(|state| {
+            if value {
+                state.states.set(xdg_toplevel::State::Fullscreen);
+            } else {
+                state.states.unset(xdg_toplevel::State::Fullscreen);
+            }
+        });
+
+        // Make sure we recieve a commit later to update self.is_windowed_fullscreen.
+        self.needs_configure = true;
     }
 
     fn is_child_of(&self, parent: &Self) -> bool {
@@ -1097,5 +1214,16 @@ impl LayoutElement for Mapped {
                 self.request_size_once = Some(RequestSizeOnce::UseWindowSize);
             }
         }
+
+        // "Commit" our "acked" pending windowed fullscreen state.
+        self.uncommited_windowed_fullscreen
+            .retain_mut(|(serial, value)| {
+                if commit_serial.is_no_older_than(serial) {
+                    self.is_windowed_fullscreen = *value;
+                    false
+                } else {
+                    true
+                }
+            });
     }
 }

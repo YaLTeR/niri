@@ -1,5 +1,6 @@
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
+use smithay::backend::renderer::gles::GlesTexture;
 use smithay::backend::renderer::utils::{CommitCounter, OpaqueRegions};
 use smithay::backend::renderer::{Frame as _, ImportMem, Renderer, Texture};
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
@@ -58,7 +59,7 @@ impl<T> TextureBuffer<T> {
         scale: impl Into<Scale<f64>>,
         transform: Transform,
         opaque_regions: Vec<Rectangle<i32, Buffer>>,
-    ) -> Result<Self, <R as Renderer>::Error> {
+    ) -> Result<Self, R::Error> {
         let texture = renderer.import_memory(data, format, size.into(), flipped)?;
         Ok(TextureBuffer::from_texture(
             renderer,
@@ -72,7 +73,7 @@ impl<T> TextureBuffer<T> {
     pub fn from_memory_buffer<R: Renderer<TextureId = T> + ImportMem>(
         renderer: &mut R,
         buffer: &MemoryBuffer,
-    ) -> Result<Self, <R as Renderer>::Error> {
+    ) -> Result<Self, R::Error> {
         Self::from_memory(
             renderer,
             buffer.data(),
@@ -112,6 +113,12 @@ impl<T: Texture> TextureBuffer<T> {
             .size()
             .to_f64()
             .to_logical(self.scale, self.transform)
+    }
+}
+
+impl TextureBuffer<GlesTexture> {
+    pub fn is_texture_reference_unique(&mut self) -> bool {
+        self.texture.is_unique_reference()
     }
 }
 
@@ -213,12 +220,12 @@ where
 {
     fn draw(
         &self,
-        frame: &mut <R as Renderer>::Frame<'_>,
+        frame: &mut R::Frame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dest: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
-    ) -> Result<(), <R as Renderer>::Error> {
+    ) -> Result<(), R::Error> {
         if frame.id() != self.buffer.renderer_id {
             warn!("trying to render texture from different renderer");
             return Ok(());

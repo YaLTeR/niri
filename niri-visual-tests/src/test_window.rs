@@ -6,12 +6,13 @@ use niri::layout::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
     LayoutElementRenderSnapshot,
 };
+use niri::render_helpers::offscreen::OffscreenData;
 use niri::render_helpers::renderer::NiriRenderer;
 use niri::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use niri::render_helpers::{RenderTarget, SplitElements};
 use niri::utils::transaction::Transaction;
 use niri::window::ResolvedWindowRules;
-use smithay::backend::renderer::element::{Id, Kind};
+use smithay::backend::renderer::element::Kind;
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
@@ -181,15 +182,12 @@ impl LayoutElement for TestWindow {
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
+        is_fullscreen: bool,
         _animate: bool,
         _transaction: Option<Transaction>,
     ) {
         self.inner.borrow_mut().requested_size = Some(size);
-        self.inner.borrow_mut().pending_fullscreen = false;
-    }
-
-    fn request_fullscreen(&mut self, _size: Size<i32, Logical>) {
-        self.inner.borrow_mut().pending_fullscreen = true;
+        self.inner.borrow_mut().pending_fullscreen = is_fullscreen;
     }
 
     fn min_size(&self) -> Size<i32, Logical> {
@@ -214,7 +212,7 @@ impl LayoutElement for TestWindow {
 
     fn output_leave(&self, _output: &Output) {}
 
-    fn set_offscreen_element_id(&self, _id: Option<Id>) {}
+    fn set_offscreen_data(&self, _data: Option<OffscreenData>) {}
 
     fn set_activated(&mut self, _active: bool) {}
 

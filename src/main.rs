@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, mem};
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use directories::ProjectDirs;
 use niri::cli::{Cli, Sub};
 #[cfg(feature = "dbus")]
@@ -52,6 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let env_filter = EnvFilter::builder().parse_lossy(directives);
     tracing_subscriber::fmt()
         .compact()
+        .with_writer(io::stderr)
         .with_env_filter(env_filter)
         .init();
 
@@ -106,6 +107,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Ok(());
             }
             Sub::Panic => cause_panic(),
+            Sub::Completions { shell } => {
+                clap_complete::generate(shell, &mut Cli::command(), "niri", &mut io::stdout());
+                return Ok(());
+            }
         }
     }
 

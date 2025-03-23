@@ -12,9 +12,11 @@ use bitflags::bitflags;
 use directories::UserDirs;
 use git_version::git_version;
 use niri_config::{Config, OutputName};
+use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::input::pointer::CursorIcon;
 use smithay::output::{self, Output};
 use smithay::reexports::rustix::time::{clock_gettime, ClockId};
+use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{DisplayHandle, Resource as _};
@@ -26,6 +28,7 @@ use smithay::wayland::shell::xdg::{
 };
 use wayland_backend::server::Credentials;
 
+use crate::handlers::KdeDecorationsModeState;
 use crate::niri::ClientState;
 
 pub mod id;
@@ -179,6 +182,11 @@ pub fn ipc_transform_to_smithay(transform: niri_ipc::Transform) -> Transform {
     }
 }
 
+pub fn is_mapped(surface: &WlSurface) -> bool {
+    // None if the surface hadn't committed yet.
+    with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false)
+}
+
 pub fn send_scale_transform(
     surface: &WlSurface,
     data: &SurfaceData,
@@ -266,6 +274,69 @@ pub fn with_toplevel_role<T>(
 
         f(&mut role)
     })
+}
+
+pub fn update_tiled_state(
+    toplevel: &ToplevelSurface,
+    prefer_no_csd: bool,
+    force_tiled: Option<bool>,
+) {
+    // Determine the default value for our tiled state. The idea is to use the tiled state to
+    // make windows rectangular even if they don't support xdg-decoration (e.g. GTK).
+    //
+    // If the user prefers no CSD, it's a reasonable assumption that they would prefer to get
+    // rid of the various client-side rounded corners also by using the tiled state.
+    let should_tile = || {
+        // Figure out if the client bound any decoration globals for this window. In this case,
+        // the pending decoration mode will be set to something (we always set it upon binding the
+        // global and never reset to None).
+        //
+        // If the client bound a decoration global, use the mode that we negotiated. This way,
+        // changing the decoration mode on the client at runtime will synchonize with the
+        // default tiled state.
+        if let Some(mode) = toplevel.with_pending_state(|state| state.decoration_mode) {
+            mode == zxdg_toplevel_decoration_v1::Mode::ServerSide
+        } else if let Some(mode) = with_states(toplevel.wl_surface(), |states| {
+            states.data_map.get::<KdeDecorationsModeState>().cloned()
+        }) {
+            // Actually, make the KDE decoration overridable with prefer_no_csd. GTK 3 likes to
+            // always request CSD through it, and we want prefer_no_csd to set the tiled state
+            // automatically for GTK 3. Also, unlike xdg-decoration, KDE decoration is not
+            // synchronized to commits, so that argument is less important.
+            mode.is_server() || prefer_no_csd
+        } else {
+            // The client doesn't see or doesn't care about the decoration protocols. In this
+            // case, use the current prefer_no_csd value as the user's intention.
+            //
+            // This is a bit weird because it makes it seem like prefer_no_csd can apply live,
+            // while that isn't really the case. That's because prefer_no_csd controls two separate
+            // things: whether the client sees the decoration globals, and the tiled state.
+            //
+            // A more accurate way would perhaps be to check if the client cannot see the
+            // decoration globals, and in this case behave as if prefer_no_csd was false. However,
+            // this also regresses the common case of GTK 4 applications that do not react to
+            // xdg-decoration in any way, and therefore the tiled state *is* the "no CSD" mode from
+            // the user's perspective, so by artificially gating it we would artificially make it
+            // impossible to apply it live for GTK 4 applications.
+            prefer_no_csd
+        }
+    };
+
+    let should_tile = force_tiled.unwrap_or_else(should_tile);
+
+    toplevel.with_pending_state(|state| {
+        if should_tile {
+            state.states.set(xdg_toplevel::State::TiledLeft);
+            state.states.set(xdg_toplevel::State::TiledRight);
+            state.states.set(xdg_toplevel::State::TiledTop);
+            state.states.set(xdg_toplevel::State::TiledBottom);
+        } else {
+            state.states.unset(xdg_toplevel::State::TiledLeft);
+            state.states.unset(xdg_toplevel::State::TiledRight);
+            state.states.unset(xdg_toplevel::State::TiledTop);
+            state.states.unset(xdg_toplevel::State::TiledBottom);
+        }
+    });
 }
 
 pub fn get_credentials_for_surface(surface: &WlSurface) -> Option<Credentials> {

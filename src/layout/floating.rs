@@ -1206,11 +1206,23 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 let area = self.working_area;
 
                 let mut pos = Point::from((pos.x.0, pos.y.0));
-                if relative_to == RelativeTo::TopRight || relative_to == RelativeTo::BottomRight {
+                if relative_to == RelativeTo::TopRight
+                    || relative_to == RelativeTo::BottomRight
+                    || relative_to == RelativeTo::Right
+                {
                     pos.x = area.size.w - size.w - pos.x;
                 }
-                if relative_to == RelativeTo::BottomLeft || relative_to == RelativeTo::BottomRight {
+                if relative_to == RelativeTo::BottomLeft
+                    || relative_to == RelativeTo::BottomRight
+                    || relative_to == RelativeTo::Bottom
+                {
                     pos.y = area.size.h - size.h - pos.y;
+                }
+                if relative_to == RelativeTo::Top || relative_to == RelativeTo::Bottom {
+                    pos.x += area.size.w / 2.0 - size.w / 2.0
+                }
+                if relative_to == RelativeTo::Left || relative_to == RelativeTo::Right {
+                    pos.y += area.size.h / 2.0 - size.h / 2.0
                 }
 
                 pos + self.working_area.loc

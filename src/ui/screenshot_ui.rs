@@ -101,6 +101,7 @@ impl ScreenshotUi {
         // Output, screencast, screen capture.
         screenshots: HashMap<Output, [OutputScreenshot; 3]>,
         default_output: Output,
+        show_pointer: bool,
     ) -> bool {
         if screenshots.is_empty() {
             return false;
@@ -191,7 +192,7 @@ impl ScreenshotUi {
             selection,
             output_data,
             mouse_down: false,
-            show_pointer: true,
+            show_pointer,
             open_anim,
             clock: clock.clone(),
             config: config.clone(),

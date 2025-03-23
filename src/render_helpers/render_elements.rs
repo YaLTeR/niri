@@ -99,7 +99,7 @@ macro_rules! niri_render_elements {
         {
             fn draw(
                 &self,
-                frame: &mut smithay::backend::renderer::gles::GlesFrame<'_>,
+                frame: &mut smithay::backend::renderer::gles::GlesFrame<'_, '_>,
                 src: smithay::utils::Rectangle<f64, smithay::utils::Buffer>,
                 dst: smithay::utils::Rectangle<i32, smithay::utils::Physical>,
                 damage: &[smithay::utils::Rectangle<i32, smithay::utils::Physical>],
@@ -124,7 +124,7 @@ macro_rules! niri_render_elements {
         {
             fn draw(
                 &self,
-                frame: &mut $crate::backend::tty::TtyFrame<'render, '_>,
+                frame: &mut $crate::backend::tty::TtyFrame<'render, '_, '_>,
                 src: smithay::utils::Rectangle<f64, smithay::utils::Buffer>,
                 dst: smithay::utils::Rectangle<i32, smithay::utils::Physical>,
                 damage: &[smithay::utils::Rectangle<i32, smithay::utils::Physical>],

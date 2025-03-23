@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 use niri_ipc::{Action, OutputAction};
 
 use crate::utils::version;
@@ -54,6 +55,8 @@ pub enum Sub {
     },
     /// Cause a panic to check if the backtraces are good.
     Panic,
+    /// Generate shell completions.
+    Completions { shell: Shell },
 }
 
 #[derive(Subcommand)]
@@ -74,6 +77,8 @@ pub enum Msg {
     FocusedWindow,
     /// Pick a window with the mouse and print information about it.
     PickWindow,
+    /// Pick a color from the screen with the mouse.
+    PickColor,
     /// Perform an action.
     Action {
         #[command(subcommand)]

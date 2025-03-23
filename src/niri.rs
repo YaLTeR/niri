@@ -14,8 +14,8 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout, WorkspaceReference,
-    DEFAULT_BACKGROUND_COLOR, DEFAULT_MRU_COMMIT_MS,
+    Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
+    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKGROUND_COLOR, DEFAULT_MRU_COMMIT_MS,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -33,7 +33,7 @@ use smithay::backend::renderer::element::{
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::{Color32F, Unbind};
+use smithay::backend::renderer::Color32F;
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
     send_frames_surface_tree, surface_presentation_feedback_flags_from_states,
@@ -45,9 +45,12 @@ use smithay::desktop::{
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
 use smithay::input::keyboard::Layout as KeyboardLayout;
-use smithay::input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData, MotionEvent};
+use smithay::input::pointer::{
+    CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
+    GrabStartData as PointerGrabStartData, MotionEvent,
+};
 use smithay::input::{Seat, SeatState};
-use smithay::output::{self, Output, OutputModeSource, PhysicalProperties, Subpixel};
+use smithay::output::{self, Output, OutputModeSource, PhysicalProperties, Subpixel, WeakOutput};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{
@@ -118,6 +121,7 @@ use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
+use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
@@ -138,7 +142,7 @@ use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManag
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::pw_utils::{Cast, PipeWire};
 #[cfg(feature = "xdp-gnome-screencast")]
-use crate::pw_utils::{CastSizeChange, CastTarget, PwToNiri};
+use crate::pw_utils::{CastSizeChange, PwToNiri};
 use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -155,8 +159,9 @@ use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRende
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
-    center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, logical_output,
-    make_screenshot_path, output_matches_name, output_size, send_scale_transform, write_png_rgba8,
+    center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
+    logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
+    write_png_rgba8,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -357,6 +362,7 @@ pub struct Niri {
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
 
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
+    pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
 
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
@@ -379,11 +385,15 @@ pub struct Niri {
     #[cfg(feature = "xdp-gnome-screencast")]
     pub mapped_cast_output: HashMap<Window, Output>,
 
+    /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub dynamic_cast_id_for_portal: MappedId,
+
     // List of windows for MRU prev/next traversal.
     // Only defined when there is an active traversal in progress
     pub window_mru: Option<WindowMRU>,
 
-    pending_mru_commit: Option<PendingMruCommit>,
+    pending_mru_commit: Option<PendingMruCommit>,    
 }
 
 #[derive(Debug)]
@@ -480,10 +490,14 @@ pub struct PointContents {
     pub layer: Option<LayerSurface>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub enum LockState {
     #[default]
     Unlocked,
+    WaitingForSurfaces {
+        confirmation: SessionLocker,
+        deadline_token: RegistrationToken,
+    },
     Locking(SessionLocker),
     Locked(ExtSessionLockV1),
 }
@@ -507,10 +521,17 @@ struct SurfaceFrameThrottlingState {
 pub enum CenterCoords {
     Separately,
     Both,
+    // Force centering even if the cursor is already in the rectangle.
+    BothAlways,
 }
 
-#[derive(Default)]
-pub struct WindowOffscreenId(pub RefCell<Option<Id>>);
+#[derive(Clone, PartialEq, Eq)]
+pub enum CastTarget {
+    // Dynamic cast before selecting anything.
+    Nothing,
+    Output(WeakOutput),
+    Window { id: u64 },
+}
 
 /// Window MRU traversal context.
 #[derive(Debug)]
@@ -673,6 +694,10 @@ impl State {
         self.refresh_popup_grab();
         self.update_keyboard_focus();
 
+        // Should be called before refresh_layout() because that one will refresh other window
+        // states and then send a pending configure.
+        self.niri.refresh_window_states();
+
         // Needs to be called after updating the keyboard focus.
         self.niri.refresh_layout();
 
@@ -759,6 +784,7 @@ impl State {
                     center_f64(rect)
                 }
             }
+            CenterCoords::BothAlways => center_f64(rect),
         };
 
         self.move_cursor(p);
@@ -842,19 +868,27 @@ impl State {
     }
 
     pub fn maybe_warp_cursor_to_focus(&mut self) -> bool {
-        if !self.niri.config.borrow().input.warp_mouse_to_focus {
-            return false;
-        }
-
-        self.move_cursor_to_focused_tile(CenterCoords::Separately)
+        let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
+            None => return false,
+            Some(inner) => match inner.mode {
+                None => CenterCoords::Separately,
+                Some(WarpMouseToFocusMode::CenterXy) => CenterCoords::Both,
+                Some(WarpMouseToFocusMode::CenterXyAlways) => CenterCoords::BothAlways,
+            },
+        };
+        self.move_cursor_to_focused_tile(focused)
     }
 
     pub fn maybe_warp_cursor_to_focus_centered(&mut self) -> bool {
-        if !self.niri.config.borrow().input.warp_mouse_to_focus {
-            return false;
-        }
-
-        self.move_cursor_to_focused_tile(CenterCoords::Both)
+        let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
+            None => return false,
+            Some(inner) => match inner.mode {
+                None => CenterCoords::Both,
+                Some(WarpMouseToFocusMode::CenterXy) => CenterCoords::Both,
+                Some(WarpMouseToFocusMode::CenterXyAlways) => CenterCoords::BothAlways,
+            },
+        };
+        self.move_cursor_to_focused_tile(focused)
     }
 
     pub fn refresh_pointer_contents(&mut self) {
@@ -1326,14 +1360,15 @@ impl State {
             preserved_output_config = Some(mem::take(&mut old_config.outputs));
         }
 
-        if config.binds != old_config.binds {
-            self.niri.hotkey_overlay.on_hotkey_config_updated();
-            self.niri.mods_with_mouse_binds =
-                mods_with_mouse_binds(self.backend.mod_key(), &config.binds);
-            self.niri.mods_with_wheel_binds =
-                mods_with_wheel_binds(self.backend.mod_key(), &config.binds);
+        let new_mod_key = self.backend.mod_key(&config);
+        if new_mod_key != self.backend.mod_key(&old_config) || config.binds != old_config.binds {
+            self.niri
+                .hotkey_overlay
+                .on_hotkey_config_updated(new_mod_key);
+            self.niri.mods_with_mouse_binds = mods_with_mouse_binds(new_mod_key, &config.binds);
+            self.niri.mods_with_wheel_binds = mods_with_wheel_binds(new_mod_key, &config.binds);
             self.niri.mods_with_finger_scroll_binds =
-                mods_with_finger_scroll_binds(self.backend.mod_key(), &config.binds);
+                mods_with_finger_scroll_binds(new_mod_key, &config.binds);
         }
 
         if config.window_rules != old_config.window_rules {
@@ -1638,7 +1673,7 @@ impl State {
         self.niri.output_management_state.notify_changes(new_config);
     }
 
-    pub fn open_screenshot_ui(&mut self) {
+    pub fn open_screenshot_ui(&mut self, show_pointer: bool) {
         if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
             return;
         }
@@ -1670,9 +1705,25 @@ impl State {
         self.backend.with_primary_renderer(|renderer| {
             self.niri
                 .screenshot_ui
-                .open(renderer, screenshots, default_output)
+                .open(renderer, screenshots, default_output, show_pointer)
         });
 
+        self.niri
+            .cursor_manager
+            .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
+        self.niri.queue_redraw_all();
+    }
+
+    pub fn handle_pick_color(&mut self, tx: async_channel::Sender<Option<niri_ipc::PickedColor>>) {
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        let start_data = PointerGrabStartData {
+            focus: None,
+            button: 0,
+            location: pointer.current_location(),
+        };
+        let grab = PickColorGrab::new(start_data);
+        pointer.set_grab(self, grab, SERIAL_COUNTER.next_serial(), Focus::Clear);
+        self.niri.pick_color = Some(tx);
         self.niri
             .cursor_manager
             .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
@@ -1683,20 +1734,7 @@ impl State {
     pub fn on_pw_msg(&mut self, msg: PwToNiri) {
         match msg {
             PwToNiri::StopCast { session_id } => self.niri.stop_cast(session_id),
-            PwToNiri::Redraw(target) => match target {
-                CastTarget::Output(weak) => {
-                    if let Some(output) = weak.upgrade() {
-                        self.niri.queue_redraw(&output);
-                    }
-                }
-                CastTarget::Window { id } => {
-                    self.backend.with_primary_renderer(|renderer| {
-                        // FIXME: target presentation time at the time of window commit?
-                        self.niri
-                            .render_window_for_screen_cast(renderer, id, get_monotonic_time());
-                    });
-                }
-            },
+            PwToNiri::Redraw { stream_id } => self.redraw_cast(stream_id),
             PwToNiri::FatalError => {
                 warn!("stopping PipeWire due to fatal error");
                 if let Some(pw) = self.niri.pipewire.take() {
@@ -1711,6 +1749,139 @@ impl State {
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
+    fn redraw_cast(&mut self, stream_id: usize) {
+        let _span = tracy_client::span!("State::redraw_cast");
+
+        let casts = &mut self.niri.casts;
+        let Some(cast) = casts.iter_mut().find(|cast| cast.stream_id == stream_id) else {
+            warn!("cast to redraw is missing");
+            return;
+        };
+
+        match &cast.target {
+            CastTarget::Nothing => {
+                let config = self.niri.config.borrow();
+                let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
+                drop(config);
+
+                self.backend.with_primary_renderer(|renderer| {
+                    if cast.dequeue_buffer_and_clear(renderer, wait_for_sync) {
+                        cast.last_frame_time = get_monotonic_time();
+                    }
+                });
+            }
+            CastTarget::Output(weak) => {
+                if let Some(output) = weak.upgrade() {
+                    self.niri.queue_redraw(&output);
+                }
+            }
+            CastTarget::Window { id } => {
+                let mut windows = self.niri.layout.windows();
+                let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == *id) else {
+                    return;
+                };
+
+                // Use the cached output since it will be present even if the output was
+                // currently disconnected.
+                let Some(output) = self.niri.mapped_cast_output.get(&mapped.window) else {
+                    return;
+                };
+
+                let scale = Scale::from(output.current_scale().fractional_scale());
+                let bbox = mapped
+                    .window
+                    .bbox_with_popups()
+                    .to_physical_precise_up(scale);
+
+                match cast.ensure_size(bbox.size) {
+                    Ok(CastSizeChange::Ready) => (),
+                    Ok(CastSizeChange::Pending) => return,
+                    Err(err) => {
+                        warn!("error updating stream size, stopping screencast: {err:?}");
+                        drop(windows);
+                        let session_id = cast.session_id;
+                        self.niri.stop_cast(session_id);
+                        return;
+                    }
+                }
+
+                let config = self.niri.config.borrow();
+                let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
+                drop(config);
+
+                self.backend.with_primary_renderer(|renderer| {
+                    // FIXME: pointer.
+                    let elements = mapped
+                        .render_for_screen_cast(renderer, scale)
+                        .rev()
+                        .collect::<Vec<_>>();
+
+                    if cast.dequeue_buffer_and_render(
+                        renderer,
+                        &elements,
+                        bbox.size,
+                        scale,
+                        wait_for_sync,
+                    ) {
+                        cast.last_frame_time = get_monotonic_time();
+                    }
+                });
+            }
+        }
+    }
+
+    #[cfg(not(feature = "xdp-gnome-screencast"))]
+    pub fn set_dynamic_cast_target(&mut self, _target: CastTarget) {}
+
+    #[cfg(feature = "xdp-gnome-screencast")]
+    pub fn set_dynamic_cast_target(&mut self, target: CastTarget) {
+        let _span = tracy_client::span!("State::set_dynamic_cast_target");
+
+        let mut refresh = None;
+        match &target {
+            // Leave refresh as is when clearing. Chances are, the next refresh will match it,
+            // then we'll avoid reconfiguring.
+            CastTarget::Nothing => (),
+            CastTarget::Output(output) => {
+                if let Some(output) = output.upgrade() {
+                    refresh = Some(output.current_mode().unwrap().refresh as u32);
+                }
+            }
+            CastTarget::Window { id } => {
+                let mut windows = self.niri.layout.windows();
+                if let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == *id) {
+                    if let Some(output) = self.niri.mapped_cast_output.get(&mapped.window) {
+                        refresh = Some(output.current_mode().unwrap().refresh as u32);
+                    }
+                }
+            }
+        }
+
+        let mut to_redraw = Vec::new();
+        let mut to_stop = Vec::new();
+        for cast in &mut self.niri.casts {
+            if !cast.dynamic_target {
+                continue;
+            }
+
+            if let Some(refresh) = refresh {
+                if let Err(err) = cast.set_refresh(refresh) {
+                    warn!("error changing cast FPS: {err:?}");
+                    to_stop.push(cast.session_id);
+                    continue;
+                }
+            }
+
+            cast.target = target.clone();
+            to_redraw.push(cast.stream_id);
+        }
+
+        for id in to_redraw {
+            self.redraw_cast(id);
+        }
+    }
+
+    #[cfg(feature = "xdp-gnome-screencast")]
     pub fn on_screen_cast_msg(&mut self, msg: ScreenCastToNiri) {
         use smithay::reexports::gbm::Modifier;
 
@@ -1719,13 +1890,14 @@ impl State {
         match msg {
             ScreenCastToNiri::StartCast {
                 session_id,
+                stream_id,
                 target,
                 cursor_mode,
                 signal_ctx,
             } => {
                 let _span = tracy_client::span!("StartCast");
 
-                debug!(session_id, "StartCast");
+                debug!(session_id, stream_id, "StartCast");
 
                 let Some(gbm) = self.backend.gbm_device() else {
                     warn!("error starting screencast: no GBM device available");
@@ -1748,6 +1920,7 @@ impl State {
                     }
                 };
 
+                let mut dynamic_target = false;
                 let (target, size, refresh, alpha) = match target {
                     StreamTargetId::Output { name } => {
                         let global_space = &self.niri.global_space;
@@ -1764,17 +1937,19 @@ impl State {
                         let refresh = mode.refresh as u32;
                         (CastTarget::Output(output.downgrade()), size, refresh, false)
                     }
+                    StreamTargetId::Window { id }
+                        if id == self.niri.dynamic_cast_id_for_portal.get() =>
+                    {
+                        dynamic_target = true;
+
+                        // All dynamic casts start as Nothing to avoid surprises and exposing
+                        // sensitive info.
+                        (CastTarget::Nothing, Size::from((1, 1)), 1000, true)
+                    }
                     StreamTargetId::Window { id } => {
-                        let mut window = None;
-                        self.niri.layout.with_windows(|mapped, _, _| {
-                            if mapped.id().get() != id {
-                                return;
-                            }
-
-                            window = Some(mapped.window.clone());
-                        });
-
-                        let Some(window) = window else {
+                        let Some(window) = self.niri.layout.windows().find_map(|(_, mapped)| {
+                            (mapped.id().get() == id).then_some(&mapped.window)
+                        }) else {
                             warn!("error starting screencast: requested window is missing");
                             self.niri.stop_cast(session_id);
                             return;
@@ -1782,7 +1957,7 @@ impl State {
 
                         // Use the cached output since it will be present even if the output was
                         // currently disconnected.
-                        let Some(output) = self.niri.mapped_cast_output.get(&window) else {
+                        let Some(output) = self.niri.mapped_cast_output.get(window) else {
                             warn!("error starting screencast: requested window is missing");
                             self.niri.stop_cast(session_id);
                             return;
@@ -1817,7 +1992,9 @@ impl State {
                     gbm,
                     render_formats,
                     session_id,
+                    stream_id,
                     target,
+                    dynamic_target,
                     size,
                     refresh,
                     alpha,
@@ -1844,7 +2021,22 @@ impl State {
         to_screenshot: &async_channel::Sender<NiriToScreenshot>,
         msg: ScreenshotToNiri,
     ) {
-        let ScreenshotToNiri::TakeScreenshot { include_cursor } = msg;
+        match msg {
+            ScreenshotToNiri::TakeScreenshot { include_cursor } => {
+                self.handle_take_screenshot(to_screenshot, include_cursor);
+            }
+            ScreenshotToNiri::PickColor(tx) => {
+                self.handle_pick_color(tx);
+            }
+        }
+    }
+
+    #[cfg(feature = "dbus")]
+    fn handle_take_screenshot(
+        &mut self,
+        to_screenshot: &async_channel::Sender<NiriToScreenshot>,
+        include_cursor: bool,
+    ) {
         let _span = tracy_client::span!("TakeScreenshot");
 
         let rv = self.backend.with_primary_renderer(|renderer| {
@@ -1892,6 +2084,15 @@ impl State {
         let _span = tracy_client::span!("GetWindows");
 
         let mut windows = HashMap::new();
+
+        #[cfg(feature = "xdp-gnome-screencast")]
+        windows.insert(
+            self.niri.dynamic_cast_id_for_portal.get(),
+            gnome_shell_introspect::WindowProperties {
+                title: String::from("niri Dynamic Cast Target"),
+                app_id: String::from("rs.bxt.niri"),
+            },
+        );
 
         self.niri.layout.with_windows(|mapped, _, _| {
             let id = mapped.id().get();
@@ -2056,28 +2257,39 @@ impl Niri {
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
-        seat.add_keyboard(
+        if let Err(err) = seat.add_keyboard(
             config_.input.keyboard.xkb.to_xkb_config(),
             config_.input.keyboard.repeat_delay.into(),
             config_.input.keyboard.repeat_rate.into(),
-        )
-        .unwrap();
+        ) {
+            if let smithay::input::keyboard::Error::BadKeymap = err {
+                warn!("error loading the configured xkb keymap, trying default");
+            } else {
+                warn!("error adding keyboard: {err:?}");
+            }
+            seat.add_keyboard(
+                Default::default(),
+                config_.input.keyboard.repeat_delay.into(),
+                config_.input.keyboard.repeat_rate.into(),
+            )
+            .unwrap();
+        }
         seat.add_pointer();
 
         let cursor_shape_manager_state = CursorShapeManagerState::new::<State>(&display_handle);
         let cursor_manager =
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
-        let mods_with_mouse_binds = mods_with_mouse_binds(backend.mod_key(), &config_.binds);
-        let mods_with_wheel_binds = mods_with_wheel_binds(backend.mod_key(), &config_.binds);
-        let mods_with_finger_scroll_binds =
-            mods_with_finger_scroll_binds(backend.mod_key(), &config_.binds);
+        let mod_key = backend.mod_key(&config.borrow());
+        let mods_with_mouse_binds = mods_with_mouse_binds(mod_key, &config_.binds);
+        let mods_with_wheel_binds = mods_with_wheel_binds(mod_key, &config_.binds);
+        let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
         let config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
 
-        let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
+        let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), mod_key);
         if !config_.hotkey_overlay.skip_at_startup {
             hotkey_overlay.show();
         }
@@ -2272,6 +2484,7 @@ impl Niri {
             exit_confirm_dialog,
 
             pick_window: None,
+            pick_color: None,
 
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,
@@ -2292,8 +2505,11 @@ impl Niri {
             #[cfg(feature = "xdp-gnome-screencast")]
             mapped_cast_output: HashMap::new(),
 
+            #[cfg(feature = "xdp-gnome-screencast")]
+            dynamic_cast_id_for_portal: MappedId::next(),
+
             window_mru: None,
-            pending_mru_commit: None,
+            pending_mru_commit: None,            
         };
 
         niri.reset_pointer_inactivity_timer();
@@ -2604,7 +2820,10 @@ impl Niri {
                     self.lock_state = LockState::Locking(confirmation);
                 }
             }
-            lock_state => self.lock_state = lock_state,
+            lock_state => {
+                self.lock_state = lock_state;
+                self.maybe_continue_to_locking();
+            }
         }
 
         if self.screenshot_ui.close() {
@@ -2618,7 +2837,6 @@ impl Niri {
         let output_size = output_size(output).to_i32_round();
         let scale = output.current_scale();
         let transform = output.current_transform();
-        let is_locked = self.is_locked();
 
         {
             let mut layer_map = layer_map_for_output(output);
@@ -2636,10 +2854,8 @@ impl Niri {
             state.background_buffer.resize(output_size);
 
             state.lock_color_buffer.resize(output_size);
-            if is_locked {
-                if let Some(lock_surface) = &state.lock_surface {
-                    configure_lock_surface(lock_surface, output);
-                }
+            if let Some(lock_surface) = &state.lock_surface {
+                configure_lock_surface(lock_surface, output);
             }
         }
 
@@ -3365,6 +3581,16 @@ impl Niri {
         self.idle_notifier_state.set_is_inhibited(is_inhibited);
     }
 
+    pub fn refresh_window_states(&mut self) {
+        let _span = tracy_client::span!("Niri::refresh_window_states");
+
+        let config = self.config.borrow();
+        self.layout.with_windows_mut(|mapped, _output| {
+            mapped.update_tiled_state(config.prefer_no_csd);
+        });
+        drop(config);
+    }
+
     pub fn refresh_window_rules(&mut self) {
         let _span = tracy_client::span!("Niri::refresh_window_rules");
 
@@ -3380,6 +3606,11 @@ impl Niri {
                 if let Some(output) = output {
                     outputs.insert(output.clone());
                 }
+
+                // Since refresh_window_rules() is called after refresh_layout(), we need to update
+                // the tiled state right here, so that it's picked up by the following
+                // send_pending_configure().
+                mapped.update_tiled_state(config.prefer_no_csd);
             }
         });
         drop(config);
@@ -3903,26 +4134,49 @@ impl Niri {
 
         for mapped in self.layout.windows_for_output(output) {
             let win = &mapped.window;
-            let offscreen_id = win
-                .user_data()
-                .get_or_insert(WindowOffscreenId::default)
-                .0
-                .borrow();
-            let offscreen_id = offscreen_id.as_ref();
+            let offscreen_data = mapped.offscreen_data();
+            let offscreen_data = offscreen_data.as_ref();
 
             win.with_surfaces(|surface, states| {
-                let surface_primary_scanout_output = states
+                let primary_scanout_output = states
                     .data_map
                     .get_or_insert_threadsafe(Mutex::<PrimaryScanoutOutput>::default);
-                surface_primary_scanout_output
-                    .lock()
-                    .unwrap()
-                    .update_from_render_element_states(
-                        offscreen_id.cloned().unwrap_or_else(|| surface.into()),
-                        output,
-                        render_element_states,
-                        |_, _, output, _| output,
-                    );
+                let mut primary_scanout_output = primary_scanout_output.lock().unwrap();
+
+                let mut id = Id::from_wayland_resource(surface);
+
+                if let Some(data) = offscreen_data {
+                    // We have offscreen data; it's likely that all surfaces are on it.
+                    if data.states.element_was_presented(id.clone()) {
+                        // If the surface was presented to the offscreen, use the offscreen's id.
+                        id = data.id.clone();
+                    }
+
+                    // If we the surface wasn't presented to the offscreen it can mean:
+                    //
+                    // - The surface was invisible. For example, it's obscured by another surface on
+                    //   the offscreen, or simply isn't mapped.
+                    // - The surface is rendered separately from the offscreen, for example: popups
+                    //   during the window resize animation.
+                    //
+                    // In both of these cases, using the original surface element id and the
+                    // original states is the correct thing to do. We may find the surface in the
+                    // original states (in the second case). Either way, we definitely know it is
+                    // *not* in the offscreen, and we won't miss it.
+                    //
+                    // There's one edge case: if the surface is both in the offscreen and separate,
+                    // and the offscreen itself is invisible, while the separate surface is
+                    // visible. In this case we'll currently mark the surface as invisible. We
+                    // don't really use offscreens like that however, and if we start, it's easy
+                    // enough to fix (need an extra check).
+                }
+
+                primary_scanout_output.update_from_render_element_states(
+                    id,
+                    output,
+                    render_element_states,
+                    |_, _, output, _| output,
+                );
             });
         }
 
@@ -4286,6 +4540,10 @@ impl Niri {
 
         let scale = Scale::from(output.current_scale().fractional_scale());
 
+        let config = self.config.borrow();
+        let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
+        drop(config);
+
         let mut elements = None;
         let mut casts_to_stop = vec![];
 
@@ -4317,7 +4575,7 @@ impl Niri {
                 self.render(renderer, output, true, RenderTarget::Screencast)
             });
 
-            if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
+            if cast.dequeue_buffer_and_render(renderer, elements, size, scale, wait_for_sync) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
@@ -4338,6 +4596,10 @@ impl Niri {
         let _span = tracy_client::span!("Niri::render_windows_for_screen_cast");
 
         let scale = Scale::from(output.current_scale().fractional_scale());
+
+        let config = self.config.borrow();
+        let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
+        drop(config);
 
         let mut casts_to_stop = vec![];
 
@@ -4377,97 +4639,12 @@ impl Niri {
             // FIXME: pointer.
             let elements: Vec<_> = mapped.render_for_screen_cast(renderer, scale).collect();
 
-            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
+            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale, wait_for_sync)
+            {
                 cast.last_frame_time = target_presentation_time;
             }
         }
         self.casts = casts;
-
-        for id in casts_to_stop {
-            self.stop_cast(id);
-        }
-    }
-
-    #[cfg(feature = "xdp-gnome-screencast")]
-    fn render_window_for_screen_cast(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        window_id: u64,
-        target_presentation_time: Duration,
-    ) {
-        let _span = tracy_client::span!("Niri::render_window_for_screen_cast");
-
-        let mut window = None;
-        self.layout.with_windows(|mapped, _, _| {
-            if mapped.id().get() != window_id {
-                return;
-            }
-
-            window = Some(mapped.window.clone());
-        });
-
-        let Some(window) = window else {
-            return;
-        };
-
-        // Use the cached output since it will be present even if the output was
-        // currently disconnected.
-        let Some(output) = self.mapped_cast_output.get(&window) else {
-            return;
-        };
-
-        let mut windows = self.layout.windows_for_output(output);
-        let mapped = windows
-            .find(|mapped| mapped.id().get() == window_id)
-            .unwrap();
-
-        let scale = Scale::from(output.current_scale().fractional_scale());
-        let bbox = mapped
-            .window
-            .bbox_with_popups()
-            .to_physical_precise_up(scale);
-
-        let mut elements = None;
-        let mut casts_to_stop = vec![];
-
-        let mut casts = mem::take(&mut self.casts);
-        for cast in &mut casts {
-            if !cast.is_active.get() {
-                continue;
-            }
-
-            if cast.target != (CastTarget::Window { id: window_id }) {
-                continue;
-            }
-
-            match cast.ensure_size(bbox.size) {
-                Ok(CastSizeChange::Ready) => (),
-                Ok(CastSizeChange::Pending) => continue,
-                Err(err) => {
-                    warn!("error updating stream size, stopping screencast: {err:?}");
-                    casts_to_stop.push(cast.session_id);
-                }
-            }
-
-            if cast.check_time_and_schedule(&self.event_loop, output, target_presentation_time) {
-                continue;
-            }
-
-            let elements = elements.get_or_insert_with(|| {
-                // FIXME: pointer.
-                mapped
-                    .render_for_screen_cast(renderer, scale)
-                    .rev()
-                    .collect::<Vec<_>>()
-            });
-
-            if cast.dequeue_buffer_and_render(renderer, elements, bbox.size, scale) {
-                cast.last_frame_time = target_presentation_time;
-            }
-        }
-        self.casts = casts;
-
-        drop(windows);
 
         for id in casts_to_stop {
             self.stop_cast(id);
@@ -4643,10 +4820,6 @@ impl Niri {
             }
         };
 
-        if let Err(err) = renderer.unbind() {
-            warn!("error unbinding after rendering for screencopy: {err:?}");
-        }
-
         Ok((sync, damages))
     }
 
@@ -4683,20 +4856,37 @@ impl Niri {
         }
     }
 
+    #[cfg(not(feature = "xdp-gnome-screencast"))]
+    pub fn stop_casts_for_target(&mut self, _target: CastTarget) {}
+
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn stop_casts_for_target(&mut self, target: CastTarget) {
         let _span = tracy_client::span!("Niri::stop_casts_for_target");
 
         // This is O(N^2) but it shouldn't be a problem I think.
-        let ids: Vec<_> = self
-            .casts
-            .iter()
-            .filter(|cast| cast.target == target)
-            .map(|cast| cast.session_id)
-            .collect();
+        let mut saw_dynamic = false;
+        let mut ids = Vec::new();
+        for cast in &self.casts {
+            if cast.target != target {
+                continue;
+            }
+
+            if cast.dynamic_target {
+                saw_dynamic = true;
+                continue;
+            }
+
+            ids.push(cast.session_id);
+        }
 
         for id in ids {
             self.stop_cast(id);
+        }
+
+        // We don't stop dynamic casts, instead we switch them to Nothing.
+        if saw_dynamic {
+            self.event_loop
+                .insert_idle(|state| state.set_dynamic_cast_target(CastTarget::Nothing));
         }
     }
 
@@ -4792,6 +4982,7 @@ impl Niri {
         renderer: &mut GlesRenderer,
         output: &Output,
         write_to_disk: bool,
+        include_pointer: bool,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot");
 
@@ -4802,8 +4993,12 @@ impl Niri {
         let size = transform.transform_size(size);
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let elements =
-            self.render::<GlesRenderer>(renderer, output, true, RenderTarget::ScreenCapture);
+        let elements = self.render::<GlesRenderer>(
+            renderer,
+            output,
+            include_pointer,
+            RenderTarget::ScreenCapture,
+        );
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
@@ -5012,12 +5207,18 @@ impl Niri {
     }
 
     pub fn is_locked(&self) -> bool {
-        !matches!(self.lock_state, LockState::Unlocked)
+        match self.lock_state {
+            LockState::Unlocked | LockState::WaitingForSurfaces { .. } => false,
+            LockState::Locking(_) | LockState::Locked(_) => true,
+        }
     }
 
     pub fn lock(&mut self, confirmation: SessionLocker) {
         // Check if another client is in the process of locking.
-        if matches!(self.lock_state, LockState::Locking(_)) {
+        if matches!(
+            self.lock_state,
+            LockState::WaitingForSurfaces { .. } | LockState::Locking(_)
+        ) {
             info!("refusing lock as another client is currently locking");
             return;
         }
@@ -5030,30 +5231,111 @@ impl Niri {
             }
 
             // If the client had died, continue with the new lock.
+            info!("locking session (replacing existing dead lock)");
+
+            // Since the session was already locked, we know that the outputs are blanked, and
+            // can lock right away.
+            let lock = confirmation.ext_session_lock().clone();
+            confirmation.lock();
+            self.lock_state = LockState::Locked(lock);
+
+            return;
         }
 
         info!("locking session");
 
-        self.screenshot_ui.close();
-        self.cursor_manager
-            .set_cursor_image(CursorImageStatus::default_named());
-
         if self.output_state.is_empty() {
             // There are no outputs, lock the session right away.
+            self.screenshot_ui.close();
+            self.cursor_manager
+                .set_cursor_image(CursorImageStatus::default_named());
+
             let lock = confirmation.ext_session_lock().clone();
             confirmation.lock();
             self.lock_state = LockState::Locked(lock);
         } else {
-            // There are outputs, which we need to redraw before locking.
-            self.lock_state = LockState::Locking(confirmation);
-            self.queue_redraw_all();
+            // There are outputs which we need to redraw before locking. But before we do that,
+            // let's wait for the lock surfaces.
+            //
+            // Give them a second; swaylock can take its time to paint a big enough image.
+            let timer = Timer::from_duration(Duration::from_millis(1000));
+            let deadline_token = self
+                .event_loop
+                .insert_source(timer, |_, _, state| {
+                    trace!("lock deadline expired, continuing");
+                    state.niri.continue_to_locking();
+                    TimeoutAction::Drop
+                })
+                .unwrap();
+
+            self.lock_state = LockState::WaitingForSurfaces {
+                confirmation,
+                deadline_token,
+            };
+        }
+    }
+
+    pub fn maybe_continue_to_locking(&mut self) {
+        if !matches!(self.lock_state, LockState::WaitingForSurfaces { .. }) {
+            // Not waiting.
+            return;
+        }
+
+        // Check if there are any outputs whose lock surfaces had not had a commit yet.
+        for state in self.output_state.values() {
+            let Some(surface) = &state.lock_surface else {
+                // Surface not created yet.
+                return;
+            };
+
+            if !is_mapped(surface.wl_surface()) {
+                return;
+            }
+        }
+
+        // All good.
+        trace!("lock surfaces are ready, continuing");
+        self.continue_to_locking();
+    }
+
+    fn continue_to_locking(&mut self) {
+        match mem::take(&mut self.lock_state) {
+            LockState::WaitingForSurfaces {
+                confirmation,
+                deadline_token,
+            } => {
+                self.event_loop.remove(deadline_token);
+
+                self.screenshot_ui.close();
+                self.cursor_manager
+                    .set_cursor_image(CursorImageStatus::default_named());
+
+                if self.output_state.is_empty() {
+                    // There are no outputs, lock the session right away.
+                    let lock = confirmation.ext_session_lock().clone();
+                    confirmation.lock();
+                    self.lock_state = LockState::Locked(lock);
+                } else {
+                    // There are outputs which we need to redraw before locking.
+                    self.lock_state = LockState::Locking(confirmation);
+                    self.queue_redraw_all();
+                }
+            }
+            other => {
+                error!("continue_to_locking() called with wrong lock state: {other:?}",);
+                self.lock_state = other;
+            }
         }
     }
 
     pub fn unlock(&mut self) {
         info!("unlocking session");
 
-        self.lock_state = LockState::Unlocked;
+        let prev = mem::take(&mut self.lock_state);
+        if let LockState::WaitingForSurfaces { deadline_token, .. } = prev {
+            self.event_loop.remove(deadline_token);
+        }
+
         for output_state in self.output_state.values_mut() {
             output_state.lock_surface = None;
         }
@@ -5061,7 +5343,7 @@ impl Niri {
     }
 
     pub fn new_lock_surface(&mut self, surface: LockSurface, output: &Output) {
-        if !self.is_locked() {
+        if matches!(self.lock_state, LockState::Unlocked) {
             error!("tried to add a lock surface on an unlocked session");
             return;
         }

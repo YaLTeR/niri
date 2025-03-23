@@ -233,7 +233,7 @@ impl Element for ShadowRenderElement {
 impl RenderElement<GlesRenderer> for ShadowRenderElement {
     fn draw(
         &self,
-        frame: &mut GlesFrame<'_>,
+        frame: &mut GlesFrame<'_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],
@@ -250,7 +250,7 @@ impl RenderElement<GlesRenderer> for ShadowRenderElement {
 impl<'render> RenderElement<TtyRenderer<'render>> for ShadowRenderElement {
     fn draw(
         &self,
-        frame: &mut TtyFrame<'_, '_>,
+        frame: &mut TtyFrame<'_, '_, '_>,
         src: Rectangle<f64, Buffer>,
         dst: Rectangle<i32, Physical>,
         damage: &[Rectangle<i32, Physical>],

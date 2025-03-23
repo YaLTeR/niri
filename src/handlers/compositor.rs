@@ -1,7 +1,7 @@
 use std::collections::hash_map::Entry;
 
 use niri_ipc::PositionChange;
-use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
+use smithay::backend::renderer::utils::on_commit_buffer_handler;
 use smithay::input::pointer::{CursorImageStatus, CursorImageSurfaceData};
 use smithay::reexports::calloop::Interest;
 use smithay::reexports::wayland_server::protocol::wl_buffer;
@@ -21,9 +21,9 @@ use smithay::{delegate_compositor, delegate_shm};
 use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
 use crate::handlers::XDG_ACTIVATION_TOKEN_TIMEOUT;
 use crate::layout::{ActivateWindow, AddWindowTarget};
-use crate::niri::{ClientState, State};
-use crate::utils::send_scale_transform;
+use crate::niri::{CastTarget, ClientState, LockState, State};
 use crate::utils::transaction::Transaction;
+use crate::utils::{is_mapped, send_scale_transform};
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped};
 
 impl CompositorHandler for State {
@@ -78,14 +78,7 @@ impl CompositorHandler for State {
         if surface == &root_surface {
             // This is a root surface commit. It might have mapped a previously-unmapped toplevel.
             if let Entry::Occupied(entry) = self.niri.unmapped_windows.entry(surface.clone()) {
-                let is_mapped =
-                    with_renderer_surface_state(surface, |state| state.buffer().is_some())
-                        .unwrap_or_else(|| {
-                            error!("no renderer surface state even though we use commit handler");
-                            false
-                        });
-
-                if is_mapped {
+                if is_mapped(surface) {
                     // The toplevel got mapped.
                     let Unmapped {
                         window,
@@ -227,16 +220,10 @@ impl CompositorHandler for State {
                 let window = mapped.window.clone();
                 let output = output.cloned();
 
-                #[cfg(feature = "xdp-gnome-screencast")]
                 let id = mapped.id();
 
                 // This is a commit of a previously-mapped toplevel.
-                let is_mapped =
-                    with_renderer_surface_state(surface, |state| state.buffer().is_some())
-                        .unwrap_or_else(|| {
-                            error!("no renderer surface state even though we use commit handler");
-                            false
-                        });
+                let is_mapped = is_mapped(surface);
 
                 // Must start the close animation before window.on_commit().
                 let transaction = Transaction::new();
@@ -258,11 +245,8 @@ impl CompositorHandler for State {
                     let active_window = self.niri.layout.focus().map(|m| &m.window);
                     let was_active = active_window == Some(&window);
 
-                    #[cfg(feature = "xdp-gnome-screencast")]
                     self.niri
-                        .stop_casts_for_target(crate::pw_utils::CastTarget::Window {
-                            id: id.get(),
-                        });
+                        .stop_casts_for_target(CastTarget::Window { id: id.get() });
 
                     self.niri.layout.remove_window(&window, transaction.clone());
                     self.add_default_dmabuf_pre_commit_hook(surface);
@@ -424,16 +408,23 @@ impl CompositorHandler for State {
         }
 
         // This might be a lock surface.
-        if self.niri.is_locked() {
-            for (output, state) in &self.niri.output_state {
-                if let Some(lock_surface) = &state.lock_surface {
-                    if lock_surface.wl_surface() == &root_surface {
+        for (output, state) in &self.niri.output_state {
+            if let Some(lock_surface) = &state.lock_surface {
+                if lock_surface.wl_surface() == &root_surface {
+                    if matches!(self.niri.lock_state, LockState::WaitingForSurfaces { .. }) {
+                        self.niri.maybe_continue_to_locking();
+                    } else {
                         self.niri.queue_redraw(&output.clone());
-                        return;
                     }
+
+                    return;
                 }
             }
         }
+
+        // This message can trigger for lock surfaces that had a commit right after we unlocked
+        // the session, but that's ok, we don't need to handle them.
+        trace!("commit on an unrecognized surface: {surface:?}, root: {root_surface:?}");
     }
 
     fn destroyed(&mut self, surface: &WlSurface) {
