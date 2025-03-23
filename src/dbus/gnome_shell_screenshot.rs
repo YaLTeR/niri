@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use niri_ipc::PickedColor;
 use zbus::fdo::{self, RequestNameFlags};
-use zbus::interface;
 use zbus::zvariant::OwnedValue;
+use zbus::{interface, zvariant};
 
 use super::Start;
 
@@ -71,10 +71,10 @@ impl Screenshot {
         };
 
         let mut result = HashMap::new();
-        let rgb_slice: &[f64] = &color.rgb;
+        let [r, g, b] = color.rgb;
         result.insert(
             "color".to_string(),
-            zbus::zvariant::Value::from(rgb_slice).try_into().unwrap(),
+            zvariant::OwnedValue::try_from(zvariant::Value::from((r, g, b))).unwrap(),
         );
 
         Ok(result)
