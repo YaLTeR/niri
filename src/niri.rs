@@ -810,6 +810,21 @@ impl State {
                 }
             }
         }
+
+        // If we couldn't find the specified monitor, we center the mouse on one.
+        // Without this, the mouse would start at the top left corner
+
+		// For more consistent behavior, we choose an output after sorting them by connector names.
+        let mut outputs: Vec<&Output> = self.niri.output_state.keys().collect();
+        outputs.sort_unstable_by(|a, b| {
+            let a = a.user_data().get::<OutputName>().unwrap();
+            let b = b.user_data().get::<OutputName>().unwrap();
+            a.compare(b)
+        });
+
+        if let Some(&output) = outputs.first() {
+            self.move_cursor_to_output(&output.clone());
+        }
     }
 
     /// Focus a specific window, taking care of a potential active output change and cursor
