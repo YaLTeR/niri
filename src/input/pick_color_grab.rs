@@ -12,7 +12,7 @@ use smithay::input::SeatHandler;
 use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 
 use crate::niri::State;
-use crate::render_helpers::render_to_vec;
+use crate::render_helpers::{render_to_vec, RenderTarget};
 
 pub struct PickColorGrab {
     start_data: PointerGrabStartData<State>,
@@ -52,7 +52,8 @@ impl PickColorGrab {
                     renderer,
                     &output,
                     false,
-                    crate::render_helpers::RenderTarget::ScreenCapture,
+                    // This is an interactive operation so we can render without blocking out.
+                    RenderTarget::Output,
                 );
 
                 let pixels = match render_to_vec(
