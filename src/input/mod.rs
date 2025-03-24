@@ -1091,10 +1091,8 @@ impl State {
                             self.move_cursor_to_output(&output);
                         }
                     } else {
-                        if !focus {
-                            self.niri.layout.move_to_workspace_focus(None, index);
-                        } else {
-                            self.niri.layout.move_to_workspace(None, index);
+                        self.niri.layout.move_to_workspace(None, index, focus);
+                        if focus {
                             self.maybe_warp_cursor_to_focus();
                         }
                     }
@@ -1135,14 +1133,10 @@ impl State {
                                 }
                             }
                         } else {
-                            if !focus {
-                                self.niri
-                                    .layout
-                                    .move_to_workspace_focus(Some(&window), index);
-                            } else {
-                                self.niri.layout.move_to_workspace(Some(&window), index);
+                            self.niri.layout.move_to_workspace(Some(&window), index, focus);
 
-                                // If we focused the target window.
+                            // If we focused the target window.
+                            if focus {
                                 let new_focus = self.niri.layout.focus();
                                 if new_focus.is_some_and(|win| win.window == window) {
                                     self.maybe_warp_cursor_to_focus();

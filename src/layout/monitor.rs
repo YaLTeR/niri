@@ -474,7 +474,7 @@ impl<W: LayoutElement> Monitor<W> {
         );
     }
 
-    pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize) {
+    pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize, should_focus: bool) {
         let source_workspace_idx = if let Some(window) = window {
             self.workspaces
                 .iter()
@@ -490,9 +490,16 @@ impl<W: LayoutElement> Monitor<W> {
         }
         let new_id = self.workspaces[new_idx].id();
 
-        let activate = window.map_or(true, |win| {
-            self.active_window().map(|win| win.id()) == Some(win)
-        });
+        // Whether to activate the window based on should_focus and whether the window
+        // is currently focused.
+        let activate = if should_focus {
+            window.map_or(true, |win| {
+                self.active_window().map(|win| win.id()) == Some(win)
+            })
+        } else {
+            false
+        };
+
         let activate = if activate {
             ActivateWindow::Yes
         } else {
@@ -516,51 +523,6 @@ impl<W: LayoutElement> Monitor<W> {
                 column_idx: None,
             },
             activate,
-            removed.width,
-            removed.is_full_width,
-            removed.is_floating,
-        );
-
-        if self.workspace_switch.is_none() {
-            self.clean_up_workspaces();
-        }
-    }
-
-    /// Like move_to_workspace, but never activates the workspace we move the window to.
-    pub fn move_to_workspace_focus(&mut self, window: Option<&W::Id>, idx: usize) {
-        let source_workspace_idx = if let Some(window) = window {
-            self.workspaces
-                .iter()
-                .position(|ws| ws.has_window(window))
-                .unwrap()
-        } else {
-            self.active_workspace_idx
-        };
-
-        let new_idx = min(idx, self.workspaces.len() - 1);
-        if new_idx == source_workspace_idx {
-            return;
-        }
-        let new_id = self.workspaces[new_idx].id();
-
-        let workspace = &mut self.workspaces[source_workspace_idx];
-        let transaction = Transaction::new();
-        let removed = if let Some(window) = window {
-            workspace.remove_tile(window, transaction)
-        } else if let Some(removed) = workspace.remove_active_tile(transaction) {
-            removed
-        } else {
-            return;
-        };
-
-        // We always use ActivateWindow::No to keep focus on the current workspace.
-        self.add_tile(
-            removed.tile,
-            MonitorAddWindowTarget::Workspace {
-                id: new_id,
-                column_idx: None,
-            },
-            ActivateWindow::No,
             removed.width,
             removed.is_full_width,
             removed.is_floating,
@@ -623,7 +585,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         if workspace.floating_is_active() {
-            self.move_to_workspace(None, idx);
+            self.move_to_workspace(None, idx, true);
             return;
         }
 
