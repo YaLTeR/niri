@@ -426,6 +426,11 @@ pub enum Action {
         /// Reference (index or name) of the workspace to move the window to.
         #[cfg_attr(feature = "clap", arg())]
         reference: WorkspaceReferenceArg,
+
+        /// When set to true, move the window to the workspace without switching
+        /// focus to that workspace. The focus remains on the current workspace.
+        #[cfg_attr(feature = "clap", arg(long))]
+        focus: Option<bool>,
     },
     /// Move the focused column to the workspace below.
     MoveColumnToWorkspaceDown {},

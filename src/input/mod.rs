@@ -1072,7 +1072,7 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveWindowToWorkspace(reference) => {
+            Action::MoveWindowToWorkspace(reference, focus) => {
                 if let Some((mut output, index)) =
                     self.niri.find_output_and_workspace_index(reference)
                 {
@@ -1091,8 +1091,12 @@ impl State {
                             self.move_cursor_to_output(&output);
                         }
                     } else {
-                        self.niri.layout.move_to_workspace(None, index);
-                        self.maybe_warp_cursor_to_focus();
+                        if !focus {
+                            self.niri.layout.move_to_workspace_focus(None, index);
+                        } else {
+                            self.niri.layout.move_to_workspace(None, index);
+                            self.maybe_warp_cursor_to_focus();
+                        }
                     }
 
                     // FIXME: granular
@@ -1102,6 +1106,7 @@ impl State {
             Action::MoveWindowToWorkspaceById {
                 window_id: id,
                 reference,
+                focus,
             } => {
                 let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
                 let window = window.map(|(_, m)| m.window.clone());
@@ -1130,12 +1135,18 @@ impl State {
                                 }
                             }
                         } else {
-                            self.niri.layout.move_to_workspace(Some(&window), index);
+                            if !focus {
+                                self.niri
+                                    .layout
+                                    .move_to_workspace_focus(Some(&window), index);
+                            } else {
+                                self.niri.layout.move_to_workspace(Some(&window), index);
 
-                            // If we focused the target window.
-                            let new_focus = self.niri.layout.focus();
-                            if new_focus.is_some_and(|win| win.window == window) {
-                                self.maybe_warp_cursor_to_focus();
+                                // If we focused the target window.
+                                let new_focus = self.niri.layout.focus();
+                                if new_focus.is_some_and(|win| win.window == window) {
+                                    self.maybe_warp_cursor_to_focus();
+                                }
                             }
                         }
 

@@ -2146,6 +2146,33 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_to_workspace(window, idx);
     }
 
+    /// Like move_to_workspace, but never activates the workspace we move the window to.
+    pub fn move_to_workspace_focus(&mut self, window: Option<&W::Id>, idx: usize) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
+                return;
+            }
+        }
+
+        let monitor = if let Some(window) = window {
+            match &mut self.monitor_set {
+                MonitorSet::Normal { monitors, .. } => monitors
+                    .iter_mut()
+                    .find(|mon| mon.has_window(window))
+                    .unwrap(),
+                MonitorSet::NoOutputs { .. } => {
+                    return;
+                }
+            }
+        } else {
+            let Some(monitor) = self.active_monitor() else {
+                return;
+            };
+            monitor
+        };
+        monitor.move_to_workspace_focus(window, idx);
+    }
+
     pub fn move_column_to_workspace_up(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
