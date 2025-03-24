@@ -490,7 +490,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
         let new_id = self.workspaces[new_idx].id();
 
-        // Whether to activate the window based on focus and whether the window
+        // Whether to activate the window based on focus parameter and whether the window
         // is currently focused.
         let activate = if focus {
             window.map_or(true, |win| {
