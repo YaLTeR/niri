@@ -427,7 +427,7 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg())]
         reference: WorkspaceReferenceArg,
 
-        /// When set to true, move the window to the workspace without switching
+        /// When set to false, move the window to the workspace without switching
         /// focus to that workspace. The focus remains on the current workspace.
         #[cfg_attr(feature = "clap", arg(long))]
         focus: Option<bool>,
