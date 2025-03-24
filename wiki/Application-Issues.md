@@ -52,3 +52,14 @@ Other game launchers such as [Lutris](https://lutris.net/) have their own ways o
 
 Running X11-based games with this method doesn't require Xwayland as gamescope creates its own Xwayland server.
 You can run Wayland-native games as well by passing `--expose-wayland` to gamescope, therefore eliminating X11 from the equation.
+
+### Steam
+
+Steam notifications don't run through the standard notification daemon and show up as floating windows in the center of the screen. You can move them to a more convenient location by adding a window rule in your niri config:
+
+```kdl
+window-rule {
+    match app-id="steam" title=r#"^notificationtoasts_\d+_desktop$"#
+    default-floating-position x=10 y=10 relative-to="bottom-right"
+}
+```
