@@ -1133,7 +1133,9 @@ impl State {
                                 }
                             }
                         } else {
-                            self.niri.layout.move_to_workspace(Some(&window), index, focus);
+                            self.niri
+                                .layout
+                                .move_to_workspace(Some(&window), index, focus);
 
                             // If we focused the target window.
                             if focus {
