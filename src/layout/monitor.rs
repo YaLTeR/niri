@@ -474,7 +474,7 @@ impl<W: LayoutElement> Monitor<W> {
         );
     }
 
-    pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize, should_focus: bool) {
+    pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize, focus: bool) {
         let source_workspace_idx = if let Some(window) = window {
             self.workspaces
                 .iter()
@@ -490,9 +490,9 @@ impl<W: LayoutElement> Monitor<W> {
         }
         let new_id = self.workspaces[new_idx].id();
 
-        // Whether to activate the window based on should_focus and whether the window
+        // Whether to activate the window based on focus and whether the window
         // is currently focused.
-        let activate = if should_focus {
+        let activate = if focus {
             window.map_or(true, |win| {
                 self.active_window().map(|win| win.id()) == Some(win)
             })
