@@ -55,7 +55,8 @@ You can run Wayland-native games as well by passing `--expose-wayland` to gamesc
 
 ### Steam
 
-Steam notifications don't run through the standard notification daemon and show up as floating windows in the center of the screen. You can move them to a more convenient location by adding a window rule in your niri config:
+Steam notifications don't run through the standard notification daemon and show up as floating windows in the center of the screen.
+You can move them to a more convenient location by adding a window rule in your niri config:
 
 ```kdl
 window-rule {
