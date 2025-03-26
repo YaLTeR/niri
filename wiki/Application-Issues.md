@@ -1,3 +1,21 @@
+### Electron applications
+
+Electron-based applications can run directly on Wayland, but it's not the default.
+
+For Electron > 28, you can set an environment variable:
+```kdl
+environment {
+    ELECTRON_OZONE_PLATFORM_HINT "auto"
+}
+```
+
+For previous versions, you need to pass command-line flags to the target application:
+```
+--enable-features=UseOzonePlatform --ozone-platform-hint=auto
+```
+
+If the application has a [desktop entry](https://specifications.freedesktop.org/menu-spec/latest/menu-add-example.html), you can put the command-line arguments into the `Exec` section.
+
 ### VSCode
 
 If you're having issues with some VSCode hotkeys, try starting `Xwayland` and setting the `DISPLAY=:0` environment variable for VSCode.
