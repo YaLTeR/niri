@@ -34,8 +34,6 @@ pub use utils::RegexEq;
 pub struct Config {
     #[knuffel(child, default)]
     pub input: Input,
-    #[knuffel(child, unwrap(argument), default = None)]
-    pub default_output: Option<String>,
     #[knuffel(children(name = "output"))]
     pub outputs: Outputs,
     #[knuffel(children(name = "spawn-at-startup"))]
@@ -430,6 +428,8 @@ pub struct Outputs(pub Vec<Output>);
 pub struct Output {
     #[knuffel(child)]
     pub off: bool,
+    #[knuffel(child)]
+    pub focus_at_startup: bool,
     #[knuffel(argument)]
     pub name: String,
     #[knuffel(child, unwrap(argument))]
@@ -464,6 +464,7 @@ impl Default for Output {
     fn default() -> Self {
         Self {
             off: false,
+            focus_at_startup: false,
             name: String::new(),
             scale: None,
             transform: Transform::Normal,
@@ -3747,9 +3748,8 @@ mod tests {
                 mod-key-nested "Super"
             }
 
-            default-output "eDP-1"
-
             output "eDP-1" {
+                focus-at-startup
                 scale 2
                 transform "flipped-90"
                 position x=10 y=20
@@ -4078,13 +4078,11 @@ mod tests {
                     Super,
                 ),
             },
-            default_output: Some(
-                "eDP-1",
-            ),
             outputs: Outputs(
                 [
                     Output {
                         off: false,
+                        focus_at_startup: true,
                         name: "eDP-1",
                         scale: Some(
                             FloatOrInt(

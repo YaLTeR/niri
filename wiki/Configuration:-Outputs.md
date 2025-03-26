@@ -8,6 +8,7 @@ Here's what it looks like with all properties written out:
 ```kdl
 output "eDP-1" {
     // off
+    focus-at-startup
     mode "1920x1080@120.030"
     scale 2.0
     transform "90"
@@ -43,6 +44,22 @@ This flag turns off that output entirely.
 // Turn off that monitor.
 output "HDMI-A-1" {
     off
+}
+```
+
+### `focus-at-startup`
+
+Gives focus to this output when niri starts. Priority is decided by declaration order.
+
+```kdl
+// Try to focus HDMI-A-1
+output "HDMI-A-1" {
+    focus-at-startup
+}
+
+// ...if it wasn't detected, try to focus DP-2 instead
+output "DP-2" {
+    focus-at-startup
 }
 ```
 
@@ -121,9 +138,6 @@ output "HDMI-A-1" {
     position x=1280 y=0
 }
 ```
-
-#### Setting a Primary Monitor
-To change which output is active on startup, see [`default-output`](./Configuration:-Miscellaneous.md#default-output)
 
 #### Automatic Positioning
 

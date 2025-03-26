@@ -60,9 +60,6 @@ input {
     // focus-follows-mouse max-scroll-amount="0%"
 }
 
-// You can set an output for niri to focus when starting.
-/-default-output "eDP-1"
-
 // You can configure outputs by their name, which you can find
 // by running `niri msg outputs` while inside a niri instance.
 // The built-in laptop monitor is usually called "eDP-1".

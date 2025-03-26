@@ -800,10 +800,10 @@ impl State {
         let config_temp = self.niri.config.clone();
         let config = config_temp.borrow();
 
-        if let Some(focus_target) = &config.default_output {
+        for output_definition in config.outputs.0.iter() {
             for output in self.niri.output_state.keys() {
                 let name = output.user_data().get::<OutputName>().unwrap();
-                if name.matches(focus_target) {
+                if name.matches(&output_definition.name) {
                     self.niri.layout.activate_output(&output.clone());
                     self.move_cursor_to_output(&output.clone());
                     return;
@@ -814,7 +814,7 @@ impl State {
         // If we couldn't find the specified monitor, we center the mouse on one.
         // Without this, the mouse would start at the top left corner
 
-		// For more consistent behavior, we choose an output after sorting them by connector names.
+        // For more consistent behavior, we choose an output after sorting them by connector names.
         let mut outputs: Vec<&Output> = self.niri.output_state.keys().collect();
         outputs.sort_unstable_by(|a, b| {
             let a = a.user_data().get::<OutputName>().unwrap();
