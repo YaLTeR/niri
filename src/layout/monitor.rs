@@ -584,7 +584,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         if workspace.floating_is_active() {
-            self.move_to_workspace(None, idx, ActivateWindow::Yes);
+            self.move_to_workspace(None, idx, ActivateWindow::Smart);
             return;
         }
 
