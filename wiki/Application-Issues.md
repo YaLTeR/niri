@@ -1,21 +1,20 @@
-### Electron based applications
+### Electron applications
 
-Electron based applications can work directly on Wayland, but they don't accept it without configuration. Configuration differs between versions. Information was grabbed from the [ArchWiki](https://wiki.archlinux.org/title/Wayland#Electron).
+Electron-based applications can run directly on Wayland, but it's not the default.
 
-For Electron (>28) you need to set environment variable:
+For Electron > 28, you can set an environment variable:
 ```kdl
 environment {
     ELECTRON_OZONE_PLATFORM_HINT "auto"
 }
 ```
 
-For previous version you need to set flags via CLI:
+For previous versions, you need to pass command-line flags to the target application:
 ```
---enable-features=UseOzonePlatform
---ozone-platform-hint=auto
+--enable-features=UseOzonePlatform --ozone-platform-hint=auto
 ```
 
-If application has a [desktop entry](https://specifications.freedesktop.org/menu-spec/latest/menu-add-example.html), you can modify an `Exec` section.
+If the application has a [desktop entry](https://specifications.freedesktop.org/menu-spec/latest/menu-add-example.html), you can put the command-line arguments into the `Exec` section.
 
 ### VSCode
 
