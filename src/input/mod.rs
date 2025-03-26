@@ -40,7 +40,7 @@ use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::layout::scrolling::ScrollDirection;
-use crate::layout::LayoutElement as _;
+use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
@@ -1091,7 +1091,12 @@ impl State {
                             self.move_cursor_to_output(&output);
                         }
                     } else {
-                        self.niri.layout.move_to_workspace(None, index, focus);
+                        let activate = if focus {
+                            ActivateWindow::Smart
+                        } else {
+                            ActivateWindow::No
+                        };
+                        self.niri.layout.move_to_workspace(None, index, activate);
                         self.maybe_warp_cursor_to_focus();
                     }
 
@@ -1131,9 +1136,14 @@ impl State {
                                 }
                             }
                         } else {
+                            let activate = if focus {
+                                ActivateWindow::Smart
+                            } else {
+                                ActivateWindow::No
+                            };
                             self.niri
                                 .layout
-                                .move_to_workspace(Some(&window), index, focus);
+                                .move_to_workspace(Some(&window), index, activate);
 
                             // If we focused the target window.
                             let new_focus = self.niri.layout.focus();

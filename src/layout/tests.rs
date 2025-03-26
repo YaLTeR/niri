@@ -1063,7 +1063,7 @@ impl Op {
                 workspace_idx,
             } => {
                 let window_id = window_id.filter(|id| layout.has_window(id));
-                layout.move_to_workspace(window_id.as_ref(), workspace_idx, true);
+                layout.move_to_workspace(window_id.as_ref(), workspace_idx, ActivateWindow::Yes);
             }
             Op::MoveColumnToWorkspaceDown => layout.move_column_to_workspace_down(),
             Op::MoveColumnToWorkspaceUp => layout.move_column_to_workspace_up(),
