@@ -1822,10 +1822,7 @@ impl From<niri_ipc::Action> for Action {
                 window_id: None,
                 reference,
                 focus,
-            } => Self::MoveWindowToWorkspace(
-                WorkspaceReference::from(reference),
-                focus,
-            ),
+            } => Self::MoveWindowToWorkspace(WorkspaceReference::from(reference), focus),
             niri_ipc::Action::MoveWindowToWorkspace {
                 window_id: Some(window_id),
                 reference,
