@@ -429,8 +429,8 @@ pub enum Action {
 
         /// When set to false, move the window to the workspace without switching
         /// focus to that workspace. The focus remains on the current workspace.
-        #[cfg_attr(feature = "clap", arg(long))]
-        focus: Option<bool>,
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
     },
     /// Move the focused column to the workspace below.
     MoveColumnToWorkspaceDown {},

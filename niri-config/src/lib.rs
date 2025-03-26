@@ -1824,7 +1824,7 @@ impl From<niri_ipc::Action> for Action {
                 focus,
             } => Self::MoveWindowToWorkspace(
                 WorkspaceReference::from(reference),
-                focus.unwrap_or(true),
+                focus,
             ),
             niri_ipc::Action::MoveWindowToWorkspace {
                 window_id: Some(window_id),
@@ -1833,7 +1833,7 @@ impl From<niri_ipc::Action> for Action {
             } => Self::MoveWindowToWorkspaceById {
                 window_id,
                 reference: WorkspaceReference::from(reference),
-                focus: focus.unwrap_or(true),
+                focus,
             },
             niri_ipc::Action::MoveColumnToWorkspaceDown {} => Self::MoveColumnToWorkspaceDown,
             niri_ipc::Action::MoveColumnToWorkspaceUp {} => Self::MoveColumnToWorkspaceUp,
