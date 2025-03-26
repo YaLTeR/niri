@@ -1092,9 +1092,7 @@ impl State {
                         }
                     } else {
                         self.niri.layout.move_to_workspace(None, index, focus);
-                        if focus {
-                            self.maybe_warp_cursor_to_focus();
-                        }
+                        self.maybe_warp_cursor_to_focus();
                     }
 
                     // FIXME: granular
@@ -1138,11 +1136,9 @@ impl State {
                                 .move_to_workspace(Some(&window), index, focus);
 
                             // If we focused the target window.
-                            if focus {
-                                let new_focus = self.niri.layout.focus();
-                                if new_focus.is_some_and(|win| win.window == window) {
-                                    self.maybe_warp_cursor_to_focus();
-                                }
+                            let new_focus = self.niri.layout.focus();
+                            if new_focus.is_some_and(|win| win.window == window) {
+                                self.maybe_warp_cursor_to_focus();
                             }
                         }
 
