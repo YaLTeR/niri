@@ -9,19 +9,19 @@ environment {
 }
 ```
 
-For previous version you need to set flags in configuration file `~/.config/electron-flags.conf`:
+For previous version you need to set flags via CLI:
 ```
 --enable-features=UseOzonePlatform
 --ozone-platform-hint=auto
 ```
+
+If application has a [desktop entry](https://specifications.freedesktop.org/menu-spec/latest/menu-add-example.html), you can modify an `Exec` section.
 
 ### VSCode
 
-To run VSCode natively via Wayland you need to put flags in `~/.config/code-flags.conf`:
-```
---enable-features=UseOzonePlatform
---ozone-platform-hint=auto
-```
+If you're having issues with some VSCode hotkeys, try starting `Xwayland` and setting the `DISPLAY=:0` environment variable for VSCode.
+That is, still running VSCode with the Wayland backend, but with `DISPLAY` set to a running Xwayland instance.
+Apparently, VSCode currently unconditionally queries the X server for a keymap.
 
 ### WezTerm
 
