@@ -22,6 +22,10 @@ Since we're using `xdg-desktop-portal-gnome`, Flatpak apps will read the GNOME U
 dconf write /org/gnome/desktop/interface/color-scheme '"prefer-dark"'
 ```
 
+Note that if you're using the provided `resources/niri-portals.conf`, you also need to install the `nautilus` file manager in order for file chooser dialogues to work properly. This is necessary because xdg-desktop-portal-gnome uses nautilus as the file chooser by default starting from version 47.0.
+
+If you do not want to install `natuilus` (say you use `nemo` instead), you can set `org.freedesktop.impl.portal.FileChooser=gtk;` in `niri-portals.conf` to use the GTK portal for file chooser dialogues.
+
 ### Authentication Agent
 
 Required when apps need to ask for root permissions. Something like `plasma-polkit-agent` works fine. Start it [with systemd](./Example-systemd-Setup.md) or with [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup).
