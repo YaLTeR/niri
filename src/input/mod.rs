@@ -1831,6 +1831,37 @@ impl State {
             Action::ClearDynamicCastTarget => {
                 self.set_dynamic_cast_target(CastTarget::Nothing);
             }
+            Action::ToggleUrgent(id) => {
+                let window = self
+                    .niri
+                    .layout
+                    .workspaces_mut()
+                    .find_map(|ws| ws.windows_mut().find(|w| w.id().get() == id));
+                if let Some(window) = window {
+                    let urgent = window.is_urgent();
+                    window.set_urgent(!urgent);
+                }
+            }
+            Action::SetUrgent(id) => {
+                let window = self
+                    .niri
+                    .layout
+                    .workspaces_mut()
+                    .find_map(|ws| ws.windows_mut().find(|w| w.id().get() == id));
+                if let Some(window) = window {
+                    window.set_urgent(true);
+                }
+            }
+            Action::UnsetUrgent(id) => {
+                let window = self
+                    .niri
+                    .layout
+                    .workspaces_mut()
+                    .find_map(|ws| ws.windows_mut().find(|w| w.id().get() == id));
+                if let Some(window) = window {
+                    window.set_urgent(false);
+                }
+            }
         }
     }
 
