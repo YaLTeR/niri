@@ -1736,6 +1736,12 @@ pub enum Action {
     SetDynamicCastWindowById(u64),
     SetDynamicCastMonitor(#[knuffel(argument)] Option<String>),
     ClearDynamicCastTarget,
+    #[knuffel(skip)]
+    ToggleUrgent(u64),
+    #[knuffel(skip)]
+    SetUrgent(u64),
+    #[knuffel(skip)]
+    UnsetUrgent(u64),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -2000,6 +2006,9 @@ impl From<niri_ipc::Action> for Action {
                 Self::SetDynamicCastMonitor(output)
             }
             niri_ipc::Action::ClearDynamicCastTarget {} => Self::ClearDynamicCastTarget,
+            niri_ipc::Action::ToggleUrgent { id } => Self::ToggleUrgent(id),
+            niri_ipc::Action::SetUrgent { id } => Self::SetUrgent(id),
+            niri_ipc::Action::UnsetUrgent { id } => Self::UnsetUrgent(id),
         }
     }
 }
