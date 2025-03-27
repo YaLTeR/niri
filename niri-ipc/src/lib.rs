@@ -803,6 +803,24 @@ pub enum Action {
     OpenOverview {},
     /// Close the Overview.
     CloseOverview {},
+    /// Toggle urgent status of a window.
+    ToggleUrgent {
+        /// Id of the window to toggle urgent.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+    },
+    /// Set urgent status of a window.
+    SetUrgent {
+        /// Id of the window to set urgent.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+    },
+    /// Unset urgent status of a window.
+    UnsetUrgent {
+        /// Id of the window to unset urgent.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+    },
 }
 
 /// Change in window or column size.
