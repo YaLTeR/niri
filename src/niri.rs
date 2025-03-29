@@ -797,34 +797,26 @@ impl State {
     }
 
     pub fn focus_default_monitor(&mut self) {
-        let config_temp = self.niri.config.clone();
-        let config = config_temp.borrow();
+        // Our default target is the first output in sorted order.
+        let Some(mut target) = self.niri.sorted_outputs.first().cloned() else {
+            // No outputs are connected.
+            return;
+        };
 
-        for output_definition in config.outputs.0.iter() {
-            for output in self.niri.output_state.keys() {
-                let name = output.user_data().get::<OutputName>().unwrap();
-                if name.matches(&output_definition.name) {
-                    self.niri.layout.activate_output(&output.clone());
-                    self.move_cursor_to_output(&output.clone());
-                    return;
-                }
+        let config = self.niri.config.borrow();
+        for config in &config.outputs.0 {
+            if !config.focus_at_startup {
+                continue;
+            }
+            if let Some(output) = self.niri.output_by_name_match(&config.name) {
+                target = output.clone();
+                break;
             }
         }
+        drop(config);
 
-        // If we couldn't find the specified monitor, we center the mouse on one.
-        // Without this, the mouse would start at the top left corner
-
-        // For more consistent behavior, we choose an output after sorting them by connector names.
-        let mut outputs: Vec<&Output> = self.niri.output_state.keys().collect();
-        outputs.sort_unstable_by(|a, b| {
-            let a = a.user_data().get::<OutputName>().unwrap();
-            let b = b.user_data().get::<OutputName>().unwrap();
-            a.compare(b)
-        });
-
-        if let Some(&output) = outputs.first() {
-            self.move_cursor_to_output(&output.clone());
-        }
+        self.niri.layout.focus_output(&target);
+        self.move_cursor_to_output(&target);
     }
 
     /// Focus a specific window, taking care of a potential active output change and cursor

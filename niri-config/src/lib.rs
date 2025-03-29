@@ -428,8 +428,6 @@ pub struct Outputs(pub Vec<Output>);
 pub struct Output {
     #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child)]
-    pub focus_at_startup: bool,
     #[knuffel(argument)]
     pub name: String,
     #[knuffel(child, unwrap(argument))]
@@ -442,6 +440,8 @@ pub struct Output {
     pub mode: Option<ConfiguredMode>,
     #[knuffel(child)]
     pub variable_refresh_rate: Option<Vrr>,
+    #[knuffel(child)]
+    pub focus_at_startup: bool,
     #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
     pub background_color: Color,
 }
@@ -4082,7 +4082,6 @@ mod tests {
                 [
                     Output {
                         off: false,
-                        focus_at_startup: true,
                         name: "eDP-1",
                         scale: Some(
                             FloatOrInt(
@@ -4110,6 +4109,7 @@ mod tests {
                                 on_demand: true,
                             },
                         ),
+                        focus_at_startup: true,
                         background_color: Color {
                             r: 0.09803922,
                             g: 0.09803922,
