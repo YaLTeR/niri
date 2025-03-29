@@ -73,6 +73,10 @@ You can run Wayland-native games as well by passing `--expose-wayland` to gamesc
 
 ### Steam
 
+On some systems, Steam will show a fully black window.
+To fix this, navigate to Settings -> Interface (via Steam's tray icon, or by blindly finding the Steam menu at the top left of the window), then **disable** GPU accelerated rendering in web views.
+Restart Steam and it should now work fine.
+
 Steam notifications don't run through the standard notification daemon and show up as floating windows in the center of the screen.
 You can move them to a more convenient location by adding a window rule in your niri config:
 
