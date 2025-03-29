@@ -427,8 +427,11 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg())]
         reference: WorkspaceReferenceArg,
 
-        /// When set to false, move the window to the workspace without switching
-        /// focus to that workspace. The focus remains on the current workspace.
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default) and the window to move is focused, the focus will follow the
+        /// window to the new workspace. If `false`, the focus will remain on the original
+        /// workspace.
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
         focus: bool,
     },
