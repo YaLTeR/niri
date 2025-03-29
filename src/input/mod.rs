@@ -740,14 +740,24 @@ impl State {
                 });
             }
             Action::MoveColumnLeft => {
-                self.niri.layout.move_left();
-                self.maybe_warp_cursor_to_focus();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_left();
+                } else {
+                    self.niri.layout.move_left();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::MoveColumnRight => {
-                self.niri.layout.move_right();
-                self.maybe_warp_cursor_to_focus();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_right();
+                } else {
+                    self.niri.layout.move_right();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
@@ -798,14 +808,24 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowDown => {
-                self.niri.layout.move_down();
-                self.maybe_warp_cursor_to_focus();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_down();
+                } else {
+                    self.niri.layout.move_down();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowUp => {
-                self.niri.layout.move_up();
-                self.maybe_warp_cursor_to_focus();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_up();
+                } else {
+                    self.niri.layout.move_up();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
@@ -1589,10 +1609,24 @@ impl State {
                 }
             }
             Action::SetColumnWidth(change) => {
-                self.niri.layout.set_column_width(change);
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.set_width(change);
+
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                } else {
+                    self.niri.layout.set_column_width(change);
+                }
             }
             Action::SetWindowWidth(change) => {
-                self.niri.layout.set_window_width(None, change);
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.set_width(change);
+
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                } else {
+                    self.niri.layout.set_window_width(None, change);
+                }
             }
             Action::SetWindowWidthById { id, change } => {
                 let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
@@ -1602,7 +1636,14 @@ impl State {
                 }
             }
             Action::SetWindowHeight(change) => {
-                self.niri.layout.set_window_height(None, change);
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.set_height(change);
+
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                } else {
+                    self.niri.layout.set_window_height(None, change);
+                }
             }
             Action::SetWindowHeightById { id, change } => {
                 let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
@@ -3418,6 +3459,14 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::Suspend
             | Action::PowerOffMonitors
             | Action::PowerOnMonitors
+            // The screenshot UI can handle these.
+            | Action::MoveColumnLeft
+            | Action::MoveColumnRight
+            | Action::MoveWindowUp
+            | Action::MoveWindowDown
+            | Action::SetWindowWidth(_)
+            | Action::SetWindowHeight(_)
+            | Action::SetColumnWidth(_)
     )
 }
 
