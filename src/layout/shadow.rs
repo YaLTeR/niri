@@ -62,7 +62,11 @@ impl Shadow {
 
         let win_radius = radius.fit_to(win_size.w as f32, win_size.h as f32);
 
-        let box_size = win_size + Size::from((spread, spread)).upscale(2.);
+        let box_size = if spread >= 0. {
+            win_size + Size::from((spread, spread)).upscale(2.)
+        } else {
+            win_size - Size::from((-spread, -spread)).upscale(2.)
+        };
         let radius = win_radius.expanded_by(spread as f32);
 
         let shader_size = box_size + Size::from((width, width)).upscale(2.);
