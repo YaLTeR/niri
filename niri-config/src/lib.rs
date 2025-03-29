@@ -440,6 +440,8 @@ pub struct Output {
     pub mode: Option<ConfiguredMode>,
     #[knuffel(child)]
     pub variable_refresh_rate: Option<Vrr>,
+    #[knuffel(child)]
+    pub focus_at_startup: bool,
     #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
     pub background_color: Color,
 }
@@ -462,6 +464,7 @@ impl Default for Output {
     fn default() -> Self {
         Self {
             off: false,
+            focus_at_startup: false,
             name: String::new(),
             scale: None,
             transform: Transform::Normal,
@@ -3746,6 +3749,7 @@ mod tests {
             }
 
             output "eDP-1" {
+                focus-at-startup
                 scale 2
                 transform "flipped-90"
                 position x=10 y=20
@@ -4105,6 +4109,7 @@ mod tests {
                                 on_demand: true,
                             },
                         ),
+                        focus_at_startup: true,
                         background_color: Color {
                             r: 0.09803922,
                             g: 0.09803922,

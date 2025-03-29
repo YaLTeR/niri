@@ -630,6 +630,8 @@ impl State {
         state.load_xkb_file();
         // Initialize some IPC server state.
         state.ipc_keyboard_layouts_changed();
+        // Focus the default monitor if set by the user.
+        state.focus_default_monitor();
 
         Ok(state)
     }
@@ -792,6 +794,29 @@ impl State {
         }
 
         rv
+    }
+
+    pub fn focus_default_monitor(&mut self) {
+        // Our default target is the first output in sorted order.
+        let Some(mut target) = self.niri.sorted_outputs.first().cloned() else {
+            // No outputs are connected.
+            return;
+        };
+
+        let config = self.niri.config.borrow();
+        for config in &config.outputs.0 {
+            if !config.focus_at_startup {
+                continue;
+            }
+            if let Some(output) = self.niri.output_by_name_match(&config.name) {
+                target = output.clone();
+                break;
+            }
+        }
+        drop(config);
+
+        self.niri.layout.focus_output(&target);
+        self.move_cursor_to_output(&target);
     }
 
     /// Focus a specific window, taking care of a potential active output change and cursor
