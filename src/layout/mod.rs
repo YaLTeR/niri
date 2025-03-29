@@ -200,6 +200,9 @@ pub trait LayoutElement {
     fn set_bounds(&self, bounds: Size<i32, Logical>);
     fn is_ignoring_opacity_window_rule(&self) -> bool;
 
+    fn set_urgent(&mut self, urgent: bool);
+    fn is_urgent(&self) -> bool;
+
     fn configure_intent(&self) -> ConfigureIntent;
     fn send_pending_configure(&mut self);
 
@@ -1502,6 +1505,14 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         ws_idx == mon.active_workspace_idx
+    }
+
+    pub fn urgent_window(&mut self, id: &W::Id) {
+        self.with_windows_mut(|window, _| {
+            if window.id() == id {
+                window.set_urgent(true);
+            }
+        });
     }
 
     pub fn activate_window(&mut self, window: &W::Id) {

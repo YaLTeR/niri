@@ -571,10 +571,14 @@ pub struct FocusRing {
     pub active_color: Color,
     #[knuffel(child, default = Self::default().inactive_color)]
     pub inactive_color: Color,
+    #[knuffel(child, default = Self::default().urgent_color)]
+    pub urgent_color: Color,
     #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub urgent_gradient: Option<Gradient>,
 }
 
 impl Default for FocusRing {
@@ -584,8 +588,10 @@ impl Default for FocusRing {
             width: FloatOrInt(4.),
             active_color: Color::from_rgba8_unpremul(127, 200, 255, 255),
             inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
+            urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
             active_gradient: None,
             inactive_gradient: None,
+            urgent_gradient: None,
         }
     }
 }
@@ -657,10 +663,14 @@ pub struct Border {
     pub active_color: Color,
     #[knuffel(child, default = Self::default().inactive_color)]
     pub inactive_color: Color,
+    #[knuffel(child, default = Self::default().urgent_color)]
+    pub urgent_color: Color,
     #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub urgent_gradient: Option<Gradient>,
 }
 
 impl Default for Border {
@@ -670,8 +680,10 @@ impl Default for Border {
             width: FloatOrInt(4.),
             active_color: Color::from_rgba8_unpremul(255, 200, 127, 255),
             inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
+            urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
             active_gradient: None,
             inactive_gradient: None,
+            urgent_gradient: None,
         }
     }
 }
@@ -683,8 +695,10 @@ impl From<Border> for FocusRing {
             width: value.width,
             active_color: value.active_color,
             inactive_color: value.inactive_color,
+            urgent_color: value.urgent_color,
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
+            urgent_gradient: value.urgent_gradient,
         }
     }
 }
@@ -696,8 +710,10 @@ impl From<FocusRing> for Border {
             width: value.width,
             active_color: value.active_color,
             inactive_color: value.inactive_color,
+            urgent_color: value.urgent_color,
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
+            urgent_gradient: value.urgent_gradient,
         }
     }
 }
@@ -1363,9 +1379,13 @@ pub struct BorderRule {
     #[knuffel(child)]
     pub inactive_color: Option<Color>,
     #[knuffel(child)]
+    pub urgent_color: Option<Color>,
+    #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub urgent_gradient: Option<Gradient>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
@@ -1716,6 +1736,12 @@ pub enum Action {
     SetDynamicCastWindowById(u64),
     SetDynamicCastMonitor(#[knuffel(argument)] Option<String>),
     ClearDynamicCastTarget,
+    #[knuffel(skip)]
+    ToggleUrgent(u64),
+    #[knuffel(skip)]
+    SetUrgent(u64),
+    #[knuffel(skip)]
+    UnsetUrgent(u64),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1977,6 +2003,9 @@ impl From<niri_ipc::Action> for Action {
                 Self::SetDynamicCastMonitor(output)
             }
             niri_ipc::Action::ClearDynamicCastTarget {} => Self::ClearDynamicCastTarget,
+            niri_ipc::Action::ToggleUrgent { id } => Self::ToggleUrgent(id),
+            niri_ipc::Action::SetUrgent { id } => Self::SetUrgent(id),
+            niri_ipc::Action::UnsetUrgent { id } => Self::UnsetUrgent(id),
         }
     }
 }
@@ -2205,11 +2234,17 @@ impl BorderRule {
         if let Some(x) = other.inactive_color {
             self.inactive_color = Some(x);
         }
+        if let Some(x) = other.urgent_color {
+            self.urgent_color = Some(x);
+        }
         if let Some(x) = other.active_gradient {
             self.active_gradient = Some(x);
         }
         if let Some(x) = other.inactive_gradient {
             self.inactive_gradient = Some(x);
+        }
+        if let Some(x) = other.urgent_gradient {
+            self.urgent_gradient = Some(x);
         }
     }
 
@@ -2230,11 +2265,18 @@ impl BorderRule {
             config.inactive_color = x;
             config.inactive_gradient = None;
         }
+        if let Some(x) = self.urgent_color {
+            config.urgent_color = x;
+            config.urgent_gradient = None;
+        }
         if let Some(x) = self.active_gradient {
             config.active_gradient = Some(x);
         }
         if let Some(x) = self.inactive_gradient {
             config.inactive_gradient = Some(x);
+        }
+        if let Some(x) = self.urgent_gradient {
+            config.urgent_gradient = Some(x);
         }
 
         config
@@ -4146,6 +4188,12 @@ mod tests {
                         b: 0.39215687,
                         a: 0.0,
                     },
+                    urgent_color: Color {
+                        r: 0.60784316,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
                     active_gradient: Some(
                         Gradient {
                             from: Color {
@@ -4169,6 +4217,7 @@ mod tests {
                         },
                     ),
                     inactive_gradient: None,
+                    urgent_gradient: None,
                 },
                 border: Border {
                     off: false,
@@ -4187,8 +4236,15 @@ mod tests {
                         b: 0.39215687,
                         a: 0.0,
                     },
+                    urgent_color: Color {
+                        r: 0.60784316,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
                     active_gradient: None,
                     inactive_gradient: None,
+                    urgent_gradient: None,
                 },
                 shadow: Shadow {
                     on: false,
@@ -4566,8 +4622,10 @@ mod tests {
                         ),
                         active_color: None,
                         inactive_color: None,
+                        urgent_color: None,
                         active_gradient: None,
                         inactive_gradient: None,
+                        urgent_gradient: None,
                     },
                     border: BorderRule {
                         off: false,
@@ -4579,8 +4637,10 @@ mod tests {
                         ),
                         active_color: None,
                         inactive_color: None,
+                        urgent_color: None,
                         active_gradient: None,
                         inactive_gradient: None,
+                        urgent_gradient: None,
                     },
                     shadow: ShadowRule {
                         off: false,
@@ -5312,8 +5372,10 @@ mod tests {
                 width: None,
                 active_color: None,
                 inactive_color: None,
+                urgent_color: None,
                 active_gradient: None,
                 inactive_gradient: None,
+                urgent_gradient: None,
             };
 
             for rule in rules.iter().copied() {

@@ -583,6 +583,12 @@ impl State {
             if is_active && !ipc_ws.is_active {
                 events.push(Event::WorkspaceActivated { id, focused: false });
             }
+
+            // Check if this workspace urgent state changed.
+            let urgent = ws.is_urgent();
+            if urgent != ipc_ws.is_urgent {
+                events.push(Event::WorkspaceUrgencyChanged { id, urgent });
+            }
         }
 
         // Check if any workspaces were removed.
@@ -602,6 +608,7 @@ impl State {
                         idx: u8::try_from(ws_idx + 1).unwrap_or(u8::MAX),
                         name: ws.name().cloned(),
                         output: mon.map(|mon| mon.output_name().clone()),
+                        is_urgent: ws.is_urgent(),
                         is_active: mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx),
                         is_focused: Some(id) == focused_ws_id,
                         active_window_id: ws.active_window().map(|win| win.id().get()),
