@@ -2237,7 +2237,7 @@ impl State {
                 let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                 if mod_down {
                     if let Some(output) = self.niri.output_under_cursor() {
-                        self.niri.layout.activate_output(&output);
+                        self.niri.layout.focus_output(&output);
 
                         let location = pointer.current_location();
                         let start_data = PointerGrabStartData {
@@ -2368,7 +2368,7 @@ impl State {
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
             } else if let Some(output) = self.niri.output_under_cursor() {
-                self.niri.layout.activate_output(&output);
+                self.niri.layout.focus_output(&output);
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
@@ -2687,7 +2687,7 @@ impl State {
                             // FIXME: granular.
                             self.niri.queue_redraw_all();
                         } else if let Some(output) = under.output {
-                            self.niri.layout.activate_output(&output);
+                            self.niri.layout.focus_output(&output);
 
                             // FIXME: granular.
                             self.niri.queue_redraw_all();
@@ -3084,7 +3084,7 @@ impl State {
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
             } else if let Some(output) = under.output {
-                self.niri.layout.activate_output(&output);
+                self.niri.layout.focus_output(&output);
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();

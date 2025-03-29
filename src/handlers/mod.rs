@@ -373,7 +373,7 @@ impl ClientDndGrabHandler for State {
                 // We can't even get the current pointer location because it's locked (we're deep
                 // in the grab call stack here). So use the last known one.
                 if let Some(output) = &self.niri.pointer_contents.output {
-                    self.niri.layout.activate_output(output);
+                    self.niri.layout.focus_output(output);
                 }
             }
         }

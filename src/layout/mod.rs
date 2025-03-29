@@ -1576,23 +1576,6 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn activate_output(&mut self, output: &Output) {
-        let MonitorSet::Normal {
-            monitors,
-            active_monitor_idx,
-            ..
-        } = &mut self.monitor_set
-        else {
-            return;
-        };
-
-        let idx = monitors
-            .iter()
-            .position(|mon| &mon.output == output)
-            .unwrap();
-        *active_monitor_idx = idx;
-    }
-
     pub fn active_output(&self) -> Option<&Output> {
         let MonitorSet::Normal {
             monitors,
