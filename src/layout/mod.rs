@@ -2120,7 +2120,12 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_to_workspace_down();
     }
 
-    pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize) {
+    pub fn move_to_workspace(
+        &mut self,
+        window: Option<&W::Id>,
+        idx: usize,
+        activate: ActivateWindow,
+    ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
@@ -2143,7 +2148,7 @@ impl<W: LayoutElement> Layout<W> {
             };
             monitor
         };
-        monitor.move_to_workspace(window, idx);
+        monitor.move_to_workspace(window, idx, activate);
     }
 
     pub fn move_column_to_workspace_up(&mut self) {

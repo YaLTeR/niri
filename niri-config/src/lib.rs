@@ -1592,11 +1592,15 @@ pub enum Action {
     FocusWorkspacePrevious,
     MoveWindowToWorkspaceDown,
     MoveWindowToWorkspaceUp,
-    MoveWindowToWorkspace(#[knuffel(argument)] WorkspaceReference),
+    MoveWindowToWorkspace(
+        #[knuffel(argument)] WorkspaceReference,
+        #[knuffel(property(name = "focus"), default = true)] bool,
+    ),
     #[knuffel(skip)]
     MoveWindowToWorkspaceById {
         window_id: u64,
         reference: WorkspaceReference,
+        focus: bool,
     },
     MoveColumnToWorkspaceDown,
     MoveColumnToWorkspaceUp,
@@ -1817,13 +1821,16 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveWindowToWorkspace {
                 window_id: None,
                 reference,
-            } => Self::MoveWindowToWorkspace(WorkspaceReference::from(reference)),
+                focus,
+            } => Self::MoveWindowToWorkspace(WorkspaceReference::from(reference), focus),
             niri_ipc::Action::MoveWindowToWorkspace {
                 window_id: Some(window_id),
                 reference,
+                focus,
             } => Self::MoveWindowToWorkspaceById {
                 window_id,
                 reference: WorkspaceReference::from(reference),
+                focus,
             },
             niri_ipc::Action::MoveColumnToWorkspaceDown {} => Self::MoveColumnToWorkspaceDown,
             niri_ipc::Action::MoveColumnToWorkspaceUp {} => Self::MoveColumnToWorkspaceUp,
