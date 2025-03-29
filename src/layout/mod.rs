@@ -3199,6 +3199,7 @@ impl<W: LayoutElement> Layout<W> {
         window: Option<&W::Id>,
         output: &Output,
         target_ws_idx: Option<usize>,
+        activate: ActivateWindow,
     ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
@@ -3241,9 +3242,11 @@ impl<W: LayoutElement> Layout<W> {
             let ws_id = monitors[new_idx].workspaces[workspace_idx].id();
 
             let mon = &mut monitors[mon_idx];
-            let activate = window.map_or(true, |win| {
-                mon_idx == *active_monitor_idx
-                    && mon.active_window().map(|win| win.id()) == Some(win)
+            let activate = activate.map_smart(|| {
+                window.map_or(true, |win| {
+                    mon_idx == *active_monitor_idx
+                        && mon.active_window().map(|win| win.id()) == Some(win)
+                })
             });
             let activate = if activate {
                 ActivateWindow::Yes
@@ -3302,7 +3305,7 @@ impl<W: LayoutElement> Layout<W> {
             let ws = current.active_workspace();
 
             if ws.floating_is_active() {
-                self.move_to_output(None, output, None);
+                self.move_to_output(None, output, None, ActivateWindow::Smart);
                 return;
             }
 

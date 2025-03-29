@@ -76,6 +76,7 @@ use smithay::{
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
+use crate::layout::ActivateWindow;
 use crate::niri::{DndIcon, NewClient, State};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
@@ -551,9 +552,12 @@ impl ForeignToplevelHandler for State {
 
             if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
                 if Some(&requested_output) != current_output {
-                    self.niri
-                        .layout
-                        .move_to_output(Some(&window), &requested_output, None);
+                    self.niri.layout.move_to_output(
+                        Some(&window),
+                        &requested_output,
+                        None,
+                        ActivateWindow::Smart,
+                    );
                 }
             }
 

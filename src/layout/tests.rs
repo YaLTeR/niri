@@ -1081,7 +1081,12 @@ impl Op {
 
                 let window_id = window_id.filter(|id| layout.has_window(id));
                 let target_ws_idx = target_ws_idx.filter(|idx| mon.workspaces.len() > *idx);
-                layout.move_to_output(window_id.as_ref(), &output, target_ws_idx);
+                layout.move_to_output(
+                    window_id.as_ref(),
+                    &output,
+                    target_ws_idx,
+                    ActivateWindow::Smart,
+                );
             }
             Op::MoveColumnToOutput(id) => {
                 let name = format!("output{id}");

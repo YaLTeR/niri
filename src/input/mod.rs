@@ -1104,18 +1104,25 @@ impl State {
                         }
                     }
 
-                    if let Some(output) = output {
-                        self.niri.layout.move_to_output(None, &output, Some(index));
+                    let activate = if focus {
+                        ActivateWindow::Smart
+                    } else {
+                        ActivateWindow::No
+                    };
 
-                        if !self.maybe_warp_cursor_to_focus_centered() {
-                            self.move_cursor_to_output(&output);
+                    if let Some(output) = output {
+                        self.niri
+                            .layout
+                            .move_to_output(None, &output, Some(index), activate);
+
+                        if focus {
+                            if !self.maybe_warp_cursor_to_focus_centered() {
+                                self.move_cursor_to_output(&output);
+                            }
+                        } else {
+                            self.maybe_warp_cursor_to_focus();
                         }
                     } else {
-                        let activate = if focus {
-                            ActivateWindow::Smart
-                        } else {
-                            ActivateWindow::No
-                        };
                         self.niri.layout.move_to_workspace(None, index, activate);
                         self.maybe_warp_cursor_to_focus();
                     }
@@ -1141,10 +1148,19 @@ impl State {
                             .active_output()
                             .is_some_and(|active| output.as_ref() == Some(active));
 
+                        let activate = if focus {
+                            ActivateWindow::Smart
+                        } else {
+                            ActivateWindow::No
+                        };
+
                         if let Some(output) = output {
-                            self.niri
-                                .layout
-                                .move_to_output(Some(&window), &output, Some(index));
+                            self.niri.layout.move_to_output(
+                                Some(&window),
+                                &output,
+                                Some(index),
+                                activate,
+                            );
 
                             // If the active output changed (window was moved and focused).
                             #[allow(clippy::collapsible_if)]
@@ -1156,11 +1172,6 @@ impl State {
                                 }
                             }
                         } else {
-                            let activate = if focus {
-                                ActivateWindow::Smart
-                            } else {
-                                ActivateWindow::No
-                            };
                             self.niri
                                 .layout
                                 .move_to_workspace(Some(&window), index, activate);
@@ -1458,7 +1469,9 @@ impl State {
             }
             Action::MoveWindowToMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
-                    self.niri.layout.move_to_output(None, &output, None);
+                    self.niri
+                        .layout
+                        .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
@@ -1467,7 +1480,9 @@ impl State {
             }
             Action::MoveWindowToMonitorRight => {
                 if let Some(output) = self.niri.output_right() {
-                    self.niri.layout.move_to_output(None, &output, None);
+                    self.niri
+                        .layout
+                        .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
@@ -1476,7 +1491,9 @@ impl State {
             }
             Action::MoveWindowToMonitorDown => {
                 if let Some(output) = self.niri.output_down() {
-                    self.niri.layout.move_to_output(None, &output, None);
+                    self.niri
+                        .layout
+                        .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
@@ -1485,7 +1502,9 @@ impl State {
             }
             Action::MoveWindowToMonitorUp => {
                 if let Some(output) = self.niri.output_up() {
-                    self.niri.layout.move_to_output(None, &output, None);
+                    self.niri
+                        .layout
+                        .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
@@ -1494,7 +1513,9 @@ impl State {
             }
             Action::MoveWindowToMonitorPrevious => {
                 if let Some(output) = self.niri.output_previous() {
-                    self.niri.layout.move_to_output(None, &output, None);
+                    self.niri
+                        .layout
+                        .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
@@ -1503,7 +1524,9 @@ impl State {
             }
             Action::MoveWindowToMonitorNext => {
                 if let Some(output) = self.niri.output_next() {
-                    self.niri.layout.move_to_output(None, &output, None);
+                    self.niri
+                        .layout
+                        .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
@@ -1512,7 +1535,9 @@ impl State {
             }
             Action::MoveWindowToMonitor(output) => {
                 if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
-                    self.niri.layout.move_to_output(None, &output, None);
+                    self.niri
+                        .layout
+                        .move_to_output(None, &output, None, ActivateWindow::Smart);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
                         self.move_cursor_to_output(&output);
@@ -1531,9 +1556,12 @@ impl State {
                             .active_output()
                             .is_some_and(|active| output == *active);
 
-                        self.niri
-                            .layout
-                            .move_to_output(Some(&window), &output, None);
+                        self.niri.layout.move_to_output(
+                            Some(&window),
+                            &output,
+                            None,
+                            ActivateWindow::Smart,
+                        );
 
                         // If the active output changed (window was moved and focused).
                         #[allow(clippy::collapsible_if)]
