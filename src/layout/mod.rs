@@ -1658,6 +1658,13 @@ impl<W: LayoutElement> Layout<W> {
         moving_window.chain(mon_windows)
     }
 
+    pub fn current_interactive_move_tile(&self) -> Option<&Tile<W>> {
+        match &self.interactive_move {
+            Some(InteractiveMoveState::Moving(move_)) => Some(&move_.tile),
+            _ => None,
+        }
+    }
+
     pub fn with_windows(&self, mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>)) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             f(move_.tile.window(), Some(&move_.output), None);
