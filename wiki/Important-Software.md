@@ -24,7 +24,7 @@ dconf write /org/gnome/desktop/interface/color-scheme '"prefer-dark"'
 
 Note that if you're using the provided `resources/niri-portals.conf`, you also need to install the `nautilus` file manager in order for file chooser dialogues to work properly. This is necessary because xdg-desktop-portal-gnome uses nautilus as the file chooser by default starting from version 47.0.
 
-If you do not want to install `natuilus` (say you use `nemo` instead), you can set `org.freedesktop.impl.portal.FileChooser=gtk;` in `niri-portals.conf` to use the GTK portal for file chooser dialogues.
+If you do not want to install `nautilus` (say you use `nemo` instead), you can set `org.freedesktop.impl.portal.FileChooser=gtk;` in `niri-portals.conf` to use the GTK portal for file chooser dialogues.
 
 ### Authentication Agent
 
