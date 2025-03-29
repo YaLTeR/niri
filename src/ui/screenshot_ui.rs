@@ -7,6 +7,7 @@ use std::rc::Rc;
 use anyhow::Context;
 use arrayvec::ArrayVec;
 use niri_config::{Action, Config};
+use niri_ipc::SizeChange;
 use pango::{Alignment, FontDescription};
 use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
@@ -20,6 +21,7 @@ use smithay::output::{Output, WeakOutput};
 use smithay::utils::{Physical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::animation::{Animation, Clock};
+use crate::layout::floating::DIRECTIONAL_MOVE_PX;
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -38,12 +40,6 @@ const TEXT_HIDE_P: &str =
 const TEXT_SHOW_P: &str =
     "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
      Press <span face='mono' bgcolor='#2C2C2C'> P </span> to show the pointer.";
-
-/// How many pixels the move commands move the selection.
-const DIRECTIONAL_MOVE_PX: i32 = 50;
-
-/// Minimum size for screenshot selection in pixels, only applies to keybinds.
-const MIN_SELECTION_SIZE: i32 = 10;
 
 // Ideally the screenshot UI should support cross-output selections. However, that poses some
 // technical challenges when the outputs have different scales and such. So, this implementation
@@ -245,115 +241,159 @@ impl ScreenshotUi {
     }
 
     pub fn move_left(&mut self) {
-        if let Self::Open { selection, .. } = self {
-            selection.1.x -= DIRECTIONAL_MOVE_PX;
-            selection.2.x -= DIRECTIONAL_MOVE_PX;
-            self.update_buffers();
-        }
+        let Self::Open {
+            selection: (output, a, b),
+            output_data,
+            ..
+        } = self
+        else {
+            return;
+        };
+
+        let data = &output_data[output];
+
+        let delta: i32 = to_physical_precise_round(data.scale, DIRECTIONAL_MOVE_PX);
+        let delta = min(delta, min(a.x, b.x));
+        a.x -= delta;
+        b.x -= delta;
+
+        self.update_buffers();
     }
 
     pub fn move_right(&mut self) {
-        if let Self::Open { selection, .. } = self {
-            selection.1.x += DIRECTIONAL_MOVE_PX;
-            selection.2.x += DIRECTIONAL_MOVE_PX;
-            self.update_buffers();
-        }
+        let Self::Open {
+            selection: (output, a, b),
+            output_data,
+            ..
+        } = self
+        else {
+            return;
+        };
+
+        let data = &output_data[output];
+
+        let delta: i32 = to_physical_precise_round(data.scale, DIRECTIONAL_MOVE_PX);
+        let delta = min(delta, data.size.w - max(a.x, b.x) - 1);
+        a.x += delta;
+        b.x += delta;
+
+        self.update_buffers();
     }
 
     pub fn move_up(&mut self) {
-        if let Self::Open { selection, .. } = self {
-            selection.1.y -= DIRECTIONAL_MOVE_PX;
-            selection.2.y -= DIRECTIONAL_MOVE_PX;
-            self.update_buffers();
-        }
+        let Self::Open {
+            selection: (output, a, b),
+            output_data,
+            ..
+        } = self
+        else {
+            return;
+        };
+
+        let data = &output_data[output];
+
+        let delta: i32 = to_physical_precise_round(data.scale, DIRECTIONAL_MOVE_PX);
+        let delta = min(delta, min(a.y, b.y));
+        a.y -= delta;
+        b.y -= delta;
+
+        self.update_buffers();
     }
 
     pub fn move_down(&mut self) {
-        if let Self::Open { selection, .. } = self {
-            selection.1.y += DIRECTIONAL_MOVE_PX;
-            selection.2.y += DIRECTIONAL_MOVE_PX;
-            self.update_buffers();
-        }
+        let Self::Open {
+            selection: (output, a, b),
+            output_data,
+            ..
+        } = self
+        else {
+            return;
+        };
+
+        let data = &output_data[output];
+
+        let delta: i32 = to_physical_precise_round(data.scale, DIRECTIONAL_MOVE_PX);
+        let delta = min(delta, data.size.h - max(a.y, b.y) - 1);
+        a.y += delta;
+        b.y += delta;
+
+        self.update_buffers();
     }
 
-    pub fn resize_left(&mut self) {
-        if let Self::Open { selection, .. } = self {
-            let new_x = selection.1.x - DIRECTIONAL_MOVE_PX;
-            if selection.2.x - new_x >= MIN_SELECTION_SIZE {
-                selection.1.x = new_x;
-                self.update_buffers();
+    pub fn set_width(&mut self, change: SizeChange) {
+        let Self::Open {
+            selection: (output, a, b),
+            output_data,
+            ..
+        } = self
+        else {
+            return;
+        };
+
+        let data = &output_data[output];
+
+        let available_size = f64::from(data.size.w);
+        let current_size = max(a.x, b.x) + 1 - min(a.x, b.x);
+
+        let new_size = match change {
+            SizeChange::SetFixed(fixed) => to_physical_precise_round(data.scale, fixed),
+            SizeChange::SetProportion(prop) => {
+                let prop = (prop / 100.).clamp(0., 1.);
+                (available_size * prop).round() as i32
             }
-        }
+            SizeChange::AdjustFixed(delta) => {
+                let delta = to_physical_precise_round(data.scale, delta);
+                current_size.saturating_add(delta)
+            }
+            SizeChange::AdjustProportion(delta) => {
+                let current_prop = f64::from(current_size) / available_size;
+                let prop = (current_prop + delta / 100.).clamp(0., 1.);
+                (available_size * prop).round() as i32
+            }
+        };
+        let new_size = new_size.clamp(1, data.size.w - min(a.x, b.x)) - 1;
+        a.x = min(a.x, b.x);
+        b.x = a.x + new_size;
+
+        self.update_buffers();
     }
 
-    pub fn resize_right(&mut self) {
-        if let Self::Open { selection, .. } = self {
-            let new_x = selection.2.x + DIRECTIONAL_MOVE_PX;
-            if new_x - selection.1.x >= MIN_SELECTION_SIZE {
-                selection.2.x = new_x;
-                self.update_buffers();
-            }
-        }
-    }
+    pub fn set_height(&mut self, change: SizeChange) {
+        let Self::Open {
+            selection: (output, a, b),
+            output_data,
+            ..
+        } = self
+        else {
+            return;
+        };
 
-    pub fn resize_up(&mut self) {
-        if let Self::Open { selection, .. } = self {
-            let new_y = selection.1.y - DIRECTIONAL_MOVE_PX;
-            if selection.2.y - new_y >= MIN_SELECTION_SIZE {
-                selection.1.y = new_y;
-                self.update_buffers();
-            }
-        }
-    }
+        let data = &output_data[output];
 
-    pub fn resize_down(&mut self) {
-        if let Self::Open { selection, .. } = self {
-            let new_y = selection.2.y + DIRECTIONAL_MOVE_PX;
-            if new_y - selection.1.y >= MIN_SELECTION_SIZE {
-                selection.2.y = new_y;
-                self.update_buffers();
-            }
-        }
-    }
+        let available_size = f64::from(data.size.h);
+        let current_size = max(a.y, b.y) + 1 - min(a.y, b.y);
 
-    pub fn resize_inward_left(&mut self) {
-        if let Self::Open { selection, .. } = self {
-            let new_x = selection.2.x - DIRECTIONAL_MOVE_PX;
-            if new_x >= selection.1.x + MIN_SELECTION_SIZE {
-                selection.2.x = new_x;
-                self.update_buffers();
+        let new_size = match change {
+            SizeChange::SetFixed(fixed) => to_physical_precise_round(data.scale, fixed),
+            SizeChange::SetProportion(prop) => {
+                let prop = (prop / 100.).clamp(0., 1.);
+                (available_size * prop).round() as i32
             }
-        }
-    }
+            SizeChange::AdjustFixed(delta) => {
+                let delta = to_physical_precise_round(data.scale, delta);
+                current_size.saturating_add(delta)
+            }
+            SizeChange::AdjustProportion(delta) => {
+                let current_prop = f64::from(current_size) / available_size;
+                let prop = (current_prop + delta / 100.).clamp(0., 1.);
+                (available_size * prop).round() as i32
+            }
+        };
+        let new_size = new_size.clamp(1, data.size.h - min(a.y, b.y)) - 1;
+        a.y = min(a.y, b.y);
+        b.y = a.y + new_size;
 
-    pub fn resize_inward_right(&mut self) {
-        if let Self::Open { selection, .. } = self {
-            let new_x = selection.1.x + DIRECTIONAL_MOVE_PX;
-            if new_x <= selection.2.x - MIN_SELECTION_SIZE {
-                selection.1.x = new_x;
-                self.update_buffers();
-            }
-        }
-    }
-
-    pub fn resize_inward_up(&mut self) {
-        if let Self::Open { selection, .. } = self {
-            let new_y = selection.2.y - DIRECTIONAL_MOVE_PX;
-            if new_y >= selection.1.y + MIN_SELECTION_SIZE {
-                selection.2.y = new_y;
-                self.update_buffers();
-            }
-        }
-    }
-
-    pub fn resize_inward_down(&mut self) {
-        if let Self::Open { selection, .. } = self {
-            let new_y = selection.1.y + DIRECTIONAL_MOVE_PX;
-            if new_y <= selection.2.y - MIN_SELECTION_SIZE {
-                selection.1.y = new_y;
-                self.update_buffers();
-            }
-        }
+        self.update_buffers();
     }
 
     pub fn advance_animations(&mut self) {}

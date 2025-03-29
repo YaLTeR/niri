@@ -7,7 +7,7 @@ use std::time::Duration;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger};
-use niri_ipc::{LayoutSwitchTarget, SizeChange};
+use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -505,76 +505,8 @@ impl State {
     }
 
     pub fn do_action(&mut self, action: Action, allow_when_locked: bool) {
-        if self.niri.is_locked() && !allow_when_locked && !allowed_when_locked(&action) {
+        if self.niri.is_locked() && !(allow_when_locked || allowed_when_locked(&action)) {
             return;
-        }
-
-        if self.niri.screenshot_ui.is_open() {
-            match &action {
-                Action::MoveColumnLeft => {
-                    self.niri.screenshot_ui.move_left();
-                    self.niri.queue_redraw_all();
-                    return;
-                }
-                Action::MoveColumnRight => {
-                    self.niri.screenshot_ui.move_right();
-                    self.niri.queue_redraw_all();
-                    return;
-                }
-                Action::MoveWindowUp => {
-                    self.niri.screenshot_ui.move_up();
-                    self.niri.queue_redraw_all();
-                    return;
-                }
-                Action::MoveWindowDown => {
-                    self.niri.screenshot_ui.move_down();
-                    self.niri.queue_redraw_all();
-                    return;
-                }
-                Action::SetWindowWidth(change) => {
-                    match change {
-                        SizeChange::AdjustFixed(v) if *v > 0 => {
-                            self.niri.screenshot_ui.resize_right();
-                            self.niri.queue_redraw_all();
-                        }
-                        SizeChange::AdjustFixed(v) if *v < 0 => {
-                            self.niri.screenshot_ui.resize_inward_right();
-                            self.niri.queue_redraw_all();
-                        }
-                        _ => {}
-                    }
-                    return;
-                }
-                Action::SetWindowHeight(change) => {
-                    match change {
-                        SizeChange::AdjustFixed(v) if *v > 0 => {
-                            self.niri.screenshot_ui.resize_down();
-                            self.niri.queue_redraw_all();
-                        }
-                        SizeChange::AdjustFixed(v) if *v < 0 => {
-                            self.niri.screenshot_ui.resize_inward_down();
-                            self.niri.queue_redraw_all();
-                        }
-                        _ => {}
-                    }
-                    return;
-                }
-                Action::SetColumnWidth(change) => {
-                    match change {
-                        SizeChange::AdjustFixed(v) if *v > 0 => {
-                            self.niri.screenshot_ui.resize_left();
-                            self.niri.queue_redraw_all();
-                        }
-                        SizeChange::AdjustFixed(v) if *v < 0 => {
-                            self.niri.screenshot_ui.resize_inward_left();
-                            self.niri.queue_redraw_all();
-                        }
-                        _ => {}
-                    }
-                    return;
-                }
-                _ => {}
-            }
         }
 
         if let Some(touch) = self.niri.seat.get_touch() {
@@ -808,14 +740,24 @@ impl State {
                 });
             }
             Action::MoveColumnLeft => {
-                self.niri.layout.move_left();
-                self.maybe_warp_cursor_to_focus();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_left();
+                } else {
+                    self.niri.layout.move_left();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::MoveColumnRight => {
-                self.niri.layout.move_right();
-                self.maybe_warp_cursor_to_focus();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_right();
+                } else {
+                    self.niri.layout.move_right();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
@@ -866,14 +808,24 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowDown => {
-                self.niri.layout.move_down();
-                self.maybe_warp_cursor_to_focus();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_down();
+                } else {
+                    self.niri.layout.move_down();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowUp => {
-                self.niri.layout.move_up();
-                self.maybe_warp_cursor_to_focus();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_up();
+                } else {
+                    self.niri.layout.move_up();
+                    self.maybe_warp_cursor_to_focus();
+                }
+
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
@@ -1644,10 +1596,24 @@ impl State {
                 }
             }
             Action::SetColumnWidth(change) => {
-                self.niri.layout.set_column_width(change);
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.set_width(change);
+
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                } else {
+                    self.niri.layout.set_column_width(change);
+                }
             }
             Action::SetWindowWidth(change) => {
-                self.niri.layout.set_window_width(None, change);
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.set_width(change);
+
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                } else {
+                    self.niri.layout.set_window_width(None, change);
+                }
             }
             Action::SetWindowWidthById { id, change } => {
                 let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
@@ -1657,7 +1623,14 @@ impl State {
                 }
             }
             Action::SetWindowHeight(change) => {
-                self.niri.layout.set_window_height(None, change);
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.set_height(change);
+
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                } else {
+                    self.niri.layout.set_window_height(None, change);
+                }
             }
             Action::SetWindowHeightById { id, change } => {
                 let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
@@ -3473,6 +3446,7 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::Suspend
             | Action::PowerOffMonitors
             | Action::PowerOnMonitors
+            // The screenshot UI can handle these.
             | Action::MoveColumnLeft
             | Action::MoveColumnRight
             | Action::MoveWindowUp

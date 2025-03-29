@@ -26,7 +26,7 @@ use crate::utils::{
 use crate::window::ResolvedWindowRules;
 
 /// By how many logical pixels the directional move commands move floating windows.
-const DIRECTIONAL_MOVE_PX: f64 = 50.;
+pub const DIRECTIONAL_MOVE_PX: f64 = 50.;
 
 /// Space for floating windows.
 #[derive(Debug)]
