@@ -244,7 +244,7 @@ mod systemd {
                     close(fd);
                 }
 
-                // Convert the our FDs to OwnedFd, which will close them in all of our fork paths.
+                // Convert the FDs to OwnedFd, which will close them in all of our fork paths.
                 let pipe_pid_write = pipe_pid_write_fd.take().map(|fd| OwnedFd::from_raw_fd(fd));
                 let pipe_wait_read = pipe_wait_read_fd.take().map(|fd| OwnedFd::from_raw_fd(fd));
 
