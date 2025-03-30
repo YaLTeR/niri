@@ -1739,6 +1739,9 @@ impl From<niri_ipc::Action> for Action {
                 id: Some(id),
                 write_to_disk,
             } => Self::ScreenshotWindowById { id, write_to_disk },
+            niri_ipc::Action::ToggleKeyboardShortcutsInhibit {} => {
+                Self::ToggleKeyboardShortcutsInhibit
+            }
             niri_ipc::Action::CloseWindow { id: None } => Self::CloseWindow,
             niri_ipc::Action::CloseWindow { id: Some(id) } => Self::CloseWindowById(id),
             niri_ipc::Action::FullscreenWindow { id: None } => Self::FullscreenWindow,

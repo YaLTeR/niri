@@ -212,6 +212,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
     },
+    /// Enables or disables the keyboard shortcut inhibitor (if any) for the focused surface.
+    ToggleKeyboardShortcutsInhibit {},
     /// Close a window.
     #[cfg_attr(feature = "clap", clap(about = "Close the focused window"))]
     CloseWindow {
