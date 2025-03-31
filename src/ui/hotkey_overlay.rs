@@ -428,6 +428,12 @@ fn action_name(action: &Action) -> String {
         Action::MoveWindowToWorkspaceDown => String::from("Move Window to Workspace Down"),
         Action::MoveWindowToWorkspaceUp => String::from("Move Window to Workspace Up"),
         Action::SwitchPresetColumnWidth => String::from("Switch Preset Column Widths"),
+        Action::SwitchPresetColumnWidthNext => {
+            String::from("Switch to Next Preset Column Width if possible")
+        }
+        Action::SwitchPresetColumnWidthPrev => {
+            String::from("Switch to Previous Preset Column Width if possible")
+        }
         Action::MaximizeColumn => String::from("Maximize Column"),
         Action::ConsumeOrExpelWindowLeft => String::from("Consume or Expel Window Left"),
         Action::ConsumeOrExpelWindowRight => String::from("Consume or Expel Window Right"),

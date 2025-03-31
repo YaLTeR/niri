@@ -1362,6 +1362,12 @@ impl State {
             Action::SwitchPresetColumnWidth => {
                 self.niri.layout.toggle_width();
             }
+            Action::SwitchPresetColumnWidthNext => {
+                self.niri.layout.increment_width();
+            }
+            Action::SwitchPresetColumnWidthPrev => {
+                self.niri.layout.decrement_width();
+            }
             Action::SwitchPresetWindowWidth => {
                 self.niri.layout.toggle_window_width(None);
             }
