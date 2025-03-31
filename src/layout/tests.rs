@@ -3313,6 +3313,28 @@ fn move_unfocused_pending_unfullscreen_window_out_of_active_column() {
     check_ops(&ops);
 }
 
+#[test]
+fn interactive_resize_on_pending_unfullscreen_column() {
+    let ops = [
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::FullscreenWindow(2),
+        Op::Communicate(2),
+        Op::SetFullscreenWindow {
+            window: 2,
+            is_fullscreen: false,
+        },
+        Op::InteractiveResizeBegin {
+            window: 2,
+            edges: ResizeEdge::RIGHT,
+        },
+        Op::Communicate(2),
+    ];
+
+    check_ops(&ops);
+}
+
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
     if parent_id == id {
         return true;

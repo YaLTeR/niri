@@ -3284,10 +3284,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return false;
         }
 
-        let col = self
+        let (col_idx, col) = self
             .columns
             .iter_mut()
-            .find(|col| col.contains(&window))
+            .enumerate()
+            .find(|(_, col)| col.contains(&window))
             .unwrap();
 
         if col.is_fullscreen {
@@ -3310,6 +3311,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.interactive_resize = Some(resize);
 
         self.view_offset.stop_anim_and_gesture();
+
+        // If this is the active column, clear the stored unfullscreen view offset in case one of
+        // the tiles in the column is still pending unfullscreen. Normally it is cleared and
+        // applied in update_window(), but we skip that during interactive resize because the view
+        // is frozen.
+        if col_idx == self.active_column_idx {
+            self.view_offset_before_fullscreen = None;
+        }
 
         true
     }
