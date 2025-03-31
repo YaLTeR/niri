@@ -4379,6 +4379,13 @@ impl<W: LayoutElement> Column<W> {
         true
     }
 
+    fn select_width(&mut self, preset_idx: usize, tile_idx: Option<usize>) {
+        let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
+        let preset = self.options.preset_column_widths[preset_idx];
+        self.set_column_width(SizeChange::from(preset), Some(tile_idx), true);
+        self.preset_width_idx = Some(preset_idx);
+    }
+
     fn toggle_width(&mut self, tile_idx: Option<usize>) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
@@ -4408,10 +4415,7 @@ impl<W: LayoutElement> Column<W> {
                 .unwrap_or(0)
         };
 
-        let preset = self.options.preset_column_widths[preset_idx];
-        self.set_column_width(SizeChange::from(preset), Some(tile_idx), true);
-
-        self.preset_width_idx = Some(preset_idx);
+        self.select_width(preset_idx, Some(tile_idx));
     }
 
     fn toggle_full_width(&mut self) {
