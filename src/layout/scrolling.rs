@@ -2420,6 +2420,28 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
+    pub fn increment_width(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        col.cycle_width(1, None, false);
+
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+    }
+
+    pub fn decrement_width(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        col.cycle_width(-1, None, false);
+
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+    }
+
     pub fn toggle_full_width(&mut self) {
         if self.columns.is_empty() {
             return;
