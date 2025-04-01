@@ -95,11 +95,15 @@ pub struct Input {
     #[knuffel(child)]
     pub disable_power_key_handling: bool,
     #[knuffel(child)]
-    pub warp_mouse_to_focus: bool,
+    pub warp_mouse_to_focus: Option<WarpMouseToFocus>,
     #[knuffel(child)]
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
     #[knuffel(child)]
     pub workspace_auto_back_and_forth: bool,
+    #[knuffel(child, unwrap(argument, str))]
+    pub mod_key: Option<ModKey>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub mod_key_nested: Option<ModKey>,
 }
 
 #[derive(knuffel::Decode, Debug, PartialEq, Eq)]
@@ -365,8 +369,57 @@ pub struct FocusFollowsMouse {
     pub max_scroll_amount: Option<Percent>,
 }
 
+#[derive(knuffel::Decode, Debug, PartialEq, Eq, Clone, Copy)]
+pub struct WarpMouseToFocus {
+    #[knuffel(property, str)]
+    pub mode: Option<WarpMouseToFocusMode>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum WarpMouseToFocusMode {
+    CenterXy,
+    CenterXyAlways,
+}
+
+impl FromStr for WarpMouseToFocusMode {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "center-xy" => Ok(Self::CenterXy),
+            "center-xy-always" => Ok(Self::CenterXyAlways),
+            _ => Err(miette!(
+                r#"invalid mode for warp-mouse-to-focus, can be "center-xy" or "center-xy-always" (or leave unset for separate centering)"#
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Percent(pub f64);
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ModKey {
+    Ctrl,
+    Shift,
+    Alt,
+    Super,
+    IsoLevel3Shift,
+    IsoLevel5Shift,
+}
+
+impl ModKey {
+    pub fn to_modifiers(&self) -> Modifiers {
+        match self {
+            ModKey::Ctrl => Modifiers::CTRL,
+            ModKey::Shift => Modifiers::SHIFT,
+            ModKey::Alt => Modifiers::ALT,
+            ModKey::Super => Modifiers::SUPER,
+            ModKey::IsoLevel3Shift => Modifiers::ISO_LEVEL3_SHIFT,
+            ModKey::IsoLevel5Shift => Modifiers::ISO_LEVEL5_SHIFT,
+        }
+    }
+}
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Outputs(pub Vec<Output>);
@@ -387,6 +440,8 @@ pub struct Output {
     pub mode: Option<ConfiguredMode>,
     #[knuffel(child)]
     pub variable_refresh_rate: Option<Vrr>,
+    #[knuffel(child)]
+    pub focus_at_startup: bool,
     #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
     pub background_color: Color,
 }
@@ -409,6 +464,7 @@ impl Default for Output {
     fn default() -> Self {
         Self {
             off: false,
+            focus_at_startup: false,
             name: String::new(),
             scale: None,
             transform: Transform::Normal,
@@ -655,7 +711,7 @@ pub struct Shadow {
     #[knuffel(child, unwrap(argument), default = Self::default().softness)]
     pub softness: FloatOrInt<0, 1024>,
     #[knuffel(child, unwrap(argument), default = Self::default().spread)]
-    pub spread: FloatOrInt<0, 1024>,
+    pub spread: FloatOrInt<-1024, 1024>,
     #[knuffel(child, unwrap(argument), default = Self::default().draw_behind_window)]
     pub draw_behind_window: bool,
     #[knuffel(child, default = Self::default().color)]
@@ -1323,7 +1379,7 @@ pub struct ShadowRule {
     #[knuffel(child, unwrap(argument))]
     pub softness: Option<FloatOrInt<0, 1024>>,
     #[knuffel(child, unwrap(argument))]
-    pub spread: Option<FloatOrInt<0, 1024>>,
+    pub spread: Option<FloatOrInt<-1024, 1024>>,
     #[knuffel(child, unwrap(argument))]
     pub draw_behind_window: Option<bool>,
     #[knuffel(child)]
@@ -1476,6 +1532,9 @@ pub enum Action {
     FullscreenWindow,
     #[knuffel(skip)]
     FullscreenWindowById(u64),
+    ToggleWindowedFullscreen,
+    #[knuffel(skip)]
+    ToggleWindowedFullscreenById(u64),
     #[knuffel(skip)]
     FocusWindow(u64),
     FocusWindowInColumn(#[knuffel(argument)] u8),
@@ -1536,11 +1595,15 @@ pub enum Action {
     FocusWorkspacePrevious,
     MoveWindowToWorkspaceDown,
     MoveWindowToWorkspaceUp,
-    MoveWindowToWorkspace(#[knuffel(argument)] WorkspaceReference),
+    MoveWindowToWorkspace(
+        #[knuffel(argument)] WorkspaceReference,
+        #[knuffel(property(name = "focus"), default = true)] bool,
+    ),
     #[knuffel(skip)]
     MoveWindowToWorkspaceById {
         window_id: u64,
         reference: WorkspaceReference,
+        focus: bool,
     },
     MoveColumnToWorkspaceDown,
     MoveColumnToWorkspaceUp,
@@ -1676,10 +1739,19 @@ impl From<niri_ipc::Action> for Action {
                 id: Some(id),
                 write_to_disk,
             } => Self::ScreenshotWindowById { id, write_to_disk },
+            niri_ipc::Action::ToggleKeyboardShortcutsInhibit {} => {
+                Self::ToggleKeyboardShortcutsInhibit
+            }
             niri_ipc::Action::CloseWindow { id: None } => Self::CloseWindow,
             niri_ipc::Action::CloseWindow { id: Some(id) } => Self::CloseWindowById(id),
             niri_ipc::Action::FullscreenWindow { id: None } => Self::FullscreenWindow,
             niri_ipc::Action::FullscreenWindow { id: Some(id) } => Self::FullscreenWindowById(id),
+            niri_ipc::Action::ToggleWindowedFullscreen { id: None } => {
+                Self::ToggleWindowedFullscreen
+            }
+            niri_ipc::Action::ToggleWindowedFullscreen { id: Some(id) } => {
+                Self::ToggleWindowedFullscreenById(id)
+            }
             niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
             niri_ipc::Action::FocusWindowInColumn { index } => Self::FocusWindowInColumn(index),
             niri_ipc::Action::FocusWindowPrevious {} => Self::FocusWindowPrevious,
@@ -1755,13 +1827,16 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveWindowToWorkspace {
                 window_id: None,
                 reference,
-            } => Self::MoveWindowToWorkspace(WorkspaceReference::from(reference)),
+                focus,
+            } => Self::MoveWindowToWorkspace(WorkspaceReference::from(reference), focus),
             niri_ipc::Action::MoveWindowToWorkspace {
                 window_id: Some(window_id),
                 reference,
+                focus,
             } => Self::MoveWindowToWorkspaceById {
                 window_id,
                 reference: WorkspaceReference::from(reference),
+                focus,
             },
             niri_ipc::Action::MoveColumnToWorkspaceDown {} => Self::MoveColumnToWorkspaceDown,
             niri_ipc::Action::MoveColumnToWorkspaceUp {} => Self::MoveColumnToWorkspaceUp,
@@ -2271,6 +2346,7 @@ impl CornerRadius {
     }
 
     pub fn expanded_by(mut self, width: f32) -> Self {
+        // Radius = 0 is preserved, so that square corners remain square.
         if self.top_left > 0. {
             self.top_left += width;
         }
@@ -2282,6 +2358,13 @@ impl CornerRadius {
         }
         if self.bottom_left > 0. {
             self.bottom_left += width;
+        }
+
+        if width < 0. {
+            self.top_left = self.top_left.max(0.);
+            self.top_right = self.top_right.max(0.);
+            self.bottom_left = self.bottom_left.max(0.);
+            self.bottom_right = self.bottom_right.max(0.);
         }
 
         self
@@ -3418,6 +3501,22 @@ where
     }
 }
 
+impl FromStr for ModKey {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match &*s.to_ascii_lowercase() {
+            "ctrl" | "control" => Ok(Self::Ctrl),
+            "shift" => Ok(Self::Shift),
+            "alt" => Ok(Self::Alt),
+            "super" | "win" => Ok(Self::Super),
+            "iso_level3_shift" | "mod5" => Ok(Self::IsoLevel3Shift),
+            "iso_level5_shift" | "mod3" => Ok(Self::IsoLevel5Shift),
+            _ => Err(miette!("invalid Mod key: {s}")),
+        }
+    }
+}
+
 impl FromStr for Key {
     type Err = miette::Error;
 
@@ -3655,9 +3754,13 @@ mod tests {
                 warp-mouse-to-focus
                 focus-follows-mouse
                 workspace-auto-back-and-forth
+
+                mod-key "Mod5"
+                mod-key-nested "Super"
             }
 
             output "eDP-1" {
+                focus-at-startup
                 scale 2
                 transform "flipped-90"
                 position x=10 y=20
@@ -3968,13 +4071,23 @@ mod tests {
                     ),
                 },
                 disable_power_key_handling: true,
-                warp_mouse_to_focus: true,
+                warp_mouse_to_focus: Some(
+                    WarpMouseToFocus {
+                        mode: None,
+                    },
+                ),
                 focus_follows_mouse: Some(
                     FocusFollowsMouse {
                         max_scroll_amount: None,
                     },
                 ),
                 workspace_auto_back_and_forth: true,
+                mod_key: Some(
+                    IsoLevel3Shift,
+                ),
+                mod_key_nested: Some(
+                    Super,
+                ),
             },
             outputs: Outputs(
                 [
@@ -4007,6 +4120,7 @@ mod tests {
                                 on_demand: true,
                             },
                         ),
+                        focus_at_startup: true,
                         background_color: Color {
                             r: 0.09803922,
                             g: 0.09803922,

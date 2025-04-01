@@ -32,7 +32,7 @@
           libinput,
           seatd,
           libxkbcommon,
-          mesa,
+          libgbm,
           pango,
           pipewire,
           pkg-config,
@@ -92,7 +92,7 @@
               libinput
               seatd
               libxkbcommon
-              mesa # libgbm
+              libgbm
               pango
               wayland
             ]

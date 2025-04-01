@@ -52,6 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let env_filter = EnvFilter::builder().parse_lossy(directives);
     tracing_subscriber::fmt()
         .compact()
+        .with_writer(io::stderr)
         .with_env_filter(env_filter)
         .init();
 

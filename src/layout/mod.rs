@@ -176,16 +176,15 @@ pub trait LayoutElement {
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
+        is_fullscreen: bool,
         animate: bool,
         transaction: Option<Transaction>,
     );
 
     /// Requests the element to change size once, clearing the request afterwards.
     fn request_size_once(&mut self, size: Size<i32, Logical>, animate: bool) {
-        self.request_size(size, animate, None);
+        self.request_size(size, false, animate, None);
     }
-
-    fn request_fullscreen(&mut self, size: Size<i32, Logical>);
 
     fn min_size(&self) -> Size<i32, Logical>;
     fn max_size(&self) -> Size<i32, Logical>;
@@ -206,12 +205,12 @@ pub trait LayoutElement {
 
     /// Whether the element is currently fullscreen.
     ///
-    /// This will *not* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
+    /// This will *not* switch immediately after a [`LayoutElement::request_size()`] call.
     fn is_fullscreen(&self) -> bool;
 
     /// Whether we're requesting the element to be fullscreen.
     ///
-    /// This *will* switch immediately after a [`LayoutElement::request_fullscreen()`] call.
+    /// This *will* switch immediately after a [`LayoutElement::request_size()`] call.
     fn is_pending_fullscreen(&self) -> bool;
 
     /// Size previously requested through [`LayoutElement::request_size()`].
@@ -243,6 +242,13 @@ pub trait LayoutElement {
             requested.h = current.h;
         }
         Some(requested)
+    }
+
+    fn is_pending_windowed_fullscreen(&self) -> bool {
+        false
+    }
+    fn request_windowed_fullscreen(&mut self, value: bool) {
+        let _ = value;
     }
 
     fn is_child_of(&self, parent: &Self) -> bool;
@@ -1190,6 +1196,11 @@ impl<W: LayoutElement> Layout<W> {
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if move_.tile.window().id() == window {
+                // Do this before calling update_window() so it can get up-to-date info.
+                if let Some(serial) = serial {
+                    move_.tile.window_mut().on_commit(serial);
+                }
+
                 move_.tile.update_window();
                 return;
             }
@@ -1563,23 +1574,6 @@ impl<W: LayoutElement> Layout<W> {
                 }
             }
         }
-    }
-
-    pub fn activate_output(&mut self, output: &Output) {
-        let MonitorSet::Normal {
-            monitors,
-            active_monitor_idx,
-            ..
-        } = &mut self.monitor_set
-        else {
-            return;
-        };
-
-        let idx = monitors
-            .iter()
-            .position(|mon| &mon.output == output)
-            .unwrap();
-        *active_monitor_idx = idx;
     }
 
     pub fn active_output(&self) -> Option<&Output> {
@@ -2109,7 +2103,12 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_to_workspace_down();
     }
 
-    pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize) {
+    pub fn move_to_workspace(
+        &mut self,
+        window: Option<&W::Id>,
+        idx: usize,
+        activate: ActivateWindow,
+    ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
@@ -2132,7 +2131,7 @@ impl<W: LayoutElement> Layout<W> {
             };
             monitor
         };
-        monitor.move_to_workspace(window, idx);
+        monitor.move_to_workspace(window, idx, activate);
     }
 
     pub fn move_column_to_workspace_up(&mut self) {
@@ -2336,6 +2335,9 @@ impl<W: LayoutElement> Layout<W> {
                 }
                 InteractiveMoveState::Moving(move_) => {
                     assert_eq!(self.clock, move_.tile.clock);
+                    assert!(!move_.tile.window().is_pending_fullscreen());
+
+                    move_.tile.verify_invariants();
 
                     let scale = move_.output.current_scale().fractional_scale();
                     let options = Options::clone(&self.options).adjusted_for_scale(scale);
@@ -3180,6 +3182,7 @@ impl<W: LayoutElement> Layout<W> {
         window: Option<&W::Id>,
         output: &Output,
         target_ws_idx: Option<usize>,
+        activate: ActivateWindow,
     ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
@@ -3222,9 +3225,11 @@ impl<W: LayoutElement> Layout<W> {
             let ws_id = monitors[new_idx].workspaces[workspace_idx].id();
 
             let mon = &mut monitors[mon_idx];
-            let activate = window.map_or(true, |win| {
-                mon_idx == *active_monitor_idx
-                    && mon.active_window().map(|win| win.id()) == Some(win)
+            let activate = activate.map_smart(|| {
+                window.map_or(true, |win| {
+                    mon_idx == *active_monitor_idx
+                        && mon.active_window().map(|win| win.id()) == Some(win)
+                })
             });
             let activate = if activate {
                 ActivateWindow::Yes
@@ -3283,7 +3288,7 @@ impl<W: LayoutElement> Layout<W> {
             let ws = current.active_workspace();
 
             if ws.floating_is_active() {
-                self.move_to_output(None, output, None);
+                self.move_to_output(None, output, None, ActivateWindow::Smart);
                 return;
             }
 
@@ -3450,62 +3455,68 @@ impl<W: LayoutElement> Layout<W> {
         res
     }
 
-    pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
-        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if move_.tile.window().id() == window {
+    pub fn set_fullscreen(&mut self, id: &W::Id, is_fullscreen: bool) {
+        // Check if this is a request to unset the windowed fullscreen state.
+        if !is_fullscreen {
+            let mut handled = false;
+            self.with_windows_mut(|window, _| {
+                if window.id() == id && window.is_pending_windowed_fullscreen() {
+                    window.request_windowed_fullscreen(false);
+                    handled = true;
+                }
+            });
+            if handled {
                 return;
             }
         }
 
-        match &mut self.monitor_set {
-            MonitorSet::Normal { monitors, .. } => {
-                for mon in monitors {
-                    for ws in &mut mon.workspaces {
-                        if ws.has_window(window) {
-                            ws.set_fullscreen(window, is_fullscreen);
-                            return;
-                        }
-                    }
-                }
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == id {
+                return;
             }
-            MonitorSet::NoOutputs { workspaces, .. } => {
-                for ws in workspaces {
-                    if ws.has_window(window) {
-                        ws.set_fullscreen(window, is_fullscreen);
-                        return;
-                    }
-                }
+        }
+
+        for ws in self.workspaces_mut() {
+            if ws.has_window(id) {
+                ws.set_fullscreen(id, is_fullscreen);
+                return;
             }
         }
     }
 
-    pub fn toggle_fullscreen(&mut self, window: &W::Id) {
+    pub fn toggle_fullscreen(&mut self, id: &W::Id) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if move_.tile.window().id() == window {
+            if move_.tile.window().id() == id {
                 return;
             }
         }
 
-        match &mut self.monitor_set {
-            MonitorSet::Normal { monitors, .. } => {
-                for mon in monitors {
-                    for ws in &mut mon.workspaces {
-                        if ws.has_window(window) {
-                            ws.toggle_fullscreen(window);
-                            return;
-                        }
-                    }
-                }
+        for ws in self.workspaces_mut() {
+            if ws.has_window(id) {
+                ws.toggle_fullscreen(id);
+                return;
             }
-            MonitorSet::NoOutputs { workspaces, .. } => {
-                for ws in workspaces {
-                    if ws.has_window(window) {
-                        ws.toggle_fullscreen(window);
-                        return;
-                    }
+        }
+    }
+
+    pub fn toggle_windowed_fullscreen(&mut self, id: &W::Id) {
+        let (_, window) = self.windows().find(|(_, win)| win.id() == id).unwrap();
+        if window.is_pending_fullscreen() {
+            // Remove the real fullscreen.
+            for ws in self.workspaces_mut() {
+                if ws.has_window(id) {
+                    ws.set_fullscreen(id, false);
+                    break;
                 }
             }
         }
+
+        // This will switch is_pending_fullscreen() to false right away.
+        self.with_windows_mut(|window, _| {
+            if window.id() == id {
+                window.request_windowed_fullscreen(!window.is_pending_windowed_fullscreen());
+            }
+        });
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, output: &Output, is_touchpad: bool) {

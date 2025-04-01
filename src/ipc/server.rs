@@ -356,6 +356,15 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             });
             Response::PickedWindow(window)
         }
+        Request::PickColor => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                state.handle_pick_color(tx);
+            });
+            let result = rx.recv().await;
+            let color = result.map_err(|_| String::from("error getting picked color"))?;
+            Response::PickedColor(color)
+        }
         Request::Action(action) => {
             let (tx, rx) = async_channel::bounded(1);
 

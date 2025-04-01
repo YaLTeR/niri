@@ -1063,6 +1063,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let tile = column.tiles.remove(tile_idx);
         column.data.remove(tile_idx);
 
+        // If we're removing a pending-unfullscreen window, we need to clear the stored view
+        // offset. There might be other pending-unfullscreen windows in this column but that's kind
+        // of an edge case, don't think we need to handle that.
+        if column_idx == self.active_column_idx && tile.is_fullscreen() && !column.is_fullscreen {
+            self.view_offset_before_fullscreen = None;
+        }
+
         // If one window is left, reset its weight to 1.
         if column.data.len() == 1 {
             if let WindowHeight::Auto { weight } = &mut column.data[0].height {
@@ -3277,10 +3284,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return false;
         }
 
-        let col = self
+        let (col_idx, col) = self
             .columns
             .iter_mut()
-            .find(|col| col.contains(&window))
+            .enumerate()
+            .find(|(_, col)| col.contains(&window))
             .unwrap();
 
         if col.is_fullscreen {
@@ -3303,6 +3311,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.interactive_resize = Some(resize);
 
         self.view_offset.stop_anim_and_gesture();
+
+        // If this is the active column, clear the stored unfullscreen view offset in case one of
+        // the tiles in the column is still pending unfullscreen. Normally it is cleared and
+        // applied in update_window(), but we skip that during interactive resize because the view
+        // is frozen.
+        if col_idx == self.active_column_idx {
+            self.view_offset_before_fullscreen = None;
+        }
 
         true
     }
@@ -3999,8 +4015,16 @@ impl<W: LayoutElement> Column<W> {
 
     fn update_tile_sizes_with_transaction(&mut self, animate: bool, transaction: Transaction) {
         if self.is_fullscreen {
-            for tile in &mut self.tiles {
-                tile.request_fullscreen();
+            for (tile_idx, tile) in self.tiles.iter_mut().enumerate() {
+                // In tabbed mode, only the visible window participates in the transaction.
+                let is_active = tile_idx == self.active_tile_idx;
+                let transaction = if self.display_mode == ColumnDisplay::Tabbed && !is_active {
+                    None
+                } else {
+                    Some(transaction.clone())
+                };
+
+                tile.request_fullscreen(animate, transaction);
             }
             return;
         }
@@ -4010,14 +4034,18 @@ impl<W: LayoutElement> Column<W> {
         let min_size: Vec<_> = self
             .tiles
             .iter()
-            .map(Tile::min_size)
+            .map(Tile::min_size_nonfullscreen)
             .map(|mut size| {
                 size.w = size.w.max(1.);
                 size.h = size.h.max(1.);
                 size
             })
             .collect();
-        let max_size: Vec<_> = self.tiles.iter().map(Tile::max_size).collect();
+        let max_size: Vec<_> = self
+            .tiles
+            .iter()
+            .map(Tile::max_size_nonfullscreen)
+            .collect();
 
         // Compute the column width.
         let min_width = min_size
@@ -4509,7 +4537,7 @@ impl<W: LayoutElement> Column<W> {
                 .iter()
                 .enumerate()
                 .filter(|(idx, _)| *idx != tile_idx)
-                .map(|(_, tile)| f64::max(1., tile.min_size().h) + gaps)
+                .map(|(_, tile)| f64::max(1., tile.min_size_nonfullscreen().h) + gaps)
                 .sum::<f64>()
         };
         let height_left = working_size - extra_size - gaps - min_height_taken - gaps;
@@ -4939,7 +4967,7 @@ impl<W: LayoutElement> Column<W> {
             let requested_size = tile.window().requested_size().unwrap();
             let requested_tile_height =
                 tile.tile_height_for_window_height(f64::from(requested_size.h));
-            let min_tile_height = f64::max(1., tile.min_size().h);
+            let min_tile_height = f64::max(1., tile.min_size_nonfullscreen().h);
 
             if !self.is_fullscreen
                 && self.scale.round() == self.scale

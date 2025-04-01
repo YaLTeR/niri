@@ -43,6 +43,7 @@ use crate::input::resize_grab::ResizeGrab;
 use crate::input::touch_move_grab::TouchMoveGrab;
 use crate::input::touch_resize_grab::TouchResizeGrab;
 use crate::input::{PointerOrTouchStartData, DOUBLE_CLICK_TIME};
+use crate::layout::ActivateWindow;
 use crate::niri::{CastTarget, PopupGrabState, State};
 use crate::utils::transaction::Transaction;
 use crate::utils::{
@@ -445,9 +446,12 @@ impl XdgShellHandler for State {
 
             if let Some(requested_output) = requested_output {
                 if Some(&requested_output) != current_output {
-                    self.niri
-                        .layout
-                        .move_to_output(Some(&window), &requested_output, None);
+                    self.niri.layout.move_to_output(
+                        Some(&window),
+                        &requested_output,
+                        None,
+                        ActivateWindow::Smart,
+                    );
                 }
             }
 

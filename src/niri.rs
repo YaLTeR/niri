@@ -14,8 +14,8 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout, WorkspaceReference,
-    DEFAULT_BACKGROUND_COLOR,
+    Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
+    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKGROUND_COLOR,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -45,7 +45,10 @@ use smithay::desktop::{
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
 use smithay::input::keyboard::Layout as KeyboardLayout;
-use smithay::input::pointer::{CursorIcon, CursorImageStatus, CursorImageSurfaceData, MotionEvent};
+use smithay::input::pointer::{
+    CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
+    GrabStartData as PointerGrabStartData, MotionEvent,
+};
 use smithay::input::{Seat, SeatState};
 use smithay::output::{self, Output, OutputModeSource, PhysicalProperties, Subpixel, WeakOutput};
 use smithay::reexports::calloop::generic::Generic;
@@ -118,6 +121,7 @@ use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
+use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
@@ -358,6 +362,7 @@ pub struct Niri {
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
 
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
+    pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
 
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
@@ -510,6 +515,8 @@ struct SurfaceFrameThrottlingState {
 pub enum CenterCoords {
     Separately,
     Both,
+    // Force centering even if the cursor is already in the rectangle.
+    BothAlways,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -623,6 +630,8 @@ impl State {
         state.load_xkb_file();
         // Initialize some IPC server state.
         state.ipc_keyboard_layouts_changed();
+        // Focus the default monitor if set by the user.
+        state.focus_default_monitor();
 
         Ok(state)
     }
@@ -753,6 +762,7 @@ impl State {
                     center_f64(rect)
                 }
             }
+            CenterCoords::BothAlways => center_f64(rect),
         };
 
         self.move_cursor(p);
@@ -786,6 +796,29 @@ impl State {
         rv
     }
 
+    pub fn focus_default_monitor(&mut self) {
+        // Our default target is the first output in sorted order.
+        let Some(mut target) = self.niri.sorted_outputs.first().cloned() else {
+            // No outputs are connected.
+            return;
+        };
+
+        let config = self.niri.config.borrow();
+        for config in &config.outputs.0 {
+            if !config.focus_at_startup {
+                continue;
+            }
+            if let Some(output) = self.niri.output_by_name_match(&config.name) {
+                target = output.clone();
+                break;
+            }
+        }
+        drop(config);
+
+        self.niri.layout.focus_output(&target);
+        self.move_cursor_to_output(&target);
+    }
+
     /// Focus a specific window, taking care of a potential active output change and cursor
     /// warp.
     pub fn focus_window(&mut self, window: &Window) {
@@ -808,19 +841,27 @@ impl State {
     }
 
     pub fn maybe_warp_cursor_to_focus(&mut self) -> bool {
-        if !self.niri.config.borrow().input.warp_mouse_to_focus {
-            return false;
-        }
-
-        self.move_cursor_to_focused_tile(CenterCoords::Separately)
+        let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
+            None => return false,
+            Some(inner) => match inner.mode {
+                None => CenterCoords::Separately,
+                Some(WarpMouseToFocusMode::CenterXy) => CenterCoords::Both,
+                Some(WarpMouseToFocusMode::CenterXyAlways) => CenterCoords::BothAlways,
+            },
+        };
+        self.move_cursor_to_focused_tile(focused)
     }
 
     pub fn maybe_warp_cursor_to_focus_centered(&mut self) -> bool {
-        if !self.niri.config.borrow().input.warp_mouse_to_focus {
-            return false;
-        }
-
-        self.move_cursor_to_focused_tile(CenterCoords::Both)
+        let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
+            None => return false,
+            Some(inner) => match inner.mode {
+                None => CenterCoords::Both,
+                Some(WarpMouseToFocusMode::CenterXy) => CenterCoords::Both,
+                Some(WarpMouseToFocusMode::CenterXyAlways) => CenterCoords::BothAlways,
+            },
+        };
+        self.move_cursor_to_focused_tile(focused)
     }
 
     pub fn refresh_pointer_contents(&mut self) {
@@ -1247,14 +1288,15 @@ impl State {
             preserved_output_config = Some(mem::take(&mut old_config.outputs));
         }
 
-        if config.binds != old_config.binds {
-            self.niri.hotkey_overlay.on_hotkey_config_updated();
-            self.niri.mods_with_mouse_binds =
-                mods_with_mouse_binds(self.backend.mod_key(), &config.binds);
-            self.niri.mods_with_wheel_binds =
-                mods_with_wheel_binds(self.backend.mod_key(), &config.binds);
+        let new_mod_key = self.backend.mod_key(&config);
+        if new_mod_key != self.backend.mod_key(&old_config) || config.binds != old_config.binds {
+            self.niri
+                .hotkey_overlay
+                .on_hotkey_config_updated(new_mod_key);
+            self.niri.mods_with_mouse_binds = mods_with_mouse_binds(new_mod_key, &config.binds);
+            self.niri.mods_with_wheel_binds = mods_with_wheel_binds(new_mod_key, &config.binds);
             self.niri.mods_with_finger_scroll_binds =
-                mods_with_finger_scroll_binds(self.backend.mod_key(), &config.binds);
+                mods_with_finger_scroll_binds(new_mod_key, &config.binds);
         }
 
         if config.window_rules != old_config.window_rules {
@@ -1600,6 +1642,22 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    pub fn handle_pick_color(&mut self, tx: async_channel::Sender<Option<niri_ipc::PickedColor>>) {
+        let pointer = self.niri.seat.get_pointer().unwrap();
+        let start_data = PointerGrabStartData {
+            focus: None,
+            button: 0,
+            location: pointer.current_location(),
+        };
+        let grab = PickColorGrab::new(start_data);
+        pointer.set_grab(self, grab, SERIAL_COUNTER.next_serial(), Focus::Clear);
+        self.niri.pick_color = Some(tx);
+        self.niri
+            .cursor_manager
+            .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
+        self.niri.queue_redraw_all();
+    }
+
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn on_pw_msg(&mut self, msg: PwToNiri) {
         match msg {
@@ -1891,7 +1949,22 @@ impl State {
         to_screenshot: &async_channel::Sender<NiriToScreenshot>,
         msg: ScreenshotToNiri,
     ) {
-        let ScreenshotToNiri::TakeScreenshot { include_cursor } = msg;
+        match msg {
+            ScreenshotToNiri::TakeScreenshot { include_cursor } => {
+                self.handle_take_screenshot(to_screenshot, include_cursor);
+            }
+            ScreenshotToNiri::PickColor(tx) => {
+                self.handle_pick_color(tx);
+            }
+        }
+    }
+
+    #[cfg(feature = "dbus")]
+    fn handle_take_screenshot(
+        &mut self,
+        to_screenshot: &async_channel::Sender<NiriToScreenshot>,
+        include_cursor: bool,
+    ) {
         let _span = tracy_client::span!("TakeScreenshot");
 
         let rv = self.backend.with_primary_renderer(|renderer| {
@@ -2135,16 +2208,16 @@ impl Niri {
         let cursor_manager =
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
-        let mods_with_mouse_binds = mods_with_mouse_binds(backend.mod_key(), &config_.binds);
-        let mods_with_wheel_binds = mods_with_wheel_binds(backend.mod_key(), &config_.binds);
-        let mods_with_finger_scroll_binds =
-            mods_with_finger_scroll_binds(backend.mod_key(), &config_.binds);
+        let mod_key = backend.mod_key(&config.borrow());
+        let mods_with_mouse_binds = mods_with_mouse_binds(mod_key, &config_.binds);
+        let mods_with_wheel_binds = mods_with_wheel_binds(mod_key, &config_.binds);
+        let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
         let config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
 
-        let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), backend.mod_key());
+        let mut hotkey_overlay = HotkeyOverlay::new(config.clone(), mod_key);
         if !config_.hotkey_overlay.skip_at_startup {
             hotkey_overlay.show();
         }
@@ -2339,6 +2412,7 @@ impl Niri {
             exit_confirm_dialog,
 
             pick_window: None,
+            pick_color: None,
 
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,

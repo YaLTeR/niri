@@ -28,6 +28,9 @@ struct TestWindowInner {
     max_size: Size<i32, Logical>,
     pending_fullscreen: Cell<bool>,
     pending_activated: Cell<bool>,
+    is_fullscreen: Cell<bool>,
+    is_windowed_fullscreen: Cell<bool>,
+    is_pending_windowed_fullscreen: Cell<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,10 +73,15 @@ impl TestWindow {
             max_size: params.min_max_size.1,
             pending_fullscreen: Cell::new(false),
             pending_activated: Cell::new(false),
+            is_fullscreen: Cell::new(false),
+            is_windowed_fullscreen: Cell::new(false),
+            is_pending_windowed_fullscreen: Cell::new(false),
         }))
     }
 
     fn communicate(&self) -> bool {
+        let mut changed = false;
+
         if let Some(size) = self.0.requested_size.get() {
             assert!(size.w >= 0);
             assert!(size.h >= 0);
@@ -88,11 +96,23 @@ impl TestWindow {
 
             if self.0.bbox.get() != new_bbox {
                 self.0.bbox.set(new_bbox);
-                return true;
+                changed = true;
             }
         }
 
-        false
+        if self.0.is_fullscreen.get() != self.0.pending_fullscreen.get() {
+            self.0.is_fullscreen.set(self.0.pending_fullscreen.get());
+            changed = true;
+        }
+
+        if self.0.is_windowed_fullscreen.get() != self.0.is_pending_windowed_fullscreen.get() {
+            self.0
+                .is_windowed_fullscreen
+                .set(self.0.is_pending_windowed_fullscreen.get());
+            changed = true;
+        }
+
+        changed
     }
 }
 
@@ -129,15 +149,16 @@ impl LayoutElement for TestWindow {
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
+        is_fullscreen: bool,
         _animate: bool,
         _transaction: Option<Transaction>,
     ) {
         self.0.requested_size.set(Some(size));
-        self.0.pending_fullscreen.set(false);
-    }
+        self.0.pending_fullscreen.set(is_fullscreen);
 
-    fn request_fullscreen(&mut self, _size: Size<i32, Logical>) {
-        self.0.pending_fullscreen.set(true);
+        if is_fullscreen {
+            self.0.is_pending_windowed_fullscreen.set(false);
+        }
     }
 
     fn min_size(&self) -> Size<i32, Logical> {
@@ -185,15 +206,31 @@ impl LayoutElement for TestWindow {
     fn set_floating(&mut self, _floating: bool) {}
 
     fn is_fullscreen(&self) -> bool {
-        false
+        if self.0.is_windowed_fullscreen.get() {
+            return false;
+        }
+
+        self.0.is_fullscreen.get()
     }
 
     fn is_pending_fullscreen(&self) -> bool {
+        if self.0.is_pending_windowed_fullscreen.get() {
+            return false;
+        }
+
         self.0.pending_fullscreen.get()
     }
 
     fn requested_size(&self) -> Option<Size<i32, Logical>> {
         self.0.requested_size.get()
+    }
+
+    fn is_pending_windowed_fullscreen(&self) -> bool {
+        self.0.is_pending_windowed_fullscreen.get()
+    }
+
+    fn request_windowed_fullscreen(&mut self, value: bool) {
+        self.0.is_pending_windowed_fullscreen.set(value);
     }
 
     fn is_child_of(&self, parent: &Self) -> bool {
@@ -368,6 +405,7 @@ enum Op {
         window: usize,
         is_fullscreen: bool,
     },
+    ToggleWindowedFullscreen(#[proptest(strategy = "1..=5usize")] usize),
     FocusColumnLeft,
     FocusColumnRight,
     FocusColumnFirst,
@@ -895,13 +933,25 @@ impl Op {
                 layout.remove_window(&id, Transaction::new());
             }
             Op::FullscreenWindow(id) => {
+                if !layout.has_window(&id) {
+                    return;
+                }
                 layout.toggle_fullscreen(&id);
             }
             Op::SetFullscreenWindow {
                 window,
                 is_fullscreen,
             } => {
+                if !layout.has_window(&window) {
+                    return;
+                }
                 layout.set_fullscreen(&window, is_fullscreen);
+            }
+            Op::ToggleWindowedFullscreen(id) => {
+                if !layout.has_window(&id) {
+                    return;
+                }
+                layout.toggle_windowed_fullscreen(&id);
             }
             Op::FocusColumnLeft => layout.focus_left(),
             Op::FocusColumnRight => layout.focus_right(),
@@ -1013,7 +1063,7 @@ impl Op {
                 workspace_idx,
             } => {
                 let window_id = window_id.filter(|id| layout.has_window(id));
-                layout.move_to_workspace(window_id.as_ref(), workspace_idx);
+                layout.move_to_workspace(window_id.as_ref(), workspace_idx, ActivateWindow::Smart);
             }
             Op::MoveColumnToWorkspaceDown => layout.move_column_to_workspace_down(),
             Op::MoveColumnToWorkspaceUp => layout.move_column_to_workspace_up(),
@@ -1031,7 +1081,12 @@ impl Op {
 
                 let window_id = window_id.filter(|id| layout.has_window(id));
                 let target_ws_idx = target_ws_idx.filter(|idx| mon.workspaces.len() > *idx);
-                layout.move_to_output(window_id.as_ref(), &output, target_ws_idx);
+                layout.move_to_output(
+                    window_id.as_ref(),
+                    &output,
+                    target_ws_idx,
+                    ActivateWindow::Smart,
+                );
             }
             Op::MoveColumnToOutput(id) => {
                 let name = format!("output{id}");
@@ -3154,6 +3209,127 @@ fn disable_tabbed_mode_in_fullscreen() {
         Op::ToggleColumnTabbedDisplay,
         Op::FullscreenWindow(0),
         Op::ToggleColumnTabbedDisplay,
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn unfullscreen_with_large_border() {
+    let ops = [
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::FullscreenWindow(0),
+        Op::Communicate(0),
+        Op::FullscreenWindow(0),
+    ];
+
+    let options = Options {
+        border: niri_config::Border {
+            off: false,
+            width: niri_config::FloatOrInt(10000.),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    check_ops_with_options(options, &ops);
+}
+
+#[test]
+fn fullscreen_to_windowed_fullscreen() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::FullscreenWindow(0),
+        Op::Communicate(0), // Make sure it goes into fullscreen.
+        Op::ToggleWindowedFullscreen(0),
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn windowed_fullscreen_to_fullscreen() {
+    let ops = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::FullscreenWindow(0),
+        Op::Communicate(0),              // Commit fullscreen state.
+        Op::ToggleWindowedFullscreen(0), // Switch is_fullscreen() to false.
+        Op::FullscreenWindow(0),         // Switch is_fullscreen() back to true.
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn move_pending_unfullscreen_window_out_of_active_column() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FullscreenWindow(1),
+        Op::Communicate(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::ConsumeWindowIntoColumn,
+        // Window 1 is now pending unfullscreen.
+        // Moving it out should reset view_offset_before_fullscreen.
+        Op::MoveWindowToWorkspaceDown,
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn move_unfocused_pending_unfullscreen_window_out_of_active_column() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FullscreenWindow(1),
+        Op::Communicate(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::ConsumeWindowIntoColumn,
+        // Window 1 is now pending unfullscreen.
+        // Moving it out should reset view_offset_before_fullscreen.
+        Op::FocusWindowDown,
+        Op::MoveWindowToWorkspace {
+            window_id: Some(1),
+            workspace_idx: 1,
+        },
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn interactive_resize_on_pending_unfullscreen_column() {
+    let ops = [
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::FullscreenWindow(2),
+        Op::Communicate(2),
+        Op::SetFullscreenWindow {
+            window: 2,
+            is_fullscreen: false,
+        },
+        Op::InteractiveResizeBegin {
+            window: 2,
+            edges: ResizeEdge::RIGHT,
+        },
+        Op::Communicate(2),
     ];
 
     check_ops(&ops);

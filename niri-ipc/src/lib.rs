@@ -65,6 +65,8 @@ pub enum Request {
     FocusedWindow,
     /// Request picking a window and get its information.
     PickWindow,
+    /// Request picking a color from the screen.
+    PickColor,
     /// Perform an action.
     Action(Action),
     /// Change output configuration temporarily.
@@ -133,8 +135,18 @@ pub enum Response {
     FocusedWindow(Option<Window>),
     /// Information about the picked window.
     PickedWindow(Option<Window>),
+    /// Information about the picked color.
+    PickedColor(Option<PickedColor>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
+}
+
+/// Color picked from the screen.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct PickedColor {
+    /// Color values as red, green, blue, each ranging from 0.0 to 1.0.
+    pub rgb: [f64; 3],
 }
 
 /// Actions that niri can perform.
@@ -200,6 +212,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
     },
+    /// Enable or disable the keyboard shortcuts inhibitor (if any) for the focused surface.
+    ToggleKeyboardShortcutsInhibit {},
     /// Close a window.
     #[cfg_attr(feature = "clap", clap(about = "Close the focused window"))]
     CloseWindow {
@@ -216,6 +230,18 @@ pub enum Action {
     )]
     FullscreenWindow {
         /// Id of the window to toggle fullscreen of.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Toggle windowed (fake) fullscreen on a window.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Toggle windowed (fake) fullscreen on the focused window")
+    )]
+    ToggleWindowedFullscreen {
+        /// Id of the window to toggle windowed fullscreen of.
         ///
         /// If `None`, uses the focused window.
         #[cfg_attr(feature = "clap", arg(long))]
@@ -402,6 +428,14 @@ pub enum Action {
         /// Reference (index or name) of the workspace to move the window to.
         #[cfg_attr(feature = "clap", arg())]
         reference: WorkspaceReferenceArg,
+
+        /// Whether the focus should follow the moved window.
+        ///
+        /// If `true` (the default) and the window to move is focused, the focus will follow the
+        /// window to the new workspace. If `false`, the focus will remain on the original
+        /// workspace.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
     },
     /// Move the focused column to the workspace below.
     MoveColumnToWorkspaceDown {},
