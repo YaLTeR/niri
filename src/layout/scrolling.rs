@@ -4167,9 +4167,7 @@ impl<W: LayoutElement> Column<W> {
             let min_height = f64::min(max_tile_height, min_height);
             let tabbed_height = f64::max(tabbed_height, min_height);
 
-            for h in &mut heights {
-                *h = WindowHeight::Fixed(tabbed_height);
-            }
+            heights.fill(WindowHeight::Fixed(tabbed_height));
 
             // The following logic will apply individual min/max height, etc.
         }
