@@ -1035,6 +1035,10 @@ impl<W: LayoutElement> Monitor<W> {
             return true;
         }
 
+        // Take into account any idle time between the last event and now.
+        let now = self.clock.now_unadjusted();
+        gesture.tracker.push(0., now);
+
         let total_height = if gesture.is_touchpad {
             WORKSPACE_GESTURE_MOVEMENT
         } else {

@@ -3004,6 +3004,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // it in all the right places (adding columns, removing columns, etc.) -- quite a bit of
         // effort and bug potential.
 
+        // Take into account any idle time between the last event and now.
+        let now = self.clock.now_unadjusted();
+        gesture.tracker.push(0., now);
+
         let norm_factor = if gesture.is_touchpad {
             self.working_area.size.w / VIEW_GESTURE_WORKING_AREA_MOVEMENT
         } else {
