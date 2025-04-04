@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use smithay::backend::renderer::element::utils::{
-    CropRenderElement, Relocate, RelocateRenderElement,
+    CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Size};
@@ -17,11 +17,13 @@ use super::workspace::{
 use super::{ActivateWindow, HitType, LayoutElement, Options};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
+use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::Transaction;
-use crate::utils::{output_size, ResizeEdge};
+use crate::utils::{output_size, round_logical_in_physical, ResizeEdge};
 
 /// Amount of touchpad movement to scroll the height of one workspace.
 const WORKSPACE_GESTURE_MOVEMENT: f64 = 300.;
@@ -30,6 +32,8 @@ const WORKSPACE_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
     stiffness: 0.5,
     limit: 0.05,
 };
+
+pub(super) const OVERVIEW_WORKSPACE_SCALE: f64 = 0.25;
 
 #[derive(Debug)]
 pub struct Monitor<W: LayoutElement> {
@@ -45,6 +49,10 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) previous_workspace_id: Option<WorkspaceId>,
     /// In-progress switch between workspaces.
     pub(super) workspace_switch: Option<WorkspaceSwitch>,
+    /// Whether the overview is open.
+    pub(super) overview_open: bool,
+    /// The overview zoom animation.
+    pub(super) overview_anim: Option<Animation>,
     /// Clock for driving animations.
     pub(super) clock: Clock,
     /// Configurable properties of the layout.
@@ -85,8 +93,14 @@ pub enum MonitorAddWindowTarget<'a, W: LayoutElement> {
     NextTo(&'a W::Id),
 }
 
-pub type MonitorRenderElement<R> =
-    RelocateRenderElement<CropRenderElement<WorkspaceRenderElement<R>>>;
+niri_render_elements! {
+    MonitorRenderElement<R> => {
+        Workspace = RelocateRenderElement<RescaleRenderElement<CropRenderElement<
+            WorkspaceRenderElement<R>>
+            >>,
+        Shadow = RelocateRenderElement<RescaleRenderElement<ShadowRenderElement>>,
+    }
+}
 
 impl WorkspaceSwitch {
     pub fn current_idx(&self) -> f64 {
@@ -139,6 +153,8 @@ impl<W: LayoutElement> Monitor<W> {
             workspaces,
             active_workspace_idx: 0,
             previous_workspace_id: None,
+            overview_open: false,
+            overview_anim: None,
             workspace_switch: None,
             clock,
             options,
@@ -646,6 +662,14 @@ impl<W: LayoutElement> Monitor<W> {
             }
         }
 
+        if !self.overview_open {
+            if let Some(anim) = &mut self.overview_anim {
+                if anim.is_done() {
+                    self.overview_anim = None;
+                }
+            }
+        }
+
         for ws in &mut self.workspaces {
             ws.advance_animations();
         }
@@ -655,11 +679,19 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_switch
             .as_ref()
             .is_some_and(|s| s.is_animation())
+            || self
+                .overview_anim
+                .as_ref()
+                .is_some_and(|anim| !anim.is_done())
             || self.workspaces.iter().any(|ws| ws.are_animations_ongoing())
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
         self.workspace_switch.is_some()
+            || self
+                .overview_anim
+                .as_ref()
+                .is_some_and(|anim| !anim.is_done())
             || self
                 .workspaces
                 .iter()
@@ -667,8 +699,9 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn update_render_elements(&mut self, is_active: bool) {
+        let is_overview_open = self.overview_open;
         for (ws, _) in self.workspaces_with_render_geo_mut() {
-            ws.update_render_elements(is_active);
+            ws.update_render_elements(is_active, is_overview_open);
         }
     }
 
@@ -794,6 +827,10 @@ impl<W: LayoutElement> Monitor<W> {
     ///
     /// During animations, assumes the final view position.
     pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
+        if self.overview_open {
+            return None;
+        }
+        // TODO: unify logic
         let mut rect = self.active_workspace_ref().active_tile_visual_rectangle()?;
 
         if let Some(switch) = &self.workspace_switch {
@@ -809,6 +846,14 @@ impl<W: LayoutElement> Monitor<W> {
         Some(rect)
     }
 
+    pub fn workspace_scale(&self) -> f64 {
+        if let Some(anim) = &self.overview_anim {
+            (1. - anim.value() * (1. - OVERVIEW_WORKSPACE_SCALE)).max(0.)
+        } else {
+            1.
+        }
+    }
+
     pub fn workspaces_render_geo(&self) -> impl Iterator<Item = Rectangle<f64, Logical>> {
         let render_idx = if let Some(switch) = &self.workspace_switch {
             switch.current_idx()
@@ -821,20 +866,27 @@ impl<W: LayoutElement> Monitor<W> {
         let scale = self.output.current_scale().fractional_scale();
         let size = output_size(&self.output);
 
-        // Compute the offset in such a way that if render_idx is active_workspace_idx, then its
-        // offset will be (0., 0.).
-        let before_ws_y = (before_idx - render_idx) * size.h;
+        let ws_scale = self.workspace_scale();
+
+        let gap = round_logical_in_physical(scale, size.h * 0.1 * ws_scale);
+
+        let static_offset = Point::from((size.w, size.h)).upscale(scale * (1. - ws_scale) / 2.);
 
         // Ceil the workspace size in physical pixels.
         let ws_size = Size::from((size.w, size.h))
+            .upscale(ws_scale)
             .to_physical_precise_ceil(scale)
             .to_logical(scale);
 
-        let first_ws_y = before_ws_y - ws_size.h * before_idx;
+        // Compute the offset in such a way that if render_idx is active_workspace_idx and the
+        // workspace scale is 1., then its offset will be (0., 0.).
+        let before_ws_y = (before_idx - render_idx) * (ws_size.h + gap);
+
+        let first_ws_y = before_ws_y - (ws_size.h + gap) * before_idx;
 
         (0..self.workspaces.len()).map(move |idx| {
-            let y = first_ws_y + idx as f64 * ws_size.h;
-            let loc = Point::from((0., y));
+            let y = first_ws_y + idx as f64 * (ws_size.h + gap);
+            let loc = Point::from((0., y)) + static_offset;
             let loc = loc.to_physical_precise_round(scale).to_logical(scale);
             Rectangle::new(loc, ws_size)
         })
@@ -882,18 +934,32 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn window_under(&self, pos_within_output: Point<f64, Logical>) -> Option<(&W, HitType)> {
         let (ws, geo) = self.workspace_under(pos_within_output)?;
-        let (win, hit) = ws.window_under(pos_within_output - geo.loc)?;
-        Some((win, hit.offset_win_pos(geo.loc)))
+
+        if self.overview_anim.is_some() {
+            let ws_scale = self.workspace_scale().max(0.0001);
+            let pos_within_workspace = (pos_within_output - geo.loc).downscale(ws_scale);
+            let (win, hit) = ws.window_under(pos_within_workspace)?;
+            // During the overview animation, we cannot do input hits because we cannot really
+            // represent scaled windows properly.
+            Some((win, hit.to_activate()))
+        } else {
+            let (win, hit) = ws.window_under(pos_within_output - geo.loc)?;
+            Some((win, hit.offset_win_pos(geo.loc)))
+        }
     }
 
     pub fn resize_edges_under(&self, pos_within_output: Point<f64, Logical>) -> Option<ResizeEdge> {
+        if self.overview_anim.is_some() {
+            return None;
+        }
+
         let (ws, geo) = self.workspace_under(pos_within_output)?;
         ws.resize_edges_under(pos_within_output - geo.loc)
     }
 
     pub fn render_above_top_layer(&self) -> bool {
         // Render above the top layer only if the view is stationary.
-        if self.workspace_switch.is_some() {
+        if self.workspace_switch.is_some() || self.overview_anim.is_some() {
             return false;
         }
 
@@ -906,7 +972,12 @@ impl<W: LayoutElement> Monitor<W> {
         renderer: &'a mut R,
         target: RenderTarget,
         focus_ring: bool,
-    ) -> impl Iterator<Item = MonitorRenderElement<R>> + 'a {
+    ) -> impl Iterator<
+        Item = (
+            Rectangle<f64, Logical>,
+            impl Iterator<Item = MonitorRenderElement<R>>,
+        ),
+    > + 'a {
         let _span = tracy_client::span!("Monitor::render_elements");
 
         let scale = self.output.current_scale().fractional_scale();
@@ -924,7 +995,7 @@ impl<W: LayoutElement> Monitor<W> {
         // rendering for maximized GTK windows.
         //
         // FIXME: use proper bounds after fixing the Crop element.
-        let crop_bounds = if self.workspace_switch.is_some() {
+        let crop_bounds = if self.workspace_switch.is_some() || self.overview_anim.is_some() {
             Rectangle::new(
                 Point::from((-i32::MAX / 2, 0)),
                 Size::from((i32::MAX, height)),
@@ -936,23 +1007,58 @@ impl<W: LayoutElement> Monitor<W> {
             )
         };
 
-        self.workspaces_with_render_geo()
-            .flat_map(move |(ws, geo)| {
-                ws.render_elements(renderer, target, focus_ring)
-                    .filter_map(move |elem| {
-                        CropRenderElement::from_element(elem, scale, crop_bounds)
-                    })
-                    .map(move |elem| {
-                        RelocateRenderElement::from_element(
-                            elem,
-                            // The offset we get from workspaces_with_render_positions() is already
-                            // rounded to physical pixels, but it's in the logical coordinate
-                            // space, so we need to convert it to physical.
-                            geo.loc.to_physical_precise_round(scale),
-                            Relocate::Relative,
-                        )
-                    })
-            })
+        let ws_scale = self.workspace_scale();
+        let overview_anim_value = self.overview_anim.as_ref().map(|anim| anim.clamped_value());
+        let is_overview_open = self.overview_open;
+        self.workspaces_with_render_geo().map(move |(ws, geo)| {
+            let iter = ws
+                .render_elements(renderer, target, focus_ring, is_overview_open)
+                .filter_map(move |elem| CropRenderElement::from_element(elem, scale, crop_bounds))
+                // .map(move |elem| {
+                //     let elem_scale = 1. - (1. - ws_scale) / OVERVIEW_WORKSPACE_SCALE * 0.03;
+                //     RescaleRenderElement::from_element(
+                //         elem,
+                //         size.downscale(2.)
+                //             .to_physical_precise_round(scale)
+                //             .to_point(),
+                //         elem_scale,
+                //     )
+                // })
+                .map(move |elem| {
+                    RescaleRenderElement::from_element(elem, Point::from((0, 0)), ws_scale)
+                })
+                .map(move |elem| {
+                    RelocateRenderElement::from_element(
+                        elem,
+                        // The offset we get from workspaces_with_render_positions() is already
+                        // rounded to physical pixels, but it's in the logical coordinate
+                        // space, so we need to convert it to physical.
+                        geo.loc.to_physical_precise_round(scale),
+                        Relocate::Relative,
+                    )
+                })
+                .map(MonitorRenderElement::Workspace);
+            let shadow = if let Some(value) = overview_anim_value {
+                Vec::from_iter(
+                    ws.render_shadow(renderer)
+                        .map(move |elem| elem.with_alpha(value.clamp(0., 1.) as f32))
+                        .map(move |elem| {
+                            RescaleRenderElement::from_element(elem, Point::from((0, 0)), ws_scale)
+                        })
+                        .map(move |elem| {
+                            RelocateRenderElement::from_element(
+                                elem,
+                                geo.loc.to_physical_precise_round(scale),
+                                Relocate::Relative,
+                            )
+                        })
+                        .map(MonitorRenderElement::Shadow),
+                )
+            } else {
+                Vec::new()
+            };
+            (geo, iter.chain(shadow))
+        })
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, is_touchpad: bool) {

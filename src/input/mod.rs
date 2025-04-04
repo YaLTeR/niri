@@ -1915,6 +1915,10 @@ impl State {
             Action::ClearDynamicCastTarget => {
                 self.set_dynamic_cast_target(CastTarget::Nothing);
             }
+            Action::ToggleOverview => {
+                self.niri.layout.toggle_overview();
+                self.niri.queue_redraw_all();
+            }
         }
     }
 
@@ -2265,16 +2269,19 @@ impl State {
 
             if let Some(mapped) = self.niri.window_under_cursor() {
                 let window = mapped.window.clone();
+                let overview_open = self.niri.layout.is_overview_open();
 
                 // Check if we need to start an interactive move.
                 if button == Some(MouseButton::Left) && !pointer.is_grabbed() {
                     let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
-                    if mod_down {
+                    if overview_open || mod_down {
                         let location = pointer.current_location();
                         let (output, pos_within_output) = self.niri.output_under(location).unwrap();
                         let output = output.clone();
 
-                        self.niri.layout.activate_window(&window);
+                        if !overview_open {
+                            self.niri.layout.activate_window(&window);
+                        }
 
                         if self.niri.layout.interactive_move_begin(
                             window.clone(),
@@ -2286,11 +2293,14 @@ impl State {
                                 button: button_code,
                                 location,
                             };
-                            let grab = MoveGrab::new(start_data, window.clone());
+                            let grab = MoveGrab::new(start_data, window.clone(), overview_open);
                             pointer.set_grab(self, grab, serial, Focus::Clear);
-                            self.niri
-                                .cursor_manager
-                                .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
+
+                            if !overview_open {
+                                self.niri
+                                    .cursor_manager
+                                    .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
+                            }
                         }
                     }
                 }
@@ -2365,7 +2375,9 @@ impl State {
                     }
                 }
 
-                self.niri.layout.activate_window(&window);
+                if !overview_open {
+                    self.niri.layout.activate_window(&window);
+                }
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();

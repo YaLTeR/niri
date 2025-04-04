@@ -657,6 +657,7 @@ enum Op {
         #[proptest(strategy = "1..=5usize")]
         window: usize,
     },
+    ToggleOverview,
 }
 
 impl Op {
@@ -1441,6 +1442,9 @@ impl Op {
             }
             Op::InteractiveResizeEnd { window } => {
                 layout.interactive_resize_end(&window);
+            }
+            Op::ToggleOverview => {
+                layout.toggle_overview();
             }
         }
     }
