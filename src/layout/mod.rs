@@ -2601,6 +2601,17 @@ impl<W: LayoutElement> Layout<W> {
                 }
                 saw_view_offset_gesture = has_view_offset_gesture;
             }
+
+            let scale = monitor.output.current_scale().fractional_scale();
+            let iter = monitor.workspaces_with_render_geo();
+            for (_ws, ws_geo) in iter {
+                let pos = ws_geo.loc;
+                let rounded_pos = pos.to_physical_precise_round(scale).to_logical(scale);
+
+                // Workspace positions must be rounded to physical pixels.
+                assert_abs_diff_eq!(pos.x, rounded_pos.x, epsilon = 1e-5);
+                assert_abs_diff_eq!(pos.y, rounded_pos.y, epsilon = 1e-5);
+            }
         }
     }
 
@@ -2623,14 +2634,14 @@ impl<W: LayoutElement> Layout<W> {
         // Scroll the view if needed.
         if let Some((output, pos_within_output)) = dnd_scroll {
             if let Some(mon) = self.monitor_for_output_mut(&output) {
-                if let Some((ws, offset)) = mon.workspace_under(pos_within_output) {
+                if let Some((ws, geo)) = mon.workspace_under(pos_within_output) {
                     let ws_id = ws.id();
                     let ws = mon
                         .workspaces
                         .iter_mut()
                         .find(|ws| ws.id() == ws_id)
                         .unwrap();
-                    ws.dnd_scroll_gesture_scroll(pos_within_output - offset);
+                    ws.dnd_scroll_gesture_scroll(pos_within_output - geo.loc);
                 }
             }
         }
@@ -2770,7 +2781,7 @@ impl<W: LayoutElement> Layout<W> {
         let _span = tracy_client::span!("Layout::update_insert_hint::update");
 
         if let Some(mon) = self.monitor_for_output_mut(&move_.output) {
-            if let Some((ws, offset)) = mon.workspace_under(move_.pointer_pos_within_output) {
+            if let Some((ws, geo)) = mon.workspace_under(move_.pointer_pos_within_output) {
                 let ws_id = ws.id();
                 let ws = mon
                     .workspaces
@@ -2778,7 +2789,7 @@ impl<W: LayoutElement> Layout<W> {
                     .find(|ws| ws.id() == ws_id)
                     .unwrap();
 
-                let position = ws.get_insert_position(move_.pointer_pos_within_output - offset);
+                let position = ws.get_insert_position(move_.pointer_pos_within_output - geo.loc);
 
                 let rules = move_.tile.window().rules();
                 let border_width = move_.tile.effective_border_width().unwrap_or(0.);
@@ -3669,8 +3680,8 @@ impl<W: LayoutElement> Layout<W> {
             return false;
         };
 
-        let Some((mon, (ws, ws_offset))) = monitors.iter().find_map(|mon| {
-            mon.workspaces_with_render_positions()
+        let Some((mon, (ws, ws_geo))) = monitors.iter().find_map(|mon| {
+            mon.workspaces_with_render_geo()
                 .find(|(ws, _)| ws.has_window(&window_id))
                 .map(|rv| (mon, rv))
         }) else {
@@ -3688,7 +3699,7 @@ impl<W: LayoutElement> Layout<W> {
             .unwrap();
         let window_offset = tile.window_loc();
 
-        let tile_pos = ws_offset + tile_offset;
+        let tile_pos = ws_geo.loc + tile_offset;
 
         let pointer_offset_within_window = start_pos_within_output - tile_pos - window_offset;
         let window_size = tile.window_size();
@@ -3784,8 +3795,8 @@ impl<W: LayoutElement> Layout<W> {
                 // potentially animatable.
                 let mut tile_pos = None;
                 if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
-                    if let Some((mon, (ws, ws_offset))) = monitors.iter().find_map(|mon| {
-                        mon.workspaces_with_render_positions()
+                    if let Some((mon, (ws, ws_geo))) = monitors.iter().find_map(|mon| {
+                        mon.workspaces_with_render_geo()
                             .find(|(ws, _)| ws.has_window(window))
                             .map(|rv| (mon, rv))
                     }) {
@@ -3795,7 +3806,7 @@ impl<W: LayoutElement> Layout<W> {
                                 .find(|(tile, _, _)| tile.window().id() == window)
                                 .unwrap();
 
-                            tile_pos = Some(ws_offset + tile_offset);
+                            tile_pos = Some(ws_geo.loc + tile_offset);
                         }
                     }
                 }
@@ -3987,12 +3998,12 @@ impl<W: LayoutElement> Layout<W> {
                 let (mon, ws_idx, position, offset) = if let Some(mon) =
                     monitors.iter_mut().find(|mon| mon.output == move_.output)
                 {
-                    let (ws, offset) = mon
+                    let (ws, ws_geo) = mon
                         .workspace_under(move_.pointer_pos_within_output)
                         // If the pointer is somehow outside the move output and a workspace switch
                         // is in progress, this won't necessarily do the expected thing, but also
                         // that is not really supposed to happen so eh?
-                        .unwrap_or_else(|| mon.workspaces_with_render_positions().next().unwrap());
+                        .unwrap_or_else(|| mon.workspaces_with_render_geo().next().unwrap());
 
                     let ws_id = ws.id();
                     let ws_idx = mon
@@ -4005,14 +4016,14 @@ impl<W: LayoutElement> Layout<W> {
                         InsertPosition::Floating
                     } else {
                         let ws = &mut mon.workspaces[ws_idx];
-                        ws.get_insert_position(move_.pointer_pos_within_output - offset)
+                        ws.get_insert_position(move_.pointer_pos_within_output - ws_geo.loc)
                     };
 
-                    (mon, ws_idx, position, offset)
+                    (mon, ws_idx, position, ws_geo.loc)
                 } else {
                     let mon = &mut monitors[*active_monitor_idx];
                     // No point in trying to use the pointer position on the wrong output.
-                    let (ws, offset) = mon.workspaces_with_render_positions().next().unwrap();
+                    let (ws, ws_geo) = mon.workspaces_with_render_geo().next().unwrap();
 
                     let position = if move_.is_floating {
                         InsertPosition::Floating
@@ -4026,7 +4037,7 @@ impl<W: LayoutElement> Layout<W> {
                         .iter_mut()
                         .position(|ws| ws.id() == ws_id)
                         .unwrap();
-                    (mon, ws_idx, position, offset)
+                    (mon, ws_idx, position, ws_geo.loc)
                 };
 
                 let win_id = move_.tile.window().id().clone();
@@ -4443,7 +4454,7 @@ impl<W: LayoutElement> Layout<W> {
                 let Some(mon) = self.monitor_for_output_mut(&output) else {
                     return;
                 };
-                let Some((ws, offset)) = mon.workspace_under(pointer_pos_within_output) else {
+                let Some((ws, ws_geo)) = mon.workspace_under(pointer_pos_within_output) else {
                     return;
                 };
                 let ws_id = ws.id();
@@ -4453,7 +4464,7 @@ impl<W: LayoutElement> Layout<W> {
                     .find(|ws| ws.id() == ws_id)
                     .unwrap();
 
-                let tile_pos = tile_pos - offset;
+                let tile_pos = tile_pos - ws_geo.loc;
                 ws.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
                 return;
             }

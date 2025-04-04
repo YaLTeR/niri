@@ -1,4 +1,5 @@
 use std::cmp::min;
+use std::iter::zip;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -20,7 +21,7 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::Transaction;
-use crate::utils::{output_size, round_logical_in_physical, ResizeEdge};
+use crate::utils::{output_size, ResizeEdge};
 
 /// Amount of touchpad movement to scroll the height of one workspace.
 const WORKSPACE_GESTURE_MOVEMENT: f64 = 300.;
@@ -666,31 +667,8 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn update_render_elements(&mut self, is_active: bool) {
-        match &self.workspace_switch {
-            Some(switch) => {
-                let render_idx = switch.current_idx();
-                let before_idx = render_idx.floor();
-                let after_idx = render_idx.ceil();
-
-                if after_idx < 0. || before_idx as usize >= self.workspaces.len() {
-                    return;
-                }
-
-                let after_idx = after_idx as usize;
-                if after_idx < self.workspaces.len() {
-                    self.workspaces[after_idx].update_render_elements(is_active);
-
-                    if before_idx < 0. {
-                        return;
-                    }
-                }
-
-                let before_idx = before_idx as usize;
-                self.workspaces[before_idx].update_render_elements(is_active);
-            }
-            None => {
-                self.workspaces[self.active_workspace_idx].update_render_elements(is_active);
-            }
+        for (ws, _) in self.workspaces_with_render_geo_mut() {
+            ws.update_render_elements(is_active);
         }
     }
 
@@ -841,72 +819,86 @@ impl<W: LayoutElement> Monitor<W> {
         Some(rect)
     }
 
-    pub fn workspaces_with_render_positions(
+    pub fn workspaces_render_geo(&self) -> impl Iterator<Item = Rectangle<f64, Logical>> {
+        let render_idx = if let Some(switch) = &self.workspace_switch {
+            switch.current_idx()
+        } else {
+            self.active_workspace_idx as f64
+        };
+
+        let before_idx = render_idx.floor();
+
+        let scale = self.output.current_scale().fractional_scale();
+        let size = output_size(&self.output);
+
+        // Compute the offset in such a way that if render_idx is active_workspace_idx, then its
+        // offset will be (0., 0.).
+        let before_ws_y = (before_idx - render_idx) * size.h;
+
+        // Ceil the workspace size in physical pixels.
+        let ws_size = Size::from((size.w, size.h))
+            .to_physical_precise_ceil(scale)
+            .to_logical(scale);
+
+        let first_ws_y = before_ws_y - ws_size.h * before_idx;
+
+        (0..self.workspaces.len()).map(move |idx| {
+            let y = first_ws_y + idx as f64 * ws_size.h;
+            let loc = Point::from((0., y));
+            let loc = loc.to_physical_precise_round(scale).to_logical(scale);
+            Rectangle::new(loc, ws_size)
+        })
+    }
+
+    pub fn workspaces_with_render_geo(
         &self,
-    ) -> impl Iterator<Item = (&Workspace<W>, Point<f64, Logical>)> {
-        let mut first = None;
-        let mut second = None;
+    ) -> impl Iterator<Item = (&Workspace<W>, Rectangle<f64, Logical>)> {
+        let output_size = output_size(&self.output);
+        let output_geo = Rectangle::new(Point::from((0., 0.)), output_size);
 
-        match &self.workspace_switch {
-            Some(switch) => {
-                let render_idx = switch.current_idx();
-                let before_idx = render_idx.floor();
-                let after_idx = render_idx.ceil();
+        let geo = self.workspaces_render_geo();
+        zip(self.workspaces.iter(), geo)
+            // Cull out workspaces outside the output.
+            .filter(move |(_ws, geo)| geo.intersection(output_geo).is_some())
+    }
 
-                if after_idx >= 0. && before_idx < self.workspaces.len() as f64 {
-                    let scale = self.output.current_scale().fractional_scale();
-                    let size = output_size(&self.output);
-                    let offset =
-                        round_logical_in_physical(scale, (render_idx - before_idx) * size.h);
+    pub fn workspaces_with_render_geo_mut(
+        &mut self,
+    ) -> impl Iterator<Item = (&mut Workspace<W>, Rectangle<f64, Logical>)> {
+        let output_size = output_size(&self.output);
+        let output_geo = Rectangle::new(Point::from((0., 0.)), output_size);
 
-                    // Ceil the height in physical pixels.
-                    let height = (size.h * scale).ceil() / scale;
-
-                    if before_idx >= 0. {
-                        let before_idx = before_idx as usize;
-                        let before_offset = Point::from((0., -offset));
-                        first = Some((&self.workspaces[before_idx], before_offset));
-                    }
-
-                    let after_idx = after_idx as usize;
-                    if after_idx < self.workspaces.len() {
-                        let after_offset = Point::from((0., -offset + height));
-                        second = Some((&self.workspaces[after_idx], after_offset));
-                    }
-                }
-            }
-            None => {
-                first = Some((
-                    &self.workspaces[self.active_workspace_idx],
-                    Point::from((0., 0.)),
-                ));
-            }
-        }
-
-        first.into_iter().chain(second)
+        let geo = self.workspaces_render_geo();
+        zip(self.workspaces.iter_mut(), geo)
+            // Cull out workspaces outside the output.
+            .filter(move |(_ws, geo)| geo.intersection(output_geo).is_some())
     }
 
     pub fn workspace_under(
         &self,
         pos_within_output: Point<f64, Logical>,
-    ) -> Option<(&Workspace<W>, Point<f64, Logical>)> {
+    ) -> Option<(&Workspace<W>, Rectangle<f64, Logical>)> {
         let size = output_size(&self.output);
-        let (ws, bounds) = self
-            .workspaces_with_render_positions()
-            .map(|(ws, offset)| (ws, Rectangle::new(offset, size)))
-            .find(|(_, bounds)| bounds.contains(pos_within_output))?;
-        Some((ws, bounds.loc))
+        let (ws, geo) = self.workspaces_with_render_geo().find_map(|(ws, geo)| {
+            // Extend width to entire output.
+            let loc = Point::from((0., geo.loc.y));
+            let size = Size::from((size.w, geo.size.h));
+            let bounds = Rectangle::new(loc, size);
+
+            bounds.contains(pos_within_output).then_some((ws, geo))
+        })?;
+        Some((ws, geo))
     }
 
     pub fn window_under(&self, pos_within_output: Point<f64, Logical>) -> Option<(&W, HitType)> {
-        let (ws, offset) = self.workspace_under(pos_within_output)?;
-        let (win, hit) = ws.window_under(pos_within_output - offset)?;
-        Some((win, hit.offset_win_pos(offset)))
+        let (ws, geo) = self.workspace_under(pos_within_output)?;
+        let (win, hit) = ws.window_under(pos_within_output - geo.loc)?;
+        Some((win, hit.offset_win_pos(geo.loc)))
     }
 
     pub fn resize_edges_under(&self, pos_within_output: Point<f64, Logical>) -> Option<ResizeEdge> {
-        let (ws, offset) = self.workspace_under(pos_within_output)?;
-        ws.resize_edges_under(pos_within_output - offset)
+        let (ws, geo) = self.workspace_under(pos_within_output)?;
+        ws.resize_edges_under(pos_within_output - geo.loc)
     }
 
     pub fn render_above_top_layer(&self) -> bool {
@@ -954,8 +946,8 @@ impl<W: LayoutElement> Monitor<W> {
             )
         };
 
-        self.workspaces_with_render_positions()
-            .flat_map(move |(ws, offset)| {
+        self.workspaces_with_render_geo()
+            .flat_map(move |(ws, geo)| {
                 ws.render_elements(renderer, target, focus_ring)
                     .filter_map(move |elem| {
                         CropRenderElement::from_element(elem, scale, crop_bounds)
@@ -966,7 +958,7 @@ impl<W: LayoutElement> Monitor<W> {
                             // The offset we get from workspaces_with_render_positions() is already
                             // rounded to physical pixels, but it's in the logical coordinate
                             // space, so we need to convert it to physical.
-                            offset.to_physical_precise_round(scale),
+                            geo.loc.to_physical_precise_round(scale),
                             Relocate::Relative,
                         )
                     })
