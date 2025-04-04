@@ -3794,6 +3794,10 @@ impl<W: LayoutElement> Layout<W> {
                     }
                 }
 
+                // Clear it before calling remove_window() to avoid running interactive_move_end()
+                // in the middle of interactive_move_update() and the confusion that causes.
+                self.interactive_move = None;
+
                 let RemovedTile {
                     mut tile,
                     width,
