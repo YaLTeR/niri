@@ -2302,7 +2302,7 @@ impl State {
                             .niri
                             .layout
                             .resize_edges_under(output, pos_within_output)
-                            .unwrap();
+                            .unwrap_or(ResizeEdge::empty());
 
                         if !edges.is_empty() {
                             // See if we got a double resize-click gesture.
