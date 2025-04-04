@@ -373,7 +373,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             || !self.closing_windows.is_empty()
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool) {
+    pub fn update_render_elements(&mut self, is_active: bool, is_overview_open: bool) {
         let view_pos = Point::from((self.view_pos(), 0.));
         let view_size = self.view_size;
         let active_idx = self.active_column_idx;
@@ -386,7 +386,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         if let Some(insert_hint) = &self.insert_hint {
-            if let Some(area) = self.insert_hint_area(insert_hint) {
+            if let Some(area) = self.insert_hint_area(insert_hint, !is_overview_open) {
                 let view_rect = Rectangle::new(area.loc.upscale(-1.), view_size);
                 self.insert_hint_element.update_render_elements(
                     area.size,
@@ -2276,7 +2276,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             })
     }
 
-    fn insert_hint_area(&self, insert_hint: &InsertHint) -> Option<Rectangle<f64, Logical>> {
+    fn insert_hint_area(
+        &self,
+        insert_hint: &InsertHint,
+        clamp_to_view: bool,
+    ) -> Option<Rectangle<f64, Logical>> {
         let mut hint_area = match insert_hint.position {
             InsertPosition::NewColumn(column_index) => {
                 if column_index == 0 || column_index == self.columns.len() {
@@ -2371,7 +2375,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let view_size = self.view_size;
 
         // Make sure the hint is at least partially visible.
-        if matches!(insert_hint.position, InsertPosition::NewColumn(_)) {
+        if clamp_to_view && matches!(insert_hint.position, InsertPosition::NewColumn(_)) {
             hint_area.loc.x = hint_area.loc.x.max(-hint_area.size.w / 2.);
             hint_area.loc.x = hint_area.loc.x.min(view_size.w - hint_area.size.w / 2.);
         }
@@ -2727,12 +2731,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         scale: Scale<f64>,
         target: RenderTarget,
         focus_ring: bool,
+        is_overview_open: bool,
     ) -> Vec<ScrollingSpaceRenderElement<R>> {
         let mut rv = vec![];
 
         // Draw the insert hint.
         if let Some(insert_hint) = &self.insert_hint {
-            if let Some(area) = self.insert_hint_area(insert_hint) {
+            if let Some(area) = self.insert_hint_area(insert_hint, !is_overview_open) {
                 rv.extend(
                     self.insert_hint_element
                         .render(renderer, area.loc)

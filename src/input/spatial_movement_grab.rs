@@ -10,12 +10,14 @@ use smithay::input::SeatHandler;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point};
 
+use crate::layout::workspace::WorkspaceId;
 use crate::niri::State;
 
 pub struct SpatialMovementGrab {
     start_data: PointerGrabStartData<State>,
     last_location: Point<f64, Logical>,
     output: Output,
+    workspace_id: WorkspaceId,
     gesture: GestureState,
 }
 
@@ -27,12 +29,24 @@ enum GestureState {
 }
 
 impl SpatialMovementGrab {
-    pub fn new(start_data: PointerGrabStartData<State>, output: Output) -> Self {
+    pub fn new(
+        start_data: PointerGrabStartData<State>,
+        output: Output,
+        workspace_id: WorkspaceId,
+        is_view_offset: bool,
+    ) -> Self {
+        let gesture = if is_view_offset {
+            GestureState::ViewOffset
+        } else {
+            GestureState::Recognizing
+        };
+
         Self {
             last_location: start_data.location,
             start_data,
             output,
-            gesture: GestureState::Recognizing,
+            workspace_id,
+            gesture,
         }
     }
 
@@ -81,8 +95,16 @@ impl PointerGrab<State> for SpatialMovementGrab {
                 if c.x * c.x + c.y * c.y >= 8. * 8. {
                     if c.x.abs() > c.y.abs() {
                         self.gesture = GestureState::ViewOffset;
-                        layout.view_offset_gesture_begin(&self.output, false);
-                        layout.view_offset_gesture_update(-c.x, timestamp, false)
+                        if let Some((ws_idx, ws)) = layout.find_workspace_by_id(self.workspace_id) {
+                            if ws.current_output() == Some(&self.output) {
+                                layout.view_offset_gesture_begin(&self.output, Some(ws_idx), false);
+                                layout.view_offset_gesture_update(-c.x, timestamp, false)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
                     } else {
                         self.gesture = GestureState::WorkspaceSwitch;
                         layout.workspace_switch_gesture_begin(&self.output, false);

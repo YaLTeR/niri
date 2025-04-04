@@ -23,7 +23,8 @@ use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
 use smithay::reexports::input;
 
-pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.2, 0.2, 0.2, 1.]);
+pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.25, 0.25, 0.25, 1.]);
+pub const DEFAULT_BACKDROP_COLOR: Color = Color::from_array_unpremul([0.15, 0.15, 0.15, 1.]);
 
 pub mod layer_rule;
 
@@ -984,6 +985,8 @@ pub struct Animations {
     pub config_notification_open_close: ConfigNotificationOpenCloseAnim,
     #[knuffel(child, default)]
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
+    #[knuffel(child, default)]
+    pub overview_open_close: OverviewOpenCloseAnim,
 }
 
 impl Default for Animations {
@@ -999,6 +1002,7 @@ impl Default for Animations {
             window_resize: Default::default(),
             config_notification_open_close: Default::default(),
             screenshot_ui_open: Default::default(),
+            overview_open_close: Default::default(),
         }
     }
 }
@@ -1147,6 +1151,22 @@ impl Default for ScreenshotUiOpenAnim {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OverviewOpenCloseAnim(pub Animation);
+
+impl Default for OverviewOpenCloseAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Animation {
     pub off: bool,
     pub kind: AnimationKind,
@@ -1183,6 +1203,8 @@ pub struct SpringParams {
 pub struct Gestures {
     #[knuffel(child, default)]
     pub dnd_edge_view_scroll: DndEdgeViewScroll,
+    #[knuffel(child, default)]
+    pub dnd_edge_workspace_switch: DndEdgeWorkspaceSwitch,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -1199,6 +1221,26 @@ impl Default for DndEdgeViewScroll {
     fn default() -> Self {
         Self {
             trigger_width: FloatOrInt(30.), // Taken from GTK 4.
+            delay_ms: 100,
+            max_speed: FloatOrInt(1500.),
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct DndEdgeWorkspaceSwitch {
+    #[knuffel(child, unwrap(argument), default = Self::default().trigger_height)]
+    pub trigger_height: FloatOrInt<0, 65535>,
+    #[knuffel(child, unwrap(argument), default = Self::default().delay_ms)]
+    pub delay_ms: u16,
+    #[knuffel(child, unwrap(argument), default = Self::default().max_speed)]
+    pub max_speed: FloatOrInt<0, 1_000_000>,
+}
+
+impl Default for DndEdgeWorkspaceSwitch {
+    fn default() -> Self {
+        Self {
+            trigger_height: FloatOrInt(50.),
             delay_ms: 100,
             max_speed: FloatOrInt(1500.),
         }
@@ -1716,6 +1758,7 @@ pub enum Action {
     SetDynamicCastWindowById(u64),
     SetDynamicCastMonitor(#[knuffel(argument)] Option<String>),
     ClearDynamicCastTarget,
+    ToggleOverview,
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1980,6 +2023,7 @@ impl From<niri_ipc::Action> for Action {
                 Self::SetDynamicCastMonitor(output)
             }
             niri_ipc::Action::ClearDynamicCastTarget {} => Self::ClearDynamicCastTarget,
+            niri_ipc::Action::ToggleOverview {} => Self::ToggleOverview,
         }
     }
 }
@@ -2950,6 +2994,21 @@ where
 }
 
 impl<S> knuffel::Decode<S> for ScreenshotUiOpenAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for OverviewOpenCloseAnim
 where
     S: knuffel::traits::ErrorSpan,
 {
@@ -4459,6 +4518,18 @@ mod tests {
                         ),
                     },
                 ),
+                overview_open_close: OverviewOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
             },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
@@ -4468,6 +4539,15 @@ mod tests {
                     delay_ms: 100,
                     max_speed: FloatOrInt(
                         50.0,
+                    ),
+                },
+                dnd_edge_workspace_switch: DndEdgeWorkspaceSwitch {
+                    trigger_height: FloatOrInt(
+                        50.0,
+                    ),
+                    delay_ms: 100,
+                    max_speed: FloatOrInt(
+                        1500.0,
                     ),
                 },
             },
