@@ -31,6 +31,8 @@ Valid modifiers are:
 This way, you can test niri in a window without causing too many conflicts with the host compositor's key bindings.
 For this reason, most of the default keys use the `Mod` modifier.
 
+<sup>Since: next release</sup> You can customize the `Mod` key [in the `input` section of the config](./Configuration:-Input.md#mod-key-mod-key-nested).
+
 > [!TIP]
 > To find an XKB name for a particular key, you may use a program like [`wev`](https://git.sr.ht/~sircmpwn/wev).
 >
@@ -313,7 +315,7 @@ Actions for taking screenshots.
 - `screenshot`: opens the built-in interactive screenshot UI.
 - `screenshot-screen`, `screenshow-window`: takes a screenshot of the focused screen or window respectively.
 
-The screenshot is both stored to the clipboard and saved to disk, according to the [`screenshot-path` option](./Configuration:-Miscellaneous#screenshot-path).
+The screenshot is both stored to the clipboard and saved to disk, according to the [`screenshot-path` option](./Configuration:-Miscellaneous.md#screenshot-path).
 
 <sup>Since: 25.02</sup> You can disable saving to disk for a specific bind with the `write-to-disk=false` property:
 

@@ -57,12 +57,18 @@ impl Shadow {
         let offset = self.config.offset;
         let offset = Point::from((ceil(offset.x.0), ceil(offset.y.0)));
 
-        let spread = ceil(self.config.spread.0);
+        let spread = self.config.spread.0;
+        let spread = ceil(spread.abs()).copysign(spread);
         let offset = offset - Point::from((spread, spread));
 
         let win_radius = radius.fit_to(win_size.w as f32, win_size.h as f32);
 
-        let box_size = win_size + Size::from((spread, spread)).upscale(2.);
+        let box_size = if spread >= 0. {
+            win_size + Size::from((spread, spread)).upscale(2.)
+        } else {
+            // This is a saturating sub.
+            win_size - Size::from((-spread, -spread)).upscale(2.)
+        };
         let radius = win_radius.expanded_by(spread as f32);
 
         let shader_size = box_size + Size::from((width, width)).upscale(2.);

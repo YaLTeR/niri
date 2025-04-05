@@ -163,6 +163,7 @@ impl Layout {
         window.request_size(
             ws.new_window_size(width, None, false, window.rules(), (min_size, max_size)),
             false,
+            false,
             None,
         );
         window.communicate();
@@ -190,6 +191,7 @@ impl Layout {
         let max_size = window.max_size();
         window.request_size(
             ws.new_window_size(width, None, false, window.rules(), (min_size, max_size)),
+            false,
             false,
             None,
         );

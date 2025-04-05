@@ -92,6 +92,7 @@ window-rule {
     geometry-corner-radius 12
     clip-to-geometry true
     tiled-state true
+    baba-is-float true
 
     min-width 100
     max-width 200
@@ -657,7 +658,7 @@ window-rule {
 
 Set a scroll factor for all scroll events sent to a window.
 
-This will be multiplied with the scroll factor set for your input device in the [input section](/wiki/Configuration:-Input.md#pointing-devices).
+This will be multiplied with the scroll factor set for your input device in the [input section](./Configuration:-Input.md#pointing-devices).
 
 ```kdl
 // Make scrolling in Firefox a bit slower.
@@ -845,6 +846,24 @@ window-rule {
     tiled-state true
 }
 ```
+
+#### `baba-is-float`
+
+<sup>Since: 25.02</sup>
+
+Make your windows FLOAT up and down.
+
+This is an April Fools' 2025 feature.
+
+```kdl
+window-rule {
+    match is-floating=true
+
+    baba-is-float true
+}
+```
+
+https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509
 
 #### Size Overrides
 

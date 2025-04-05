@@ -182,15 +182,12 @@ impl LayoutElement for TestWindow {
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
+        is_fullscreen: bool,
         _animate: bool,
         _transaction: Option<Transaction>,
     ) {
         self.inner.borrow_mut().requested_size = Some(size);
-        self.inner.borrow_mut().pending_fullscreen = false;
-    }
-
-    fn request_fullscreen(&mut self, _size: Size<i32, Logical>) {
-        self.inner.borrow_mut().pending_fullscreen = true;
+        self.inner.borrow_mut().pending_fullscreen = is_fullscreen;
     }
 
     fn min_size(&self) -> Size<i32, Logical> {

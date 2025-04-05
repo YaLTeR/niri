@@ -368,12 +368,14 @@ Shadow rendered behind a window.
 
 Set `on` to enable the shadow.
 
-`softness` controls the shadow softness/size in logical pixels, same as CSS box-shadow *blur radius*.
+`softness` controls the shadow softness/size in logical pixels, same as [CSS box-shadow] *blur radius*.
 Setting `softness 0` will give you hard shadows.
 
 `spread` is the distance to expand the window rectangle in logical pixels, same as CSS box-shadow spread.
+<sup>Since: next release</sup> Spread can be negative.
 
 `offset` moves the shadow relative to the window in logical pixels, same as CSS box-shadow offset.
+For example, `offset x=2 y=2` will move the shadow 2 logical pixels downwards and to the right.
 
 Set `draw-behind-window` to `true` to make shadows draw behind the window rather than just around it.
 Note that niri has no way of knowing about the CSD window corner radius.
@@ -405,6 +407,8 @@ layout {
 // they don't draw their own window shadows.
 prefer-no-csd
 ```
+
+[CSS box-shadow]: https://developer.mozilla.org/en-US/docs/Web/CSS/box-shadow
 
 ### `tab-indicator`
 

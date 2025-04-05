@@ -474,7 +474,12 @@ impl<W: LayoutElement> Monitor<W> {
         );
     }
 
-    pub fn move_to_workspace(&mut self, window: Option<&W::Id>, idx: usize) {
+    pub fn move_to_workspace(
+        &mut self,
+        window: Option<&W::Id>,
+        idx: usize,
+        activate: ActivateWindow,
+    ) {
         let source_workspace_idx = if let Some(window) = window {
             self.workspaces
                 .iter()
@@ -490,14 +495,11 @@ impl<W: LayoutElement> Monitor<W> {
         }
         let new_id = self.workspaces[new_idx].id();
 
-        let activate = window.map_or(true, |win| {
-            self.active_window().map(|win| win.id()) == Some(win)
+        let activate = activate.map_smart(|| {
+            window.map_or(true, |win| {
+                self.active_window().map(|win| win.id()) == Some(win)
+            })
         });
-        let activate = if activate {
-            ActivateWindow::Yes
-        } else {
-            ActivateWindow::No
-        };
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         let transaction = Transaction::new();
@@ -515,7 +517,11 @@ impl<W: LayoutElement> Monitor<W> {
                 id: new_id,
                 column_idx: None,
             },
-            activate,
+            if activate {
+                ActivateWindow::Yes
+            } else {
+                ActivateWindow::No
+            },
             removed.width,
             removed.is_full_width,
             removed.is_floating,
@@ -578,7 +584,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         if workspace.floating_is_active() {
-            self.move_to_workspace(None, idx);
+            self.move_to_workspace(None, idx, ActivateWindow::Smart);
             return;
         }
 

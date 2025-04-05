@@ -13,6 +13,7 @@ output "eDP-1" {
     transform "90"
     position x=1280 y=0
     variable-refresh-rate // on-demand=true
+    focus-at-startup
     background-color "#003300"
 }
 
@@ -161,6 +162,28 @@ This is helpful to avoid various issues with VRR, since it can be disabled most 
 ```kdl
 output "HDMI-A-1" {
     variable-refresh-rate on-demand=true
+}
+```
+
+### `focus-at-startup`
+
+<sup>Since: next release</sup>
+
+Focus this output by default when niri starts.
+
+If multiple outputs with `focus-at-startup` are connected, they are prioritized in the order that they appear in the config.
+
+When none of the connected outputs are explicitly `focus-at-startup`, niri will focus the first one sorted by name (same output sorting as used elsewhere in niri).
+
+```kdl
+// Focus HDMI-A-1 by default.
+output "HDMI-A-1" {
+    focus-at-startup
+}
+
+// ...if HDMI-A-1 wasn't connected, focus DP-2 instead.
+output "DP-2" {
+    focus-at-startup
 }
 ```
 

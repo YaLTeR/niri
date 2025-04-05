@@ -111,4 +111,26 @@ Example:
 
 ![Screencasted window indicated with a red border and shadow.](https://github.com/user-attachments/assets/375b381e-3a87-4e94-8676-44404971d893)
 
+### Windowed (fake/detached) fullscreen
+
+<sup>Since: next release</sup>
+
+When screencasting browser-based presentations like Google Slides, you usually want to hide the browser UI, which requires making the browser fullscreen.
+This is not always convenient, for example if you have an ultrawide monitor, or just want to leave the browser as a smaller window, without taking up an entire monitor.
+
+The `toggle-windowed-fullscreen` bind helps with this.
+It tells the app that it went fullscreen, while in reality leaving it as a normal window that you can resize and put wherever you want.
+
+```kdl
+binds {
+    Mod+Ctrl+Shift+F { toggle-windowed-fullscreen; }
+}
+```
+
+Keep in mind that not all apps react to fullscreening, so it may sometimes look as if the bind did nothing.
+
+Here's an example showing a windowed-fullscreen Google Slides [presentation](https://youtu.be/Kmz8ODolnDg), along with the presenter view and a meeting app:
+
+![Windowed Google Slides presentation, another window showing the presenter view, and another window showing Zoom UI casting the presentation.](https://github.com/user-attachments/assets/b2b49eea-f5a0-4c0a-b537-51fd1949a59d)
+
 [OBS]: https://obsproject.com/

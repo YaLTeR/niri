@@ -29,7 +29,7 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 ## Features
 
 - Built from the ground up for scrollable tiling
-- Dynamic workspaces like in GNOME
+- [Dynamic workspaces](https://github.com/YaLTeR/niri/wiki/Workspaces) like in GNOME
 - Built-in screenshot UI
 - Monitor and window screencasting through xdg-desktop-portal-gnome
     - You can [block out](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules#block-out-from) sensitive windows from screencasts

@@ -76,6 +76,7 @@ use smithay::{
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
+use crate::layout::ActivateWindow;
 use crate::niri::{DndIcon, NewClient, State};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
@@ -372,7 +373,7 @@ impl ClientDndGrabHandler for State {
                 // We can't even get the current pointer location because it's locked (we're deep
                 // in the grab call stack here). So use the last known one.
                 if let Some(output) = &self.niri.pointer_contents.output {
-                    self.niri.layout.activate_output(output);
+                    self.niri.layout.focus_output(output);
                 }
             }
         }
@@ -551,9 +552,12 @@ impl ForeignToplevelHandler for State {
 
             if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {
                 if Some(&requested_output) != current_output {
-                    self.niri
-                        .layout
-                        .move_to_output(Some(&window), &requested_output, None);
+                    self.niri.layout.move_to_output(
+                        Some(&window),
+                        &requested_output,
+                        None,
+                        ActivateWindow::Smart,
+                    );
                 }
             }
 

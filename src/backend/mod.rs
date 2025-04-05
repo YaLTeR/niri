@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use niri_config::{Config, ModKey};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
-use crate::input::CompositorMod;
 use crate::niri::Niri;
 use crate::utils::id::IdCounter;
 
@@ -94,11 +94,16 @@ impl Backend {
         }
     }
 
-    pub fn mod_key(&self) -> CompositorMod {
+    pub fn mod_key(&self, config: &Config) -> ModKey {
         match self {
-            Backend::Tty(_) => CompositorMod::Super,
-            Backend::Winit(_) => CompositorMod::Alt,
-            Backend::Headless(_) => CompositorMod::Super,
+            Backend::Winit(_) => config.input.mod_key_nested.unwrap_or({
+                if let Some(ModKey::Alt) = config.input.mod_key {
+                    ModKey::Super
+                } else {
+                    ModKey::Alt
+                }
+            }),
+            Backend::Tty(_) | Backend::Headless(_) => config.input.mod_key.unwrap_or(ModKey::Super),
         }
     }
 
