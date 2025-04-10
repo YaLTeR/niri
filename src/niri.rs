@@ -388,6 +388,9 @@ pub struct Niri {
     /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
     #[cfg(feature = "xdp-gnome-screencast")]
     pub dynamic_cast_id_for_portal: MappedId,
+
+    /// Whether Niri should ignore input events.
+    pub input_inhibited: bool,
 }
 
 #[derive(Debug)]
@@ -2435,6 +2438,9 @@ impl Niri {
 
             #[cfg(feature = "xdp-gnome-screencast")]
             dynamic_cast_id_for_portal: MappedId::next(),
+
+            // Whether Niri should ignore input events.
+            input_inhibited: false,
         };
 
         niri.reset_pointer_inactivity_timer();

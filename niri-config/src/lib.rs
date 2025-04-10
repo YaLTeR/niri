@@ -1716,6 +1716,8 @@ pub enum Action {
     SetDynamicCastWindowById(u64),
     SetDynamicCastMonitor(#[knuffel(argument)] Option<String>),
     ClearDynamicCastTarget,
+    #[knuffel(skip)]
+    InhibitInput(bool),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1980,6 +1982,7 @@ impl From<niri_ipc::Action> for Action {
                 Self::SetDynamicCastMonitor(output)
             }
             niri_ipc::Action::ClearDynamicCastTarget {} => Self::ClearDynamicCastTarget,
+            niri_ipc::Action::InhibitInput { inhibited } => Self::InhibitInput(inhibited),
         }
     }
 }

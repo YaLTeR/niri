@@ -87,6 +87,21 @@ impl State {
     {
         let _span = tracy_client::span!("process_input_event");
 
+        // If input is inhibited, ignore almost all events except device add/remove
+        // which we might still need to handle correctly.
+        if self.niri.input_inhibited {
+            match &event {
+                InputEvent::DeviceAdded { .. } | InputEvent::DeviceRemoved { .. } => {
+                    // Allow device add/remove events through even when inhibited
+                }
+                _ => {
+                    // Optionally log that an event was ignored
+                    // trace!("Ignoring input event due to input inhibited state");
+                    return;
+                }
+            }
+        }
+
         // Make sure some logic like workspace clean-up has a chance to run before doing actions.
         self.niri.advance_animations();
 
@@ -356,17 +371,19 @@ impl State {
 
         let is_inhibiting_shortcuts = self.is_inhibiting_shortcuts();
 
-        let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
+        let keyboard_input_result = self.niri.seat.get_keyboard().unwrap().input(
             self,
             event.key_code(),
             event.state(),
             serial,
             time,
+            // --- Closure Start ---
             |this, mods, keysym| {
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
 
+                // --- Check Exit Dialog ---
                 if let Some(dialog) = &this.niri.exit_confirm_dialog {
                     if dialog.is_open() && pressed && raw == Some(Keysym::Return) {
                         info!("quitting after confirming exit dialog");
@@ -378,6 +395,7 @@ impl State {
                     }
                 }
 
+                // --- Check Cancel Picking ---
                 if pressed
                     && raw == Some(Keysym::Escape)
                     && (this.niri.pick_window.is_some() || this.niri.pick_color.is_some())
@@ -393,10 +411,12 @@ impl State {
                     return FilterResult::Intercept(None);
                 }
 
-                let bindings = &this.niri.config.borrow().binds;
-                should_intercept_key(
+                // --- Determine Filter Result based on Binds/Context ---
+                // This function also updates `this.niri.suppressed_keys` based on whether
+                // a key press/release matches a bind.
+                let filter_result = should_intercept_key(
                     &mut this.niri.suppressed_keys,
-                    bindings,
+                    &this.niri.config.borrow().binds,
                     mod_key,
                     key_code,
                     modified,
@@ -406,16 +426,41 @@ impl State {
                     &this.niri.screenshot_ui,
                     this.niri.config.borrow().input.disable_power_key_handling,
                     is_inhibiting_shortcuts,
-                )
+                );
+
+                // --- Check Custom Input Inhibition ---
+                if this.niri.input_inhibited {
+                    // When inhibited, always intercept the event entirely.
+                    // Do not execute binds, do not forward to client.
+                    // The keyboard handler's internal state *is* still updated by smithay,
+                    // preventing stuck modifiers within niri itself.
+                    // `should_intercept_key` still runs to manage suppressed_keys correctly
+                    // for cases where inhibition starts/stops between press/release.
+                    FilterResult::Intercept(None)
+                } else {
+                    // Not inhibited by our custom flag, return the original filter result.
+                    filter_result
+                }
             },
-        ) else {
+            // --- Closure End ---
+        );
+
+        // keyboard_input_result is the *final* result after considering inhibition.
+        // It contains Some(Some(bind)) only if a bind was found *and* we were *not* inhibited.
+        let Some(Some(bind)) = keyboard_input_result else {
+            // Event was forwarded, intercepted with no action, or inhibited. Nothing more to do here.
             return;
         };
 
+        // We only reach here if a bind was found *and* we are *not* inhibited by niri.input_inhibited.
+        // This must be a key press event, because releases that match a bind are returned as Intercept(None).
         if !pressed {
-            return;
+           // Should be unreachable due to the logic inside the closure for releases matching binds.
+           warn!("Bind action triggered on key release, this should not happen.");
+           return;
         }
 
+        // Execute the bind
         self.handle_bind(bind.clone());
 
         self.start_key_repeat(bind);
@@ -659,6 +704,10 @@ impl State {
                         inhibitor.activate();
                     }
                 }
+            }
+            Action::InhibitInput(inhibited) => {
+                info!("Setting input inhibited state to: {}", inhibited);
+                self.niri.input_inhibited = inhibited;
             }
             Action::CloseWindow => {
                 if let Some(mapped) = self.niri.layout.focus() {
@@ -3478,6 +3527,7 @@ fn allowed_when_locked(action: &Action) -> bool {
             | Action::PowerOnMonitors
             | Action::SwitchLayout(_)
             | Action::ToggleKeyboardShortcutsInhibit
+            | Action::InhibitInput(_)
     )
 }
 
