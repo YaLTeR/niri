@@ -764,6 +764,24 @@ pub enum Action {
     },
     /// Clear the dynamic cast target, making it show nothing.
     ClearDynamicCastTarget {},
+    /// Toggle urgent status of a window.
+    ToggleUrgent {
+        /// Id of the window to toggle urgent.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+    },
+    /// Set urgent status of a window.
+    SetUrgent {
+        /// Id of the window to set urgent.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+    },
+    /// Unset urgent status of a window.
+    UnsetUrgent {
+        /// Id of the window to unset urgent.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+    },
 }
 
 /// Change in window or column size.
@@ -1111,6 +1129,8 @@ pub struct Workspace {
     ///
     /// Can be `None` if no outputs are currently connected.
     pub output: Option<String>,
+    /// Whether the workspace currently has an urgent window in its output.
+    pub is_urgent: bool,
     /// Whether the workspace is currently active on its output.
     ///
     /// Every output has one active workspace, the one that is currently visible on that output.
@@ -1184,6 +1204,13 @@ pub enum Event {
         /// This configuration completely replaces the previous configuration. I.e. if any
         /// workspaces are missing from here, then they were deleted.
         workspaces: Vec<Workspace>,
+    },
+    /// A window on a workspace became urgent.
+    WorkspaceUrgencyChanged {
+        /// Id of the workspace.
+        id: u64,
+        /// Whether this workspace has an urgent window.
+        urgent: bool,
     },
     /// A workspace was activated on an output.
     ///
