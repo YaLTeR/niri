@@ -2880,9 +2880,9 @@ impl Niri {
         let mon = self.layout.monitor_for_output(output).unwrap();
         if !mon.render_above_top_layer()
             && (layer_popup_under(Layer::Top)
+                || layer_toplevel_under(Layer::Top)
                 || layer_popup_under(Layer::Bottom)
-                || layer_popup_under(Layer::Background)
-                || layer_toplevel_under(Layer::Top))
+                || layer_popup_under(Layer::Background))
         {
             return None;
         }
@@ -3008,17 +3008,17 @@ impl Niri {
             under = under
                 .or_else(window_under)
                 .or_else(|| layer_popup_under(Layer::Top))
+                .or_else(|| layer_toplevel_under(Layer::Top))
                 .or_else(|| layer_popup_under(Layer::Bottom))
                 .or_else(|| layer_popup_under(Layer::Background))
-                .or_else(|| layer_toplevel_under(Layer::Top))
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
             under = under
                 .or_else(|| layer_popup_under(Layer::Top))
+                .or_else(|| layer_toplevel_under(Layer::Top))
                 .or_else(|| layer_popup_under(Layer::Bottom))
                 .or_else(|| layer_popup_under(Layer::Background))
-                .or_else(|| layer_toplevel_under(Layer::Top))
                 .or_else(window_under)
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
@@ -3791,10 +3791,13 @@ impl Niri {
         extend_from_layer(&mut layer_elems, Layer::Overlay);
         elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
 
-        // Collect all other layer-shell elements.
+        // Collect the top layer elements.
         let mut layer_elems = SplitElements::default();
         extend_from_layer(&mut layer_elems, Layer::Top);
-        let top_layer_normal = mem::take(&mut layer_elems.normal);
+        let top_layer = layer_elems;
+
+        // Collect all other layer-shell elements.
+        let mut layer_elems = SplitElements::default();
         extend_from_layer(&mut layer_elems, Layer::Bottom);
         extend_from_layer(&mut layer_elems, Layer::Background);
 
@@ -3808,12 +3811,12 @@ impl Niri {
             );
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
 
+            elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
             elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
-            elements.extend(top_layer_normal.into_iter().map(OutputRenderElements::from));
             elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
         } else {
+            elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
             elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
-            elements.extend(top_layer_normal.into_iter().map(OutputRenderElements::from));
 
             elements.extend(
                 int_move_elements
