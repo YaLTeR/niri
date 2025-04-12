@@ -123,8 +123,8 @@ impl Animation {
             ),
             Kind::Spring(spring) => {
                 let spring = Spring {
-                    from: self.from,
-                    to: self.to,
+                    from,
+                    to,
                     initial_velocity: self.initial_velocity,
                     params: spring.params,
                 };
