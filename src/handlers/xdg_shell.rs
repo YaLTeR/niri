@@ -1062,6 +1062,19 @@ impl State {
         // The target geometry for the positioner should be relative to its parent's geometry, so
         // we will compute that here.
         let mut target = Rectangle::from_size(output_geo.size);
+
+        // Background and bottom layer popups render below the top and the overlay layer, so let's
+        // put them into the non-exclusive zone.
+        //
+        // FIXME: ideally this should use the "top and overlay layer" non-exclusive zone, but
+        // Smithay only computes the "all layers" non-exclusive zone atm.
+        //
+        // FIXME: related to the above, top layer popups should use the "overlay layer"
+        // non-exclusive zone.
+        if matches!(layer_surface.layer(), Layer::Background | Layer::Bottom) {
+            target = map.non_exclusive_zone();
+        }
+
         target.loc -= layer_geo.loc;
         target.loc -= get_popup_toplevel_coords(popup);
 
