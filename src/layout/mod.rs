@@ -4476,7 +4476,7 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn render_floating_for_output<'a, R: NiriRenderer + 'a>(
+    pub fn render_interactive_move_for_output<'a, R: NiriRenderer + 'a>(
         &'a self,
         renderer: &mut R,
         output: &Output,

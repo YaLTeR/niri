@@ -3774,9 +3774,9 @@ impl Niri {
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
         let monitor_elements: Vec<_> = mon.render_elements(renderer, target, focus_ring).collect();
-        let float_elements: Vec<_> = self
+        let int_move_elements: Vec<_> = self
             .layout
-            .render_floating_for_output(renderer, output, target)
+            .render_interactive_move_for_output(renderer, output, target)
             .collect();
 
         // Get layer-shell elements.
@@ -3801,7 +3801,11 @@ impl Niri {
         // When rendering above the top layer, we put the regular monitor elements first.
         // Otherwise, we will render all layer-shell pop-ups and the top layer on top.
         if mon.render_above_top_layer() {
-            elements.extend(float_elements.into_iter().map(OutputRenderElements::from));
+            elements.extend(
+                int_move_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
 
             elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
@@ -3811,7 +3815,11 @@ impl Niri {
             elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
             elements.extend(top_layer_normal.into_iter().map(OutputRenderElements::from));
 
-            elements.extend(float_elements.into_iter().map(OutputRenderElements::from));
+            elements.extend(
+                int_move_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
 
             elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
