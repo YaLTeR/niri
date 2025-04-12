@@ -2837,17 +2837,11 @@ impl Niri {
         Some((output, pos_within_output))
     }
 
-    /// Returns the window under the position to be activated.
-    ///
-    /// The cursor may be inside the window's activation region, but not within the window's input
-    /// region.
-    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Mapped> {
-        if self.is_locked() || self.screenshot_ui.is_open() {
-            return None;
-        }
-
-        let (output, pos_within_output) = self.output_under(pos)?;
-
+    pub fn is_layout_obscured_under(
+        &self,
+        output: &Output,
+        pos_within_output: Point<f64, Logical>,
+    ) -> bool {
         // The ordering here must be consistent with the ordering in render() so that input is
         // consistent with the visuals.
 
@@ -2874,7 +2868,7 @@ impl Niri {
         let layer_popup_under = |layer| layer_surface_under(layer, true);
 
         if layer_popup_under(Layer::Overlay) || layer_toplevel_under(Layer::Overlay) {
-            return None;
+            return true;
         }
 
         let mon = self.layout.monitor_for_output(output).unwrap();
@@ -2884,6 +2878,24 @@ impl Niri {
                 || layer_popup_under(Layer::Bottom)
                 || layer_popup_under(Layer::Background))
         {
+            return true;
+        }
+
+        false
+    }
+
+    /// Returns the window under the position to be activated.
+    ///
+    /// The cursor may be inside the window's activation region, but not within the window's input
+    /// region.
+    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Mapped> {
+        if self.is_locked() || self.screenshot_ui.is_open() {
+            return None;
+        }
+
+        let (output, pos_within_output) = self.output_under(pos)?;
+
+        if self.is_layout_obscured_under(output, pos_within_output) {
             return None;
         }
 
