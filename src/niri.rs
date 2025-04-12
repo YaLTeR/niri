@@ -2872,11 +2872,14 @@ impl Niri {
         }
 
         let mon = self.layout.monitor_for_output(output).unwrap();
-        if !mon.render_above_top_layer()
-            && (layer_popup_under(Layer::Top)
-                || layer_toplevel_under(Layer::Top)
-                || layer_popup_under(Layer::Bottom)
-                || layer_popup_under(Layer::Background))
+        if mon.render_above_top_layer() {
+            return false;
+        }
+
+        if layer_popup_under(Layer::Top)
+            || layer_toplevel_under(Layer::Top)
+            || layer_popup_under(Layer::Bottom)
+            || layer_popup_under(Layer::Background)
         {
             return true;
         }
