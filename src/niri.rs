@@ -331,11 +331,8 @@ pub struct Niri {
     /// taking grabs into account is expected, because we pass the information to pointer.motion()
     /// which passes it down through grabs, which decide what to do with it as they see fit.
     pub pointer_contents: PointContents,
-    /// Whether the pointer is hidden, for example due to a previous touch input.
-    ///
-    /// When this happens, the pointer also loses any focus. This is so that touch can prevent
-    /// various tooltips from sticking around.
-    pub pointer_hidden: bool,
+    /// Pointer visibility state
+    pub pointer_visibility: PointerVisibility,
     pub pointer_inactivity_timer: Option<RegistrationToken>,
     /// Whether the pointer inactivity timer got reset this event loop iteration.
     ///
@@ -393,6 +390,25 @@ pub struct Niri {
     /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
     #[cfg(feature = "xdp-gnome-screencast")]
     pub dynamic_cast_id_for_portal: MappedId,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PointerVisibility {
+    /// Cursor is in its normal state.
+    #[default]
+    Visible,
+    /// Cursor is invisible, but remains its current focus.
+    Hidden,
+    /// Cursor is invisible and loses any focus, for example due to a previous touch input.
+    ///
+    /// This is so that touch can prevent various tooltips from sticking around.
+    Disabled,
+}
+
+impl PointerVisibility {
+    pub fn is_visible(&self) -> bool {
+        matches!(self, Self::Visible)
+    }
 }
 
 #[derive(Debug)]
@@ -911,10 +927,9 @@ impl State {
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
-        let under = if self.niri.pointer_hidden {
-            PointContents::default()
-        } else {
-            self.niri.contents_under(location)
+        let under = match self.niri.pointer_visibility {
+            PointerVisibility::Disabled => PointContents::default(),
+            _ => self.niri.contents_under(location),
         };
 
         // We're not changing the global cursor location here, so if the contents did not change,
@@ -2424,7 +2439,7 @@ impl Niri {
             cursor_shape_manager_state,
             dnd_icon: None,
             pointer_contents: PointContents::default(),
-            pointer_hidden: false,
+            pointer_visibility: PointerVisibility::default(),
             pointer_inactivity_timer: None,
             pointer_inactivity_timer_got_reset: false,
             notified_activity_this_iteration: false,
@@ -3420,7 +3435,7 @@ impl Niri {
         renderer: &mut R,
         output: &Output,
     ) -> Vec<OutputRenderElements<R>> {
-        if self.pointer_hidden {
+        if !self.pointer_visibility.is_visible() {
             return vec![];
         }
 
@@ -3507,7 +3522,7 @@ impl Niri {
     }
 
     pub fn refresh_pointer_outputs(&mut self) {
-        if self.pointer_hidden {
+        if !self.pointer_visibility.is_visible() {
             return;
         }
 
@@ -5850,7 +5865,7 @@ impl Niri {
             .event_loop
             .insert_source(timer, move |_, _, state| {
                 state.niri.pointer_inactivity_timer = None;
-                state.niri.pointer_hidden = true;
+                state.niri.pointer_visibility = PointerVisibility::Hidden;
                 state.niri.queue_redraw_all();
 
                 TimeoutAction::Drop
