@@ -925,6 +925,11 @@ impl State {
             return false;
         }
 
+        // Disable the hidden pointer if content underneath has changed
+        if !self.niri.pointer_visibility.is_visible() {
+            self.niri.pointer_visibility = PointerVisibility::Disabled;
+        }
+
         self.niri.pointer_contents.clone_from(&under);
 
         pointer.motion(
