@@ -41,7 +41,7 @@ use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
-use crate::niri::{CastTarget, State};
+use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
@@ -467,7 +467,7 @@ impl State {
             return;
         }
 
-        self.niri.pointer_hidden = true;
+        self.niri.pointer_visibility = PointerVisibility::Hidden;
         self.niri.queue_redraw_all();
     }
 
@@ -1934,7 +1934,7 @@ impl State {
         let mut new_pos = pos + event.delta();
 
         // We received an event for the regular pointer, so show it now.
-        self.niri.pointer_hidden = false;
+        self.niri.pointer_visibility = PointerVisibility::Visible;
         self.niri.tablet_cursor_location = None;
 
         // Check if we have an active pointer constraint.
@@ -2167,7 +2167,7 @@ impl State {
         self.niri.maybe_activate_pointer_constraint();
 
         // We moved the pointer, show it.
-        self.niri.pointer_hidden = false;
+        self.niri.pointer_visibility = PointerVisibility::Visible;
 
         // We moved the regular pointer, so show it now.
         self.niri.tablet_cursor_location = None;
@@ -2232,7 +2232,7 @@ impl State {
             }
 
             // We received an event for the regular pointer, so show it now.
-            self.niri.pointer_hidden = false;
+            self.niri.pointer_visibility = PointerVisibility::Visible;
             self.niri.tablet_cursor_location = None;
 
             if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
@@ -2431,7 +2431,7 @@ impl State {
         // We received an event for the regular pointer, so show it now. This is also needed for
         // update_pointer_contents() below to return the real contents, necessary for the pointer
         // axis event to reach the window.
-        self.niri.pointer_hidden = false;
+        self.niri.pointer_visibility = PointerVisibility::Visible;
         self.niri.tablet_cursor_location = None;
 
         let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
@@ -2663,7 +2663,7 @@ impl State {
                 event.time_msec(),
             );
 
-            self.niri.pointer_hidden = false;
+            self.niri.pointer_visibility = PointerVisibility::Visible;
             self.niri.tablet_cursor_location = Some(pos);
         }
 
@@ -2730,7 +2730,7 @@ impl State {
                             event.time_msec(),
                         );
                     }
-                    self.niri.pointer_hidden = false;
+                    self.niri.pointer_visibility = PointerVisibility::Visible;
                     self.niri.tablet_cursor_location = Some(pos);
                 }
                 ProximityState::Out => {
@@ -2744,7 +2744,7 @@ impl State {
                         self.move_cursor(pos);
                     }
 
-                    self.niri.pointer_hidden = false;
+                    self.niri.pointer_visibility = PointerVisibility::Visible;
                     self.niri.tablet_cursor_location = None;
                 }
             }
@@ -3106,7 +3106,7 @@ impl State {
         );
 
         // We're using touch, hide the pointer.
-        self.niri.pointer_hidden = true;
+        self.niri.pointer_visibility = PointerVisibility::Disabled;
     }
     fn on_touch_up<I: InputBackend>(&mut self, evt: I::TouchUpEvent) {
         let Some(handle) = self.niri.seat.get_touch() else {
