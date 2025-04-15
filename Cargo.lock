@@ -330,6 +330,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "atomic_float"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "628d228f918ac3b82fe590352cc719d30664a0c13ca3a60266fe02c7132d480a"
+
+[[package]]
 name = "autocfg"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3401,10 +3407,11 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.5.0"
-source = "git+https://github.com/Smithay/smithay.git#16d3c0f36c0c27c46ad44f1c9d8a592cca92b1c3"
+source = "git+https://github.com/Smithay/smithay.git#5420c2225c66ed12d3e2faa3ec5fe36075051e51"
 dependencies = [
  "aliasable",
  "appendlist",
+ "atomic_float",
  "bitflags 2.9.0",
  "calloop 0.14.2",
  "cc",
@@ -3473,7 +3480,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#16d3c0f36c0c27c46ad44f1c9d8a592cca92b1c3"
+source = "git+https://github.com/Smithay/smithay.git#5420c2225c66ed12d3e2faa3ec5fe36075051e51"
 dependencies = [
  "drm",
  "libdisplay-info",
