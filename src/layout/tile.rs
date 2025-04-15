@@ -25,8 +25,8 @@ use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::RenderTarget;
-use crate::utils::round_logical_in_physical;
 use crate::utils::transaction::Transaction;
+use crate::utils::{round_logical_in_physical, round_logical_in_physical_max1};
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -105,6 +105,11 @@ pub struct Tile<W: LayoutElement> {
 
     /// Scale of the output the tile is on (and rounds its sizes to).
     scale: f64,
+
+    /// Extra scale used for rendering.
+    ///
+    /// Applied on top of `scale` and used for visuals only (does not affect the layout).
+    extra_overview_scale: f64,
 
     /// Clock for driving animations.
     pub(super) clock: Clock,
@@ -193,6 +198,7 @@ impl<W: LayoutElement> Tile<W> {
             rounded_corner_damage: Default::default(),
             view_size,
             scale,
+            extra_overview_scale: 1.,
             clock,
             options,
         }
@@ -346,8 +352,16 @@ impl<W: LayoutElement> Tile<W> {
                 .is_some_and(|alpha| !alpha.anim.is_done())
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        view_rect: Rectangle<f64, Logical>,
+        extra_overview_scale: f64,
+    ) {
         let rules = self.window.rules();
+
+        self.extra_overview_scale = extra_overview_scale;
+        let visual_scale = self.scale * extra_overview_scale;
 
         let draw_border_with_background = rules
             .draw_border_with_background
@@ -371,7 +385,7 @@ impl<W: LayoutElement> Tile<W> {
                 view_rect.size,
             ),
             radius,
-            self.scale,
+            visual_scale,
             1.,
         );
 
@@ -386,7 +400,7 @@ impl<W: LayoutElement> Tile<W> {
             self.animated_tile_size(),
             is_active,
             radius,
-            self.scale,
+            visual_scale,
             1.,
         );
 
@@ -402,7 +416,7 @@ impl<W: LayoutElement> Tile<W> {
             !draw_focus_ring_with_background,
             view_rect,
             radius,
-            self.scale,
+            visual_scale,
             1.,
         );
     }
@@ -546,6 +560,12 @@ impl<W: LayoutElement> Tile<W> {
         Some(self.border.width())
     }
 
+    pub fn visual_effective_border_width(&self) -> Option<f64> {
+        let visual_scale = self.scale * self.extra_overview_scale;
+        self.effective_border_width()
+            .map(move |w| round_logical_in_physical_max1(visual_scale, w))
+    }
+
     /// Returns the location of the window's visual geometry within this Tile.
     pub fn window_loc(&self) -> Point<f64, Logical> {
         let mut loc = Point::from((0., 0.));
@@ -571,6 +591,38 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if let Some(width) = self.effective_border_width() {
+            loc += (width, width).into();
+        }
+
+        loc
+    }
+
+    pub fn visual_window_loc(&self) -> Point<f64, Logical> {
+        let mut loc = Point::from((0., 0.));
+
+        let visual_scale = self.scale * self.extra_overview_scale;
+
+        // In fullscreen, center the window in the given size.
+        if self.is_fullscreen {
+            let window_size = self.window_size();
+            let target_size = self.view_size;
+
+            // Windows aren't supposed to be larger than the fullscreen size, but in case we get
+            // one, leave it at the top-left as usual.
+            if window_size.w < target_size.w {
+                loc.x += (target_size.w - window_size.w) / 2.;
+            }
+            if window_size.h < target_size.h {
+                loc.y += (target_size.h - window_size.h) / 2.;
+            }
+
+            // Round to physical pixels.
+            loc = loc
+                .to_physical_precise_round(visual_scale)
+                .to_logical(visual_scale);
+        }
+
+        if let Some(width) = self.visual_effective_border_width() {
             loc += (width, width).into();
         }
 
@@ -635,6 +687,8 @@ impl<W: LayoutElement> Tile<W> {
     pub fn animated_window_size(&self) -> Size<f64, Logical> {
         let mut size = self.window_size();
 
+        let visual_scale = self.scale * self.extra_overview_scale;
+
         if let Some(resize) = &self.resize_animation {
             let val = resize.anim.value();
             let size_from = resize.size_from.to_f64();
@@ -642,8 +696,8 @@ impl<W: LayoutElement> Tile<W> {
             size.w = f64::max(1., size_from.w + (size.w - size_from.w) * val);
             size.h = f64::max(1., size_from.h + (size.h - size_from.h) * val);
             size = size
-                .to_physical_precise_round(self.scale)
-                .to_logical(self.scale);
+                .to_physical_precise_round(visual_scale)
+                .to_logical(visual_scale);
         }
 
         size
@@ -652,15 +706,20 @@ impl<W: LayoutElement> Tile<W> {
     pub fn animated_tile_size(&self) -> Size<f64, Logical> {
         let mut size = self.animated_window_size();
 
+        let visual_scale = self.scale * self.extra_overview_scale;
+
         if self.is_fullscreen {
             // Normally we'd just return the fullscreen size here, but this makes things a bit
             // nicer if a fullscreen window is bigger than the fullscreen size for some reason.
             size.w = f64::max(size.w, self.view_size.w);
             size.h = f64::max(size.h, self.view_size.h);
+            size = size
+                .to_physical_precise_round(visual_scale)
+                .to_logical(visual_scale);
             return size;
         }
 
-        if let Some(width) = self.effective_border_width() {
+        if let Some(width) = self.visual_effective_border_width() {
             size.w += width * 2.;
             size.h += width * 2.;
         }
@@ -798,10 +857,12 @@ impl<W: LayoutElement> Tile<W> {
             return Point::from((0., 0.));
         }
 
+        let visual_scale = self.scale * self.extra_overview_scale;
+
         let now = self.clock.now().as_secs_f64();
         let amplitude = self.view_size.h / 96.;
         let y = amplitude * ((f64::consts::TAU * now / 3.6).sin() - 1.);
-        let y = round_logical_in_physical(self.scale, y);
+        let y = round_logical_in_physical(visual_scale, y);
         Point::from((0., y))
     }
 
@@ -826,6 +887,7 @@ impl<W: LayoutElement> Tile<W> {
         let _span = tracy_client::span!("Tile::render_inner");
 
         let scale = Scale::from(self.scale);
+        let visual_scale = scale * self.extra_overview_scale;
 
         let win_alpha = if self.is_fullscreen || self.window.is_ignoring_opacity_window_rule() {
             1.
@@ -843,7 +905,7 @@ impl<W: LayoutElement> Tile<W> {
         // passed to update_render_elements(). But, it works well enough for what it is.
         let location = location + self.bob_offset();
 
-        let window_loc = self.window_loc();
+        let window_loc = self.visual_window_loc();
         let window_size = self.window_size().to_f64();
         let animated_window_size = self.animated_window_size();
         let window_render_loc = location + window_loc;
@@ -1035,7 +1097,7 @@ impl<W: LayoutElement> Tile<W> {
         });
         let rv = rv.chain(elem);
 
-        let elem = self.effective_border_width().map(|width| {
+        let elem = self.visual_effective_border_width().map(|width| {
             self.border
                 .render(renderer, location + Point::from((width, width)))
                 .map(Into::into)

@@ -368,21 +368,32 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.are_transitions_ongoing() || self.floating.are_transitions_ongoing()
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, is_overview_open: bool) {
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        is_overview_open: bool,
+        extra_overview_scale: f64,
+    ) {
         self.scrolling.update_render_elements(
             is_active && !self.floating_is_active.get(),
             is_overview_open,
+            extra_overview_scale,
         );
 
         let view_rect = Rectangle::from_size(self.view_size);
-        self.floating
-            .update_render_elements(is_active && self.floating_is_active.get(), view_rect);
+        self.floating.update_render_elements(
+            is_active && self.floating_is_active.get(),
+            view_rect,
+            extra_overview_scale,
+        );
+
+        let visual_scale = self.scale.fractional_scale() * extra_overview_scale;
 
         self.shadow.update_render_elements(
             self.view_size,
             true,
             CornerRadius::default(),
-            self.scale.fractional_scale(),
+            visual_scale,
             1.,
         );
     }
@@ -1500,7 +1511,7 @@ impl<W: LayoutElement> Workspace<W> {
             if tile.window().id() == window {
                 let view_pos = Point::from((-tile_pos.x, -tile_pos.y));
                 let view_rect = Rectangle::new(view_pos, view_size);
-                tile.update_render_elements(false, view_rect);
+                tile.update_render_elements(false, view_rect, 1.);
                 tile.store_unmap_snapshot_if_empty(renderer);
                 return;
             }

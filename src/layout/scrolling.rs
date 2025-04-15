@@ -21,7 +21,7 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
-use crate::utils::ResizeEdge;
+use crate::utils::{round_logical_in_physical_max1, ResizeEdge};
 use crate::window::ResolvedWindowRules;
 
 /// Amount of touchpad movement to scroll the view for the width of one working area.
@@ -83,6 +83,11 @@ pub struct ScrollingSpace<W: LayoutElement> {
 
     /// Scale of the output the space is on (and rounds its sizes to).
     scale: f64,
+
+    /// Extra scale used for rendering.
+    ///
+    /// Applied on top of `scale` and used for visuals only (does not affect the layout).
+    extra_overview_scale: f64,
 
     /// Clock for driving animations.
     clock: Clock,
@@ -288,6 +293,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             view_size,
             working_area,
             scale,
+            extra_overview_scale: 1.,
             clock,
             options,
         }
@@ -371,7 +377,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             || !self.closing_windows.is_empty()
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, is_overview_open: bool) {
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        is_overview_open: bool,
+        extra_overview_scale: f64,
+    ) {
+        self.extra_overview_scale = extra_overview_scale;
+
         let view_pos = Point::from((self.view_pos(), 0.));
         let view_size = self.view_size;
         let active_idx = self.active_column_idx;
@@ -380,7 +393,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let col_off = Point::from((col_x, 0.));
             let col_pos = view_pos - col_off - col.render_offset();
             let view_rect = Rectangle::new(col_pos, view_size);
-            col.update_render_elements(is_active, view_rect);
+            col.update_render_elements(is_active, view_rect, extra_overview_scale);
         }
 
         if let Some(insert_hint) = &self.insert_hint {
@@ -2183,14 +2196,41 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .unwrap()
     }
 
+    fn visual_column_xs(
+        &self,
+        data: impl Iterator<Item = ColumnData>,
+    ) -> impl Iterator<Item = f64> {
+        let visual_scale = self.scale * self.extra_overview_scale;
+        let gaps = round_logical_in_physical_max1(visual_scale, self.options.gaps);
+        // let gaps = self.options.gaps / self.extra_overview_scale;
+
+        let mut x = 0.;
+
+        // Chain with a dummy value to be able to get one past all columns' X.
+        let dummy = ColumnData { width: 0. };
+        let data = data.chain(iter::once(dummy));
+
+        data.map(move |data| {
+            let rv = x;
+            let width = round_logical_in_physical_max1(visual_scale, data.width);
+            // let width = data.width;
+            x += width + gaps;
+            rv
+        })
+    }
+
     fn column_xs_in_render_order(
         &self,
         data: impl Iterator<Item = ColumnData>,
     ) -> impl Iterator<Item = f64> {
         let active_idx = self.active_column_idx;
-        let active_pos = self.column_x(active_idx);
+        // let active_pos = self.column_x(active_idx);
+        let active_pos = self
+            .visual_column_xs(self.data.iter().copied())
+            .nth(active_idx)
+            .unwrap();
         let offsets = self
-            .column_xs(data)
+            .visual_column_xs(data)
             .enumerate()
             .filter_map(move |(idx, pos)| (idx != active_idx).then_some(pos));
         iter::once(active_pos).chain(offsets)
@@ -2234,7 +2274,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn tiles_with_render_positions(
         &self,
     ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>, bool)> {
-        let scale = self.scale;
+        let scale = self.scale * self.extra_overview_scale;
         let view_off = Point::from((-self.view_pos(), 0.));
         self.columns_in_render_order()
             .flat_map(move |(col, col_x)| {
@@ -2255,7 +2295,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         &mut self,
         round: bool,
     ) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> {
-        let scale = self.scale;
+        let scale = self.scale * self.extra_overview_scale;
         let view_off = Point::from((-self.view_pos(), 0.));
         self.columns_in_render_order_mut()
             .flat_map(move |(col, col_x)| {
@@ -2733,6 +2773,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let mut rv = vec![];
 
         let scale = Scale::from(self.scale);
+        let visual_scale = scale * self.extra_overview_scale;
 
         // Draw the insert hint.
         if let Some(insert_hint) = &self.insert_hint {
@@ -2767,7 +2808,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // Draw the tab indicator on top.
             {
                 let pos = view_off + col_off + col_render_off;
-                let pos = pos.to_physical_precise_round(scale).to_logical(scale);
+                let pos = pos
+                    .to_physical_precise_round(visual_scale)
+                    .to_logical(visual_scale);
                 rv.extend(col.tab_indicator.render(renderer, pos).map(Into::into));
             }
 
@@ -2775,7 +2818,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let tile_pos =
                     view_off + col_off + col_render_off + tile_off + tile.render_offset();
                 // Round to physical pixels.
-                let tile_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
+                let tile_pos = tile_pos
+                    .to_physical_precise_round(visual_scale)
+                    .to_logical(visual_scale);
 
                 // And now the drawing logic.
 
@@ -3822,14 +3867,19 @@ impl<W: LayoutElement> Column<W> {
             || self.tiles.iter().any(Tile::are_transitions_ongoing)
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        view_rect: Rectangle<f64, Logical>,
+        extra_overview_scale: f64,
+    ) {
         let active_idx = self.active_tile_idx;
         for (tile_idx, (tile, tile_off)) in self.tiles_mut().enumerate() {
             let is_active = is_active && tile_idx == active_idx;
 
             let mut tile_view_rect = view_rect;
             tile_view_rect.loc -= tile_off + tile.render_offset();
-            tile.update_render_elements(is_active, tile_view_rect);
+            tile.update_render_elements(is_active, tile_view_rect, extra_overview_scale);
         }
 
         let config = self.tab_indicator.config();
@@ -3855,7 +3905,7 @@ impl<W: LayoutElement> Column<W> {
             self.tiles.len(),
             tabs,
             is_active,
-            self.scale,
+            self.scale * extra_overview_scale,
         );
     }
 

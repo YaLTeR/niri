@@ -9,6 +9,7 @@ use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
+use crate::utils::round_logical_in_physical_max1;
 
 #[derive(Debug)]
 pub struct FocusRing {
@@ -64,7 +65,9 @@ impl FocusRing {
         scale: f64,
         alpha: f32,
     ) {
-        let width = self.config.width.0;
+        // let scale = scale * extra_visual_scale;
+        // let width = self.config.width.0 / extra_visual_scale;
+        let width = round_logical_in_physical_max1(scale, self.config.width.0);
         self.full_size = win_size + Size::from((width, width)).upscale(2.);
 
         let color = if is_active {

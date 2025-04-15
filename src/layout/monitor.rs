@@ -752,8 +752,9 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn update_render_elements(&mut self, is_active: bool) {
         let is_overview_open = self.overview_open;
+        let extra_overview_scale = self.workspace_scale();
         for (ws, _) in self.workspaces_with_render_geo_mut() {
-            ws.update_render_elements(is_active, is_overview_open);
+            ws.update_render_elements(is_active, is_overview_open, extra_overview_scale);
         }
     }
 
