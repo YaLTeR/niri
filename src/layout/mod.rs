@@ -45,6 +45,7 @@ use niri_config::{
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
 use scrolling::{Column, ColumnWidth, InsertHint, InsertPosition};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -55,7 +56,8 @@ use workspace::{WorkspaceAddWindowTarget, WorkspaceId};
 pub use self::monitor::MonitorRenderElement;
 use self::monitor::{Monitor, WorkspaceSwitch};
 use self::workspace::{OutputId, Workspace};
-use crate::animation::Clock;
+use crate::animation::{Animation, Clock};
+use crate::input::swipe_tracker::SwipeTracker;
 use crate::layout::scrolling::ScrollDirection;
 use crate::niri_render_elements;
 use crate::render_helpers::offscreen::OffscreenData;
@@ -95,6 +97,17 @@ const INTERACTIVE_MOVE_START_THRESHOLD: f64 = 256. * 256.;
 
 /// Opacity of interactively moved tiles targeting the scrolling layout.
 const INTERACTIVE_MOVE_ALPHA: f64 = 0.75;
+
+/// Scale of the workspaces when the overview is fully open.
+const OVERVIEW_WORKSPACE_SCALE: f64 = 0.25;
+
+/// Amount of touchpad movement to toggle the overview.
+const OVERVIEW_GESTURE_MOVEMENT: f64 = 300.;
+
+const OVERVIEW_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
+    stiffness: 0.5,
+    limit: 0.05,
+};
 
 /// Size-relative units.
 pub struct SizeFrac;
@@ -288,11 +301,18 @@ pub struct Layout<W: LayoutElement> {
     /// Ongoing interactive move.
     interactive_move: Option<InteractiveMoveState<W>>,
     /// Ongoing drag-and-drop operation.
-    dnd: Option<DndData>,
+    dnd: Option<DndData<W>>,
     /// Clock for driving animations.
     clock: Clock,
     /// Time that we last updated render elements for.
     update_render_elements_time: Duration,
+    /// Whether the overview is open.
+    ///
+    /// This is a boolean flag that controls things like where input goes to. The actual animation
+    /// is controlled by overview_progress.
+    overview_open: bool,
+    /// The overview zoom progress.
+    overview_progress: Option<OverviewProgress>,
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -414,11 +434,26 @@ struct InteractiveMoveData<W: LayoutElement> {
 }
 
 #[derive(Debug)]
-pub struct DndData {
+pub struct DndData<W: LayoutElement> {
     /// Output where the pointer is currently located.
     output: Output,
     /// Current pointer position within output.
     pointer_pos_within_output: Point<f64, Logical>,
+    /// Ongoing DnD hold to activate something.
+    hold: Option<DndHold<W>>,
+}
+
+#[derive(Debug)]
+struct DndHold<W: LayoutElement> {
+    /// Time when we started holding on the target.
+    start_time: Duration,
+    target: DndHoldTarget<W::Id>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum DndHoldTarget<WindowId> {
+    Window(WindowId),
+    Workspace(WorkspaceId),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -493,6 +528,21 @@ pub enum HitType {
     },
 }
 
+#[derive(Debug)]
+enum OverviewProgress {
+    Animation(Animation),
+    Gesture(OverviewGesture),
+}
+
+#[derive(Debug)]
+struct OverviewGesture {
+    tracker: SwipeTracker,
+    /// Start point.
+    start: f64,
+    /// Current progress.
+    value: f64,
+}
+
 impl<W: LayoutElement> InteractiveMoveState<W> {
     fn moving(&self) -> Option<&InteractiveMoveData<W>> {
         match self {
@@ -510,16 +560,16 @@ impl<W: LayoutElement> InteractiveMoveState<W> {
 }
 
 impl<W: LayoutElement> InteractiveMoveData<W> {
-    fn tile_render_location(&self) -> Point<f64, Logical> {
+    fn tile_render_location(&self, window_scale: f64) -> Point<f64, Logical> {
         let scale = Scale::from(self.output.current_scale().fractional_scale());
         let window_size = self.tile.window_size();
         let pointer_offset_within_window = Point::from((
             window_size.w * self.pointer_ratio_within_window.0,
             window_size.h * self.pointer_ratio_within_window.1,
         ));
-        let pos =
-            self.pointer_pos_within_output - pointer_offset_within_window - self.tile.window_loc()
-                + self.tile.render_offset();
+        let pos = self.pointer_pos_within_output
+            - (pointer_offset_within_window + self.tile.window_loc() - self.tile.render_offset())
+                .upscale(window_scale);
         // Round to physical pixels.
         pos.to_physical_precise_round(scale).to_logical(scale)
     }
@@ -552,6 +602,15 @@ impl HitType {
         let pos_within_tile = point - tile_pos;
         tile.hit(pos_within_tile)
             .map(|hit| (tile.window(), hit.offset_win_pos(tile_pos)))
+    }
+
+    pub fn to_activate(self) -> Self {
+        match self {
+            HitType::Input { .. } => HitType::Activate {
+                is_tab_indicator: false,
+            },
+            HitType::Activate { .. } => self,
+        }
     }
 }
 
@@ -611,6 +670,19 @@ impl Options {
     }
 }
 
+impl OverviewProgress {
+    fn value(&self) -> f64 {
+        match self {
+            OverviewProgress::Animation(anim) => anim.value(),
+            OverviewProgress::Gesture(gesture) => gesture.value,
+        }
+    }
+
+    fn is_animation(&self) -> bool {
+        matches!(self, OverviewProgress::Animation(_))
+    }
+}
+
 impl<W: LayoutElement> Layout<W> {
     pub fn new(clock: Clock, config: &Config) -> Self {
         Self::with_options_and_workspaces(clock, config, Options::from_config(config))
@@ -625,6 +697,8 @@ impl<W: LayoutElement> Layout<W> {
             dnd: None,
             clock,
             update_render_elements_time: Duration::ZERO,
+            overview_open: false,
+            overview_progress: None,
             options: Rc::new(options),
         }
     }
@@ -648,6 +722,8 @@ impl<W: LayoutElement> Layout<W> {
             dnd: None,
             clock,
             update_render_elements_time: Duration::ZERO,
+            overview_open: false,
+            overview_progress: None,
             options: opts,
         }
     }
@@ -751,6 +827,8 @@ impl<W: LayoutElement> Layout<W> {
                 let mut monitor =
                     Monitor::new(output, workspaces, self.clock.clone(), self.options.clone());
                 monitor.active_workspace_idx = active_workspace_idx;
+                monitor.overview_open = self.overview_open;
+                monitor.set_overview_progress(self.overview_progress.as_ref());
                 monitors.push(monitor);
 
                 MonitorSet::Normal {
@@ -789,6 +867,8 @@ impl<W: LayoutElement> Layout<W> {
                 let mut monitor =
                     Monitor::new(output, workspaces, self.clock.clone(), self.options.clone());
                 monitor.active_workspace_idx = active_workspace_idx;
+                monitor.overview_open = self.overview_open;
+                monitor.set_overview_progress(self.overview_progress.as_ref());
 
                 MonitorSet::Normal {
                     monitors: vec![monitor],
@@ -1112,6 +1192,12 @@ impl<W: LayoutElement> Layout<W> {
                             unreachable!()
                         };
 
+                        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+                            for mon in monitors {
+                                mon.dnd_scroll_gesture_end();
+                            }
+                        }
+
                         // Unlock the view on the workspaces.
                         for ws in self.workspaces_mut() {
                             ws.dnd_scroll_gesture_end();
@@ -1418,7 +1504,7 @@ impl<W: LayoutElement> Layout<W> {
                 let mut target = Rectangle::from_size(Size::from((width, height)));
                 // FIXME: ideally this shouldn't include the tile render offset, but the code
                 // duplication would be a bit annoying for this edge case.
-                target.loc.y -= move_.tile_render_location().y;
+                target.loc.y -= move_.tile_render_location(1.).y;
                 target.loc.y -= move_.tile.window_loc().y;
                 return target;
             }
@@ -1570,6 +1656,32 @@ impl<W: LayoutElement> Layout<W> {
                         _ => mon.switch_workspace(workspace_idx),
                     }
 
+                    return;
+                }
+            }
+        }
+    }
+
+    pub fn activate_window_without_switching_workspace(&mut self, window: &W::Id) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == window {
+                return;
+            }
+        }
+
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return;
+        };
+
+        for (monitor_idx, mon) in monitors.iter_mut().enumerate() {
+            for ws in &mut mon.workspaces {
+                if ws.activate_window(window) {
+                    *active_monitor_idx = monitor_idx;
                     return;
                 }
             }
@@ -2290,7 +2402,8 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            let tile_pos = move_.tile_render_location();
+            // TODO scale
+            let tile_pos = move_.tile_render_location(1.);
             return HitType::hit_tile(&move_.tile, tile_pos, pos_within_output);
         };
 
@@ -2311,6 +2424,40 @@ impl<W: LayoutElement> Layout<W> {
         mon.resize_edges_under(pos_within_output)
     }
 
+    pub fn workspace_under(
+        &self,
+        extended_bounds: bool,
+        output: &Output,
+        pos_within_output: Point<f64, Logical>,
+    ) -> Option<&Workspace<W>> {
+        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
+            return None;
+        };
+
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            // TODO scale
+            let tile_pos = move_.tile_render_location(1.);
+            if HitType::hit_tile(&move_.tile, tile_pos, pos_within_output).is_some() {
+                return None;
+            }
+        };
+
+        let mon = monitors.iter().find(|mon| &mon.output == output)?;
+        if extended_bounds {
+            mon.workspace_under(pos_within_output).map(|(ws, _)| ws)
+        } else {
+            mon.workspace_under_narrow(pos_within_output)
+        }
+    }
+
+    pub fn workspace_scale(&self) -> f64 {
+        if let Some(p) = &self.overview_progress {
+            (1. - p.value() * (1. - OVERVIEW_WORKSPACE_SCALE)).max(0.)
+        } else {
+            1.
+        }
+    }
+
     #[cfg(test)]
     fn verify_invariants(&self) {
         use std::collections::HashSet;
@@ -2318,6 +2465,8 @@ impl<W: LayoutElement> Layout<W> {
         use approx::assert_abs_diff_eq;
 
         use crate::layout::monitor::WorkspaceSwitch;
+
+        let ws_scale = self.workspace_scale();
 
         let mut move_win_id = None;
         if let Some(state) = &self.interactive_move {
@@ -2347,7 +2496,7 @@ impl<W: LayoutElement> Layout<W> {
                          base options adjusted for output scale"
                     );
 
-                    let tile_pos = move_.tile_render_location();
+                    let tile_pos = move_.tile_render_location(ws_scale);
                     let rounded_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
 
                     // Tile position must be rounded to physical pixels.
@@ -2453,6 +2602,12 @@ impl<W: LayoutElement> Layout<W> {
             assert_eq!(
                 monitor.options, self.options,
                 "monitor options must be synchronized with layout"
+            );
+
+            assert_eq!(self.overview_open, monitor.overview_open);
+            assert_eq!(
+                self.overview_progress.as_ref().map(|p| p.value()),
+                monitor.overview_progress_value()
             );
 
             if let Some(WorkspaceSwitch::Animation(anim)) = &monitor.workspace_switch {
@@ -2619,29 +2774,125 @@ impl<W: LayoutElement> Layout<W> {
         let _span = tracy_client::span!("Layout::advance_animations");
 
         let mut dnd_scroll = None;
+        let mut is_dnd = false;
         if let Some(dnd) = &self.dnd {
-            dnd_scroll = Some((dnd.output.clone(), dnd.pointer_pos_within_output));
+            dnd_scroll = Some((dnd.output.clone(), dnd.pointer_pos_within_output, true));
+            is_dnd = true;
         }
 
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             move_.tile.advance_animations();
 
-            if !move_.is_floating && dnd_scroll.is_none() {
-                dnd_scroll = Some((move_.output.clone(), move_.pointer_pos_within_output));
+            if dnd_scroll.is_none() {
+                dnd_scroll = Some((
+                    move_.output.clone(),
+                    move_.pointer_pos_within_output,
+                    !move_.is_floating,
+                ));
             }
         }
 
+        let is_overview_open = self.overview_open;
+
         // Scroll the view if needed.
-        if let Some((output, pos_within_output)) = dnd_scroll {
+        if let Some((output, pos_within_output, is_scrolling)) = dnd_scroll {
             if let Some(mon) = self.monitor_for_output_mut(&output) {
-                if let Some((ws, geo)) = mon.workspace_under(pos_within_output) {
-                    let ws_id = ws.id();
-                    let ws = mon
-                        .workspaces
-                        .iter_mut()
-                        .find(|ws| ws.id() == ws_id)
-                        .unwrap();
-                    ws.dnd_scroll_gesture_scroll(pos_within_output - geo.loc);
+                let mut scrolled = false;
+
+                let ws_scale = mon.workspace_scale().max(0.0001);
+                scrolled |= mon.dnd_scroll_gesture_scroll(pos_within_output, 1. / ws_scale);
+
+                if is_scrolling {
+                    if let Some((ws, geo)) = mon.workspace_under(pos_within_output) {
+                        let ws_id = ws.id();
+                        let ws = mon
+                            .workspaces
+                            .iter_mut()
+                            .find(|ws| ws.id() == ws_id)
+                            .unwrap();
+                        // As far as the DnD scroll gesture is concerned, the workspace spans across
+                        // the whole monitor horizontally.
+                        let ws_pos = Point::from((0., geo.loc.y));
+                        scrolled |=
+                            ws.dnd_scroll_gesture_scroll(pos_within_output - ws_pos, 1. / ws_scale);
+                    }
+                }
+
+                if scrolled {
+                    // Don't trigger DnD hold while scrolling.
+                    if let Some(dnd) = &mut self.dnd {
+                        dnd.hold = None;
+                    }
+                } else if is_dnd {
+                    let target = mon
+                        .window_under(pos_within_output)
+                        .map(|(win, _)| DndHoldTarget::Window(win.id().clone()))
+                        .or_else(|| {
+                            mon.workspace_under_narrow(pos_within_output)
+                                .map(|ws| DndHoldTarget::Workspace(ws.id()))
+                        });
+
+                    let dnd = self.dnd.as_mut().unwrap();
+                    if let Some(target) = target {
+                        let now = self.clock.now_unadjusted();
+                        let start_time = if let Some(hold) = &mut dnd.hold {
+                            if hold.target != target {
+                                hold.start_time = now;
+                            }
+                            hold.target = target;
+                            hold.start_time
+                        } else {
+                            let hold = dnd.hold.insert(DndHold {
+                                start_time: now,
+                                target,
+                            });
+                            hold.start_time
+                        };
+
+                        // Delay copied from gnome-shell.
+                        let delay = Duration::from_millis(750);
+                        if delay <= now.saturating_sub(start_time) {
+                            let hold = dnd.hold.take().unwrap();
+
+                            // Synchronize workspace switch to overview close to get a monotonic
+                            // animation.
+                            let config = is_overview_open
+                                .then_some(self.options.animations.overview_open_close.0);
+
+                            let mon = self.monitor_for_output_mut(&output).unwrap();
+
+                            let ws_idx = match hold.target {
+                                DndHoldTarget::Window(id) => mon
+                                    .workspaces
+                                    .iter_mut()
+                                    .position(|ws| ws.activate_window(&id))
+                                    .unwrap(),
+                                DndHoldTarget::Workspace(id) => {
+                                    mon.workspaces.iter().position(|ws| ws.id() == id).unwrap()
+                                }
+                            };
+
+                            mon.dnd_scroll_gesture_end();
+                            mon.activate_workspace_with_anim_config(ws_idx, config);
+
+                            self.focus_output(&output);
+
+                            if is_overview_open {
+                                self.toggle_overview();
+                            }
+                        }
+                    } else {
+                        // No target, reset the hold timer.
+                        dnd.hold = None;
+                    }
+                }
+            }
+        }
+
+        if !self.overview_open {
+            if let Some(OverviewProgress::Animation(anim)) = &mut self.overview_progress {
+                if anim.is_done() {
+                    self.overview_progress = None;
                 }
             }
         }
@@ -2649,6 +2900,7 @@ impl<W: LayoutElement> Layout<W> {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
+                    mon.set_overview_progress(self.overview_progress.as_ref());
                     mon.advance_animations();
                 }
             }
@@ -2681,6 +2933,14 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
+        if self
+            .overview_progress
+            .as_ref()
+            .is_some_and(|p| p.is_animation())
+        {
+            return true;
+        }
+
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             return false;
         };
@@ -2703,9 +2963,10 @@ impl<W: LayoutElement> Layout<W> {
 
         self.update_render_elements_time = self.clock.now();
 
+        let ws_scale = self.workspace_scale();
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if output.map_or(true, |output| move_.output == *output) {
-                let pos_within_output = move_.tile_render_location();
+                let pos_within_output = move_.tile_render_location(ws_scale);
                 let view_rect =
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output));
                 move_.tile.update_render_elements(true, view_rect);
@@ -2729,6 +2990,7 @@ impl<W: LayoutElement> Layout<W> {
                 let is_active = self.is_active
                     && idx == *active_monitor_idx
                     && !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_)));
+                mon.set_overview_progress(self.overview_progress.as_ref());
                 mon.update_render_elements(is_active);
             }
         }
@@ -2781,6 +3043,7 @@ impl<W: LayoutElement> Layout<W> {
         let _span = tracy_client::span!("Layout::update_insert_hint::update");
 
         if let Some(mon) = self.monitor_for_output_mut(&move_.output) {
+            let ws_scale = mon.workspace_scale().max(0.0001);
             if let Some((ws, geo)) = mon.workspace_under(move_.pointer_pos_within_output) {
                 let ws_id = ws.id();
                 let ws = mon
@@ -2789,7 +3052,9 @@ impl<W: LayoutElement> Layout<W> {
                     .find(|ws| ws.id() == ws_id)
                     .unwrap();
 
-                let position = ws.get_insert_position(move_.pointer_pos_within_output - geo.loc);
+                let pos_within_workspace =
+                    (move_.pointer_pos_within_output - geo.loc).downscale(ws_scale);
+                let position = ws.get_insert_position(pos_within_workspace);
 
                 let rules = move_.tile.window().rules();
                 let border_width = move_.tile.effective_border_width().unwrap_or(0.);
@@ -3598,7 +3863,12 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
-    pub fn view_offset_gesture_begin(&mut self, output: &Output, is_touchpad: bool) {
+    pub fn view_offset_gesture_begin(
+        &mut self,
+        output: &Output,
+        workspace_idx: Option<usize>,
+        is_touchpad: bool,
+    ) {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => unreachable!(),
@@ -3607,7 +3877,9 @@ impl<W: LayoutElement> Layout<W> {
         for monitor in monitors {
             for (idx, ws) in monitor.workspaces.iter_mut().enumerate() {
                 // Cancel the gesture on other workspaces.
-                if &monitor.output != output || idx != monitor.active_workspace_idx {
+                if &monitor.output != output
+                    || idx != workspace_idx.unwrap_or(monitor.active_workspace_idx)
+                {
                     ws.view_offset_gesture_end(true, None);
                     continue;
                 }
@@ -3623,6 +3895,9 @@ impl<W: LayoutElement> Layout<W> {
         timestamp: Duration,
         is_touchpad: bool,
     ) -> Option<Option<Output>> {
+        let ws_scale = self.workspace_scale().max(0.0001);
+        let delta_x = delta_x / ws_scale;
+
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => return None,
@@ -3666,6 +3941,77 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
+    pub fn overview_gesture_begin(&mut self) {
+        self.overview_open = true;
+
+        let value = self.overview_progress.take().map_or(0., |p| p.value());
+        let gesture = OverviewGesture {
+            tracker: SwipeTracker::new(),
+            start: value,
+            value,
+        };
+        self.overview_progress = Some(OverviewProgress::Gesture(gesture));
+
+        self.set_monitors_overview_state();
+    }
+
+    pub fn overview_gesture_update(&mut self, delta_y: f64, timestamp: Duration) -> Option<bool> {
+        let Some(OverviewProgress::Gesture(gesture)) = &mut self.overview_progress else {
+            return None;
+        };
+
+        gesture.tracker.push(delta_y, timestamp);
+
+        let total_height = OVERVIEW_GESTURE_MOVEMENT;
+        let pos = gesture.tracker.pos() / total_height;
+        let new_value = gesture.start + pos;
+        let new_value = OVERVIEW_GESTURE_RUBBER_BAND.clamp(0., 1., new_value);
+
+        if gesture.value == new_value {
+            return Some(false);
+        }
+
+        gesture.value = new_value;
+        self.set_monitors_overview_state();
+
+        Some(true)
+    }
+
+    pub fn overview_gesture_end(&mut self) -> bool {
+        let Some(OverviewProgress::Gesture(gesture)) = &mut self.overview_progress else {
+            return false;
+        };
+
+        // Take into account any idle time between the last event and now.
+        let now = self.clock.now_unadjusted();
+        gesture.tracker.push(0., now);
+
+        let total_height = OVERVIEW_GESTURE_MOVEMENT;
+
+        let mut velocity = gesture.tracker.velocity() / total_height;
+        let current_pos = gesture.tracker.pos() / total_height;
+        let pos = gesture.tracker.projected_end_pos() / total_height;
+
+        let new_value = gesture.start + pos;
+        let new_value = new_value.clamp(0., 1.).round();
+
+        velocity *=
+            OVERVIEW_GESTURE_RUBBER_BAND.clamp_derivative(0., 1., gesture.start + current_pos);
+
+        self.overview_open = new_value == 1.;
+        self.overview_progress = Some(OverviewProgress::Animation(Animation::new(
+            self.clock.clone(),
+            gesture.value,
+            new_value,
+            velocity,
+            self.options.animations.overview_open_close.0,
+        )));
+
+        self.set_monitors_overview_state();
+
+        true
+    }
+
     pub fn interactive_move_begin(
         &mut self,
         window_id: W::Id,
@@ -3692,6 +4038,8 @@ impl<W: LayoutElement> Layout<W> {
             return false;
         }
 
+        let ws_scale = mon.workspace_scale();
+
         let is_floating = ws.is_floating(&window_id);
         let (tile, tile_offset, _visible) = ws
             .tiles_with_render_positions()
@@ -3699,10 +4047,11 @@ impl<W: LayoutElement> Layout<W> {
             .unwrap();
         let window_offset = tile.window_loc();
 
-        let tile_pos = ws_geo.loc + tile_offset;
+        let tile_pos = ws_geo.loc + tile_offset.upscale(ws_scale);
 
-        let pointer_offset_within_window = start_pos_within_output - tile_pos - window_offset;
-        let window_size = tile.window_size();
+        let pointer_offset_within_window =
+            start_pos_within_output - tile_pos - window_offset.upscale(ws_scale);
+        let window_size = tile.window_size().upscale(ws_scale);
         let pointer_ratio_within_window = (
             f64::clamp(pointer_offset_within_window.x / window_size.w, 0., 1.),
             f64::clamp(pointer_offset_within_window.y / window_size.h, 0., 1.),
@@ -3713,6 +4062,12 @@ impl<W: LayoutElement> Layout<W> {
             pointer_delta: Point::from((0., 0.)),
             pointer_ratio_within_window,
         });
+
+        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+            for mon in monitors {
+                mon.dnd_scroll_gesture_begin();
+            }
+        }
 
         // Lock the view for scrolling interactive move.
         if !is_floating {
@@ -3749,6 +4104,9 @@ impl<W: LayoutElement> Layout<W> {
                     });
                     return false;
                 }
+
+                let ws_scale = self.workspace_scale().max(0.0001);
+                let delta = delta.downscale(ws_scale);
 
                 pointer_delta += delta;
 
@@ -3806,7 +4164,8 @@ impl<W: LayoutElement> Layout<W> {
                                 .find(|(tile, _, _)| tile.window().id() == window)
                                 .unwrap();
 
-                            tile_pos = Some(ws_geo.loc + tile_offset);
+                            let ws_scale = mon.workspace_scale().max(0.0001);
+                            tile_pos = Some((ws_geo.loc + tile_offset.upscale(ws_scale), ws_scale));
                         }
                     }
                 }
@@ -3885,9 +4244,10 @@ impl<W: LayoutElement> Layout<W> {
                     pointer_ratio_within_window,
                 };
 
-                if let Some(tile_pos) = tile_pos {
-                    let new_tile_pos = data.tile_render_location();
-                    data.tile.animate_move_from(tile_pos - new_tile_pos);
+                if let Some((tile_pos, ws_scale)) = tile_pos {
+                    let new_tile_pos = data.tile_render_location(ws_scale);
+                    data.tile
+                        .animate_move_from((tile_pos - new_tile_pos).downscale(ws_scale));
                 }
 
                 self.interactive_move = Some(InteractiveMoveState::Moving(data));
@@ -3942,12 +4302,22 @@ impl<W: LayoutElement> Layout<W> {
                     unreachable!()
                 };
 
+                if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+                    for mon in monitors {
+                        mon.dnd_scroll_gesture_end();
+                    }
+                }
+
+                let mut ws_id = None;
                 for ws in self.workspaces_mut() {
+                    let id = ws.id();
                     if let Some(tile) = ws.tiles_mut().find(|tile| *tile.window().id() == window_id)
                     {
                         let offset = tile.interactive_move_offset;
                         tile.interactive_move_offset = Point::from((0., 0.));
                         tile.animate_move_from(offset);
+
+                        ws_id = Some(id);
                     }
 
                     // Unlock the view on the workspaces, but if the moved window was active,
@@ -3960,6 +4330,32 @@ impl<W: LayoutElement> Layout<W> {
                     if moved_tile_was_active {
                         ws.activate_window(&window_id);
                     }
+                }
+
+                // In the overview, we want to click on a window to focus it, and also to
+                // click-and-drag to move the window. The way we handle this is by always starting
+                // the interactive move (to get frozen view), then, when in the overview, *not*
+                // calling interactive_move_update() until the cursor moves far enough. This means
+                // that if we "just click" then we end up in this branch with state == Starting.
+                // Close the overview in this case.
+                if self.overview_open {
+                    let ws_id = ws_id.unwrap();
+                    if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+                        for mon in monitors {
+                            if let Some(ws_idx) =
+                                mon.workspaces.iter().position(|ws| ws.id() == ws_id)
+                            {
+                                mon.activate_workspace_with_anim_config(
+                                    ws_idx,
+                                    Some(self.options.animations.overview_open_close.0),
+                                );
+                                break;
+                            }
+                        }
+                    }
+
+                    self.activate_window(&window_id);
+                    self.toggle_overview();
                 }
 
                 return;
@@ -3975,6 +4371,12 @@ impl<W: LayoutElement> Layout<W> {
             unreachable!()
         };
 
+        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+            for mon in monitors {
+                mon.dnd_scroll_gesture_end();
+            }
+        }
+
         // Unlock the view on the workspaces.
         if !move_.is_floating {
             for ws in self.workspaces_mut() {
@@ -3989,20 +4391,32 @@ impl<W: LayoutElement> Layout<W> {
             );
         }
 
+        // Dragging in the overview shouldn't switch the workspace and so on.
+        let activate = if self.overview_open {
+            ActivateWindow::No
+        } else {
+            ActivateWindow::Yes
+        };
+
         match &mut self.monitor_set {
             MonitorSet::Normal {
                 monitors,
                 active_monitor_idx,
                 ..
             } => {
-                let (mon, ws_idx, position, offset) = if let Some(mon) =
+                let (mon, ws_idx, position, offset, ws_scale) = if let Some(mon) =
                     monitors.iter_mut().find(|mon| mon.output == move_.output)
                 {
+                    let ws_scale = mon.workspace_scale().max(0.0001);
+
                     let (ws, ws_geo) = mon
                         .workspace_under(move_.pointer_pos_within_output)
                         // If the pointer is somehow outside the move output and a workspace switch
                         // is in progress, this won't necessarily do the expected thing, but also
                         // that is not really supposed to happen so eh?
+                        //
+                        // TODO: in the overview we need to pick the last workspace if we're below
+                        // last.
                         .unwrap_or_else(|| mon.workspaces_with_render_geo().next().unwrap());
 
                     let ws_id = ws.id();
@@ -4015,13 +4429,16 @@ impl<W: LayoutElement> Layout<W> {
                     let position = if move_.is_floating {
                         InsertPosition::Floating
                     } else {
+                        let pos_within_workspace =
+                            (move_.pointer_pos_within_output - ws_geo.loc).downscale(ws_scale);
                         let ws = &mut mon.workspaces[ws_idx];
-                        ws.get_insert_position(move_.pointer_pos_within_output - ws_geo.loc)
+                        ws.get_insert_position(pos_within_workspace)
                     };
 
-                    (mon, ws_idx, position, ws_geo.loc)
+                    (mon, ws_idx, position, ws_geo.loc, ws_scale)
                 } else {
                     let mon = &mut monitors[*active_monitor_idx];
+                    let ws_scale = mon.workspace_scale().max(0.0001);
                     // No point in trying to use the pointer position on the wrong output.
                     let (ws, ws_geo) = mon.workspaces_with_render_geo().next().unwrap();
 
@@ -4037,11 +4454,12 @@ impl<W: LayoutElement> Layout<W> {
                         .iter_mut()
                         .position(|ws| ws.id() == ws_id)
                         .unwrap();
-                    (mon, ws_idx, position, ws_geo.loc)
+                    (mon, ws_idx, position, ws_geo.loc, ws_scale)
                 };
 
                 let win_id = move_.tile.window().id().clone();
-                let window_render_loc = move_.tile_render_location() + move_.tile.window_loc();
+                let window_render_loc =
+                    move_.tile_render_location(ws_scale) + move_.tile.window_loc();
 
                 match position {
                     InsertPosition::NewColumn(column_idx) => {
@@ -4052,7 +4470,7 @@ impl<W: LayoutElement> Layout<W> {
                                 id: ws_id,
                                 column_idx: Some(column_idx),
                             },
-                            ActivateWindow::Yes,
+                            activate,
                             move_.width,
                             move_.is_full_width,
                             false,
@@ -4064,11 +4482,12 @@ impl<W: LayoutElement> Layout<W> {
                             column_idx,
                             Some(tile_idx),
                             move_.tile,
-                            true,
+                            activate == ActivateWindow::Yes,
                         );
                     }
                     InsertPosition::Floating => {
-                        let pos = move_.tile_render_location() - offset;
+                        let pos =
+                            (move_.tile_render_location(ws_scale) - offset).downscale(ws_scale);
 
                         let mut tile = move_.tile;
                         let pos = mon.workspaces[ws_idx].floating_logical_to_size_frac(pos);
@@ -4087,7 +4506,7 @@ impl<W: LayoutElement> Layout<W> {
                                 id: ws_id,
                                 column_idx: None,
                             },
-                            ActivateWindow::Yes,
+                            activate,
                             move_.width,
                             move_.is_full_width,
                             true,
@@ -4096,15 +4515,18 @@ impl<W: LayoutElement> Layout<W> {
                 }
 
                 // needed because empty_workspace_above_first could have modified the idx
-                let ws_idx = mon.active_workspace_idx();
-                let ws = &mut mon.workspaces[ws_idx];
-                let (tile, tile_render_loc) = ws
-                    .tiles_with_render_positions_mut(false)
+                let (tile, tile_render_loc) = mon
+                    .workspaces
+                    .iter_mut()
+                    .flat_map(|ws| ws.tiles_with_render_positions_mut(false))
                     .find(|(tile, _)| tile.window().id() == &win_id)
                     .unwrap();
-                let new_window_render_loc = offset + tile_render_loc + tile.window_loc();
+                let new_window_render_loc =
+                    offset + (tile_render_loc + tile.window_loc()).upscale(ws_scale);
 
-                tile.animate_move_from(window_render_loc - new_window_render_loc);
+                tile.animate_move_from(
+                    (window_render_loc - new_window_render_loc).downscale(ws_scale),
+                );
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 if workspaces.is_empty() {
@@ -4119,7 +4541,7 @@ impl<W: LayoutElement> Layout<W> {
                 ws.add_tile(
                     move_.tile,
                     WorkspaceAddWindowTarget::Auto,
-                    ActivateWindow::Yes,
+                    activate,
                     move_.width,
                     move_.is_full_width,
                     move_.is_floating,
@@ -4142,9 +4564,16 @@ impl<W: LayoutElement> Layout<W> {
         self.dnd = Some(DndData {
             output,
             pointer_pos_within_output,
+            hold: None,
         });
 
         if begin_gesture {
+            if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+                for mon in monitors {
+                    mon.dnd_scroll_gesture_begin();
+                }
+            }
+
             for ws in self.workspaces_mut() {
                 ws.dnd_scroll_gesture_begin();
             }
@@ -4157,6 +4586,12 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         self.dnd = None;
+
+        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+            for mon in monitors {
+                mon.dnd_scroll_gesture_end();
+            }
+        }
 
         for ws in self.workspaces_mut() {
             ws.dnd_scroll_gesture_end();
@@ -4357,6 +4792,42 @@ impl<W: LayoutElement> Layout<W> {
         self.unname_workspace_by_id(id);
     }
 
+    pub fn set_monitors_overview_state(&mut self) {
+        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
+            return;
+        };
+
+        for mon in monitors {
+            mon.overview_open = self.overview_open;
+            mon.set_overview_progress(self.overview_progress.as_ref());
+        }
+    }
+
+    pub fn toggle_overview(&mut self) {
+        self.overview_open = !self.overview_open;
+
+        let from = self.overview_progress.take().map_or(0., |p| p.value());
+        let to = if self.overview_open { 1. } else { 0. };
+
+        self.overview_progress = Some(OverviewProgress::Animation(Animation::new(
+            self.clock.clone(),
+            from,
+            to,
+            0.,
+            self.options.animations.overview_open_close.0,
+        )));
+
+        self.set_monitors_overview_state();
+    }
+
+    pub fn toggle_overview_to_workspace(&mut self, ws_idx: usize) {
+        let config = self.options.animations.overview_open_close.0;
+        if let Some(mon) = self.active_monitor() {
+            mon.activate_workspace_with_anim_config(ws_idx, Some(config));
+        }
+        self.toggle_overview();
+    }
+
     pub fn start_open_animation_for_window(&mut self, window: &W::Id) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.tile.window().id() == window {
@@ -4441,12 +4912,14 @@ impl<W: LayoutElement> Layout<W> {
     ) {
         let _span = tracy_client::span!("Layout::start_close_animation_for_window");
 
+        let ws_scale = self.workspace_scale();
+
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if move_.tile.window().id() == window {
                 let Some(snapshot) = move_.tile.take_unmap_snapshot() else {
                     return;
                 };
-                let tile_pos = move_.tile_render_location();
+                let tile_pos = move_.tile_render_location(ws_scale);
                 let tile_size = move_.tile.tile_size();
 
                 let output = move_.output.clone();
@@ -4497,7 +4970,7 @@ impl<W: LayoutElement> Layout<W> {
         renderer: &mut R,
         output: &Output,
         target: RenderTarget,
-    ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
+    ) -> impl Iterator<Item = RescaleRenderElement<TileRenderElement<R>>> + 'a {
         if self.update_render_elements_time != self.clock.now() {
             error!("clock moved between updating render elements and rendering");
         }
@@ -4506,8 +4979,20 @@ impl<W: LayoutElement> Layout<W> {
 
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if &move_.output == output {
-                let location = move_.tile_render_location();
-                rv = Some(move_.tile.render(renderer, location, true, target));
+                let scale = Scale::from(move_.output.current_scale().fractional_scale());
+                let ws_scale = self.workspace_scale();
+                let location = move_.tile_render_location(ws_scale);
+                let iter = move_
+                    .tile
+                    .render(renderer, location, true, target)
+                    .map(move |elem| {
+                        RescaleRenderElement::from_element(
+                            elem,
+                            location.to_physical_precise_round(scale),
+                            ws_scale,
+                        )
+                    });
+                rv = Some(iter);
             }
         }
 
@@ -4558,6 +5043,14 @@ impl<W: LayoutElement> Layout<W> {
                     let is_active = self.is_active
                         && idx == *active_monitor_idx
                         && !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_)));
+
+                    if ongoing_scrolling_dnd.is_some() && self.overview_open {
+                        // Begin the scroll on new monitors and when opening the overview.
+                        mon.dnd_scroll_gesture_begin();
+                    } else if !self.overview_open {
+                        mon.dnd_scroll_gesture_end();
+                    }
+
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         ws.refresh(is_active);
 
@@ -4570,7 +5063,7 @@ impl<W: LayoutElement> Layout<W> {
                             }
                         } else {
                             // Cancel the view offset gesture after workspace switches, moves, etc.
-                            if ws_idx != mon.active_workspace_idx {
+                            if !self.overview_open && ws_idx != mon.active_workspace_idx {
                                 ws.view_offset_gesture_end(false, None);
                             }
                         }
@@ -4663,6 +5156,10 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn has_window(&self, window: &W::Id) -> bool {
         self.windows().any(|(_, win)| win.id() == window)
+    }
+
+    pub fn is_overview_open(&self) -> bool {
+        self.overview_open
     }
 
     fn resolve_scrolling_width(&self, window: &W, width: Option<PresetSize>) -> ColumnWidth {
