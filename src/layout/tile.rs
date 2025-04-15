@@ -820,11 +820,12 @@ impl<W: LayoutElement> Tile<W> {
         &'a self,
         renderer: &mut R,
         location: Point<f64, Logical>,
-        scale: Scale<f64>,
         focus_ring: bool,
         target: RenderTarget,
     ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Tile::render_inner");
+
+        let scale = Scale::from(self.scale);
 
         let win_alpha = if self.is_fullscreen || self.window.is_ignoring_opacity_window_rule() {
             1.
@@ -1051,11 +1052,12 @@ impl<W: LayoutElement> Tile<W> {
         &'a self,
         renderer: &mut R,
         location: Point<f64, Logical>,
-        scale: Scale<f64>,
         focus_ring: bool,
         target: RenderTarget,
     ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Tile::render");
+
+        let scale = Scale::from(self.scale);
 
         let tile_alpha = self
             .alpha_animation
@@ -1070,8 +1072,7 @@ impl<W: LayoutElement> Tile<W> {
 
         if let Some(open) = &self.open_animation {
             let renderer = renderer.as_gles_renderer();
-            let elements =
-                self.render_inner(renderer, Point::from((0., 0.)), scale, focus_ring, target);
+            let elements = self.render_inner(renderer, Point::from((0., 0.)), focus_ring, target);
             let elements = elements.collect::<Vec<TileRenderElement<_>>>();
             match open.render(
                 renderer,
@@ -1091,8 +1092,7 @@ impl<W: LayoutElement> Tile<W> {
             }
         } else if let Some(alpha) = &self.alpha_animation {
             let renderer = renderer.as_gles_renderer();
-            let elements =
-                self.render_inner(renderer, Point::from((0., 0.)), scale, focus_ring, target);
+            let elements = self.render_inner(renderer, Point::from((0., 0.)), focus_ring, target);
             let elements = elements.collect::<Vec<TileRenderElement<_>>>();
             match alpha.offscreen.render(renderer, scale, &elements) {
                 Ok((elem, _sync, data)) => {
@@ -1109,7 +1109,7 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if open_anim_elem.is_none() && alpha_anim_elem.is_none() {
-            window_elems = Some(self.render_inner(renderer, location, scale, focus_ring, target));
+            window_elems = Some(self.render_inner(renderer, location, focus_ring, target));
         }
 
         open_anim_elem
@@ -1118,38 +1118,23 @@ impl<W: LayoutElement> Tile<W> {
             .chain(window_elems.into_iter().flatten())
     }
 
-    pub fn store_unmap_snapshot_if_empty(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        scale: Scale<f64>,
-    ) {
+    pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer) {
         if self.unmap_snapshot.is_some() {
             return;
         }
 
-        self.unmap_snapshot = Some(self.render_snapshot(renderer, scale));
+        self.unmap_snapshot = Some(self.render_snapshot(renderer));
     }
 
-    fn render_snapshot(
-        &self,
-        renderer: &mut GlesRenderer,
-        scale: Scale<f64>,
-    ) -> TileRenderSnapshot {
+    fn render_snapshot(&self, renderer: &mut GlesRenderer) -> TileRenderSnapshot {
         let _span = tracy_client::span!("Tile::render_snapshot");
 
-        let contents = self.render(
-            renderer,
-            Point::from((0., 0.)),
-            scale,
-            false,
-            RenderTarget::Output,
-        );
+        let contents = self.render(renderer, Point::from((0., 0.)), false, RenderTarget::Output);
 
         // A bit of a hack to render blocked out as for screencast, but I think it's fine here.
         let blocked_out_contents = self.render(
             renderer,
             Point::from((0., 0.)),
-            scale,
             false,
             RenderTarget::Screencast,
         );

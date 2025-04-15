@@ -2724,11 +2724,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn render_elements<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-        scale: Scale<f64>,
         target: RenderTarget,
         focus_ring: bool,
     ) -> Vec<ScrollingSpaceRenderElement<R>> {
         let mut rv = vec![];
+
+        let scale = Scale::from(self.scale);
 
         // Draw the insert hint.
         if let Some(insert_hint) = &self.insert_hint {
@@ -2790,7 +2791,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 }
 
                 rv.extend(
-                    tile.render(renderer, tile_pos, scale, focus_ring, target)
+                    tile.render(renderer, tile_pos, focus_ring, target)
                         .map(Into::into),
                 );
             }

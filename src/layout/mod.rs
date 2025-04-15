@@ -4359,8 +4359,7 @@ impl<W: LayoutElement> Layout<W> {
 
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if move_.tile.window().id() == window {
-                let scale = Scale::from(move_.output.current_scale().fractional_scale());
-                move_.tile.store_unmap_snapshot_if_empty(renderer, scale);
+                move_.tile.store_unmap_snapshot_if_empty(renderer);
                 return;
             }
         }
@@ -4490,9 +4489,8 @@ impl<W: LayoutElement> Layout<W> {
 
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if &move_.output == output {
-                let scale = Scale::from(move_.output.current_scale().fractional_scale());
                 let location = move_.tile_render_location();
-                rv = Some(move_.tile.render(renderer, location, scale, true, target));
+                rv = Some(move_.tile.render(renderer, location, true, target));
             }
         }
 
