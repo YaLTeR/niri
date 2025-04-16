@@ -2,7 +2,7 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::GlesTexture;
 use smithay::backend::renderer::utils::{CommitCounter, OpaqueRegions};
-use smithay::backend::renderer::{ContextId, Frame as _, ImportMem, Renderer, Texture};
+use smithay::backend::renderer::{Frame as _, ImportMem, Renderer, Texture};
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::memory::MemoryBuffer;
@@ -12,7 +12,7 @@ use super::memory::MemoryBuffer;
 pub struct TextureBuffer<T> {
     id: Id,
     commit_counter: CommitCounter,
-    context_id: ContextId,
+    renderer_id: usize,
     texture: T,
     scale: Scale<f64>,
     transform: Transform,
@@ -41,7 +41,7 @@ impl<T> TextureBuffer<T> {
         TextureBuffer {
             id: Id::new(),
             commit_counter: CommitCounter::default(),
-            context_id: renderer.context_id(),
+            renderer_id: renderer.id(),
             texture,
             scale: scale.into(),
             transform,
@@ -226,7 +226,7 @@ where
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error> {
-        if frame.context_id() != self.buffer.context_id {
+        if frame.id() != self.buffer.renderer_id {
             warn!("trying to render texture from different renderer");
             return Ok(());
         }

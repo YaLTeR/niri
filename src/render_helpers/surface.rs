@@ -53,7 +53,7 @@ pub fn render_snapshot_from_surface_tree(
                 }
 
                 let data = data.lock().unwrap();
-                let Some(texture) = data.texture::<GlesRenderer>(&renderer.context_id()) else {
+                let Some(texture) = data.texture::<GlesRenderer>(renderer.id()) else {
                     return;
                 };
 

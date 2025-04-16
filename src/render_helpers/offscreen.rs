@@ -13,7 +13,7 @@ use smithay::backend::renderer::utils::{
     CommitCounter, DamageBag, DamageSet, DamageSnapshot, OpaqueRegions,
 };
 use smithay::backend::renderer::{
-    Bind as _, Color32F, ContextId, Frame as _, Offscreen as _, Renderer, Texture as _,
+    Bind as _, Color32F, Frame as _, Offscreen as _, Renderer, Texture as _,
 };
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
@@ -37,7 +37,7 @@ struct Inner {
     /// The texture with offscreened contents.
     texture: GlesTexture,
     /// Id of the renderer that the texture comes from.
-    context_id: ContextId,
+    renderer_id: usize,
     /// Scale of the texture.
     scale: Scale<f64>,
     /// Damage tracker for drawing to the texture.
@@ -50,7 +50,7 @@ struct Inner {
 pub struct OffscreenRenderElement {
     id: Id,
     texture: GlesTexture,
-    context_id: ContextId,
+    renderer_id: usize,
     scale: Scale<f64>,
     damage: DamageSnapshot<i32, Buffer>,
     offset: Point<f64, Logical>,
@@ -92,7 +92,7 @@ impl OffscreenBuffer {
         let mut reason = "";
         if let Some(Inner {
             texture,
-            context_id,
+            renderer_id,
             ..
         }) = inner.as_mut()
         {
@@ -109,7 +109,7 @@ impl OffscreenBuffer {
                 reason = "not unique";
 
                 *inner = None;
-            } else if *context_id != renderer.context_id() {
+            } else if *renderer_id != renderer.id() {
                 reason = "renderer id changed";
 
                 *inner = None;
@@ -134,7 +134,7 @@ impl OffscreenBuffer {
 
             inner.insert(Inner {
                 texture,
-                context_id: renderer.context_id(),
+                renderer_id: renderer.id(),
                 scale,
                 damage,
                 outer_damage: DamageBag::default(),
@@ -180,7 +180,7 @@ impl OffscreenBuffer {
         let elem = OffscreenRenderElement {
             id: self.id.clone(),
             texture: inner.texture.clone(),
-            context_id: inner.context_id.clone(),
+            renderer_id: inner.renderer_id,
             scale,
             damage: inner.outer_damage.snapshot(),
             offset,
@@ -305,7 +305,7 @@ impl RenderElement<GlesRenderer> for OffscreenRenderElement {
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        if frame.context_id() != self.context_id {
+        if frame.id() != self.renderer_id {
             warn!("trying to render texture from different renderer");
             return Ok(());
         }
