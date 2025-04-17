@@ -132,11 +132,12 @@ impl EventStreamStatePart for WindowsState {
             Event::WindowsChanged { windows } => {
                 self.windows = windows.into_iter().map(|win| (win.id, win)).collect();
             }
-            Event::WindowsLocationsChanged { changes } => {
+            Event::WindowLayoutsChanged { changes } => {
                 for (id, update) in changes {
-                    let Some(w) = self.windows.get_mut(&id) else {
-                        continue; // should never be reached
-                    };
+                    let w = self
+                        .windows
+                        .get_mut(&id)
+                        .expect("altered window missing from map");
                     w.location = update;
                 }
             }

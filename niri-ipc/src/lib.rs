@@ -1073,19 +1073,27 @@ pub struct Window {
     /// If the window isn't floating then it is in the tiling layout.
     pub is_floating: bool,
     /// Position and size related properties of the Window.
-    pub location: WindowLocation,
+    pub location: WindowLayout,
 }
 
 /// Position and size related properties of a Window
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub struct WindowLocation {
+pub struct WindowLayout {
     /// Location of the window within a workspace in terms of (column index, tile index in column).
     ///
     /// Unset for floating windows.
     pub tile_pos_in_scrolling_layout: Option<(usize, usize)>,
     /// Size of the tile this window is in.
     pub tile_size: (f64, f64),
+    /// Size of the window itself.
+    /// 
+    /// Note that Wayland windows can only be integer sized.
+    pub window_size: (i32, i32),
+    /// set for floating windows ("workspace view" is also used for gradients relative-to in the config)
+    pub tile_pos_in_workspace_view: Option<(f64, f64)>,
+    /// same but windows themselves
+    pub window_pos_in_workspace_view: Option<(f64, f64)>,
 }
 
 /// Output configuration change result.
@@ -1246,12 +1254,12 @@ pub enum Event {
         /// Id of the newly focused window, or `None` if no window is now focused.
         id: Option<u64>,
     },
-    /// Apply changes to the tile location and/or size of one or more windows.
+    /// Apply changes to the tile location and/or size of one or more tiles/windows.
     ///
     /// Note that this does not trigger for a window's physical location changing.
-    WindowsLocationsChanged {
+    WindowLayoutsChanged {
         /// Pairs consisting of a window id and new position/size information for the window.
-        changes: Vec<(u64, WindowLocation)>,
+        changes: Vec<(u64, WindowLayout)>,
     },
     /// The configured keyboard layouts have changed.
     KeyboardLayoutsChanged {

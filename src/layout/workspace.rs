@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, OutputName, PresetSize, Workspace as WorkspaceConfig};
-use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
+use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
@@ -1367,13 +1367,26 @@ impl<W: LayoutElement> Workspace<W> {
         self.windows_mut().find(|win| win.is_wl_surface(wl_surface))
     }
 
-    pub fn tiles_with_workspace_positions(
+    pub fn tiles_with_window_layouts(
         &self,
-    ) -> impl Iterator<Item = (&Tile<W>, Option<(usize, usize)>)> {
+    ) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
         let scrolling = self.scrolling.tiles_with_workspace_positions();
+        let scrolling = scrolling.map(move |(tile, pos)| (tile, WindowLayout {
+            tile_pos_in_scrolling_layout: Some(pos),
+            tile_size: tile.tile_size().into(),
+            window_size: tile.window().size().into(),
+            tile_pos_in_workspace_view: None,
+            window_pos_in_workspace_view: None,
+        }));
 
         let floating = self.floating.tiles_with_render_positions();
-        let floating = floating.map(move |(tile, _pos)| (tile, None));
+        let floating = floating.map(move |(tile, pos)| (tile, WindowLayout {
+            tile_pos_in_scrolling_layout: None,
+            tile_size: tile.tile_size().into(),
+            window_size: tile.window().size().into(),
+            tile_pos_in_workspace_view: Some(pos.into()),
+            window_pos_in_workspace_view: Some((pos + tile.window_loc()).into()),
+        }));
 
         floating.chain(scrolling)
     }

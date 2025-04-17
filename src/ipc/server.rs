@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
@@ -17,8 +17,7 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, WindowLocation,
-    Workspace,
+    Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -466,7 +465,7 @@ async fn handle_event_stream_client(client: EventStreamClient) -> anyhow::Result
 fn make_ipc_window(
     mapped: &Mapped,
     workspace_id: Option<WorkspaceId>,
-    location: WindowLocation,
+    location: WindowLayout,
 ) -> niri_ipc::Window {
     with_toplevel_role(mapped.toplevel(), |role| niri_ipc::Window {
         id: mapped.id().get(),
@@ -639,40 +638,12 @@ impl State {
         let mut events = Vec::new();
         let layout = &self.niri.layout;
 
-        // Gather position/size information ahead of time, since we have to traverse
-        // the entire layout to get tile cell positions.
-        let mut window_locations = HashMap::new();
-        for (_, _, ws) in layout.workspaces() {
-            if let Some(tile) = layout.current_interactive_move_tile() {
-                let size = tile.tile_size();
-                window_locations.insert(
-                    tile.window().id().get(),
-                    WindowLocation {
-                        tile_pos_in_scrolling_layout: None,
-                        tile_size: (size.w, size.h),
-                    },
-                );
-            }
-
-            for (tile, cell) in ws.tiles_with_workspace_positions() {
-                let k = tile.window().id().get();
-                let size = tile.tile_size();
-                window_locations.insert(
-                    k,
-                    WindowLocation {
-                        tile_pos_in_scrolling_layout: cell,
-                        tile_size: (size.w, size.h),
-                    },
-                );
-            }
-        }
-
-        let mut batch_change_locations: Vec<(u64, WindowLocation)> = Vec::new();
+        let mut batch_change_locations: Vec<(u64, WindowLayout)> = Vec::new();
 
         // Check for window changes.
         let mut seen = HashSet::new();
         let mut focused_id = None;
-        layout.with_windows(|mapped, _, ws_id| {
+        layout.with_windows(|mapped, _, ws_id, window_layout| {
             let id = mapped.id().get();
             seen.insert(id);
 
@@ -680,14 +651,8 @@ impl State {
                 focused_id = Some(id);
             }
 
-            // should always be found, but if there's some unforeseen case, default to size=(0,0)
-            let location = window_locations.remove(&id).unwrap_or(WindowLocation {
-                tile_pos_in_scrolling_layout: None,
-                tile_size: (0.0, 0.0),
-            });
-
             let Some(ipc_win) = state.windows.get(&id) else {
-                let window = make_ipc_window(mapped, ws_id, location);
+                let window = make_ipc_window(mapped, ws_id, window_layout);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
             };
@@ -701,13 +666,13 @@ impl State {
             });
 
             if changed {
-                let window = make_ipc_window(mapped, ws_id, location);
+                let window = make_ipc_window(mapped, ws_id, window_layout);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
             }
 
-            if ipc_win.location != location {
-                batch_change_locations.push((id, location));
+            if ipc_win.location != window_layout {
+                batch_change_locations.push((id, window_layout));
             }
 
             if mapped.is_focused() && !ipc_win.is_focused {
@@ -716,7 +681,7 @@ impl State {
         });
 
         if !batch_change_locations.is_empty() {
-            events.push(Event::WindowsLocationsChanged {
+            events.push(Event::WindowLayoutsChanged {
                 changes: batch_change_locations,
             });
         }

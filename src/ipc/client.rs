@@ -429,7 +429,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowFocusChanged { id } => {
                         println!("Window focus changed: {id:?}");
                     }
-                    Event::WindowsLocationsChanged { changes } => {
+                    Event::WindowLayoutsChanged { changes } => {
                         println!("Windows locations changed: {changes:?}");
                     }
                     Event::KeyboardLayoutsChanged { keyboard_layouts } => {
