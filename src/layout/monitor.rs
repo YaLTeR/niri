@@ -3,12 +3,14 @@ use std::iter::zip;
 use std::rc::Rc;
 use std::time::Duration;
 
+use niri_config::CornerRadius;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement,
 };
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
+use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
 use super::scrolling::{Column, ColumnWidth};
 use super::tile::Tile;
 use super::workspace::{
@@ -17,6 +19,7 @@ use super::workspace::{
 use super::{ActivateWindow, HitType, LayoutElement, Options};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
+use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
@@ -45,6 +48,12 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) previous_workspace_id: Option<WorkspaceId>,
     /// In-progress switch between workspaces.
     pub(super) workspace_switch: Option<WorkspaceSwitch>,
+    /// Indication where an interactively-moved window is about to be placed.
+    pub(super) insert_hint: Option<InsertHint>,
+    /// Insert hint element for rendering.
+    insert_hint_element: InsertHintElement,
+    /// Location to render the insert hint element.
+    insert_hint_render_loc: Option<InsertHintRenderLoc>,
     /// Clock for driving animations.
     pub(super) clock: Clock,
     /// Configurable properties of the layout.
@@ -73,6 +82,26 @@ pub struct WorkspaceSwitchGesture {
     is_touchpad: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum InsertPosition {
+    NewColumn(usize),
+    InColumn(usize, usize),
+    Floating,
+}
+
+#[derive(Debug)]
+pub(super) struct InsertHint {
+    pub workspace: WorkspaceId,
+    pub position: InsertPosition,
+    pub corner_radius: CornerRadius,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct InsertHintRenderLoc {
+    workspace: WorkspaceId,
+    location: Point<f64, Logical>,
+}
+
 /// Where to put a newly added window.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum MonitorAddWindowTarget<'a, W: LayoutElement> {
@@ -90,8 +119,14 @@ pub enum MonitorAddWindowTarget<'a, W: LayoutElement> {
     NextTo(&'a W::Id),
 }
 
-pub type MonitorRenderElement<R> =
-    RelocateRenderElement<CropRenderElement<WorkspaceRenderElement<R>>>;
+niri_render_elements! {
+    MonitorInnerRenderElement<R> => {
+        Workspace = CropRenderElement<WorkspaceRenderElement<R>>,
+        InsertHint = CropRenderElement<InsertHintRenderElement>,
+    }
+}
+
+pub type MonitorRenderElement<R> = RelocateRenderElement<MonitorInnerRenderElement<R>>;
 
 impl WorkspaceSwitch {
     pub fn current_idx(&self) -> f64 {
@@ -153,6 +188,9 @@ impl<W: LayoutElement> Monitor<W> {
             workspaces,
             active_workspace_idx: 0,
             previous_workspace_id: None,
+            insert_hint: None,
+            insert_hint_element: InsertHintElement::new(options.insert_hint),
+            insert_hint_render_loc: None,
             workspace_switch: None,
             clock,
             options,
@@ -677,8 +715,50 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn update_render_elements(&mut self, is_active: bool) {
-        for (ws, _) in self.workspaces_with_render_geo_mut() {
+        let mut insert_hint_ws_geo = None;
+        let insert_hint_ws_id = self.insert_hint.as_ref().map(|hint| hint.workspace);
+
+        for (ws, geo) in self.workspaces_with_render_geo_mut() {
             ws.update_render_elements(is_active);
+
+            if Some(ws.id()) == insert_hint_ws_id {
+                insert_hint_ws_geo = Some(geo);
+            }
+        }
+
+        self.insert_hint_render_loc = None;
+        if let Some(hint) = &self.insert_hint {
+            if let Some(ws) = self.workspaces.iter().find(|ws| ws.id() == hint.workspace) {
+                if let Some(mut area) = ws.insert_hint_area(hint.position) {
+                    let scale = ws.scale().fractional_scale();
+                    let view_size = ws.view_size();
+
+                    // Make sure the hint is at least partially visible.
+                    if matches!(hint.position, InsertPosition::NewColumn(_)) {
+                        let geo = insert_hint_ws_geo.unwrap();
+
+                        area.loc.x = area.loc.x.max(-geo.loc.x - area.size.w / 2.);
+                        area.loc.x = area.loc.x.min(geo.loc.x + geo.size.w - area.size.w / 2.);
+                    }
+
+                    // Round to physical pixels.
+                    area = area.to_physical_precise_round(scale).to_logical(scale);
+
+                    let view_rect = Rectangle::new(area.loc.upscale(-1.), view_size);
+                    self.insert_hint_element.update_render_elements(
+                        area.size,
+                        view_rect,
+                        hint.corner_radius,
+                        scale,
+                    );
+                    self.insert_hint_render_loc = Some(InsertHintRenderLoc {
+                        workspace: hint.workspace,
+                        location: area.loc,
+                    });
+                }
+            } else {
+                error!("insert hint workspace missing from monitor");
+            }
         }
     }
 
@@ -698,6 +778,8 @@ impl<W: LayoutElement> Monitor<W> {
             ws.update_config(options.clone());
         }
 
+        self.insert_hint_element.update_config(options.insert_hint);
+
         self.options = options;
     }
 
@@ -705,6 +787,8 @@ impl<W: LayoutElement> Monitor<W> {
         for ws in &mut self.workspaces {
             ws.update_shaders();
         }
+
+        self.insert_hint_element.update_shaders();
     }
 
     pub fn move_workspace_down(&mut self) {
@@ -950,10 +1034,23 @@ impl<W: LayoutElement> Monitor<W> {
             )
         };
 
+        // Draw the insert hint.
+        let mut insert_hint = None;
+        if !self.options.insert_hint.off {
+            if let Some(render_loc) = self.insert_hint_render_loc {
+                insert_hint = Some((
+                    render_loc.workspace,
+                    self.insert_hint_element
+                        .render(renderer, render_loc.location),
+                ));
+            }
+        }
+
         self.workspaces_with_render_geo()
             .flat_map(move |(ws, geo)| {
                 let map_ws_contents = move |elem: WorkspaceRenderElement<R>| {
                     let elem = CropRenderElement::from_element(elem, scale, crop_bounds)?;
+                    let elem = MonitorInnerRenderElement::Workspace(elem);
                     Some(elem)
                 };
 
@@ -961,7 +1058,21 @@ impl<W: LayoutElement> Monitor<W> {
                 let floating = floating.filter_map(map_ws_contents);
                 let scrolling = scrolling.filter_map(map_ws_contents);
 
-                let iter = floating.chain(scrolling);
+                let hint = if matches!(insert_hint, Some((hint_ws_id, _)) if hint_ws_id == ws.id())
+                {
+                    let iter = insert_hint.take().unwrap().1;
+                    let iter = iter.filter_map(move |elem| {
+                        let elem = CropRenderElement::from_element(elem, scale, crop_bounds)?;
+                        let elem = MonitorInnerRenderElement::InsertHint(elem);
+                        Some(elem)
+                    });
+                    Some(iter)
+                } else {
+                    None
+                };
+                let hint = hint.into_iter().flatten();
+
+                let iter = floating.chain(hint).chain(scrolling);
 
                 iter.map(move |elem| {
                     RelocateRenderElement::from_element(

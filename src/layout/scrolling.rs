@@ -3,14 +3,14 @@ use std::iter::{self, zip};
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CenterFocusedColumn, CornerRadius, PresetSize, Struts};
+use niri_config::{CenterFocusedColumn, PresetSize, Struts};
 use niri_ipc::{ColumnDisplay, SizeChange};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
-use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
+use super::monitor::InsertPosition;
 use super::tab_indicator::{TabIndicator, TabIndicatorRenderElement, TabInfo};
 use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
 use super::workspace::{InteractiveResize, ResolvedSize};
@@ -67,12 +67,6 @@ pub struct ScrollingSpace<W: LayoutElement> {
     /// Windows in the closing animation.
     closing_windows: Vec<ClosingWindow>,
 
-    /// Indication where an interactively-moved window is about to be placed.
-    insert_hint: Option<InsertHint>,
-
-    /// Insert hint element for rendering.
-    insert_hint_element: InsertHintElement,
-
     /// View size for this space.
     view_size: Size<f64, Logical>,
 
@@ -96,21 +90,7 @@ niri_render_elements! {
         Tile = TileRenderElement<R>,
         ClosingWindow = ClosingWindowRenderElement,
         TabIndicator = TabIndicatorRenderElement,
-        InsertHint = InsertHintRenderElement,
     }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum InsertPosition {
-    NewColumn(usize),
-    InColumn(usize, usize),
-    Floating,
-}
-
-#[derive(Debug)]
-pub struct InsertHint {
-    pub position: InsertPosition,
-    pub corner_radius: CornerRadius,
 }
 
 /// Extra per-column data.
@@ -283,8 +263,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             activate_prev_column_on_removal: None,
             view_offset_before_fullscreen: None,
             closing_windows: Vec::new(),
-            insert_hint: None,
-            insert_hint_element: InsertHintElement::new(options.insert_hint),
             view_size,
             working_area,
             scale,
@@ -307,8 +285,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             data.update(column);
         }
 
-        self.insert_hint_element.update_config(options.insert_hint);
-
         self.view_size = view_size;
         self.working_area = working_area;
         self.scale = scale;
@@ -319,8 +295,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         for tile in self.tiles_mut() {
             tile.update_shaders();
         }
-
-        self.insert_hint_element.update_shaders();
     }
 
     pub fn advance_animations(&mut self) {
@@ -381,18 +355,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let col_pos = view_pos - col_off - col.render_offset();
             let view_rect = Rectangle::new(col_pos, view_size);
             col.update_render_elements(is_active, view_rect);
-        }
-
-        if let Some(insert_hint) = &self.insert_hint {
-            if let Some(area) = self.insert_hint_area(insert_hint) {
-                let view_rect = Rectangle::new(area.loc.upscale(-1.), view_size);
-                self.insert_hint_element.update_render_elements(
-                    area.size,
-                    view_rect,
-                    insert_hint.corner_radius,
-                    self.scale,
-                );
-            }
         }
     }
 
@@ -754,18 +716,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.interactive_resize = None;
     }
 
-    pub fn set_insert_hint(&mut self, insert_hint: InsertHint) {
-        if self.options.insert_hint.off {
-            return;
-        }
-        self.insert_hint = Some(insert_hint);
-    }
-
-    pub fn clear_insert_hint(&mut self) {
-        self.insert_hint = None;
-    }
-
-    pub fn get_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
+    pub(super) fn insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
         if self.columns.is_empty() {
             return InsertPosition::NewColumn(0);
         }
@@ -2274,8 +2225,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             })
     }
 
-    fn insert_hint_area(&self, insert_hint: &InsertHint) -> Option<Rectangle<f64, Logical>> {
-        let mut hint_area = match insert_hint.position {
+    pub(super) fn insert_hint_area(
+        &self,
+        position: InsertPosition,
+    ) -> Option<Rectangle<f64, Logical>> {
+        let mut hint_area = match position {
             InsertPosition::NewColumn(column_index) => {
                 if column_index == 0 || column_index == self.columns.len() {
                     let size =
@@ -2365,19 +2319,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         } else {
             hint_area.loc.x -= self.view_pos();
         }
-
-        let view_size = self.view_size;
-
-        // Make sure the hint is at least partially visible.
-        if matches!(insert_hint.position, InsertPosition::NewColumn(_)) {
-            hint_area.loc.x = hint_area.loc.x.max(-hint_area.size.w / 2.);
-            hint_area.loc.x = hint_area.loc.x.min(view_size.w - hint_area.size.w / 2.);
-        }
-
-        // Round to physical pixels.
-        hint_area = hint_area
-            .to_physical_precise_round(self.scale)
-            .to_logical(self.scale);
 
         Some(hint_area)
     }
@@ -2728,17 +2669,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let mut rv = vec![];
 
         let scale = Scale::from(self.scale);
-
-        // Draw the insert hint.
-        if let Some(insert_hint) = &self.insert_hint {
-            if let Some(area) = self.insert_hint_area(insert_hint) {
-                rv.extend(
-                    self.insert_hint_element
-                        .render(renderer, area.loc)
-                        .map(ScrollingSpaceRenderElement::InsertHint),
-                );
-            }
-        }
 
         // Draw the closing windows on top of the other windows.
         let view_rect = Rectangle::new(Point::from((self.view_pos(), 0.)), self.view_size);
