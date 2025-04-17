@@ -110,8 +110,6 @@ pub enum InsertPosition {
 #[derive(Debug)]
 pub struct InsertHint {
     pub position: InsertPosition,
-    pub width: ColumnWidth,
-    pub is_full_width: bool,
     pub corner_radius: CornerRadius,
 }
 

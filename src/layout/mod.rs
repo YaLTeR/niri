@@ -2792,8 +2792,6 @@ impl<W: LayoutElement> Layout<W> {
 
                 ws.set_insert_hint(InsertHint {
                     position,
-                    width: move_.width,
-                    is_full_width: move_.is_full_width,
                     corner_radius,
                 });
             }
