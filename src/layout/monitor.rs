@@ -713,6 +713,12 @@ impl<W: LayoutElement> Monitor<W> {
         self.options = options;
     }
 
+    pub fn update_shaders(&mut self) {
+        for ws in &mut self.workspaces {
+            ws.update_shaders();
+        }
+    }
+
     pub fn move_workspace_down(&mut self) {
         let mut new_idx = min(self.active_workspace_idx + 1, self.workspaces.len() - 1);
         if new_idx == self.active_workspace_idx {

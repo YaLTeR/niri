@@ -2731,9 +2731,7 @@ impl<W: LayoutElement> Layout<W> {
         match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
-                    for ws in &mut mon.workspaces {
-                        ws.update_shaders();
-                    }
+                    mon.update_shaders();
                 }
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
