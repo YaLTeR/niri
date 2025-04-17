@@ -46,3 +46,10 @@ To run X11 apps, you can use [xwayland-satellite](https://github.com/Supreeeme/x
 Check [the Xwayland wiki page](./Xwayland.md) for instructions.
 
 Keep in mind that you can run many Electron apps such as VSCode natively on Wayland by passing the right flags, e.g. `code --ozone-platform-hint=auto`
+
+### How to change cursor and system icons?
+
+You'll need a GTK theme editor like [nwg-look](https://github.com/nwg-piotr/nwg-look) to modify the cursor and system icons.
+
+After installing the progam, put your preferred icon theme into
+`~/.icons` or `~/local/share/.icons` for user wide and `/usr/share/icons` for system wide installation. Then select the iconset in nwg-look or a similar program.
