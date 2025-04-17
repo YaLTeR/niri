@@ -232,11 +232,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         // FIXME: also compute and use current velocity.
-        let current_idx = self
-            .workspace_switch
-            .as_ref()
-            .map(|s| s.current_idx())
-            .unwrap_or(self.active_workspace_idx as f64);
+        let current_idx = self.workspace_render_idx();
 
         self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
 
@@ -833,6 +829,14 @@ impl<W: LayoutElement> Monitor<W> {
         Some(rect)
     }
 
+    pub fn workspace_render_idx(&self) -> f64 {
+        if let Some(switch) = &self.workspace_switch {
+            switch.current_idx()
+        } else {
+            self.active_workspace_idx as f64
+        }
+    }
+
     pub fn workspaces_render_geo(&self) -> impl Iterator<Item = Rectangle<f64, Logical>> {
         let scale = self.output.current_scale().fractional_scale();
         let size = output_size(&self.output);
@@ -840,13 +844,7 @@ impl<W: LayoutElement> Monitor<W> {
         // Ceil the workspace size in physical pixels.
         let ws_size = size.to_physical_precise_ceil(scale).to_logical(scale);
 
-        let render_idx = if let Some(switch) = &self.workspace_switch {
-            switch.current_idx()
-        } else {
-            self.active_workspace_idx as f64
-        };
-
-        let first_ws_y = -render_idx * ws_size.h;
+        let first_ws_y = -self.workspace_render_idx() * ws_size.h;
 
         (0..self.workspaces.len()).map(move |idx| {
             let y = first_ws_y + idx as f64 * ws_size.h;
@@ -973,11 +971,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn workspace_switch_gesture_begin(&mut self, is_touchpad: bool) {
         let center_idx = self.active_workspace_idx;
-        let current_idx = self
-            .workspace_switch
-            .as_ref()
-            .map(|s| s.current_idx())
-            .unwrap_or(center_idx as f64);
+        let current_idx = self.workspace_render_idx();
 
         let gesture = WorkspaceSwitchGesture {
             center_idx,
