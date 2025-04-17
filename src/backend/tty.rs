@@ -19,6 +19,7 @@ use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags, PrimaryPlaneElement};
+use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::{
     DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType, VrrSupport,
 };
@@ -114,7 +115,7 @@ pub type TtyRendererError<'render> = <TtyRenderer<'render> as RendererSuper>::Er
 
 type GbmDrmCompositor = DrmCompositor<
     GbmAllocator<DrmDeviceFd>,
-    GbmDevice<DrmDeviceFd>,
+    GbmFramebufferExporter<DrmDeviceFd>,
     (OutputPresentationFeedback, Duration),
     DrmDeviceFd,
 >;
@@ -971,7 +972,7 @@ impl Tty {
             surface,
             None,
             allocator.clone(),
-            device.gbm.clone(),
+            GbmFramebufferExporter::new(device.gbm.clone()),
             SUPPORTED_COLOR_FORMATS,
             // This is only used to pick a good internal format, so it can use the surface's render
             // formats, even though we only ever render on the primary GPU.
@@ -1001,7 +1002,7 @@ impl Tty {
                     surface,
                     None,
                     allocator,
-                    device.gbm.clone(),
+                    GbmFramebufferExporter::new(device.gbm.clone()),
                     SUPPORTED_COLOR_FORMATS,
                     render_formats,
                     device.drm.cursor_size(),
