@@ -295,9 +295,20 @@ impl Animation {
         self.to
     }
 
-    #[cfg(test)]
     pub fn from(&self) -> f64 {
         self.from
+    }
+
+    pub fn start_time(&self) -> Duration {
+        self.start_time
+    }
+
+    pub fn end_time(&self) -> Duration {
+        self.start_time + self.duration
+    }
+
+    pub fn duration(&self) -> Duration {
+        self.duration
     }
 
     pub fn offset(&mut self, offset: f64) {
