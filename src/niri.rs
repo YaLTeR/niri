@@ -405,6 +405,10 @@ pub struct OutputState {
     pub unfinished_animations_remain: bool,
     /// Last sequence received in a vblank event.
     pub last_drm_sequence: Option<u32>,
+    /// Last timestamp of a vblank
+    pub last_drm_vblank_timestamp: Option<Duration>,
+    /// Timer used for throttling vblanks
+    pub vblank_throttle_timer_token: Option<RegistrationToken>,
     /// Sequence for frame callback throttling.
     ///
     /// We want to send frame callbacks for each surface at most once per monitor refresh cycle.
@@ -2671,6 +2675,8 @@ impl Niri {
             unfinished_animations_remain: false,
             frame_clock: FrameClock::new(refresh_interval, vrr),
             last_drm_sequence: None,
+            last_drm_vblank_timestamp: None,
+            vblank_throttle_timer_token: None,
             frame_callback_sequence: 0,
             background_buffer: SolidColorBuffer::new(size, background_color),
             lock_render_state,
