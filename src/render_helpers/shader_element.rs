@@ -245,6 +245,11 @@ impl ShaderRenderElement {
         self.area.loc = location;
         self
     }
+
+    pub fn with_alpha(mut self, alpha: f32) -> Self {
+        self.alpha = alpha;
+        self
+    }
 }
 
 impl Element for ShaderRenderElement {
