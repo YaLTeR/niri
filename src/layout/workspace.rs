@@ -1409,7 +1409,10 @@ impl<W: LayoutElement> Workspace<W> {
         renderer: &mut R,
         target: RenderTarget,
         focus_ring: bool,
-    ) -> impl Iterator<Item = WorkspaceRenderElement<R>> {
+    ) -> (
+        impl Iterator<Item = WorkspaceRenderElement<R>>,
+        impl Iterator<Item = WorkspaceRenderElement<R>>,
+    ) {
         let scrolling_focus_ring = focus_ring && !self.floating_is_active();
         let scrolling = self
             .scrolling
@@ -1424,8 +1427,9 @@ impl<W: LayoutElement> Workspace<W> {
                     .render_elements(renderer, view_rect, target, floating_focus_ring);
             floating.into_iter().map(WorkspaceRenderElement::from)
         });
+        let floating = floating.into_iter().flatten();
 
-        floating.into_iter().flatten().chain(scrolling)
+        (floating, scrolling)
     }
 
     pub fn render_above_top_layer(&self) -> bool {

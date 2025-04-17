@@ -952,20 +952,27 @@ impl<W: LayoutElement> Monitor<W> {
 
         self.workspaces_with_render_geo()
             .flat_map(move |(ws, geo)| {
-                ws.render_elements(renderer, target, focus_ring)
-                    .filter_map(move |elem| {
-                        CropRenderElement::from_element(elem, scale, crop_bounds)
-                    })
-                    .map(move |elem| {
-                        RelocateRenderElement::from_element(
-                            elem,
-                            // The offset we get from workspaces_with_render_positions() is already
-                            // rounded to physical pixels, but it's in the logical coordinate
-                            // space, so we need to convert it to physical.
-                            geo.loc.to_physical_precise_round(scale),
-                            Relocate::Relative,
-                        )
-                    })
+                let map_ws_contents = move |elem: WorkspaceRenderElement<R>| {
+                    let elem = CropRenderElement::from_element(elem, scale, crop_bounds)?;
+                    Some(elem)
+                };
+
+                let (floating, scrolling) = ws.render_elements(renderer, target, focus_ring);
+                let floating = floating.filter_map(map_ws_contents);
+                let scrolling = scrolling.filter_map(map_ws_contents);
+
+                let iter = floating.chain(scrolling);
+
+                iter.map(move |elem| {
+                    RelocateRenderElement::from_element(
+                        elem,
+                        // The offset we get from workspaces_with_render_positions() is already
+                        // rounded to physical pixels, but it's in the logical coordinate
+                        // space, so we need to convert it to physical.
+                        geo.loc.to_physical_precise_round(scale),
+                        Relocate::Relative,
+                    )
+                })
             })
     }
 
