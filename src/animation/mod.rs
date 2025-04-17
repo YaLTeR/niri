@@ -242,12 +242,21 @@ impl Animation {
         self.clock.now() >= self.start_time + self.clamped_duration
     }
 
-    pub fn value(&self) -> f64 {
-        if self.is_done() {
+    pub fn value_at(&self, at: Duration) -> f64 {
+        if at <= self.start_time {
+            // Return from when at == start_time so that when the animations are off, the behavior
+            // within a single event loop cycle (i.e. no time had passed since the start of an
+            // animation) matches the behavior when the animations are on.
+            return self.from;
+        } else if self.start_time + self.duration <= at {
             return self.to;
         }
 
-        let passed = self.clock.now().saturating_sub(self.start_time);
+        if self.clock.should_complete_instantly() {
+            return self.to;
+        }
+
+        let passed = at.saturating_sub(self.start_time);
 
         match self.kind {
             Kind::Easing { curve } => {
@@ -278,6 +287,10 @@ impl Animation {
                 self.from + (deceleration_rate.powf(1000. * passed) - 1.) / coeff * initial_velocity
             }
         }
+    }
+
+    pub fn value(&self) -> f64 {
+        self.value_at(self.clock.now())
     }
 
     /// Returns a value that stops at the target value after first reaching it.
