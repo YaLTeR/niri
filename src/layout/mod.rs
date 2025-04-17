@@ -37,13 +37,13 @@ use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
-use monitor::MonitorAddWindowTarget;
+use monitor::{InsertHint, InsertPosition, MonitorAddWindowTarget};
 use niri_config::{
     CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
     Workspace as WorkspaceConfig, WorkspaceReference,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
-use scrolling::{Column, ColumnWidth, InsertHint, InsertPosition};
+use scrolling::{Column, ColumnWidth};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::{self, Output};
@@ -2756,9 +2756,10 @@ impl<W: LayoutElement> Layout<W> {
     fn update_insert_hint(&mut self, output: Option<&Output>) {
         let _span = tracy_client::span!("Layout::update_insert_hint");
 
-        let _span = tracy_client::span!("Layout::update_insert_hint::clear");
-        for ws in self.workspaces_mut() {
-            ws.clear_insert_hint();
+        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+            for mon in monitors {
+                mon.insert_hint = None;
+            }
         }
 
         if !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_))) {
@@ -2789,7 +2790,8 @@ impl<W: LayoutElement> Layout<W> {
                     .find(|ws| ws.id() == ws_id)
                     .unwrap();
 
-                let position = ws.get_insert_position(move_.pointer_pos_within_output - geo.loc);
+                let pos_within_workspace = move_.pointer_pos_within_output - geo.loc;
+                let position = ws.scrolling_insert_position(pos_within_workspace);
 
                 let rules = move_.tile.window().rules();
                 let border_width = move_.tile.effective_border_width().unwrap_or(0.);
@@ -2799,7 +2801,8 @@ impl<W: LayoutElement> Layout<W> {
                         radius.expanded_by(border_width as f32)
                     });
 
-                ws.set_insert_hint(InsertHint {
+                mon.insert_hint = Some(InsertHint {
+                    workspace: ws_id,
                     position,
                     corner_radius,
                 });
@@ -4007,8 +4010,9 @@ impl<W: LayoutElement> Layout<W> {
                     let position = if move_.is_floating {
                         InsertPosition::Floating
                     } else {
+                        let pos_within_workspace = move_.pointer_pos_within_output - ws_geo.loc;
                         let ws = &mut mon.workspaces[ws_idx];
-                        ws.get_insert_position(move_.pointer_pos_within_output - ws_geo.loc)
+                        ws.scrolling_insert_position(pos_within_workspace)
                     };
 
                     (mon, ws_idx, position, ws_geo.loc)
@@ -4020,7 +4024,7 @@ impl<W: LayoutElement> Layout<W> {
                     let position = if move_.is_floating {
                         InsertPosition::Floating
                     } else {
-                        ws.get_insert_position(Point::from((0., 0.)))
+                        ws.scrolling_insert_position(Point::from((0., 0.)))
                     };
 
                     let ws_id = ws.id();

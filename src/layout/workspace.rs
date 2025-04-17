@@ -15,12 +15,12 @@ use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use super::floating::{FloatingSpace, FloatingSpaceRenderElement};
 use super::scrolling::{
-    Column, ColumnWidth, InsertHint, InsertPosition, ScrollDirection, ScrollingSpace,
-    ScrollingSpaceRenderElement,
+    Column, ColumnWidth, ScrollDirection, ScrollingSpace, ScrollingSpaceRenderElement,
 };
 use super::tile::{Tile, TileRenderSnapshot};
 use super::{
-    ActivateWindow, HitType, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac,
+    ActivateWindow, HitType, InsertPosition, InteractiveResizeData, LayoutElement, Options,
+    RemovedTile, SizeFrac,
 };
 use crate::animation::Clock;
 use crate::niri_render_elements;
@@ -1597,16 +1597,15 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn set_insert_hint(&mut self, insert_hint: InsertHint) {
-        self.scrolling.set_insert_hint(insert_hint);
+    pub(super) fn scrolling_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
+        self.scrolling.insert_position(pos)
     }
 
-    pub fn clear_insert_hint(&mut self) {
-        self.scrolling.clear_insert_hint();
-    }
-
-    pub fn get_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
-        self.scrolling.get_insert_position(pos)
+    pub(super) fn insert_hint_area(
+        &self,
+        position: InsertPosition,
+    ) -> Option<Rectangle<f64, Logical>> {
+        self.scrolling.insert_hint_area(position)
     }
 
     pub fn view_offset_gesture_begin(&mut self, is_touchpad: bool) {
