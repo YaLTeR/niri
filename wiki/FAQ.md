@@ -49,7 +49,9 @@ Keep in mind that you can run many Electron apps such as VSCode natively on Wayl
 
 ### How to change cursor and system icons?
 
-You'll need a GTK theme editor like [nwg-look](https://github.com/nwg-piotr/nwg-look) to modify the cursor and system icons.
+You'll need a theme editor like [nwg-look](https://github.com/nwg-piotr/nwg-look) to modify the system icons.
 
 After installing the progam, put your preferred icon theme into
-`~/.icons` or `~/local/share/.icons` for user wide and `/usr/share/icons` for system wide installation. Then select the iconset in nwg-look or a similar program.
+`~/.icons` or `~/local/share/.icons`. Then select the iconset in nwg-look or a similar program.
+
+For further information refer to the [Arch Wiki](https://wiki.archlinux.org/title/Icons).
