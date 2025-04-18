@@ -2846,14 +2846,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         Some(true)
     }
 
-    pub fn dnd_scroll_gesture_scroll(&mut self, delta: f64) {
+    pub fn dnd_scroll_gesture_scroll(&mut self, delta: f64) -> bool {
         let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
-            return;
+            return false;
         };
 
         let Some(last_time) = gesture.dnd_last_event_time else {
             // Not a DnD scroll.
-            return;
+            return false;
         };
 
         let config = &self.options.gestures.dnd_edge_view_scroll;
@@ -2864,7 +2864,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if delta == 0. {
             // We're outside the scrolling zone.
             gesture.dnd_nonzero_start_time = None;
-            return;
+            return false;
         }
 
         let nonzero_start = *gesture.dnd_nonzero_start_time.get_or_insert(now);
@@ -2873,7 +2873,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // monitors.
         let delay = Duration::from_millis(u64::from(config.delay_ms));
         if now.saturating_sub(nonzero_start) < delay {
-            return;
+            return true;
         }
 
         let time_delta = now.saturating_sub(last_time).as_secs_f64();
@@ -2917,6 +2917,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         gesture.delta_from_tracker += clamped_offset - view_offset;
         gesture.current_view_offset = clamped_offset;
+        true
     }
 
     pub fn view_offset_gesture_end(&mut self, _cancelled: bool, is_touchpad: Option<bool>) -> bool {

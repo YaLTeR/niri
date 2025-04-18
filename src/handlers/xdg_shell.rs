@@ -153,7 +153,7 @@ impl XdgShellHandler for State {
 
         match start_data {
             PointerOrTouchStartData::Pointer(start_data) => {
-                let grab = MoveGrab::new(start_data, window);
+                let grab = MoveGrab::new(start_data, window, false);
                 pointer.set_grab(self, grab, serial, Focus::Clear);
             }
             PointerOrTouchStartData::Touch(start_data) => {
@@ -315,6 +315,9 @@ impl XdgShellHandler for State {
             return;
         } else if let Some(output) = self.niri.layout.active_output() {
             let layers = layer_map_for_output(output);
+
+            // FIXME: somewhere here we probably need to check is_overview_open to match the logic
+            // in update_keyboard_focus().
 
             if layers
                 .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)

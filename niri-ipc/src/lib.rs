@@ -764,6 +764,8 @@ pub enum Action {
     },
     /// Clear the dynamic cast target, making it show nothing.
     ClearDynamicCastTarget {},
+    /// Toggle the Overview.
+    ToggleOverview {},
 }
 
 /// Change in window or column size.
