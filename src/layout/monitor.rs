@@ -241,27 +241,31 @@ impl<W: LayoutElement> Monitor<W> {
         self.windows().any(|win| win.id() == window)
     }
 
-    pub fn add_workspace_top(&mut self) {
+    pub fn add_workspace_at(&mut self, idx: usize) {
         let ws = Workspace::new(
             self.output.clone(),
             self.clock.clone(),
             self.options.clone(),
         );
-        self.workspaces.insert(0, ws);
-        self.active_workspace_idx += 1;
+
+        self.workspaces.insert(idx, ws);
+        if idx <= self.active_workspace_idx {
+            self.active_workspace_idx += 1;
+        }
 
         if let Some(switch) = &mut self.workspace_switch {
-            switch.offset(1);
+            if idx as f64 <= switch.target_idx() {
+                switch.offset(1);
+            }
         }
     }
 
+    pub fn add_workspace_top(&mut self) {
+        self.add_workspace_at(0);
+    }
+
     pub fn add_workspace_bottom(&mut self) {
-        let ws = Workspace::new(
-            self.output.clone(),
-            self.clock.clone(),
-            self.options.clone(),
-        );
-        self.workspaces.push(ws);
+        self.add_workspace_at(self.workspaces.len());
     }
 
     fn activate_workspace(&mut self, idx: usize) {
