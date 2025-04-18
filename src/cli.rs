@@ -52,6 +52,9 @@ pub enum Sub {
         /// command line argument takes precedence.
         #[arg(short, long)]
         config: Option<PathBuf>,
+        /// Format config errors as JSON to stdout.
+        #[arg(short, long)]
+        json: bool,
     },
     /// Cause a panic to check if the backtraces are good.
     Panic,
