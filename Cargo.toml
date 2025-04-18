@@ -15,9 +15,9 @@ repository = "https://github.com/YaLTeR/niri"
 rust-version = "1.80.1"
 
 [workspace.dependencies]
-anyhow = "1.0.97"
+anyhow = "1.0.98"
 bitflags = "2.9.0"
-clap = { version = "4.5.34", features = ["derive"] }
+clap = { version = "4.5.36", features = ["derive"] }
 insta = "1.42.2"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
@@ -65,10 +65,10 @@ drm-ffi = "0.9.0"
 fastrand = "2.3.0"
 futures-util = { version = "0.3.31", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
-glam = "0.30.1"
+glam = "0.30.2"
 input = { version = "0.9.1", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.171"
+libc = "0.2.172"
 libdisplay-info = "0.2.2"
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "25.2.0", path = "niri-config" }
