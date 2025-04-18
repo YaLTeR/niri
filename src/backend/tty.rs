@@ -845,9 +845,9 @@ impl Tty {
             let target = config.mode.unwrap();
             warn!(
                 "configured mode {}x{}{} could not be found, falling back to preferred",
-                target.width,
-                target.height,
-                if let Some(refresh) = target.refresh {
+                target.mode.width,
+                target.mode.height,
+                if let Some(refresh) = target.mode.refresh {
                     format!("@{refresh}")
                 } else {
                     String::new()
@@ -1871,9 +1871,9 @@ impl Tty {
                             "output {:?}: configured mode {}x{}{} could not be found, \
                              falling back to preferred",
                             surface.name.connector,
-                            target.width,
-                            target.height,
-                            if let Some(refresh) = target.refresh {
+                            target.mode.width,
+                            target.mode.height,
+                            if let Some(refresh) = target.mode.refresh {
                                 format!("@{refresh}")
                             } else {
                                 String::new()
@@ -2353,18 +2353,92 @@ fn queue_estimated_vblank_timer(
     output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
 }
 
+pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mode {
+    let options = libdisplay_info::cvt::Options {
+        red_blank_ver: libdisplay_info::cvt::ReducedBlankingVersion::None,
+        h_pixels: width as i32,
+        v_lines: height as i32,
+        ip_freq_rqd: refresh,
+        video_opt: false,
+        vblank: 0f64,
+        additional_hblank: 0,
+        early_vsync_rqd: false,
+        int_rqd: false,
+        margins_rqd: false,
+    };
+    let cvt_timing = libdisplay_info::cvt::Timing::compute(options);
+
+    let hsync_start = height + cvt_timing.h_front_porch as u16;
+    let vsync_start = (cvt_timing.v_lines_rnd + cvt_timing.v_front_porch) as u16;
+    let hsync_end = hsync_start + cvt_timing.h_sync as u16;
+    let vsync_end = vsync_start + cvt_timing.v_sync as u16;
+    let htotal = hsync_end + cvt_timing.h_back_porch as u16;
+    let vtotal = vsync_end + cvt_timing.v_back_porch as u16;
+    let clock = f64::round(cvt_timing.act_pixel_freq * 1000f64) as u32;
+    let vrefresh = f64::round(cvt_timing.act_pixel_freq) as u32;
+    let flags = drm_ffi::DRM_MODE_FLAG_NHSYNC | drm_ffi::DRM_MODE_FLAG_PVSYNC;
+
+    let mode_name = format!("{width}x{height}_{:.2}", cvt_timing.act_frame_rate);
+    let mode_name_bytes = unsafe {
+        std::slice::from_raw_parts(
+            mode_name.as_bytes() as *const _ as *const core::ffi::c_char,
+            mode_name.len(),
+        )
+    };
+    let mut name: [core::ffi::c_char; 32] = [0; 32];
+    let min_length = name.len().min(mode_name_bytes.len());
+    name[0..min_length].copy_from_slice(&mode_name_bytes[0..min_length]);
+
+    let drm_ffi_mode = drm_ffi::drm_sys::drm_mode_modeinfo {
+        clock,
+
+        hdisplay: width,
+        hsync_start,
+        hsync_end,
+        htotal,
+        hskew: 0,
+
+        vdisplay: height,
+        vsync_start,
+        vsync_end,
+        vtotal,
+
+        vscan: 0,
+        vrefresh,
+
+        flags,
+        type_: drm_ffi::DRM_MODE_TYPE_USERDEF,
+
+        name,
+    };
+
+    control::Mode::from(drm_ffi_mode)
+}
+
 fn pick_mode(
     connector: &connector::Info,
-    target: Option<niri_ipc::ConfiguredMode>,
+    target: Option<niri_config::Mode>,
 ) -> Option<(control::Mode, bool)> {
     let mut mode = None;
     let mut fallback = false;
 
     if let Some(target) = target {
-        let refresh = target.refresh.map(|r| (r * 1000.).round() as i32);
+        let target_mode = target.mode;
+
+        if target.custom {
+            if let Some(refresh) = target_mode.refresh {
+                let custom_mode =
+                    calculate_mode_cvt(target_mode.width, target_mode.height, refresh);
+                return Some((custom_mode, false));
+            } else {
+                warn!("ignoring custom mode without refresh rate");
+            }
+        }
+
+        let refresh = target_mode.refresh.map(|r| (r * 1000.).round() as i32);
 
         for m in connector.modes() {
-            if m.size() != (target.width, target.height) {
+            if m.size() != (target_mode.width, target_mode.height) {
                 continue;
             }
 
