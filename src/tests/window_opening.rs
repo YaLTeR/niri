@@ -95,6 +95,52 @@ fn dont_ack_initial_configure() {
     );
 }
 
+#[test]
+fn commit_before_initial_configure() {
+    let mut f = Fixture::new();
+
+    let id = f.add_client();
+    let window = f.client(id).create_window();
+    let surface = window.surface.clone();
+    window.commit();
+
+    // Attach and commit before niri's loop has a chance to run.
+    window.attach_new_buffer();
+    window.commit();
+
+    f.double_roundtrip(id);
+
+    let window = f.client(id).window(&surface);
+    assert_snapshot!(
+        window.format_recent_configures(),
+        @"size: 1 × 688, bounds: 1248 × 688, states: []"
+    );
+}
+
+// FIXME: this test currently panics. Uncomment and rename after it's checked in Smithay.
+//
+// https://github.com/Smithay/smithay/issues/1717
+#[test]
+fn commit_before_initial_configure_floating_fixme() {
+    let mut f = Fixture::new();
+
+    let id = f.add_client();
+    let window = f.client(id).create_window();
+
+    // Set fixed size to force floating.
+    window.set_min_size(1, 1);
+    window.set_max_size(1, 1);
+
+    window.commit();
+
+    // Attach and commit before niri's loop has a chance to run.
+    window.attach_new_buffer();
+    window.commit();
+
+    // FIXME: uncomment this.
+    // f.double_roundtrip(id);
+}
+
 #[derive(Clone, Copy)]
 enum WantFullscreen {
     No,

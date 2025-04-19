@@ -231,6 +231,14 @@ impl Window {
         self.surface.attach(Some(&buffer), 0, 0);
     }
 
+    pub fn set_min_size(&self, w: u16, h: u16) {
+        self.xdg_toplevel.set_min_size(i32::from(w), i32::from(h));
+    }
+
+    pub fn set_max_size(&self, w: u16, h: u16) {
+        self.xdg_toplevel.set_max_size(i32::from(w), i32::from(h));
+    }
+
     pub fn set_size(&self, w: u16, h: u16) {
         self.viewport.set_destination(i32::from(w), i32::from(h));
     }
