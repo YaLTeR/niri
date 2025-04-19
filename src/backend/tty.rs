@@ -51,6 +51,7 @@ use smithay::wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlob
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
+use smithay::wayland::drm_syncobj::{supports_syncobj_eventfd, DrmSyncobjState};
 use smithay::wayland::presentation::Refresh;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
@@ -90,6 +91,8 @@ pub struct Tty {
     dmabuf_global: Option<DmabufGlobal>,
     // The output config had changed, but the session is paused, so we need to update it on resume.
     update_output_config_on_resume: bool,
+    // The sync object state when available
+    pub(crate) syncobj_state: Option<DrmSyncobjState>,
     // Whether the debug tinting is enabled.
     debug_tint: bool,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
@@ -333,6 +336,7 @@ impl Tty {
             devices: HashMap::new(),
             dmabuf_global: None,
             update_output_config_on_resume: false,
+            syncobj_state: None,
             debug_tint: false,
             ipc_outputs: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -503,7 +507,7 @@ impl Tty {
         let device_fd = DrmDeviceFd::new(DeviceFd::from(fd));
 
         let (drm, drm_notifier) = DrmDevice::new(device_fd.clone(), true)?;
-        let gbm = GbmDevice::new(device_fd)?;
+        let gbm = GbmDevice::new(device_fd.clone())?;
 
         let display = unsafe { EGLDisplay::new(gbm.clone())? };
         let egl_device = EGLDevice::device_for_display(&display)?;
@@ -582,6 +586,12 @@ impl Tty {
                         }
                     }
                 }
+            }
+
+            // Expose syncobj protocol if supported by primary GPU
+            if supports_syncobj_eventfd(&device_fd) {
+                let syncobj_state = DrmSyncobjState::new::<State>(&niri.display_handle, device_fd);
+                assert!(self.syncobj_state.replace(syncobj_state).is_none());
             }
         }
 
