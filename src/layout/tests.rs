@@ -1063,7 +1063,7 @@ impl Op {
                 workspace_idx,
             } => {
                 let window_id = window_id.filter(|id| layout.has_window(id));
-                layout.move_to_workspace(window_id.as_ref(), workspace_idx);
+                layout.move_to_workspace(window_id.as_ref(), workspace_idx, ActivateWindow::Smart);
             }
             Op::MoveColumnToWorkspaceDown => layout.move_column_to_workspace_down(),
             Op::MoveColumnToWorkspaceUp => layout.move_column_to_workspace_up(),
@@ -1081,7 +1081,12 @@ impl Op {
 
                 let window_id = window_id.filter(|id| layout.has_window(id));
                 let target_ws_idx = target_ws_idx.filter(|idx| mon.workspaces.len() > *idx);
-                layout.move_to_output(window_id.as_ref(), &output, target_ws_idx);
+                layout.move_to_output(
+                    window_id.as_ref(),
+                    &output,
+                    target_ws_idx,
+                    ActivateWindow::Smart,
+                );
             }
             Op::MoveColumnToOutput(id) => {
                 let name = format!("output{id}");
@@ -3303,6 +3308,28 @@ fn move_unfocused_pending_unfullscreen_window_out_of_active_column() {
             window_id: Some(1),
             workspace_idx: 1,
         },
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn interactive_resize_on_pending_unfullscreen_column() {
+    let ops = [
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::FullscreenWindow(2),
+        Op::Communicate(2),
+        Op::SetFullscreenWindow {
+            window: 2,
+            is_fullscreen: false,
+        },
+        Op::InteractiveResizeBegin {
+            window: 2,
+            edges: ResizeEdge::RIGHT,
+        },
+        Op::Communicate(2),
     ];
 
     check_ops(&ops);

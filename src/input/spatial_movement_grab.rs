@@ -105,7 +105,7 @@ impl PointerGrab<State> for SpatialMovementGrab {
                 data.niri.queue_redraw(&output);
             }
         } else {
-            // The resize is no longer ongoing.
+            // The move is no longer ongoing.
             handle.unset_grab(self, data, event.serial, event.time, true);
         }
     }
