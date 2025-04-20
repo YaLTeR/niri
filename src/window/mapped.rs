@@ -14,6 +14,7 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId, SurfaceData};
+use smithay::wayland::foreign_toplevel_list::ForeignToplevelHandle;
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
 use wayland_backend::server::Credentials;
@@ -156,6 +157,8 @@ pub struct Mapped {
     /// These have been "sent" to the window in form of configures, but the window hadn't committed
     /// in response yet.
     uncommited_windowed_fullscreen: Vec<(Serial, bool)>,
+
+    foreign_toplevel_handle: ForeignToplevelHandle,
 }
 
 niri_render_elements! {
@@ -217,7 +220,12 @@ enum RequestSizeOnce {
 }
 
 impl Mapped {
-    pub fn new(window: Window, rules: ResolvedWindowRules, hook: HookId) -> Self {
+    pub fn new(
+        window: Window,
+        rules: ResolvedWindowRules,
+        hook: HookId,
+        foreign_toplevel_handle: ForeignToplevelHandle,
+    ) -> Self {
         let surface = window.wl_surface().expect("no X11 support");
         let credentials = get_credentials_for_surface(&surface);
 
@@ -248,6 +256,7 @@ impl Mapped {
             is_windowed_fullscreen: false,
             is_pending_windowed_fullscreen: false,
             uncommited_windowed_fullscreen: Vec::new(),
+            foreign_toplevel_handle,
         }
     }
 
@@ -509,6 +518,10 @@ impl Mapped {
 
     pub fn is_windowed_fullscreen(&self) -> bool {
         self.is_windowed_fullscreen
+    }
+
+    pub fn foreign_toplevel_handle(&self) -> &ForeignToplevelHandle {
+        &self.foreign_toplevel_handle
     }
 }
 
