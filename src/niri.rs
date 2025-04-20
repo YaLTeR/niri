@@ -630,6 +630,8 @@ impl State {
         state.load_xkb_file();
         // Initialize some IPC server state.
         state.ipc_keyboard_layouts_changed();
+        // Focus the default monitor if set by the user.
+        state.focus_default_monitor();
 
         Ok(state)
     }
@@ -792,6 +794,29 @@ impl State {
         }
 
         rv
+    }
+
+    pub fn focus_default_monitor(&mut self) {
+        // Our default target is the first output in sorted order.
+        let Some(mut target) = self.niri.sorted_outputs.first().cloned() else {
+            // No outputs are connected.
+            return;
+        };
+
+        let config = self.niri.config.borrow();
+        for config in &config.outputs.0 {
+            if !config.focus_at_startup {
+                continue;
+            }
+            if let Some(output) = self.niri.output_by_name_match(&config.name) {
+                target = output.clone();
+                break;
+            }
+        }
+        drop(config);
+
+        self.niri.layout.focus_output(&target);
+        self.move_cursor_to_output(&target);
     }
 
     /// Focus a specific window, taking care of a potential active output change and cursor
@@ -3749,9 +3774,9 @@ impl Niri {
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
         let monitor_elements: Vec<_> = mon.render_elements(renderer, target, focus_ring).collect();
-        let float_elements: Vec<_> = self
+        let int_move_elements: Vec<_> = self
             .layout
-            .render_floating_for_output(renderer, output, target)
+            .render_interactive_move_for_output(renderer, output, target)
             .collect();
 
         // Get layer-shell elements.
@@ -3776,7 +3801,11 @@ impl Niri {
         // When rendering above the top layer, we put the regular monitor elements first.
         // Otherwise, we will render all layer-shell pop-ups and the top layer on top.
         if mon.render_above_top_layer() {
-            elements.extend(float_elements.into_iter().map(OutputRenderElements::from));
+            elements.extend(
+                int_move_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
 
             elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
@@ -3786,7 +3815,11 @@ impl Niri {
             elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
             elements.extend(top_layer_normal.into_iter().map(OutputRenderElements::from));
 
-            elements.extend(float_elements.into_iter().map(OutputRenderElements::from));
+            elements.extend(
+                int_move_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
 
             elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));

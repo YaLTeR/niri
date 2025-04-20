@@ -6,7 +6,7 @@ use niri::render_helpers::RenderTarget;
 use niri_config::{Color, FloatOrInt};
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Physical, Point, Rectangle, Scale, Size};
+use smithay::utils::{Physical, Point, Rectangle, Size};
 
 use super::{Args, TestCase};
 use crate::test_window::TestWindow;
@@ -117,13 +117,7 @@ impl TestCase for Tile {
             Rectangle::new(Point::from((-location.x, -location.y)), size.to_logical(1.)),
         );
         self.tile
-            .render(
-                renderer,
-                location,
-                Scale::from(1.),
-                true,
-                RenderTarget::Output,
-            )
+            .render(renderer, location, true, RenderTarget::Output)
             .map(|elem| Box::new(elem) as _)
             .collect()
     }

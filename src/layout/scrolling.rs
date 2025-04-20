@@ -110,8 +110,6 @@ pub enum InsertPosition {
 #[derive(Debug)]
 pub struct InsertHint {
     pub position: InsertPosition,
-    pub width: ColumnWidth,
-    pub is_full_width: bool,
     pub corner_radius: CornerRadius,
 }
 
@@ -2694,11 +2692,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn render_elements<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-        scale: Scale<f64>,
         target: RenderTarget,
         focus_ring: bool,
     ) -> Vec<ScrollingSpaceRenderElement<R>> {
         let mut rv = vec![];
+
+        let scale = Scale::from(self.scale);
 
         // Draw the insert hint.
         if let Some(insert_hint) = &self.insert_hint {
@@ -2760,7 +2759,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 }
 
                 rv.extend(
-                    tile.render(renderer, tile_pos, scale, focus_ring, target)
+                    tile.render(renderer, tile_pos, focus_ring, target)
                         .map(Into::into),
                 );
             }
@@ -2973,6 +2972,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // cancelling would require keeping track of the original active column, and then updating
         // it in all the right places (adding columns, removing columns, etc.) -- quite a bit of
         // effort and bug potential.
+
+        // Take into account any idle time between the last event and now.
+        let now = self.clock.now_unadjusted();
+        gesture.tracker.push(0., now);
 
         let norm_factor = if gesture.is_touchpad {
             self.working_area.size.w / VIEW_GESTURE_WORKING_AREA_MOVEMENT
@@ -3254,10 +3257,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return false;
         }
 
-        let col = self
+        let (col_idx, col) = self
             .columns
             .iter_mut()
-            .find(|col| col.contains(&window))
+            .enumerate()
+            .find(|(_, col)| col.contains(&window))
             .unwrap();
 
         if col.is_fullscreen {
@@ -3281,6 +3285,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         self.view_offset.stop_anim_and_gesture();
         tile.prefer_expected_size = false;
+
+        // If this is the active column, clear the stored unfullscreen view offset in case one of
+        // the tiles in the column is still pending unfullscreen. Normally it is cleared and
+        // applied in update_window(), but we skip that during interactive resize because the view
+        // is frozen.
+        if col_idx == self.active_column_idx {
+            self.view_offset_before_fullscreen = None;
+        }
 
         true
     }
@@ -4132,9 +4144,7 @@ impl<W: LayoutElement> Column<W> {
             let min_height = f64::min(max_tile_height, min_height);
             let tabbed_height = f64::max(tabbed_height, min_height);
 
-            for h in &mut heights {
-                *h = WindowHeight::Fixed(tabbed_height);
-            }
+            heights.fill(WindowHeight::Fixed(tabbed_height));
 
             // The following logic will apply individual min/max height, etc.
         }

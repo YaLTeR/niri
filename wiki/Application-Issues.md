@@ -1,3 +1,21 @@
+### Electron applications
+
+Electron-based applications can run directly on Wayland, but it's not the default.
+
+For Electron > 28, you can set an environment variable:
+```kdl
+environment {
+    ELECTRON_OZONE_PLATFORM_HINT "auto"
+}
+```
+
+For previous versions, you need to pass command-line flags to the target application:
+```
+--enable-features=UseOzonePlatform --ozone-platform-hint=auto
+```
+
+If the application has a [desktop entry](https://specifications.freedesktop.org/menu-spec/latest/menu-add-example.html), you can put the command-line arguments into the `Exec` section.
+
 ### VSCode
 
 If you're having issues with some VSCode hotkeys, try starting `Xwayland` and setting the `DISPLAY=:0` environment variable for VSCode.
@@ -52,3 +70,19 @@ Other game launchers such as [Lutris](https://lutris.net/) have their own ways o
 
 Running X11-based games with this method doesn't require Xwayland as gamescope creates its own Xwayland server.
 You can run Wayland-native games as well by passing `--expose-wayland` to gamescope, therefore eliminating X11 from the equation.
+
+### Steam
+
+On some systems, Steam will show a fully black window.
+To fix this, navigate to Settings -> Interface (via Steam's tray icon, or by blindly finding the Steam menu at the top left of the window), then **disable** GPU accelerated rendering in web views.
+Restart Steam and it should now work fine.
+
+Steam notifications don't run through the standard notification daemon and show up as floating windows in the center of the screen.
+You can move them to a more convenient location by adding a window rule in your niri config:
+
+```kdl
+window-rule {
+    match app-id="steam" title=r#"^notificationtoasts_\d+_desktop$"#
+    default-floating-position x=10 y=10 relative-to="bottom-right"
+}
+```

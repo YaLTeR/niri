@@ -26,7 +26,7 @@ use crate::utils::{
 use crate::window::ResolvedWindowRules;
 
 /// By how many logical pixels the directional move commands move floating windows.
-const DIRECTIONAL_MOVE_PX: f64 = 50.;
+pub const DIRECTIONAL_MOVE_PX: f64 = 50.;
 
 /// Space for floating windows.
 #[derive(Debug)]
@@ -985,11 +985,12 @@ impl<W: LayoutElement> FloatingSpace<W> {
         &self,
         renderer: &mut R,
         view_rect: Rectangle<f64, Logical>,
-        scale: Scale<f64>,
         target: RenderTarget,
         focus_ring: bool,
     ) -> Vec<FloatingSpaceRenderElement<R>> {
         let mut rv = Vec::new();
+
+        let scale = Scale::from(self.scale);
 
         // Draw the closing windows on top of the other windows.
         //
@@ -1005,7 +1006,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             let focus_ring = focus_ring && Some(tile.window().id()) == active.as_ref();
 
             rv.extend(
-                tile.render(renderer, tile_pos, scale, focus_ring, target)
+                tile.render(renderer, tile_pos, focus_ring, target)
                     .map(Into::into),
             );
         }

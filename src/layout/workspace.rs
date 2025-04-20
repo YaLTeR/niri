@@ -9,7 +9,7 @@ use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
+use smithay::utils::{Logical, Point, Rectangle, Serial, Size, Transform};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
@@ -1410,23 +1410,18 @@ impl<W: LayoutElement> Workspace<W> {
         target: RenderTarget,
         focus_ring: bool,
     ) -> impl Iterator<Item = WorkspaceRenderElement<R>> {
-        let scale = Scale::from(self.scale.fractional_scale());
         let scrolling_focus_ring = focus_ring && !self.floating_is_active();
-        let scrolling =
-            self.scrolling
-                .render_elements(renderer, scale, target, scrolling_focus_ring);
+        let scrolling = self
+            .scrolling
+            .render_elements(renderer, target, scrolling_focus_ring);
         let scrolling = scrolling.into_iter().map(WorkspaceRenderElement::from);
 
         let floating_focus_ring = focus_ring && self.floating_is_active();
         let floating = self.is_floating_visible().then(|| {
             let view_rect = Rectangle::from_size(self.view_size);
-            let floating = self.floating.render_elements(
-                renderer,
-                view_rect,
-                scale,
-                target,
-                floating_focus_ring,
-            );
+            let floating =
+                self.floating
+                    .render_elements(renderer, view_rect, target, floating_focus_ring);
             floating.into_iter().map(WorkspaceRenderElement::from)
         });
 
@@ -1446,14 +1441,13 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
-        let output_scale = Scale::from(self.scale.fractional_scale());
         let view_size = self.view_size();
         for (tile, tile_pos) in self.tiles_with_render_positions_mut(false) {
             if tile.window().id() == window {
                 let view_pos = Point::from((-tile_pos.x, -tile_pos.y));
                 let view_rect = Rectangle::new(view_pos, view_size);
                 tile.update_render_elements(false, view_rect);
-                tile.store_unmap_snapshot_if_empty(renderer, output_scale);
+                tile.store_unmap_snapshot_if_empty(renderer);
                 return;
             }
         }
