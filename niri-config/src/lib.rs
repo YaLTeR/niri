@@ -120,6 +120,8 @@ pub struct Keyboard {
     pub repeat_rate: u8,
     #[knuffel(child, unwrap(argument), default)]
     pub track_layout: TrackLayout,
+    #[knuffel(child)]
+    pub numlock: bool,
 }
 
 impl Default for Keyboard {
@@ -129,6 +131,7 @@ impl Default for Keyboard {
             repeat_delay: 600,
             repeat_rate: 25,
             track_layout: Default::default(),
+            numlock: Default::default(),
         }
     }
 }
@@ -4059,6 +4062,7 @@ mod tests {
                     repeat_delay: 600,
                     repeat_rate: 25,
                     track_layout: Window,
+                    numlock: false,
                 },
                 touchpad: Touchpad {
                     off: false,
