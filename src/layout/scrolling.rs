@@ -2989,7 +2989,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         gesture.current_view_offset = clamped_offset;
     }
 
-    pub fn view_offset_gesture_end(&mut self, _cancelled: bool, is_touchpad: Option<bool>) -> bool {
+    pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
         let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
             return false;
         };
@@ -3279,7 +3279,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        self.view_offset_gesture_end(false, None);
+        self.view_offset_gesture_end(None);
     }
 
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {

@@ -1026,23 +1026,13 @@ impl<W: LayoutElement> Monitor<W> {
         Some(true)
     }
 
-    pub fn workspace_switch_gesture_end(
-        &mut self,
-        cancelled: bool,
-        is_touchpad: Option<bool>,
-    ) -> bool {
+    pub fn workspace_switch_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
         let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
             return false;
         };
 
         if is_touchpad.is_some_and(|x| gesture.is_touchpad != x) {
             return false;
-        }
-
-        if cancelled {
-            self.workspace_switch = None;
-            self.clean_up_workspaces();
-            return true;
         }
 
         // Take into account any idle time between the last event and now.

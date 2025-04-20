@@ -599,7 +599,6 @@ enum Op {
         is_touchpad: bool,
     },
     WorkspaceSwitchGestureEnd {
-        cancelled: bool,
         is_touchpad: Option<bool>,
     },
     InteractiveMoveBegin {
@@ -1362,8 +1361,7 @@ impl Op {
                 layout.view_offset_gesture_update(delta, timestamp, is_touchpad);
             }
             Op::ViewOffsetGestureEnd { is_touchpad } => {
-                // We don't handle cancels in this gesture.
-                layout.view_offset_gesture_end(false, is_touchpad);
+                layout.view_offset_gesture_end(is_touchpad);
             }
             Op::WorkspaceSwitchGestureBegin {
                 output_idx: id,
@@ -1383,11 +1381,8 @@ impl Op {
             } => {
                 layout.workspace_switch_gesture_update(delta, timestamp, is_touchpad);
             }
-            Op::WorkspaceSwitchGestureEnd {
-                cancelled,
-                is_touchpad,
-            } => {
-                layout.workspace_switch_gesture_end(cancelled, is_touchpad);
+            Op::WorkspaceSwitchGestureEnd { is_touchpad } => {
+                layout.workspace_switch_gesture_end(is_touchpad);
             }
             Op::InteractiveMoveBegin {
                 window,

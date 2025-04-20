@@ -3534,7 +3534,7 @@ impl<W: LayoutElement> Layout<W> {
         for monitor in monitors {
             // Cancel the gesture on other outputs.
             if &monitor.output != output {
-                monitor.workspace_switch_gesture_end(true, None);
+                monitor.workspace_switch_gesture_end(None);
                 continue;
             }
 
@@ -3568,18 +3568,14 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
-    pub fn workspace_switch_gesture_end(
-        &mut self,
-        cancelled: bool,
-        is_touchpad: Option<bool>,
-    ) -> Option<Output> {
+    pub fn workspace_switch_gesture_end(&mut self, is_touchpad: Option<bool>) -> Option<Output> {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => return None,
         };
 
         for monitor in monitors {
-            if monitor.workspace_switch_gesture_end(cancelled, is_touchpad) {
+            if monitor.workspace_switch_gesture_end(is_touchpad) {
                 return Some(monitor.output.clone());
             }
         }
@@ -3597,7 +3593,7 @@ impl<W: LayoutElement> Layout<W> {
             for (idx, ws) in monitor.workspaces.iter_mut().enumerate() {
                 // Cancel the gesture on other workspaces.
                 if &monitor.output != output || idx != monitor.active_workspace_idx {
-                    ws.view_offset_gesture_end(true, None);
+                    ws.view_offset_gesture_end(None);
                     continue;
                 }
 
@@ -3634,11 +3630,7 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
-    pub fn view_offset_gesture_end(
-        &mut self,
-        cancelled: bool,
-        is_touchpad: Option<bool>,
-    ) -> Option<Output> {
+    pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> Option<Output> {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => return None,
@@ -3646,7 +3638,7 @@ impl<W: LayoutElement> Layout<W> {
 
         for monitor in monitors {
             for ws in &mut monitor.workspaces {
-                if ws.view_offset_gesture_end(cancelled, is_touchpad) {
+                if ws.view_offset_gesture_end(is_touchpad) {
                     return Some(monitor.output.clone());
                 }
             }
@@ -4560,7 +4552,7 @@ impl<W: LayoutElement> Layout<W> {
                         } else {
                             // Cancel the view offset gesture after workspace switches, moves, etc.
                             if ws_idx != mon.active_workspace_idx {
-                                ws.view_offset_gesture_end(false, None);
+                                ws.view_offset_gesture_end(None);
                             }
                         }
                     }
@@ -4569,7 +4561,7 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
                     ws.refresh(false);
-                    ws.view_offset_gesture_end(false, None);
+                    ws.view_offset_gesture_end(None);
                 }
             }
         }

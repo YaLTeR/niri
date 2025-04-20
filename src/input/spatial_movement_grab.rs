@@ -40,10 +40,8 @@ impl SpatialMovementGrab {
         let layout = &mut state.niri.layout;
         let res = match self.gesture {
             GestureState::Recognizing => None,
-            GestureState::ViewOffset => layout.view_offset_gesture_end(false, Some(false)),
-            GestureState::WorkspaceSwitch => {
-                layout.workspace_switch_gesture_end(false, Some(false))
-            }
+            GestureState::ViewOffset => layout.view_offset_gesture_end(Some(false)),
+            GestureState::WorkspaceSwitch => layout.workspace_switch_gesture_end(Some(false)),
         };
 
         if let Some(output) = res {
