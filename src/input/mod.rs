@@ -2886,19 +2886,13 @@ impl State {
         self.niri.gesture_swipe_3f_cumulative = None;
 
         let mut handled = false;
-        let res = self
-            .niri
-            .layout
-            .workspace_switch_gesture_end(event.cancelled(), Some(true));
+        let res = self.niri.layout.workspace_switch_gesture_end(Some(true));
         if let Some(output) = res {
             self.niri.queue_redraw(&output);
             handled = true;
         }
 
-        let res = self
-            .niri
-            .layout
-            .view_offset_gesture_end(event.cancelled(), Some(true));
+        let res = self.niri.layout.view_offset_gesture_end(Some(true));
         if let Some(output) = res {
             self.niri.queue_redraw(&output);
             handled = true;

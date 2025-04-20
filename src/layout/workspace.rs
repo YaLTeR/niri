@@ -1619,9 +1619,8 @@ impl<W: LayoutElement> Workspace<W> {
             .view_offset_gesture_update(delta_x, timestamp, is_touchpad)
     }
 
-    pub fn view_offset_gesture_end(&mut self, cancelled: bool, is_touchpad: Option<bool>) -> bool {
-        self.scrolling
-            .view_offset_gesture_end(cancelled, is_touchpad)
+    pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
+        self.scrolling.view_offset_gesture_end(is_touchpad)
     }
 
     pub fn dnd_scroll_gesture_begin(&mut self) {
