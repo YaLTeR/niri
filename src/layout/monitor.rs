@@ -131,6 +131,14 @@ impl WorkspaceSwitch {
     }
 }
 
+impl WorkspaceSwitchGesture {
+    fn min_max(&self, workspace_count: usize) -> (f64, f64) {
+        let min = self.center_idx.saturating_sub(1) as f64;
+        let max = (self.center_idx + 1).min(workspace_count - 1) as f64;
+        (min, max)
+    }
+}
+
 impl<W: LayoutElement> Monitor<W> {
     pub fn new(
         output: Output,
@@ -1020,8 +1028,7 @@ impl<W: LayoutElement> Monitor<W> {
         };
         let pos = gesture.tracker.pos() / total_height;
 
-        let min = gesture.center_idx.saturating_sub(1) as f64;
-        let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
+        let (min, max) = gesture.min_max(self.workspaces.len());
         let new_idx = gesture.start_idx + pos;
         let new_idx = WORKSPACE_GESTURE_RUBBER_BAND.clamp(min, max, new_idx);
 
@@ -1056,8 +1063,7 @@ impl<W: LayoutElement> Monitor<W> {
         let current_pos = gesture.tracker.pos() / total_height;
         let pos = gesture.tracker.projected_end_pos() / total_height;
 
-        let min = gesture.center_idx.saturating_sub(1) as f64;
-        let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
+        let (min, max) = gesture.min_max(self.workspaces.len());
         let new_idx = gesture.start_idx + pos;
 
         let new_idx = WORKSPACE_GESTURE_RUBBER_BAND.clamp(min, max, new_idx);
