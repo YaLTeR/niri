@@ -214,6 +214,12 @@ pub enum Action {
     },
     /// Enable or disable the keyboard shortcuts inhibitor (if any) for the focused surface.
     ToggleKeyboardShortcutsInhibit {},
+    /// Enable or disable input processing.
+    InhibitInput {
+        /// Whether input should be inhibited.
+        #[cfg_attr(feature = "clap", arg(long))]
+        inhibited: bool,
+    },
     /// Close a window.
     #[cfg_attr(feature = "clap", clap(about = "Close the focused window"))]
     CloseWindow {
