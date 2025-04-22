@@ -89,6 +89,7 @@ Recommends:     gnome-keyring
 Recommends:     alacritty
 Recommends:     fuzzel
 Recommends:     swaylock
+Recommends:     waybar
 # Suggested utilities
 Recommends:     swaybg
 Recommends:     mako
