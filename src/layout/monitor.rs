@@ -60,6 +60,11 @@ pub enum WorkspaceSwitch {
 pub struct WorkspaceSwitchGesture {
     /// Index of the workspace where the gesture was started.
     center_idx: usize,
+    /// Fractional workspace index where the gesture was started.
+    ///
+    /// Can differ from center_idx when starting a gesture in the middle between workspaces, for
+    /// example by "catching" an animation.
+    start_idx: f64,
     /// Current, fractional workspace index.
     pub(super) current_idx: f64,
     tracker: SwipeTracker,
@@ -111,6 +116,7 @@ impl WorkspaceSwitch {
                 } else {
                     gesture.center_idx -= (-delta) as usize;
                 }
+                gesture.start_idx += delta as f64;
                 gesture.current_idx += delta as f64;
             }
         }
@@ -983,6 +989,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let gesture = WorkspaceSwitchGesture {
             center_idx,
+            start_idx: current_idx,
             current_idx,
             tracker: SwipeTracker::new(),
             is_touchpad,
@@ -1015,7 +1022,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let min = gesture.center_idx.saturating_sub(1) as f64;
         let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
-        let new_idx = gesture.center_idx as f64 + pos;
+        let new_idx = gesture.start_idx + pos;
         let new_idx = WORKSPACE_GESTURE_RUBBER_BAND.clamp(min, max, new_idx);
 
         if gesture.current_idx == new_idx {
@@ -1051,7 +1058,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let min = gesture.center_idx.saturating_sub(1) as f64;
         let max = (gesture.center_idx + 1).min(self.workspaces.len() - 1) as f64;
-        let new_idx = gesture.center_idx as f64 + pos;
+        let new_idx = gesture.start_idx + pos;
 
         let new_idx = WORKSPACE_GESTURE_RUBBER_BAND.clamp(min, max, new_idx);
         let new_idx = new_idx.round() as usize;
@@ -1059,7 +1066,7 @@ impl<W: LayoutElement> Monitor<W> {
         velocity *= WORKSPACE_GESTURE_RUBBER_BAND.clamp_derivative(
             min,
             max,
-            gesture.center_idx as f64 + current_pos,
+            gesture.start_idx + current_pos,
         );
 
         self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
