@@ -24,7 +24,11 @@
     </cargoProject>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="7357a20f-4ae3-4a02-bab6-099076da6bb7" name="Changes" comment="" />
+    <list default="true" id="7357a20f-4ae3-4a02-bab6-099076da6bb7" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/pw_utils/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/pw_utils/mod.rs" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -245,6 +249,7 @@
       <workItem from="1745387194923" duration="4713000" />
       <workItem from="1745392303764" duration="8285000" />
       <workItem from="1745400776168" duration="427000" />
+      <workItem from="1745401635160" duration="1674000" />
     </task>
     <servers />
   </component>
@@ -269,6 +274,11 @@
           <url>file://$PROJECT_DIR$/../smithay/src/backend/renderer/gles/mod.rs</url>
           <line>2048</line>
           <option name="timeStamp" value="1" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
+          <url>file://$PROJECT_DIR$/src/pw_utils/mod.rs</url>
+          <line>884</line>
+          <option name="timeStamp" value="2" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
