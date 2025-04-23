@@ -278,7 +278,7 @@ impl PipeWire {
                 let gbm = gbm.clone();
                 let formats = formats.clone();
                 let refresh = refresh.clone();
-                move |stream, (), id, pod| unsafe {
+                move |stream, (), id, pod| {
                     let id = ParamType::from_raw(id);
                     trace!(?id, "pw stream: param_changed");
 
@@ -392,10 +392,10 @@ impl PipeWire {
                         };
 
                         debug!(
-                            "pw stream: allocation successful \
-                 (modifier={modifier:?}, plane_count={plane_count}), \
-                 moving to confirmation pending"
-                        );
+            "pw stream: allocation successful \
+ (modifier={modifier:?}, plane_count={plane_count}), \
+ moving to confirmation pending"
+        );
 
                         *state = CastState::ConfirmationPending {
                             size: format_size,
@@ -452,31 +452,31 @@ impl PipeWire {
                             ..
                         } if *alpha == format_has_alpha
                             && *modifier == Modifier::from(format.modifier()) =>
-                        {
-                            let size = *size;
-                            let alpha = *alpha;
-                            let modifier = *modifier;
-                            let plane_count = *plane_count;
+                            {
+                                let size = *size;
+                                let alpha = *alpha;
+                                let modifier = *modifier;
+                                let plane_count = *plane_count;
 
-                            let damage_tracker =
-                                if let CastState::Ready { damage_tracker, .. } = &mut *state {
-                                    damage_tracker.take()
-                                } else {
-                                    None
+                                let damage_tracker =
+                                    if let CastState::Ready { damage_tracker, .. } = &mut *state {
+                                        damage_tracker.take()
+                                    } else {
+                                        None
+                                    };
+
+                                debug!("pw stream: moving to ready state");
+
+                                *state = CastState::Ready {
+                                    size,
+                                    alpha,
+                                    modifier,
+                                    plane_count,
+                                    damage_tracker,
                                 };
 
-                            debug!("pw stream: moving to ready state");
-
-                            *state = CastState::Ready {
-                                size,
-                                alpha,
-                                modifier,
-                                plane_count,
-                                damage_tracker,
-                            };
-
-                            plane_count
-                        }
+                                plane_count
+                            }
                         _ => {
                             // We're negotiating a single modifier, or alpha or modifier changed,
                             // so we need to do a test allocation.
@@ -495,10 +495,10 @@ impl PipeWire {
                             };
 
                             debug!(
-        "pw stream: allocation successful \
- (modifier={modifier:?}, plane_count={plane_count}), \
- moving to ready"
-    );
+"pw stream: allocation successful \
+(modifier={modifier:?}, plane_count={plane_count}), \
+moving to ready"
+);
 
                             *state = CastState::Ready {
                                 size: format_size,
@@ -514,35 +514,35 @@ impl PipeWire {
 
                     // Create buffer parameters
                     let o1 = pod::object!(
-                        SpaTypes::ObjectParamBuffers,
-                        ParamType::Buffers,
-                        Property::new(
-                            SPA_PARAM_BUFFERS_buffers,
-                            pod::Value::Choice(ChoiceValue::Int(Choice(
-                                ChoiceFlags::empty(),
-                                ChoiceEnum::Range {
-                                    default: 16,
-                                    min: 2,
-                                    max: 16
-                                }
-                            ))),
-                        ),
-                        Property::new(SPA_PARAM_BUFFERS_blocks, pod::Value::Int(plane_count)),
-                        Property::new(
-                            SPA_PARAM_BUFFERS_dataType,
-                            pod::Value::Choice(ChoiceValue::Int(Choice(
-                                ChoiceFlags::empty(),
-                                ChoiceEnum::Flags {
-                                    default: 1 << DataType::DmaBuf.as_raw(),
-                                    flags: vec![1 << DataType::DmaBuf.as_raw()],
-                                },
-                            ))),
-                        ),
-                        Property::new(
-                            SPA_PARAM_META_type,
-                            pod::Value::Id(Id(SPA_META_SyncTimeline))
-                        ),
-                    );
+        SpaTypes::ObjectParamBuffers,
+        ParamType::Buffers,
+        Property::new(
+            SPA_PARAM_BUFFERS_buffers,
+            pod::Value::Choice(ChoiceValue::Int(Choice(
+                ChoiceFlags::empty(),
+                ChoiceEnum::Range {
+                    default: 16,
+                    min: 2,
+                    max: 16
+                }
+            ))),
+        ),
+        Property::new(SPA_PARAM_BUFFERS_blocks, pod::Value::Int(plane_count)),
+        Property::new(
+            SPA_PARAM_BUFFERS_dataType,
+            pod::Value::Choice(ChoiceValue::Int(Choice(
+                ChoiceFlags::empty(),
+                ChoiceEnum::Flags {
+                    default: 1 << DataType::DmaBuf.as_raw(),
+                    flags: vec![1 << DataType::DmaBuf.as_raw()],
+                },
+            ))),
+        ),
+        Property::new(
+            SPA_PARAM_META_type,
+            pod::Value::Id(Id(SPA_META_SyncTimeline))
+        ),
+    );
 
                     let mut b1 = vec![];
                     let mut params = [make_pod(&mut b1, o1)];
