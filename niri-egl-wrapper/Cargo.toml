@@ -1,0 +1,14 @@
+[package]
+name = "niri-egl-wrapper"
+version.workspace = true
+description.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = "1.0.98"
+log = "0.4.27"
+smithay = { path = "../../smithay", default-features = false }

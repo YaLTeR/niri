@@ -34,12 +34,9 @@ use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmBuffer, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format, Fourcc};
 use smithay::backend::drm::DrmDeviceFd;
-use smithay::backend::egl::context::ContextPriority;
-use smithay::backend::egl::{EGLContext, EGLDisplay, EGLSurface};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::ImportDma;
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
@@ -1112,38 +1109,17 @@ fn make_pod(buffer: &mut Vec<u8>, object: pod::Object) -> &Pod {
     Pod::from_bytes(buffer).unwrap()
 }
 
-unsafe fn find_preferred_modifier(
+fn find_preferred_modifier(
     gbm: &GbmDevice<DrmDeviceFd>,
     size: Size<u32, Physical>,
     fourcc: Fourcc,
     modifiers: Vec<i64>,
 ) -> anyhow::Result<(Modifier, usize)> {
-    // Existing validation and buffer allocation
+    // Log operation details for debugging
     debug!("find_preferred_modifier: size={size:?}, fourcc={fourcc}, modifiers={modifiers:?}");
-    let (buffer, modifier) = allocate_buffer(gbm, size, fourcc, &modifiers)?;
 
-    // Export to dmabuf
-    let dmabuf = buffer
-        .export()
-        .context("error exporting GBM buffer object as dmabuf")?;
-    let plane_count = dmabuf.num_planes();
-
-    // Create EGL display from GBM device
-    let egl_display = EGLDisplay::new(gbm.clone()).context("Failed to create EGL display")?;
-
-    // Create EGL context with medium priority
-    let egl_context = EGLContext::new_with_priority(&egl_display, ContextPriority::Medium)
-        .context("Failed to create EGL context")?;
-
-    // Create GLES renderer with the EGL context
-    let mut renderer = GlesRenderer::new(egl_context).context("Failed to create GLES renderer")?;
-
-    // Try to import the dmabuf into the renderer
-    renderer
-        .import_dmabuf(&dmabuf, None)
-        .context("Failed to import dmabuf for rendering")?;
-
-    Ok((modifier, plane_count))
+    // Use the safe API from our library - no unsafe blocks needed!
+    niri_egl_wrapper::safe::find_preferred_modifier(gbm, size, fourcc, modifiers)
 }
 
 fn allocate_buffer(

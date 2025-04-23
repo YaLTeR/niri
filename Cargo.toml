@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "niri-config",
+    "niri-config", "niri-egl-wrapper",
     "niri-ipc",
     "niri-visual-tests",
 ]
@@ -73,6 +73,7 @@ libdisplay-info = "0.2.2"
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "25.2.0", path = "niri-config" }
 niri-ipc = { version = "25.2.0", path = "niri-ipc", features = ["clap"] }
+niri-egl-wrapper = { version = "25.2.0", path = "niri-egl-wrapper" }
 ordered-float = "5.0.0"
 pango = { version = "0.20.9", features = ["v1_44"] }
 pangocairo = "0.20.7"

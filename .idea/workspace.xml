@@ -11,6 +11,9 @@
       <package file="$PROJECT_DIR$/niri-config">
         <enabledFeature name="default" />
       </package>
+      <package file="$PROJECT_DIR$/niri-egl-wrapper">
+        <enabledFeature name="default" />
+      </package>
       <package file="$PROJECT_DIR$/niri-ipc">
         <enabledFeature name="default" />
         <enabledFeature name="clap" />
@@ -86,7 +89,7 @@
     "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
     "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
     "org.rust.hideNoCargoProjectNotifications/home/cole/projects/niri/pipewire-rs/Cargo.toml": "true",
-    "settings.editor.selected.configurable": "preferences.lookFeel",
+    "settings.editor.selected.configurable": "preferences.pluginManager",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
@@ -245,6 +248,7 @@
       <workItem from="1745383313898" duration="1554000" />
       <workItem from="1745385141084" duration="1128000" />
       <workItem from="1745387194923" duration="4713000" />
+      <workItem from="1745392303764" duration="8285000" />
     </task>
     <servers />
   </component>
