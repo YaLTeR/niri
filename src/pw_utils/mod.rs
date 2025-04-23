@@ -860,20 +860,7 @@ impl Cast {
             None
         }
     }
-
-    /// Handles timeline synchronization for wait_for_sync operations
-    fn handle_sync_operations(
-        sync_timeline: &mut Option<SyncTimelineRef>,
-        buffer: &mut [pipewire::spa::buffer::Data],
-        wait_for_sync: bool,
-    ) -> Result<(), anyhow::Error> {
-        if wait_for_sync {
-            Cast::sync_dmabuf_with_timeline(sync_timeline, buffer)?;
-            // Don't set release_point here - let PipeWire do it
-        }
-        Ok(())
-    }
-
+    
     /// Update buffer tracking with latest release points from PipeWire
     fn update_released_buffers(&mut self) {
         if let Some(timeline) = &self.sync_timeline {
@@ -968,9 +955,8 @@ impl Cast {
             return Ok(false);
         };
 
-        let fd = buffer.datas_mut()[0].as_raw().fd;
-        let fd_i64 = fd as i64;
-        let dmabuf = self.dmabufs.borrow()[&fd_i64].clone();
+        let fd: i64 = buffer.datas_mut()[0].as_raw().fd;
+        let dmabuf = self.dmabufs.borrow()[&fd].clone();
 
         // Render content to the DMA buffer
         let sync_point = render_to_dmabuf(
@@ -998,7 +984,7 @@ impl Cast {
         }
 
         // Save buffer_id and acquire_point before dropping buffer
-        let buffer_id = fd_i64;
+        let buffer_id = fd;
 
         // Explicitly drop the buffer here to release the immutable borrow of self.stream
         drop(buffer);
