@@ -93,7 +93,6 @@ xcursor = "0.3.8"
 zbus = { version = "5.5.0", optional = true }
 pipewire = { path = "../pipewire-rs/pipewire", optional = true, features = ["v0_3_75"] }
 async-std = "1.13.1"
-nix = "0.29.0"
 
 
 

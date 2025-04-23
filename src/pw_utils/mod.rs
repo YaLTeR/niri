@@ -9,7 +9,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::Context as _;
-use async_std::sync::{Arc, RwLock};
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::RegistrationToken;
 use pipewire::context::Context;
@@ -35,9 +34,12 @@ use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmBuffer, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::{Format, Fourcc};
 use smithay::backend::drm::DrmDeviceFd;
+use smithay::backend::egl::context::ContextPriority;
+use smithay::backend::egl::{EGLContext, EGLDisplay, EGLSurface};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::ImportDma;
 use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
@@ -279,7 +281,7 @@ impl PipeWire {
                 let gbm = gbm.clone();
                 let formats = formats.clone();
                 let refresh = refresh.clone();
-                move |stream, (), id, pod| {
+                move |stream, (), id, pod| unsafe {
                     let id = ParamType::from_raw(id);
                     trace!(?id, "pw stream: param_changed");
 
@@ -308,7 +310,6 @@ impl PipeWire {
                         }
                     }
 
-                    // Original format parsing continues below...
                     let (m_type, m_subtype) = match parse_format(pod) {
                         Ok(x) => x,
                         Err(err) => {
@@ -479,7 +480,7 @@ impl PipeWire {
 
                             plane_count
                         }
-                        _ => {
+                        _ => unsafe {
                             // We're negotiating a single modifier, or alpha or modifier changed,
                             // so we need to do a test allocation.
                             let (modifier, plane_count) = match find_preferred_modifier(
@@ -511,10 +512,9 @@ impl PipeWire {
                             };
 
                             plane_count as i32
-                        }
+                        },
                     };
 
-                    // Create buffer parameters
                     // Create buffer parameters
                     let o1 = pod::object!(
                         SpaTypes::ObjectParamBuffers,
@@ -541,7 +541,6 @@ impl PipeWire {
                                 },
                             ))),
                         ),
-                        // Add explicit sync timeline metadata request here
                         Property::new(
                             SPA_PARAM_META_type,
                             pod::Value::Id(Id(SPA_META_SyncTimeline))
@@ -818,9 +817,7 @@ impl Cast {
         B: AsMut<[pipewire::spa::buffer::Data]>,
     {
         let buffer_slice = buffer.as_mut();
-        for (data, (stride, offset)) in
-            zip(buffer_slice, zip(dmabuf.strides(), dmabuf.offsets()))
-        {
+        for (data, (stride, offset)) in zip(buffer_slice, zip(dmabuf.strides(), dmabuf.offsets())) {
             let chunk = data.chunk_mut();
             *chunk.size_mut() = 1;
             *chunk.stride_mut() = stride as i32;
@@ -844,7 +841,7 @@ impl Cast {
     fn handle_sync_operations(
         sync_timeline: &mut Option<SyncTimelineRef>,
         buffer: &mut [pipewire::spa::buffer::Data],
-        wait_for_sync: bool
+        wait_for_sync: bool,
     ) -> Result<(), anyhow::Error> {
         if wait_for_sync {
             Cast::sync_dmabuf_with_timeline(sync_timeline, buffer)?;
@@ -855,12 +852,11 @@ impl Cast {
         }
         Ok(())
     }
-    
 
     /// Synchronizes DMA-BUF buffers with timeline for explicit synchronization
     fn sync_dmabuf_with_timeline(
         sync_timeline: &mut Option<SyncTimelineRef>,
-        buffer: &mut [pipewire::spa::buffer::Data]
+        buffer: &mut [pipewire::spa::buffer::Data],
     ) -> Result<(), anyhow::Error> {
         if let Some(sync_timeline) = sync_timeline {
             for data in buffer {
@@ -953,10 +949,10 @@ impl Cast {
             scale,
             wait_for_sync,
         ))
-            .unwrap_or_else(|err| {
-                warn!("error rendering to pw buffer: {err:?}");
-                false
-            })
+        .unwrap_or_else(|err| {
+            warn!("error rendering to pw buffer: {err:?}");
+            false
+        })
     }
 
     pub fn dequeue_buffer_and_clear(
@@ -999,7 +995,9 @@ impl Cast {
 
         // In dequeue_buffer_and_clear
         self.update_buffer_chunks(buffer.datas_mut(), &dmabuf);
-        if let Err(err) = Self::handle_sync_operations(&mut self.sync_timeline, buffer.datas_mut(), wait_for_sync) {
+        if let Err(err) =
+            Self::handle_sync_operations(&mut self.sync_timeline, buffer.datas_mut(), wait_for_sync)
+        {
             warn!("Sync operations failed: {:?}", err);
             return false;
         }
@@ -1114,22 +1112,36 @@ fn make_pod(buffer: &mut Vec<u8>, object: pod::Object) -> &Pod {
     Pod::from_bytes(buffer).unwrap()
 }
 
-fn find_preferred_modifier(
+unsafe fn find_preferred_modifier(
     gbm: &GbmDevice<DrmDeviceFd>,
     size: Size<u32, Physical>,
     fourcc: Fourcc,
     modifiers: Vec<i64>,
 ) -> anyhow::Result<(Modifier, usize)> {
+    // Existing validation and buffer allocation
     debug!("find_preferred_modifier: size={size:?}, fourcc={fourcc}, modifiers={modifiers:?}");
-
     let (buffer, modifier) = allocate_buffer(gbm, size, fourcc, &modifiers)?;
 
+    // Export to dmabuf
     let dmabuf = buffer
         .export()
         .context("error exporting GBM buffer object as dmabuf")?;
     let plane_count = dmabuf.num_planes();
 
-    // FIXME: Ideally this also needs to try binding the dmabuf for rendering.
+    // Create EGL display from GBM device
+    let egl_display = EGLDisplay::new(gbm.clone()).context("Failed to create EGL display")?;
+
+    // Create EGL context with medium priority
+    let egl_context = EGLContext::new_with_priority(&egl_display, ContextPriority::Medium)
+        .context("Failed to create EGL context")?;
+
+    // Create GLES renderer with the EGL context
+    let mut renderer = GlesRenderer::new(egl_context).context("Failed to create GLES renderer")?;
+
+    // Try to import the dmabuf into the renderer
+    renderer
+        .import_dmabuf(&dmabuf, None)
+        .context("Failed to import dmabuf for rendering")?;
 
     Ok((modifier, plane_count))
 }
