@@ -96,7 +96,6 @@ pipewire = { path = "../pipewire-rs/pipewire", optional = true, features = ["v0_
 async-std = "1.13.1"
 
 
-
 [dependencies.smithay]
 workspace = true
 features = [

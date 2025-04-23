@@ -84,6 +84,10 @@ pub struct Cast {
     dmabufs: Rc<RefCell<HashMap<i64, Dmabuf>>>,
     scheduled_redraw: Option<RegistrationToken>,
     sync_timeline: Option<SyncTimelineRef>,
+
+    // FIXME: Need proper implementation of buffer state
+    buffers: Vec<BufferState>,
+    current_release_point: u64,
 }
 
 #[derive(Debug)]
@@ -667,10 +671,32 @@ moving to ready"
             dmabufs,
             scheduled_redraw: None,
             sync_timeline: None,
+            buffers: Vec::new(),
+            current_release_point: 0,
         };
+
         Ok(cast)
     }
 }
+
+struct BufferState {
+    buffer_id: i64,  // Use fd as the buffer identifier instead of storing Buffer
+    acquire_point: u64,
+    release_point: u64,
+    is_queued: bool,
+}
+
+impl BufferState {
+    fn new(buffer_id: i64, acquire_point: u64) -> Self {
+        Self {
+            buffer_id,
+            acquire_point,
+            release_point: 0,
+            is_queued: true,
+        }
+    }
+}
+
 
 impl Cast {
 
@@ -843,13 +869,45 @@ impl Cast {
     ) -> Result<(), anyhow::Error> {
         if wait_for_sync {
             Cast::sync_dmabuf_with_timeline(sync_timeline, buffer)?;
-            if let Some(sync_timeline) = sync_timeline {
-                let point = sync_timeline.acquire_point();
-                sync_timeline.set_release_point(point);
-            }
+            // Don't set release_point here - let PipeWire do it
         }
         Ok(())
     }
+
+    /// Update buffer tracking with latest release points from PipeWire
+    fn update_released_buffers(&mut self) {
+        if let Some(timeline) = &self.sync_timeline {
+            let release_point = timeline.release_point();
+
+            if release_point > self.current_release_point {
+                self.current_release_point = release_point;
+
+                // Update status of individual buffers
+                for buffer in &mut self.buffers {
+                    if buffer.is_queued && buffer.acquire_point <= release_point {
+                        buffer.is_queued = false;
+                        buffer.release_point = release_point;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Clean up buffer states that are no longer needed
+    fn cleanup_buffer_states(&mut self) {
+        // Remove buffer states that are no longer queued and have been properly released
+        self.buffers.retain(|state|
+            state.is_queued || state.release_point == 0
+        );
+
+        // Limit the number of tracked buffers to prevent memory leaks
+        if self.buffers.len() > 64 {
+            // Keep only the most recently used buffers
+            self.buffers.sort_by_key(|state| std::cmp::Reverse(state.acquire_point));
+            self.buffers.truncate(32);
+        }
+    }
+    
 
     /// Synchronizes DMA-BUF buffers with timeline for explicit synchronization
     fn sync_dmabuf_with_timeline(
@@ -859,9 +917,9 @@ impl Cast {
         if let Some(sync_timeline) = sync_timeline {
             for data in buffer {
                 if data.type_() == DataType::DmaBuf {
-                    if let Some(_fd) = data.dma_buf_fd() {
+                    if let Some(fd) = data.dma_buf_fd() {
                         if let Err(err) = data.sync_dma_buf(sync_timeline) {
-                            warn!("Error synchronizing DMA-BUF: {:?}", err);
+                            return Err(anyhow::anyhow!("Failed to sync DMA-BUF: {:?}", err));
                         }
                     }
                 }
@@ -900,7 +958,11 @@ impl Cast {
             return Ok(false);
         }
 
-        self.update_sync_timeline();
+        // Check for released buffers before requesting a new one
+        self.update_released_buffers();
+
+        // Get acquire point from timeline - this is our producer role
+        let acquire_point = self.update_sync_timeline().unwrap_or(0);
 
         let Some(mut buffer) = self.stream.dequeue_buffer_async().await? else {
             return Ok(false);
@@ -910,6 +972,7 @@ impl Cast {
         let fd_i64 = fd as i64;
         let dmabuf = self.dmabufs.borrow()[&fd_i64].clone();
 
+        // Render content to the DMA buffer
         let sync_point = render_to_dmabuf(
             renderer,
             dmabuf.clone(),
@@ -925,9 +988,30 @@ impl Cast {
                 warn!("error waiting for GPU rendering: {:?}", err);
             }
         }
-        // In dequeue_buffer_and_render_async
+
+        // Update buffer chunks with stride and offset information
         self.update_buffer_chunks(buffer.datas_mut(), &dmabuf);
-        Self::handle_sync_operations(&mut self.sync_timeline, buffer.datas_mut(), wait_for_sync)?;
+
+        // Only sync the DMA-BUF with timeline, but don't set release point
+        if wait_for_sync && self.sync_timeline.is_some() {
+            Self::sync_dmabuf_with_timeline(&mut self.sync_timeline, buffer.datas_mut())?;
+        }
+
+        // Save buffer_id and acquire_point before dropping buffer
+        let buffer_id = fd_i64;
+
+        // Explicitly drop the buffer here to release the immutable borrow of self.stream
+        drop(buffer);
+
+        // Now we can safely perform mutable operations on self
+        self.buffers.push(BufferState {
+            buffer_id,
+            acquire_point,
+            release_point: 0,   // Will be set by consumer (PipeWire)
+            is_queued: true,
+        });
+        self.last_frame_time = get_monotonic_time();
+        self.cleanup_buffer_states();
 
         Ok(true)
     }
