@@ -67,36 +67,6 @@ pub enum PwToNiri {
     FatalError,
 }
 
-#[derive(Debug)]
-pub struct TimelineManager {
-    current_point: Arc<RwLock<u64>>,
-    last_release: Arc<RwLock<u64>>,
-}
-
-impl TimelineManager {
-    pub fn new() -> Self {
-        Self {
-            current_point: Arc::new(RwLock::new(0)),
-            last_release: Arc::new(RwLock::new(0)),
-        }
-    }
-
-    pub async fn advance_timeline(&self) -> u64 {
-        let mut current = self.current_point.write().await;
-        *current += 1;
-        *current
-    }
-
-    pub async fn signal_release(&self, point: u64) {
-        let mut last = self.last_release.write().await;
-        *last = point;
-    }
-
-    pub async fn get_current_point(&self) -> u64 {
-        *self.current_point.read().await
-    }
-}
-
 pub struct Cast {
     pub session_id: usize,
     pub stream_id: usize,
@@ -114,7 +84,6 @@ pub struct Cast {
     min_time_between_frames: Rc<Cell<Duration>>,
     dmabufs: Rc<RefCell<HashMap<i64, Dmabuf>>>,
     scheduled_redraw: Option<RegistrationToken>,
-    timeline_manager: Arc<TimelineManager>,
     sync_timeline: Option<SyncTimelineRef>,
 }
 
@@ -701,7 +670,6 @@ impl PipeWire {
             min_time_between_frames,
             dmabufs,
             scheduled_redraw: None,
-            timeline_manager: Arc::new(TimelineManager::new()),
             sync_timeline: None,
         };
         Ok(cast)
@@ -844,7 +812,6 @@ impl Cast {
         }
     }
 
-
     /// Updates buffer chunks with stride and offset information from a DMA buffer.
     fn update_buffer_chunks<B: ?Sized>(&self, buffer: &mut B, dmabuf: &Dmabuf)
     where
@@ -874,30 +841,33 @@ impl Cast {
     }
 
     /// Handles timeline synchronization for wait_for_sync operations
-    fn handle_sync_operations(&self, buffer: &mut [pipewire::spa::buffer::Data], wait_for_sync: bool) -> Result<(), anyhow::Error> {
+    fn handle_sync_operations(
+        sync_timeline: &mut Option<SyncTimelineRef>,
+        buffer: &mut [pipewire::spa::buffer::Data],
+        wait_for_sync: bool
+    ) -> Result<(), anyhow::Error> {
         if wait_for_sync {
-            // Call sync_dmabuf_with_timeline and propagate any errors
-            self.sync_dmabuf_with_timeline(buffer)?;
-
-            if let Some(timeline) = &self.sync_timeline {
-                let release_point = unsafe { (*timeline.as_ptr()).release_point };
-                async_io::block_on(self.timeline_manager.signal_release(release_point));
+            Cast::sync_dmabuf_with_timeline(sync_timeline, buffer)?;
+            if let Some(sync_timeline) = sync_timeline {
+                let point = sync_timeline.acquire_point();
+                sync_timeline.set_release_point(point);
             }
         }
         Ok(())
     }
-    /// Synchronizes DMA-BUF buffers with timeline for explicit synchronization
-    fn sync_dmabuf_with_timeline(&self, buffer: &mut [pipewire::spa::buffer::Data]) -> Result<(), anyhow::Error> {
-        if let Some(sync_timeline) = &self.sync_timeline {
-            let timeline_ptr = sync_timeline.as_ptr();
+    
 
+    /// Synchronizes DMA-BUF buffers with timeline for explicit synchronization
+    fn sync_dmabuf_with_timeline(
+        sync_timeline: &mut Option<SyncTimelineRef>,
+        buffer: &mut [pipewire::spa::buffer::Data]
+    ) -> Result<(), anyhow::Error> {
+        if let Some(sync_timeline) = sync_timeline {
             for data in buffer {
                 if data.type_() == DataType::DmaBuf {
                     if let Some(_fd) = data.dma_buf_fd() {
-                        unsafe {
-                            if let Err(err) = data.sync_dma_buf(&mut SyncTimelineRef::from_raw(timeline_ptr as *mut _).unwrap()) {
-                                warn!("Error synchronizing DMA-BUF: {:?}", err);
-                            }
+                        if let Err(err) = data.sync_dma_buf(sync_timeline) {
+                            warn!("Error synchronizing DMA-BUF: {:?}", err);
                         }
                     }
                 }
@@ -961,9 +931,9 @@ impl Cast {
                 warn!("error waiting for GPU rendering: {:?}", err);
             }
         }
-
+        // In dequeue_buffer_and_render_async
         self.update_buffer_chunks(buffer.datas_mut(), &dmabuf);
-        self.handle_sync_operations(buffer.datas_mut(), wait_for_sync)?;
+        Self::handle_sync_operations(&mut self.sync_timeline, buffer.datas_mut(), wait_for_sync)?;
 
         Ok(true)
     }
@@ -1027,8 +997,9 @@ impl Cast {
             }
         }
 
+        // In dequeue_buffer_and_clear
         self.update_buffer_chunks(buffer.datas_mut(), &dmabuf);
-        if let Err(err) = self.handle_sync_operations(buffer.datas_mut(), wait_for_sync) {
+        if let Err(err) = Self::handle_sync_operations(&mut self.sync_timeline, buffer.datas_mut(), wait_for_sync) {
             warn!("Sync operations failed: {:?}", err);
             return false;
         }
