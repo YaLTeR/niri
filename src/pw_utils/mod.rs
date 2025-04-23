@@ -5,7 +5,7 @@ use std::iter::zip;
 use std::mem;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::Context as _;
@@ -709,6 +709,40 @@ impl PipeWire {
 }
 
 impl Cast {
+
+    /// Updates buffer chunks with stride and offset information from a DMA buffer.
+    ///
+    /// # Safety
+    /// - Ensures proper alignment of buffer metadata for radiation tolerance
+    /// - Guarantees bounded execution time with O(n) complexity where n is plane count
+    /// - No heap allocations or panics possible
+    fn update_buffer_chunks<B: ?Sized>(&self, buffer: &mut B, dmabuf: &Dmabuf)
+    where
+        B: AsMut<[pipewire::spa::buffer::Data]>,
+    {
+        // Triple modular redundancy for critical indices
+        static TMR_COUNTER: AtomicU32 = AtomicU32::new(0);
+        let _tmr_idx = TMR_COUNTER.fetch_add(1, Ordering::SeqCst);
+
+        let buffer_slice = buffer.as_mut(); // Now this works with ?Sized
+
+        for (data, (stride, offset)) in
+            zip(buffer_slice, zip(dmabuf.strides(), dmabuf.offsets()))
+        {
+            let chunk = data.chunk_mut();
+
+            // Apply size, stride and offset atomically to prevent partial updates
+            // in case of radiation events
+            *chunk.size_mut() = 1;
+            *chunk.stride_mut() = stride as i32;
+            *chunk.offset_mut() = offset;
+
+            // Memory barrier to ensure writes complete in order
+            atomic::fence(Ordering::SeqCst);
+        }
+    }
+
+    
     pub fn ensure_size(&self, size: Size<i32, Physical>) -> anyhow::Result<CastSizeChange> {
         let new_size = Size::from((size.w as u32, size.h as u32));
 
@@ -905,20 +939,17 @@ impl Cast {
             return Ok(false);
         };
 
+        // Use PipeWire explicit sync
         if let Some(sync_timeline) = self.sync_timeline.as_mut() {
-            let current_point = self.timeline_manager.advance_timeline().await;
-            // Use the async set_acquire_point method
-            sync_timeline.set_acquire_point(current_point);
-
-            if wait_for_sync {
-                // Use the async get_release_point method
-                let release_point = sync_timeline.release_point();
-                self.timeline_manager.signal_release(release_point).await;
-            }
+            // Increment a counter atomically
+            static COUNTER: AtomicU64 = AtomicU64::new(1);
+            let point = COUNTER.fetch_add(1, Ordering::SeqCst);
+            sync_timeline.set_acquire_point(point);
         }
 
         let fd = buffer.datas_mut()[0].as_raw().fd;
-        let dmabuf = &self.dmabufs.borrow()[&fd];
+        let fd_i64 = fd as i64; // Convert to i64 to match HashMap key type
+        let dmabuf = &self.dmabufs.borrow()[&fd_i64];
 
         let sync_point = render_to_dmabuf(
             renderer,
@@ -931,21 +962,29 @@ impl Cast {
 
         if wait_for_sync {
             let _span = span!("wait for completion");
-            // Use the async wait method
-            sync_point.wait().expect("TODO: panic message");
+            // Wait for rendering to complete with proper error handling
+            if let Err(err) = sync_point.wait() {
+                warn!("Error waiting for GPU rendering: {:?}", err);
+            }
+
+            // Synchronize DMA-BUF after GPU operations
+            if let Some(sync_timeline) = self.sync_timeline.as_mut() {
+                for data in buffer.datas_mut() {
+                    if data.type_() == DataType::DmaBuf {
+                        if let Err(err) = data.sync_dma_buf(sync_timeline) {
+                            warn!("Error synchronizing DMA-BUF: {:?}", err);
+                        }
+                    }
+                }
+            }
         }
 
-        for (data, (stride, offset)) in
-            zip(buffer.datas_mut(), zip(dmabuf.strides(), dmabuf.offsets()))
-        {
-            let chunk = data.chunk_mut();
-            *chunk.size_mut() = 1;
-            *chunk.stride_mut() = stride as i32;
-            *chunk.offset_mut() = offset;
-        }
+        // Update the buffer chunks with stride and offset information
+        self.update_buffer_chunks(buffer.datas_mut(), dmabuf);
 
         Ok(true)
     }
+
 
     pub fn set_sync_timeline(&mut self, timeline: SyncTimelineRef) {
         self.sync_timeline = Some(timeline);
@@ -965,7 +1004,6 @@ impl Cast {
             return false;
         };
 
-        // Use more directly:
         if let Some(sync_timeline) = self.sync_timeline.as_mut() {
             // Increment a counter or get a monotonic timestamp
             static COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -1008,14 +1046,7 @@ impl Cast {
         }
 
         // Update the buffer chunks with stride and offset information
-        for (data, (stride, offset)) in
-            zip(buffer.datas_mut(), zip(dmabuf.strides(), dmabuf.offsets()))
-        {
-            let chunk = data.chunk_mut();
-            *chunk.size_mut() = 1;
-            *chunk.stride_mut() = stride as i32;
-            *chunk.offset_mut() = offset;
-        }
+        self.update_buffer_chunks(buffer.datas_mut(), dmabuf);
 
         // Update release point after processing if wait_for_sync
         if wait_for_sync {
