@@ -477,7 +477,7 @@ impl PipeWire {
 
                             plane_count
                         }
-                        _ => unsafe {
+                        _ => {
                             // We're negotiating a single modifier, or alpha or modifier changed,
                             // so we need to do a test allocation.
                             let (modifier, plane_count) = match find_preferred_modifier(
@@ -495,10 +495,10 @@ impl PipeWire {
                             };
 
                             debug!(
-                                "pw stream: allocation successful \
-                     (modifier={modifier:?}, plane_count={plane_count}), \
-                     moving to ready"
-                            );
+        "pw stream: allocation successful \
+ (modifier={modifier:?}, plane_count={plane_count}), \
+ moving to ready"
+    );
 
                             *state = CastState::Ready {
                                 size: format_size,
