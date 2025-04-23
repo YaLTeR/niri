@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use anyhow::{anyhow, Context as _};
+use anyhow::Context as _;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::RegistrationToken;
 use pipewire::context::Context;
@@ -84,10 +84,7 @@ pub struct Cast {
     dmabufs: Rc<RefCell<HashMap<i64, Dmabuf>>>,
     scheduled_redraw: Option<RegistrationToken>,
     sync_timeline: Option<SyncTimelineRef>,
-    buffers: Vec<BufferState<'static>>,  // Lifetime tied to stream ownership
-    current_release_point: u64,
 }
-
 
 #[derive(Debug)]
 pub enum CastState {
@@ -670,21 +667,10 @@ moving to ready"
             dmabufs,
             scheduled_redraw: None,
             sync_timeline: None,
-            buffers: Vec::new(),
-            current_release_point: 0,
         };
         Ok(cast)
     }
 }
-
-
-struct BufferState<'s> {
-    buffer: pipewire::buffer::Buffer<'s>,
-    acquire_point: u64,
-    release_point: u64,
-    is_queued: bool,
-}
-
 
 impl Cast {
 
@@ -841,7 +827,7 @@ impl Cast {
     fn update_sync_timeline(&mut self) -> Option<u64> {
         if let Some(sync_timeline) = self.sync_timeline.as_mut() {
             static COUNTER: AtomicU64 = AtomicU64::new(1);
-            let point = COUNTER.fetch_add(1, Ordering::Release);
+            let point = COUNTER.fetch_add(1, Ordering::SeqCst);
             sync_timeline.set_acquire_point(point);
             Some(point)
         } else {
@@ -873,8 +859,11 @@ impl Cast {
         if let Some(sync_timeline) = sync_timeline {
             for data in buffer {
                 if data.type_() == DataType::DmaBuf {
-                    data.sync_dma_buf(sync_timeline)
-                        .context("Failed to sync DMA-BUF plane")?;
+                    if let Some(_fd) = data.dma_buf_fd() {
+                        if let Err(err) = data.sync_dma_buf(sync_timeline) {
+                            warn!("Error synchronizing DMA-BUF: {:?}", err);
+                        }
+                    }
                 }
             }
         }
@@ -891,7 +880,7 @@ impl Cast {
     ) -> Result<bool, anyhow::Error> {
         let _span = span!("Cast::dequeue_buffer_and_render_async");
 
-        // Damage checking
+        // Check damage in a separate scope
         let has_damage = {
             let mut state = self.state.borrow_mut();
             let CastState::Ready { damage_tracker, .. } = &mut *state else {
@@ -902,7 +891,7 @@ impl Cast {
             let tracker = damage_tracker
                 .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
 
-            let (damage, _) = tracker.damage_output(1, elements)?;
+            let (damage, _states) = tracker.damage_output(1, elements).unwrap();
             damage.is_some()
         };
 
@@ -911,29 +900,19 @@ impl Cast {
             return Ok(false);
         }
 
-        // Get available buffer
-        let buffer_state = self.get_available_buffer()
-            .ok_or_else(|| anyhow!("No available buffers"))?;
+        self.update_sync_timeline();
 
-        // Update synchronization points
-        let point = self.update_sync_timeline()
-            .ok_or_else(|| anyhow!("No sync timeline available"))?;
-        buffer_state.acquire_point = point;
-        buffer_state.is_queued = true;
+        let Some(mut buffer) = self.stream.dequeue_buffer_async().await? else {
+            return Ok(false);
+        };
 
-        // Process buffer
-        let buffer = &mut buffer_state.buffer;
         let fd = buffer.datas_mut()[0].as_raw().fd;
-        let dmabuf = self.dmabufs.borrow()[&(fd as i64)].clone();
+        let fd_i64 = fd as i64;
+        let dmabuf = self.dmabufs.borrow()[&fd_i64].clone();
 
-        // Validate buffer compatibility
-        test_egl_compatibility(&dmabuf)
-            .context("Buffer failed GPU compatibility check")?;
-
-        // Render to buffer
         let sync_point = render_to_dmabuf(
             renderer,
-            dmabuf,
+            dmabuf.clone(),
             size,
             scale,
             Transform::Normal,
@@ -941,15 +920,17 @@ impl Cast {
         )?;
 
         if wait_for_sync {
-            sync_point.wait()?;
+            let _span = span!("wait for completion");
+            if let Err(err) = sync_point.wait() {
+                warn!("error waiting for GPU rendering: {:?}", err);
+            }
         }
-
+        // In dequeue_buffer_and_render_async
         self.update_buffer_chunks(buffer.datas_mut(), &dmabuf);
         Self::handle_sync_operations(&mut self.sync_timeline, buffer.datas_mut(), wait_for_sync)?;
 
         Ok(true)
     }
-
 
     pub fn dequeue_buffer_and_render(
         &mut self,
@@ -1024,36 +1005,6 @@ impl Cast {
 
     pub fn set_sync_timeline(&mut self, timeline: SyncTimelineRef) {
         self.sync_timeline = Some(timeline);
-    }
-
-    /// Buffer release handler
-    fn handle_buffer_release(&mut self, buffer: &pipewire::buffer::Buffer) {
-        if let Some(b) = self.buffers.iter_mut().find(|b| &b.buffer == buffer) {
-            b.is_queued = false;
-            if let Some(sync_timeline) = self.sync_timeline.as_mut() {
-                b.release_point = sync_timeline.release_point();
-            }
-        }
-    }
-
-    /// Get next available buffer considering release points
-    fn get_available_buffer(&mut self) -> Option<&mut BufferState> {
-        self.update_consumer_release_point();
-
-        self.buffers.iter_mut()
-            .filter(|b|
-                !b.is_queued &&
-                    b.acquire_point <= self.current_release_point &&
-                    b.release_point <= self.current_release_point
-            )
-            .min_by_key(|b| b.acquire_point)
-    }
-
-    /// Update consumer-side release points
-    fn update_consumer_release_point(&mut self) {
-        if let Some(sync_timeline) = self.sync_timeline.as_mut() {
-            self.current_release_point = sync_timeline.release_point();
-        }
     }
 }
 
