@@ -5,7 +5,7 @@ use std::iter::zip;
 use std::mem;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::Context as _;
@@ -709,41 +709,7 @@ impl PipeWire {
 }
 
 impl Cast {
-
-    /// Updates buffer chunks with stride and offset information from a DMA buffer.
-    ///
-    /// # Safety
-    /// - Ensures proper alignment of buffer metadata for radiation tolerance
-    /// - Guarantees bounded execution time with O(n) complexity where n is plane count
-    /// - No heap allocations or panics possible
-    fn update_buffer_chunks<B: ?Sized>(&self, buffer: &mut B, dmabuf: &Dmabuf)
-    where
-        B: AsMut<[pipewire::spa::buffer::Data]>,
-    {
-        // Triple modular redundancy for critical indices
-        static TMR_COUNTER: AtomicU32 = AtomicU32::new(0);
-        let _tmr_idx = TMR_COUNTER.fetch_add(1, Ordering::SeqCst);
-
-        let buffer_slice = buffer.as_mut(); // Now this works with ?Sized
-
-        for (data, (stride, offset)) in
-            zip(buffer_slice, zip(dmabuf.strides(), dmabuf.offsets()))
-        {
-            let chunk = data.chunk_mut();
-
-            // Apply size, stride and offset atomically to prevent partial updates
-            // in case of radiation events
-            *chunk.size_mut() = 1;
-            *chunk.stride_mut() = stride as i32;
-            *chunk.offset_mut() = offset;
-
-            // Memory barrier to ensure writes complete in order
-            atomic::fence(Ordering::SeqCst);
-        }
-    }
-
-    
-    pub fn ensure_size(&self, size: Size<i32, Physical>) -> anyhow::Result<CastSizeChange> {
+    pub fn ensure_size(&mut self, size: Size<i32, Physical>) -> anyhow::Result<CastSizeChange> {
         let new_size = Size::from((size.w as u32, size.h as u32));
 
         let mut state = self.state.borrow_mut();
@@ -756,7 +722,6 @@ impl Cast {
             return Ok(CastSizeChange::Pending);
         }
 
-        let _span = tracy_client::span!("Cast::ensure_size");
         debug!("cast size changed, updating stream size");
 
         *state = CastState::ResizePending {
@@ -778,12 +743,12 @@ impl Cast {
         Ok(CastSizeChange::Pending)
     }
 
+    /// Updates the refresh rate for the stream
     pub fn set_refresh(&mut self, refresh: u32) -> anyhow::Result<()> {
         if self.refresh.get() == refresh {
             return Ok(());
         }
 
-        let _span = tracy_client::span!("Cast::set_refresh");
         debug!("cast FPS changed, updating stream FPS");
         self.refresh.set(refresh);
 
@@ -797,6 +762,24 @@ impl Cast {
         Ok(())
     }
 
+    /// Checks whether this frame should be skipped because it's too soon
+    pub fn check_time_and_schedule(
+        &mut self,
+        event_loop: &LoopHandle<'static, State>,
+        output: &Output,
+        target_frame_time: Duration,
+    ) -> bool {
+        let delay = self.compute_extra_delay(target_frame_time);
+        if delay >= CAST_DELAY_ALLOWANCE {
+            trace!("delay >= allowance, scheduling redraw");
+            self.schedule_redraw(event_loop, output.clone(), target_frame_time + delay);
+            true
+        } else {
+            self.remove_scheduled_redraw(event_loop);
+            false
+        }
+    }
+
     fn compute_extra_delay(&self, target_frame_time: Duration) -> Duration {
         let last = self.last_frame_time;
         let min = self.min_time_between_frames.get();
@@ -807,7 +790,6 @@ impl Cast {
         }
 
         if target_frame_time < last {
-            // Record frame with a warning; in case it was an overflow this will fix it.
             warn!(
                 ?target_frame_time,
                 ?last,
@@ -826,10 +808,9 @@ impl Cast {
                 delay
             );
             return delay;
-        } else {
-            trace!("overshoot={:?}", diff - min);
         }
 
+        trace!("overshoot={:?}", diff - min);
         Duration::ZERO
     }
 
@@ -848,11 +829,9 @@ impl Cast {
         let timer = Timer::from_duration(duration);
         let token = event_loop
             .insert_source(timer, move |_, _, state| {
-                // Guard against output disconnecting before the timer has a chance to run.
                 if state.niri.output_state.contains_key(&output) {
                     state.niri.queue_redraw(&output);
                 }
-
                 TimeoutAction::Drop
             })
             .unwrap();
@@ -865,30 +844,130 @@ impl Cast {
         }
     }
 
-    /// Checks whether this frame should be skipped because it's too soon.
-    ///
-    /// If the frame should be skipped, schedules a redraw and returns `true`. Otherwise, removes a
-    /// scheduled redraw, if any, and returns `false`.
-    ///
-    /// When this method returns `false`, the calling code is assumed to follow up with
-    /// [`Cast::dequeue_buffer_and_render()`].
-    pub fn check_time_and_schedule(
-        &mut self,
-        event_loop: &LoopHandle<'static, State>,
-        output: &Output,
-        target_frame_time: Duration,
-    ) -> bool {
-        let delay = self.compute_extra_delay(target_frame_time);
-        if delay >= CAST_DELAY_ALLOWANCE {
-            trace!("delay >= allowance, scheduling redraw");
-            self.schedule_redraw(event_loop, output.clone(), target_frame_time + delay);
-            true
-        } else {
-            self.remove_scheduled_redraw(event_loop);
-            false
+
+    /// Updates buffer chunks with stride and offset information from a DMA buffer.
+    fn update_buffer_chunks<B: ?Sized>(&self, buffer: &mut B, dmabuf: &Dmabuf)
+    where
+        B: AsMut<[pipewire::spa::buffer::Data]>,
+    {
+        let buffer_slice = buffer.as_mut();
+        for (data, (stride, offset)) in
+            zip(buffer_slice, zip(dmabuf.strides(), dmabuf.offsets()))
+        {
+            let chunk = data.chunk_mut();
+            *chunk.size_mut() = 1;
+            *chunk.stride_mut() = stride as i32;
+            *chunk.offset_mut() = offset;
         }
     }
-    // Synchronous wrapper for dequeue_buffer_and_render_async
+
+    /// Updates sync timeline with a new monotonically increasing point value
+    fn update_sync_timeline(&mut self) -> Option<u64> {
+        if let Some(sync_timeline) = self.sync_timeline.as_mut() {
+            static COUNTER: AtomicU64 = AtomicU64::new(1);
+            let point = COUNTER.fetch_add(1, Ordering::SeqCst);
+            sync_timeline.set_acquire_point(point);
+            Some(point)
+        } else {
+            None
+        }
+    }
+
+    /// Handles timeline synchronization for wait_for_sync operations
+    fn handle_sync_operations(&self, buffer: &mut [pipewire::spa::buffer::Data], wait_for_sync: bool) -> Result<(), anyhow::Error> {
+        if wait_for_sync {
+            // Call sync_dmabuf_with_timeline and propagate any errors
+            self.sync_dmabuf_with_timeline(buffer)?;
+
+            if let Some(timeline) = &self.sync_timeline {
+                let release_point = unsafe { (*timeline.as_ptr()).release_point };
+                async_io::block_on(self.timeline_manager.signal_release(release_point));
+            }
+        }
+        Ok(())
+    }
+    /// Synchronizes DMA-BUF buffers with timeline for explicit synchronization
+    fn sync_dmabuf_with_timeline(&self, buffer: &mut [pipewire::spa::buffer::Data]) -> Result<(), anyhow::Error> {
+        if let Some(sync_timeline) = &self.sync_timeline {
+            let timeline_ptr = sync_timeline.as_ptr();
+
+            for data in buffer {
+                if data.type_() == DataType::DmaBuf {
+                    if let Some(_fd) = data.dma_buf_fd() {
+                        unsafe {
+                            if let Err(err) = data.sync_dma_buf(&mut SyncTimelineRef::from_raw(timeline_ptr as *mut _).unwrap()) {
+                                warn!("Error synchronizing DMA-BUF: {:?}", err);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn dequeue_buffer_and_render_async(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        elements: &[impl RenderElement<GlesRenderer>],
+        size: Size<i32, Physical>,
+        scale: Scale<f64>,
+        wait_for_sync: bool,
+    ) -> Result<bool, anyhow::Error> {
+        let _span = span!("Cast::dequeue_buffer_and_render_async");
+
+        // Check damage in a separate scope
+        let has_damage = {
+            let mut state = self.state.borrow_mut();
+            let CastState::Ready { damage_tracker, .. } = &mut *state else {
+                error!("cast must be in Ready state to render");
+                return Ok(false);
+            };
+
+            let tracker = damage_tracker
+                .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
+
+            let (damage, _states) = tracker.damage_output(1, elements).unwrap();
+            damage.is_some()
+        };
+
+        if !has_damage {
+            trace!("no damage, skipping frame");
+            return Ok(false);
+        }
+
+        self.update_sync_timeline();
+
+        let Some(mut buffer) = self.stream.dequeue_buffer_async().await? else {
+            return Ok(false);
+        };
+
+        let fd = buffer.datas_mut()[0].as_raw().fd;
+        let fd_i64 = fd as i64;
+        let dmabuf = self.dmabufs.borrow()[&fd_i64].clone();
+
+        let sync_point = render_to_dmabuf(
+            renderer,
+            dmabuf.clone(),
+            size,
+            scale,
+            Transform::Normal,
+            elements.iter().rev(),
+        )?;
+
+        if wait_for_sync {
+            let _span = span!("wait for completion");
+            if let Err(err) = sync_point.wait() {
+                warn!("error waiting for GPU rendering: {:?}", err);
+            }
+        }
+
+        self.update_buffer_chunks(buffer.datas_mut(), &dmabuf);
+        self.handle_sync_operations(buffer.datas_mut(), wait_for_sync)?;
+
+        Ok(true)
+    }
+
     pub fn dequeue_buffer_and_render(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -904,138 +983,41 @@ impl Cast {
             scale,
             wait_for_sync,
         ))
-        .unwrap_or_else(|err| {
-            warn!("error rendering to pw buffer: {err:?}");
-            false
-        })
+            .unwrap_or_else(|err| {
+                warn!("error rendering to pw buffer: {err:?}");
+                false
+            })
     }
 
-    pub async fn dequeue_buffer_and_render_async(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        elements: &[impl RenderElement<GlesRenderer>],
-        size: Size<i32, Physical>,
-        scale: Scale<f64>,
-        wait_for_sync: bool,
-    ) -> Result<bool, anyhow::Error> {
-        let _span = span!("Cast::dequeue_buffer_and_render_async");
-
-        let CastState::Ready { damage_tracker, .. } = &mut *self.state.borrow_mut() else {
-            error!("cast must be in Ready state to render");
-            return Ok(false);
-        };
-
-        let damage_tracker = damage_tracker
-            .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
-
-        let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
-        if damage.is_none() {
-            trace!("no damage, skipping frame");
-            return Ok(false);
-        }
-
-        // Use the async version of dequeue_buffer
-        let Some(mut buffer) = self.stream.dequeue_buffer_async().await? else {
-            return Ok(false);
-        };
-
-        // Use PipeWire explicit sync
-        if let Some(sync_timeline) = self.sync_timeline.as_mut() {
-            // Increment a counter atomically
-            static COUNTER: AtomicU64 = AtomicU64::new(1);
-            let point = COUNTER.fetch_add(1, Ordering::SeqCst);
-            sync_timeline.set_acquire_point(point);
-        }
-
-        let fd = buffer.datas_mut()[0].as_raw().fd;
-        let fd_i64 = fd as i64; // Convert to i64 to match HashMap key type
-        let dmabuf = &self.dmabufs.borrow()[&fd_i64];
-
-        let sync_point = render_to_dmabuf(
-            renderer,
-            dmabuf.clone(),
-            size,
-            scale,
-            Transform::Normal,
-            elements.iter().rev(),
-        )?;
-
-        if wait_for_sync {
-            let _span = span!("wait for completion");
-            // Wait for rendering to complete with proper error handling
-            if let Err(err) = sync_point.wait() {
-                warn!("Error waiting for GPU rendering: {:?}", err);
-            }
-
-            // Synchronize DMA-BUF after GPU operations
-            if let Some(sync_timeline) = self.sync_timeline.as_mut() {
-                for data in buffer.datas_mut() {
-                    if data.type_() == DataType::DmaBuf {
-                        if let Err(err) = data.sync_dma_buf(sync_timeline) {
-                            warn!("Error synchronizing DMA-BUF: {:?}", err);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Update the buffer chunks with stride and offset information
-        self.update_buffer_chunks(buffer.datas_mut(), dmabuf);
-
-        Ok(true)
-    }
-
-
-    pub fn set_sync_timeline(&mut self, timeline: SyncTimelineRef) {
-        self.sync_timeline = Some(timeline);
-    }
     pub fn dequeue_buffer_and_clear(
         &mut self,
         renderer: &mut GlesRenderer,
         wait_for_sync: bool,
     ) -> bool {
-        // Clear out the damage tracker if we're in Ready state.
-        if let CastState::Ready { damage_tracker, .. } = &mut *self.state.borrow_mut() {
-            *damage_tracker = None;
-        };
+        {
+            let mut state = self.state.borrow_mut();
+            if let CastState::Ready { damage_tracker, .. } = &mut *state {
+                *damage_tracker = None;
+            }
+        }
+
+        self.update_sync_timeline();
 
         let Some(mut buffer) = self.stream.dequeue_buffer() else {
             warn!("no available buffer in pw stream, skipping clear");
             return false;
         };
 
-        if let Some(sync_timeline) = self.sync_timeline.as_mut() {
-            // Increment a counter or get a monotonic timestamp
-            static COUNTER: AtomicU64 = AtomicU64::new(1);
-            let point = COUNTER.fetch_add(1, Ordering::SeqCst);
-            sync_timeline.set_acquire_point(point);
-        }
-
-        // Get the DMA-BUF file descriptor and retrieve the corresponding buffer
         let fd = buffer.datas_mut()[0].as_raw().fd;
-        let fd_i64 = fd as i64; // Convert to i64 to match HashMap key type
-        let dmabuf = &self.dmabufs.borrow()[&fd_i64];
+        let fd_i64 = fd as i64;
+        let dmabuf = self.dmabufs.borrow()[&fd_i64].clone();
 
-        // Clear the DMA-BUF buffer
         match clear_dmabuf(renderer, dmabuf.clone()) {
             Ok(sync_point) => {
                 if wait_for_sync {
                     let _span = tracy_client::span!("wait for completion");
                     if let Err(err) = sync_point.wait() {
                         warn!("error waiting for pw frame completion: {err:?}");
-                    }
-
-                    // If we have explicit sync, also sync the DMA-BUF after GPU clear is done
-                    if let Some(sync_timeline) = self.sync_timeline.as_mut() {
-                        for data in buffer.datas_mut() {
-                            if data.type_() == DataType::DmaBuf {
-                                // Proper error handling for DMA-BUF synchronization
-                                if let Err(err) = data.sync_dma_buf(sync_timeline) {
-                                    warn!("DMA-BUF synchronization failed: {:?}", err);
-                                    // Continue with other planes rather than aborting the whole operation
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -1045,21 +1027,18 @@ impl Cast {
             }
         }
 
-        // Update the buffer chunks with stride and offset information
-        self.update_buffer_chunks(buffer.datas_mut(), dmabuf);
-
-        // Update release point after processing if wait_for_sync
-        if wait_for_sync {
-            if let Some(sync_timeline) = self.sync_timeline.as_mut() {
-                let release_point = sync_timeline.release_point();
-                async_io::block_on(self.timeline_manager.signal_release(release_point));
-            }
+        self.update_buffer_chunks(buffer.datas_mut(), &dmabuf);
+        if let Err(err) = self.handle_sync_operations(buffer.datas_mut(), wait_for_sync) {
+            warn!("Sync operations failed: {:?}", err);
+            return false;
         }
 
         true
     }
 
-
+    pub fn set_sync_timeline(&mut self, timeline: SyncTimelineRef) {
+        self.sync_timeline = Some(timeline);
+    }
 }
 
 impl CastState {
