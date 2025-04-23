@@ -680,16 +680,16 @@ moving to ready"
 }
 
 struct BufferState {
-    buffer_id: i64,  // Use fd as the buffer identifier instead of storing Buffer
+    _buffer_id: i64,  // Use fd as the buffer identifier instead of storing Buffer
     acquire_point: u64,
     release_point: u64,
     is_queued: bool,
 }
 
 impl BufferState {
-    fn new(buffer_id: i64, acquire_point: u64) -> Self {
+    fn new(_buffer_id: i64, acquire_point: u64) -> Self {
         Self {
-            buffer_id,
+            _buffer_id,
             acquire_point,
             release_point: 0,
             is_queued: true,
@@ -907,7 +907,7 @@ impl Cast {
             self.buffers.truncate(32);
         }
     }
-    
+
 
     /// Synchronizes DMA-BUF buffers with timeline for explicit synchronization
     fn sync_dmabuf_with_timeline(
@@ -917,7 +917,7 @@ impl Cast {
         if let Some(sync_timeline) = sync_timeline {
             for data in buffer {
                 if data.type_() == DataType::DmaBuf {
-                    if let Some(fd) = data.dma_buf_fd() {
+                    if let Some(_fd) = data.dma_buf_fd() {
                         if let Err(err) = data.sync_dma_buf(sync_timeline) {
                             return Err(anyhow::anyhow!("Failed to sync DMA-BUF: {:?}", err));
                         }
@@ -1004,12 +1004,8 @@ impl Cast {
         drop(buffer);
 
         // Now we can safely perform mutable operations on self
-        self.buffers.push(BufferState {
-            buffer_id,
-            acquire_point,
-            release_point: 0,   // Will be set by consumer (PipeWire)
-            is_queued: true,
-        });
+        self.buffers.push(BufferState::new(buffer_id, acquire_point));
+
         self.last_frame_time = get_monotonic_time();
         self.cleanup_buffer_states();
 
@@ -1049,7 +1045,8 @@ impl Cast {
             }
         }
 
-        self.update_sync_timeline();
+        // Get acquire point from timeline - this is our producer role
+        let acquire_point = self.update_sync_timeline().unwrap_or(0);
 
         let Some(mut buffer) = self.stream.dequeue_buffer() else {
             warn!("no available buffer in pw stream, skipping clear");
@@ -1075,17 +1072,33 @@ impl Cast {
             }
         }
 
-        // In dequeue_buffer_and_clear
+        // Update buffer chunks with stride and offset information
         self.update_buffer_chunks(buffer.datas_mut(), &dmabuf);
-        if let Err(err) =
-            Self::handle_sync_operations(&mut self.sync_timeline, buffer.datas_mut(), wait_for_sync)
-        {
-            warn!("Sync operations failed: {:?}", err);
-            return false;
+
+        // Only sync the DMA-BUF with timeline, but don't set release point
+        if wait_for_sync && self.sync_timeline.is_some() {
+            if let Err(err) = Self::sync_dmabuf_with_timeline(&mut self.sync_timeline, buffer.datas_mut()) {
+                warn!("Sync operations failed: {:?}", err);
+                return false;
+            }
         }
+
+        // Save buffer_id before dropping buffer
+        let buffer_id = fd_i64;
+
+        // Explicitly drop the buffer here to release the immutable borrow of self.stream
+        drop(buffer);
+
+        // Now we can safely perform mutable operations on self
+        self.buffers.push(BufferState::new(buffer_id, acquire_point));
+
+        // Update last frame time for frame pacing
+        self.last_frame_time = get_monotonic_time();
+        self.cleanup_buffer_states();
 
         true
     }
+
 
     pub fn set_sync_timeline(&mut self, timeline: SyncTimelineRef) {
         self.sync_timeline = Some(timeline);
