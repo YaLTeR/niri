@@ -11,4 +11,4 @@ rust-version.workspace = true
 [dependencies]
 anyhow = "1.0.98"
 log = "0.4.27"
-smithay = { path = "../../smithay", default-features = false }
+smithay = { path = "../../smithay", default-features = false, features = ["backend_gbm", "renderer_gl", "backend_drm"]}
