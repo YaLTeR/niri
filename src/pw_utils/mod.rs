@@ -5,16 +5,18 @@ use std::iter::zip;
 use std::mem;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::Context as _;
+use async_std::sync::{Arc, RwLock};
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::RegistrationToken;
 use pipewire::context::Context;
 use pipewire::core::{Core, PW_ID_CORE};
 use pipewire::main_loop::MainLoop;
 use pipewire::properties::Properties;
-use pipewire::spa::buffer::DataType;
+use pipewire::spa::buffer::{DataType, SyncTimelineRef};
 use pipewire::spa::param::format::{FormatProperties, MediaSubtype, MediaType};
 use pipewire::spa::param::format_utils::parse_format;
 use pipewire::spa::param::video::{VideoFormat, VideoInfoRaw};
@@ -24,7 +26,7 @@ use pipewire::spa::pod::serialize::PodSerializer;
 use pipewire::spa::pod::{self, ChoiceValue, Pod, PodPropFlags, Property, PropertyFlags};
 use pipewire::spa::sys::*;
 use pipewire::spa::utils::{
-    Choice, ChoiceEnum, ChoiceFlags, Direction, Fraction, Rectangle, SpaTypes,
+    Choice, ChoiceEnum, ChoiceFlags, Direction, Fraction, Id, Rectangle, SpaTypes,
 };
 use pipewire::spa::{self};
 use pipewire::stream::{Stream, StreamFlags, StreamListener, StreamState};
@@ -36,11 +38,12 @@ use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::output::{Output, OutputModeSource};
+use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
 use smithay::utils::{Physical, Scale, Size, Transform};
+use tracy_client::span;
 use zbus::object_server::SignalEmitter;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode};
@@ -64,6 +67,36 @@ pub enum PwToNiri {
     FatalError,
 }
 
+#[derive(Debug)]
+pub struct TimelineManager {
+    current_point: Arc<RwLock<u64>>,
+    last_release: Arc<RwLock<u64>>,
+}
+
+impl TimelineManager {
+    pub fn new() -> Self {
+        Self {
+            current_point: Arc::new(RwLock::new(0)),
+            last_release: Arc::new(RwLock::new(0)),
+        }
+    }
+
+    pub async fn advance_timeline(&self) -> u64 {
+        let mut current = self.current_point.write().await;
+        *current += 1;
+        *current
+    }
+
+    pub async fn signal_release(&self, point: u64) {
+        let mut last = self.last_release.write().await;
+        *last = point;
+    }
+
+    pub async fn get_current_point(&self) -> u64 {
+        *self.current_point.read().await
+    }
+}
+
 pub struct Cast {
     pub session_id: usize,
     pub stream_id: usize,
@@ -81,6 +114,8 @@ pub struct Cast {
     min_time_between_frames: Rc<Cell<Duration>>,
     dmabufs: Rc<RefCell<HashMap<i64, Dmabuf>>>,
     scheduled_redraw: Option<RegistrationToken>,
+    timeline_manager: Arc<TimelineManager>,
+    sync_timeline: Option<SyncTimelineRef>,
 }
 
 #[derive(Debug)]
@@ -99,11 +134,9 @@ pub enum CastState {
         alpha: bool,
         modifier: Modifier,
         plane_count: i32,
-        // Lazily-initialized to keep the initialization to a single place.
         damage_tracker: Option<OutputDamageTracker>,
     },
 }
-
 #[derive(PartialEq, Eq)]
 pub enum CastSizeChange {
     Ready,
@@ -166,7 +199,7 @@ impl PipeWire {
         let token = event_loop
             .insert_source(generic, move |_, wrapper, _| {
                 let _span = tracy_client::span!("pipewire iteration");
-                wrapper.0.loop_().iterate(Duration::ZERO);
+                wrapper.0.loop_().iterate(Some(Duration::ZERO));
                 Ok(PostAction::Continue)
             })
             .unwrap();
@@ -287,6 +320,26 @@ impl PipeWire {
 
                     let Some(pod) = pod else { return };
 
+                    // Check for SPA_META_SyncTimeline metadata
+                    if let Ok(obj) = pod.as_object() {
+                        // Look for metadata prop
+                        if let Some(meta_prop) = obj.find_prop(Id(SPA_PARAM_META_type)) {
+                            // Check if timeline metadata is available
+                            let has_timeline = if let Ok(Id(value)) = meta_prop.value().get_id() {
+                                value == SPA_META_SyncTimeline
+                            } else {
+                                false
+                            };
+
+                            if has_timeline {
+                                debug!("pw stream: explicit sync timeline metadata available");
+                                // Enable explicit sync pathway is handled by later metadata
+                                // retrieval
+                            }
+                        }
+                    }
+
+                    // Original format parsing continues below...
                     let (m_type, m_subtype) = match parse_format(pod) {
                         Ok(x) => x,
                         Err(err) => {
@@ -373,8 +426,8 @@ impl PipeWire {
 
                         debug!(
                             "pw stream: allocation successful \
-                             (modifier={modifier:?}, plane_count={plane_count}), \
-                             moving to confirmation pending"
+                 (modifier={modifier:?}, plane_count={plane_count}), \
+                 moving to confirmation pending"
                         );
 
                         *state = CastState::ConfirmationPending {
@@ -476,8 +529,8 @@ impl PipeWire {
 
                             debug!(
                                 "pw stream: allocation successful \
-                                 (modifier={modifier:?}, plane_count={plane_count}), \
-                                 moving to ready"
+                     (modifier={modifier:?}, plane_count={plane_count}), \
+                     moving to ready"
                             );
 
                             *state = CastState::Ready {
@@ -492,10 +545,8 @@ impl PipeWire {
                         }
                     };
 
-                    // const BPP: u32 = 4;
-                    // let stride = format.size().width * BPP;
-                    // let size = stride * format.size().height;
-
+                    // Create buffer parameters
+                    // Create buffer parameters
                     let o1 = pod::object!(
                         SpaTypes::ObjectParamBuffers,
                         ParamType::Buffers,
@@ -511,9 +562,6 @@ impl PipeWire {
                             ))),
                         ),
                         Property::new(SPA_PARAM_BUFFERS_blocks, pod::Value::Int(plane_count)),
-                        // Property::new(SPA_PARAM_BUFFERS_size, pod::Value::Int(size as i32)),
-                        // Property::new(SPA_PARAM_BUFFERS_stride, pod::Value::Int(stride as i32)),
-                        // Property::new(SPA_PARAM_BUFFERS_align, pod::Value::Int(16)),
                         Property::new(
                             SPA_PARAM_BUFFERS_dataType,
                             pod::Value::Choice(ChoiceValue::Int(Choice(
@@ -524,25 +572,15 @@ impl PipeWire {
                                 },
                             ))),
                         ),
+                        // Add explicit sync timeline metadata request here
+                        Property::new(
+                            SPA_PARAM_META_type,
+                            pod::Value::Id(Id(SPA_META_SyncTimeline))
+                        ),
                     );
 
-                    // FIXME: Hidden / embedded / metadata cursor
-
-                    // let o2 = pod::object!(
-                    //     SpaTypes::ObjectParamMeta,
-                    //     ParamType::Meta,
-                    //     Property::new(SPA_PARAM_META_type,
-                    // pod::Value::Id(Id(SPA_META_Header))),
-                    //     Property::new(
-                    //         SPA_PARAM_META_size,
-                    //         pod::Value::Int(size_of::<spa_meta_header>() as i32)
-                    //     ),
-                    // );
                     let mut b1 = vec![];
-                    // let mut b2 = vec![];
-                    let mut params = [
-                        make_pod(&mut b1, o1), // make_pod(&mut b2, o2)
-                    ];
+                    let mut params = [make_pod(&mut b1, o1)];
 
                     if let Err(err) = stream.update_params(&mut params) {
                         warn!("error updating stream params: {err:?}");
@@ -663,6 +701,8 @@ impl PipeWire {
             min_time_between_frames,
             dmabufs,
             scheduled_redraw: None,
+            timeline_manager: Arc::new(TimelineManager::new()),
+            sync_timeline: None,
         };
         Ok(cast)
     }
@@ -814,7 +854,7 @@ impl Cast {
             false
         }
     }
-
+    // Synchronous wrapper for dequeue_buffer_and_render_async
     pub fn dequeue_buffer_and_render(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -823,56 +863,76 @@ impl Cast {
         scale: Scale<f64>,
         wait_for_sync: bool,
     ) -> bool {
+        async_io::block_on(self.dequeue_buffer_and_render_async(
+            renderer,
+            elements,
+            size,
+            scale,
+            wait_for_sync,
+        ))
+        .unwrap_or_else(|err| {
+            warn!("error rendering to pw buffer: {err:?}");
+            false
+        })
+    }
+
+    pub async fn dequeue_buffer_and_render_async(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        elements: &[impl RenderElement<GlesRenderer>],
+        size: Size<i32, Physical>,
+        scale: Scale<f64>,
+        wait_for_sync: bool,
+    ) -> Result<bool, anyhow::Error> {
+        let _span = span!("Cast::dequeue_buffer_and_render_async");
+
         let CastState::Ready { damage_tracker, .. } = &mut *self.state.borrow_mut() else {
             error!("cast must be in Ready state to render");
-            return false;
+            return Ok(false);
         };
+
         let damage_tracker = damage_tracker
             .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
-
-        // Size change will drop the damage tracker, but scale change won't, so check it here.
-        let OutputModeSource::Static { scale: t_scale, .. } = damage_tracker.mode() else {
-            unreachable!();
-        };
-        if *t_scale != scale {
-            *damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
-        }
 
         let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
         if damage.is_none() {
             trace!("no damage, skipping frame");
-            return false;
+            return Ok(false);
         }
 
-        let Some(mut buffer) = self.stream.dequeue_buffer() else {
-            warn!("no available buffer in pw stream, skipping frame");
-            return false;
+        // Use the async version of dequeue_buffer
+        let Some(mut buffer) = self.stream.dequeue_buffer_async().await? else {
+            return Ok(false);
         };
+
+        if let Some(sync_timeline) = self.sync_timeline.as_mut() {
+            let current_point = self.timeline_manager.advance_timeline().await;
+            // Use the async set_acquire_point method
+            sync_timeline.set_acquire_point(current_point);
+
+            if wait_for_sync {
+                // Use the async get_release_point method
+                let release_point = sync_timeline.release_point();
+                self.timeline_manager.signal_release(release_point).await;
+            }
+        }
 
         let fd = buffer.datas_mut()[0].as_raw().fd;
         let dmabuf = &self.dmabufs.borrow()[&fd];
 
-        match render_to_dmabuf(
+        let sync_point = render_to_dmabuf(
             renderer,
             dmabuf.clone(),
             size,
             scale,
             Transform::Normal,
             elements.iter().rev(),
-        ) {
-            Ok(sync_point) => {
-                // FIXME: implement PipeWire explicit sync, and at the very least async wait.
-                if wait_for_sync {
-                    let _span = tracy_client::span!("wait for completion");
-                    if let Err(err) = sync_point.wait() {
-                        warn!("error waiting for pw frame completion: {err:?}");
-                    }
-                }
-            }
-            Err(err) => {
-                warn!("error rendering to dmabuf: {err:?}");
-                return false;
-            }
+        )?;
+
+        if wait_for_sync {
+            let _span = span!("wait for completion");
+            // Use the async wait method
+            sync_point.wait().expect("TODO: panic message");
         }
 
         for (data, (stride, offset)) in
@@ -882,16 +942,14 @@ impl Cast {
             *chunk.size_mut() = 1;
             *chunk.stride_mut() = stride as i32;
             *chunk.offset_mut() = offset;
-
-            trace!(
-                "pw buffer: fd = {}, stride = {stride}, offset = {offset}",
-                data.as_raw().fd
-            );
         }
 
-        true
+        Ok(true)
     }
 
+    pub fn set_sync_timeline(&mut self, timeline: SyncTimelineRef) {
+        self.sync_timeline = Some(timeline);
+    }
     pub fn dequeue_buffer_and_clear(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -907,16 +965,39 @@ impl Cast {
             return false;
         };
 
-        let fd = buffer.datas_mut()[0].as_raw().fd;
-        let dmabuf = &self.dmabufs.borrow()[&fd];
+        // Use more directly:
+        if let Some(sync_timeline) = self.sync_timeline.as_mut() {
+            // Increment a counter or get a monotonic timestamp
+            static COUNTER: AtomicU64 = AtomicU64::new(1);
+            let point = COUNTER.fetch_add(1, Ordering::SeqCst);
+            sync_timeline.set_acquire_point(point);
+        }
 
+        // Get the DMA-BUF file descriptor and retrieve the corresponding buffer
+        let fd = buffer.datas_mut()[0].as_raw().fd;
+        let fd_i64 = fd as i64; // Convert to i64 to match HashMap key type
+        let dmabuf = &self.dmabufs.borrow()[&fd_i64];
+
+        // Clear the DMA-BUF buffer
         match clear_dmabuf(renderer, dmabuf.clone()) {
             Ok(sync_point) => {
-                // FIXME: implement PipeWire explicit sync, and at the very least async wait.
                 if wait_for_sync {
                     let _span = tracy_client::span!("wait for completion");
                     if let Err(err) = sync_point.wait() {
                         warn!("error waiting for pw frame completion: {err:?}");
+                    }
+
+                    // If we have explicit sync, also sync the DMA-BUF after GPU clear is done
+                    if let Some(sync_timeline) = self.sync_timeline.as_mut() {
+                        for data in buffer.datas_mut() {
+                            if data.type_() == DataType::DmaBuf {
+                                // Proper error handling for DMA-BUF synchronization
+                                if let Err(err) = data.sync_dma_buf(sync_timeline) {
+                                    warn!("DMA-BUF synchronization failed: {:?}", err);
+                                    // Continue with other planes rather than aborting the whole operation
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -926,6 +1007,7 @@ impl Cast {
             }
         }
 
+        // Update the buffer chunks with stride and offset information
         for (data, (stride, offset)) in
             zip(buffer.datas_mut(), zip(dmabuf.strides(), dmabuf.offsets()))
         {
@@ -933,15 +1015,20 @@ impl Cast {
             *chunk.size_mut() = 1;
             *chunk.stride_mut() = stride as i32;
             *chunk.offset_mut() = offset;
+        }
 
-            trace!(
-                "pw buffer: fd = {}, stride = {stride}, offset = {offset}",
-                data.as_raw().fd
-            );
+        // Update release point after processing if wait_for_sync
+        if wait_for_sync {
+            if let Some(sync_timeline) = self.sync_timeline.as_mut() {
+                let release_point = sync_timeline.release_point();
+                async_io::block_on(self.timeline_manager.signal_release(release_point));
+            }
         }
 
         true
     }
+
+
 }
 
 impl CastState {

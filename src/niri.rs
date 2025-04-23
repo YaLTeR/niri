@@ -1744,6 +1744,7 @@ impl State {
                         .rev()
                         .collect::<Vec<_>>();
 
+                    // To this:
                     if cast.dequeue_buffer_and_render(
                         renderer,
                         &elements,

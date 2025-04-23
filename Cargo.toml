@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "25.2.0"
+version = "25.2.1"
 description = "A scrollable-tiling Wayland compositor"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -27,14 +27,14 @@ tracy-client = { version = "0.18.0", default-features = false }
 
 [workspace.dependencies.smithay]
 # version = "0.4.1"
-git = "https://github.com/Smithay/smithay.git"
-# path = "../smithay"
+# git = "https://github.com/Smithay/smithay.git"
+path = "../smithay"
 default-features = false
 
 [workspace.dependencies.smithay-drm-extras]
 # version = "0.1.0"
-git = "https://github.com/Smithay/smithay.git"
-# path = "../smithay/smithay-drm-extras"
+# git = "https://github.com/Smithay/smithay.git"
+path = "../smithay/smithay-drm-extras"
 
 [package]
 name = "niri"
@@ -76,7 +76,6 @@ niri-ipc = { version = "25.2.0", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.0.0"
 pango = { version = "0.20.9", features = ["v1_44"] }
 pangocairo = "0.20.7"
-pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", optional = true, features = ["v0_3_33"] }
 png = "0.17.16"
 portable-atomic = { version = "1.11.0", default-features = false, features = ["float"] }
 profiling = "1.0.16"
@@ -92,6 +91,11 @@ wayland-backend = "0.3.8"
 wayland-scanner = "0.31.6"
 xcursor = "0.3.8"
 zbus = { version = "5.5.0", optional = true }
+pipewire = { path = "../pipewire-rs/pipewire", optional = true, features = ["v0_3_75"] }
+async-std = "1.13.1"
+nix = "0.29.0"
+
+
 
 [dependencies.smithay]
 workspace = true

@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="ALL" />
+  </component>
+  <component name="CargoProjects">
+    <cargoProject FILE="$PROJECT_DIR$/Cargo.toml">
+      <package file="$PROJECT_DIR$">
+        <enabledFeature name="default" />
+      </package>
+      <package file="$PROJECT_DIR$/niri-config">
+        <enabledFeature name="default" />
+      </package>
+      <package file="$PROJECT_DIR$/niri-ipc">
+        <enabledFeature name="default" />
+        <enabledFeature name="clap" />
+      </package>
+      <package file="$PROJECT_DIR$/niri-visual-tests">
+        <enabledFeature name="default" />
+      </package>
+    </cargoProject>
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="7357a20f-4ae3-4a02-bab6-099076da6bb7" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/.gitmodules" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/vendor/pipewire-rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/lib.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/niri.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/niri.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/pw_utils.rs" beforeDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ExecutionTargetManager" SELECTED_TARGET="RsBuildProfile:test" />
+  <component name="Git.Settings">
+    <option name="RECENT_BRANCH_BY_REPOSITORY">
+      <map>
+        <entry key="$PROJECT_DIR$" value="debug-pipewire-wait-for-frame-completion" />
+      </map>
+    </option>
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="RESET_MODE" value="HARD" />
+  </component>
+  <component name="HighlightingSettingsPerFile">
+    <setting file="file://$USER_HOME$/.cargo/git/checkouts/pipewire-rs-df61a2021ea5a343/fd3d8f7/libspa/src/buffer/mod.rs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$USER_HOME$/.cargo/git/checkouts/pipewire-rs-df61a2021ea5a343/fd3d8f7/libspa/src/lib.rs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$USER_HOME$/.cargo/git/checkouts/pipewire-rs-df61a2021ea5a343/fd3d8f7/libspa/src/param/mod.rs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$USER_HOME$/.cargo/git/checkouts/pipewire-rs-df61a2021ea5a343/fd3d8f7/libspa/src/pod/mod.rs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$USER_HOME$/.cargo/git/checkouts/pipewire-rs-df61a2021ea5a343/fd3d8f7/libspa/src/support/mod.rs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$USER_HOME$/.cargo/git/checkouts/pipewire-rs-df61a2021ea5a343/fd3d8f7/libspa/src/support/system.rs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$USER_HOME$/.cargo/git/checkouts/pipewire-rs-df61a2021ea5a343/fd3d8f7/libspa/src/utils/mod.rs" root0="FORCE_HIGHLIGHTING" />
+    <setting file="file://$USER_HOME$/.cargo/git/checkouts/smithay-312425d48e59d8c8/16d3c0f/src/backend/renderer/sync/mod.rs" root0="FORCE_HIGHLIGHTING" />
+  </component>
+  <component name="JsbtTreeLayoutManager">
+    <layout place="tools.popupGrunt">
+      <scroll-view-position x="0" y="0" />
+    </layout>
+  </component>
+  <component name="MacroExpansionManager">
+    <option name="directoryName" value="uRntEJMW" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 6
+}</component>
+  <component name="ProjectId" id="2uXvHy2k1CJnT7Qtb9Bv2uBrHfu" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Cargo.Build `Test pw_utils::tests`.executor&quot;: &quot;Run&quot;,
+    &quot;Cargo.Test pw_utils::tests.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/cole/projects/pipewire-rs&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
+    &quot;org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon&quot;: &quot;&quot;,
+    &quot;org.rust.hideNoCargoProjectNotifications/home/cole/projects/niri/pipewire-rs/Cargo.toml&quot;: &quot;true&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.lookFeel&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RunManager" selected="Cargo.Test pw_utils::tests">
+    <configuration name="Run niri-visual-tests" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+      <option name="command" value="run --package niri-visual-tests --bin niri-visual-tests" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+      <envs />
+      <option name="emulateTerminal" value="true" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="buildTarget" value="REMOTE" />
+      <option name="backtrace" value="SHORT" />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="Run niri" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+      <option name="buildProfileId" value="dev" />
+      <option name="command" value="run --package niri --bin niri" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+      <envs />
+      <option name="emulateTerminal" value="true" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="buildTarget" value="REMOTE" />
+      <option name="backtrace" value="SHORT" />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="Test niri" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+      <option name="command" value="test --workspace" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+      <envs />
+      <option name="emulateTerminal" value="true" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="buildTarget" value="REMOTE" />
+      <option name="backtrace" value="SHORT" />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="Test pw_utils::tests" type="CargoCommandRunConfiguration" factoryName="Cargo Command" temporary="true">
+      <option name="buildProfileId" value="test" />
+      <option name="command" value="test --package niri --lib pw_utils::tests" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+      <envs />
+      <option name="emulateTerminal" value="true" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="buildTarget" value="REMOTE" />
+      <option name="backtrace" value="SHORT" />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Cargo.Test pw_utils::tests" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="RustProjectSettings">
+    <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="7357a20f-4ae3-4a02-bab6-099076da6bb7" name="Changes" comment="" />
+      <created>1742407650831</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1742407650831</updated>
+      <workItem from="1742407652232" duration="4000" />
+      <workItem from="1742582465289" duration="5000" />
+      <workItem from="1743461497130" duration="373000" />
+      <workItem from="1743463056071" duration="1653000" />
+      <workItem from="1743464716759" duration="2302000" />
+      <workItem from="1743467079438" duration="171000" />
+      <workItem from="1743467254799" duration="3689000" />
+      <workItem from="1743473151559" duration="102000" />
+      <workItem from="1743473405982" duration="74000" />
+      <workItem from="1743474142826" duration="117000" />
+      <workItem from="1743474316055" duration="40000" />
+      <workItem from="1743474361657" duration="69000" />
+      <workItem from="1743474570008" duration="71000" />
+      <workItem from="1743474921693" duration="1644000" />
+      <workItem from="1743476873410" duration="1751000" />
+      <workItem from="1743478706068" duration="663000" />
+      <workItem from="1743479567011" duration="770000" />
+      <workItem from="1743480829917" duration="810000" />
+      <workItem from="1743481918102" duration="93000" />
+      <workItem from="1743483096372" duration="904000" />
+      <workItem from="1743484665600" duration="247000" />
+      <workItem from="1743485493756" duration="178000" />
+      <workItem from="1743486307348" duration="224000" />
+      <workItem from="1743486776989" duration="860000" />
+      <workItem from="1743488156200" duration="15000" />
+      <workItem from="1743488216654" duration="17000" />
+      <workItem from="1743488331747" duration="91000" />
+      <workItem from="1743488929015" duration="17000" />
+      <workItem from="1743489269366" duration="4000" />
+      <workItem from="1743489416422" duration="155000" />
+      <workItem from="1743489597968" duration="49000" />
+      <workItem from="1743489854593" duration="197000" />
+      <workItem from="1743495748830" duration="560000" />
+      <workItem from="1743496384335" duration="11000" />
+      <workItem from="1743496597233" duration="574000" />
+      <workItem from="1743497674189" duration="147000" />
+      <workItem from="1743498002696" duration="569000" />
+      <workItem from="1743498719946" duration="842000" />
+      <workItem from="1743526575274" duration="67000" />
+      <workItem from="1743526661352" duration="21000" />
+      <workItem from="1743528728145" duration="2270000" />
+      <workItem from="1745304055425" duration="251000" />
+      <workItem from="1745334660747" duration="135000" />
+      <workItem from="1745354348822" duration="121000" />
+      <workItem from="1745370215270" duration="1029000" />
+      <workItem from="1745371562373" duration="635000" />
+      <workItem from="1745372376154" duration="109000" />
+      <workItem from="1745372549064" duration="323000" />
+      <workItem from="1745372955159" duration="134000" />
+      <workItem from="1745373686601" duration="1203000" />
+      <workItem from="1745374924445" duration="2315000" />
+      <workItem from="1745377455808" duration="68000" />
+      <workItem from="1745377532374" duration="233000" />
+      <workItem from="1745377866991" duration="39000" />
+      <workItem from="1745378051796" duration="19000" />
+      <workItem from="1745378078611" duration="71000" />
+      <workItem from="1745378300928" duration="84000" />
+      <workItem from="1745378403227" duration="29000" />
+      <workItem from="1745378450063" duration="46000" />
+      <workItem from="1745378505570" duration="1951000" />
+      <workItem from="1745380465003" duration="16000" />
+      <workItem from="1745380566288" duration="1058000" />
+      <workItem from="1745382036703" duration="306000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
+          <url>file://$PROJECT_DIR$/../smithay/src/backend/renderer/gles/mod.rs</url>
+          <line>2048</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
+  </component>
+</project>
