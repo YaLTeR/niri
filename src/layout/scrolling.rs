@@ -113,6 +113,10 @@ pub(super) enum ViewOffset {
 #[derive(Debug)]
 pub(super) struct ViewGesture {
     current_view_offset: f64,
+    /// Animation for the extra offset to the current position.
+    ///
+    /// For example, when we need to activate a specific window during a DnD scroll.
+    animation: Option<Animation>,
     tracker: SwipeTracker,
     delta_from_tracker: f64,
     // The view offset we'll use if needed for activate_prev_column_on_removal.
@@ -321,6 +325,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     gesture.dnd_nonzero_start_time = None;
                 }
             }
+
+            if let Some(anim) = &mut gesture.animation {
+                if anim.is_done() {
+                    gesture.animation = None;
+                }
+            }
         }
 
         for col in &mut self.columns {
@@ -334,7 +344,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.view_offset.is_animation()
+        self.view_offset.is_animation_ongoing()
             || self.columns.iter().any(Column::are_animations_ongoing)
             || !self.closing_windows.is_empty()
     }
@@ -626,8 +636,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         new_view_offset: f64,
         config: niri_config::Animation,
     ) {
-        self.view_offset.cancel_gesture();
-
         let new_col_x = self.column_x(idx);
         let old_col_x = self.column_x(self.active_column_idx);
         let offset_delta = old_col_x - new_col_x;
@@ -644,14 +652,28 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        // FIXME: also compute and use current velocity.
-        self.view_offset = ViewOffset::Animation(Animation::new(
-            self.clock.clone(),
-            self.view_offset.current(),
-            new_view_offset,
-            0.,
-            config,
-        ));
+        match &mut self.view_offset {
+            ViewOffset::Gesture(gesture) if gesture.dnd_last_event_time.is_some() => {
+                gesture.stationary_view_offset = new_view_offset;
+
+                let current_pos = gesture.current_view_offset - gesture.delta_from_tracker;
+                gesture.delta_from_tracker = new_view_offset - current_pos;
+                let offset_delta = new_view_offset - gesture.current_view_offset;
+                gesture.current_view_offset = new_view_offset;
+
+                gesture.animate_from(-offset_delta, self.clock.clone(), config);
+            }
+            _ => {
+                // FIXME: also compute and use current velocity.
+                self.view_offset = ViewOffset::Animation(Animation::new(
+                    self.clock.clone(),
+                    self.view_offset.current(),
+                    new_view_offset,
+                    0.,
+                    config,
+                ));
+            }
+        }
     }
 
     fn animate_view_offset_to_column_centered(
@@ -1563,7 +1585,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Preserve the camera position when moving to the left.
         let view_offset_delta = -self.column_x(self.active_column_idx) + current_col_x;
-        self.view_offset.cancel_gesture();
         self.view_offset.offset(view_offset_delta);
 
         // The column we just moved is offset by the difference between its new and old position.
@@ -2784,6 +2805,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let gesture = ViewGesture {
             current_view_offset: self.view_offset.current(),
+            animation: None,
             tracker: SwipeTracker::new(),
             delta_from_tracker: self.view_offset.current(),
             stationary_view_offset: self.view_offset.stationary(),
@@ -2806,6 +2828,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let gesture = ViewGesture {
             current_view_offset: self.view_offset.current(),
+            animation: None,
             tracker: SwipeTracker::new(),
             delta_from_tracker: self.view_offset.current(),
             stationary_view_offset: self.view_offset.stationary(),
@@ -3500,7 +3523,10 @@ impl ViewOffset {
         match self {
             ViewOffset::Static(offset) => *offset,
             ViewOffset::Animation(anim) => anim.value(),
-            ViewOffset::Gesture(gesture) => gesture.current_view_offset,
+            ViewOffset::Gesture(gesture) => {
+                gesture.current_view_offset
+                    + gesture.animation.as_ref().map_or(0., |anim| anim.value())
+            }
         }
     }
 
@@ -3530,21 +3556,26 @@ impl ViewOffset {
         matches!(self, Self::Static(_))
     }
 
-    pub fn is_animation(&self) -> bool {
-        matches!(self, Self::Animation(_))
-    }
-
     pub fn is_gesture(&self) -> bool {
         matches!(self, Self::Gesture(_))
+    }
+
+    pub fn is_animation_ongoing(&self) -> bool {
+        match self {
+            ViewOffset::Static(_) => false,
+            ViewOffset::Animation(_) => true,
+            ViewOffset::Gesture(gesture) => gesture.animation.is_some(),
+        }
     }
 
     pub fn offset(&mut self, delta: f64) {
         match self {
             ViewOffset::Static(offset) => *offset += delta,
             ViewOffset::Animation(anim) => anim.offset(delta),
-            ViewOffset::Gesture(_gesture) => {
-                // Is this needed?
-                error!("cancel gesture before offsetting");
+            ViewOffset::Gesture(gesture) => {
+                gesture.stationary_view_offset += delta;
+                gesture.delta_from_tracker += delta;
+                gesture.current_view_offset += delta;
             }
         }
     }
@@ -3557,6 +3588,13 @@ impl ViewOffset {
 
     pub fn stop_anim_and_gesture(&mut self) {
         *self = ViewOffset::Static(self.current());
+    }
+}
+
+impl ViewGesture {
+    fn animate_from(&mut self, from: f64, clock: Clock, config: niri_config::Animation) {
+        let current = self.animation.as_ref().map_or(0., Animation::value);
+        self.animation = Some(Animation::new(clock, from + current, 0., 0., config));
     }
 }
 
