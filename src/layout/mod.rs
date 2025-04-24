@@ -1432,19 +1432,12 @@ impl<W: LayoutElement> Layout<W> {
     pub fn update_output_size(&mut self, output: &Output) {
         let _span = tracy_client::span!("Layout::update_output_size");
 
-        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
-            panic!()
+        let Some(mon) = self.monitor_for_output_mut(output) else {
+            error!("monitor missing in update_output_size()");
+            return;
         };
 
-        for mon in monitors {
-            if &mon.output == output {
-                for ws in &mut mon.workspaces {
-                    ws.update_output_size();
-                }
-
-                break;
-            }
-        }
+        mon.update_output_size();
     }
 
     pub fn scroll_amount_to_activate(&self, window: &W::Id) -> f64 {
@@ -2551,6 +2544,17 @@ impl<W: LayoutElement> Layout<W> {
                 assert_eq!(self.clock, workspace.clock);
 
                 assert_eq!(
+                    monitor.scale().integer_scale(),
+                    workspace.scale().integer_scale()
+                );
+                assert_eq!(
+                    monitor.scale().fractional_scale(),
+                    workspace.scale().fractional_scale()
+                );
+                assert_eq!(monitor.view_size(), workspace.view_size());
+                assert_eq!(monitor.working_area(), workspace.working_area());
+
+                assert_eq!(
                     workspace.base_options, self.options,
                     "workspace options must be synchronized with layout"
                 );
@@ -2602,7 +2606,7 @@ impl<W: LayoutElement> Layout<W> {
                 saw_view_offset_gesture = has_view_offset_gesture;
             }
 
-            let scale = monitor.output.current_scale().fractional_scale();
+            let scale = monitor.scale().fractional_scale();
             let iter = monitor.workspaces_with_render_geo();
             for (_ws, ws_geo) in iter {
                 let pos = ws_geo.loc;

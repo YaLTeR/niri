@@ -1708,6 +1708,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.floating.logical_to_size_frac(logical_pos)
     }
 
+    pub fn working_area(&self) -> Rectangle<f64, Logical> {
+        self.working_area
+    }
+
     #[cfg(test)]
     pub fn scrolling(&self) -> &ScrollingSpace<W> {
         &self.scrolling
@@ -1777,6 +1781,6 @@ impl<W: LayoutElement> Workspace<W> {
     }
 }
 
-fn compute_working_area(output: &Output) -> Rectangle<f64, Logical> {
+pub(super) fn compute_working_area(output: &Output) -> Rectangle<f64, Logical> {
     layer_map_for_output(output).non_exclusive_zone().to_f64()
 }
