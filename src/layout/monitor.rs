@@ -902,19 +902,7 @@ impl<W: LayoutElement> Monitor<W> {
     ///
     /// During animations, assumes the final view position.
     pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
-        let mut rect = self.active_workspace_ref().active_tile_visual_rectangle()?;
-
-        if let Some(switch) = &self.workspace_switch {
-            let size = output_size(&self.output).to_f64();
-
-            let offset = switch.target_idx() - self.active_workspace_idx as f64;
-            let offset = offset * size.h;
-
-            let clip_rect = Rectangle::new(Point::from((0., -offset)), size);
-            rect = rect.intersection(clip_rect)?;
-        }
-
-        Some(rect)
+        self.active_workspace_ref().active_tile_visual_rectangle()
     }
 
     pub fn workspace_render_idx(&self) -> f64 {
