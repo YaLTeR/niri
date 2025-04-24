@@ -1,9 +1,11 @@
+use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::{import_surface, RendererSurfaceStateUserData};
 use smithay::backend::renderer::Renderer as _;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point};
+use smithay::utils::{Logical, Point, Size};
 use smithay::wayland::compositor::{with_surface_tree_downward, TraversalAction};
+use smithay::wayland::single_pixel_buffer::get_single_pixel_buffer;
 
 use super::texture::TextureBuffer;
 use super::BakedBuffer;
@@ -53,17 +55,37 @@ pub fn render_snapshot_from_surface_tree(
                 }
 
                 let data = data.lock().unwrap();
-                let Some(texture) = data.texture(renderer.context_id()) else {
-                    return;
-                };
+                let buffer = {
+                    if let Some(texture) = data.texture::<GlesTexture>(renderer.context_id()) {
+                        TextureBuffer::from_texture(
+                            renderer,
+                            texture.clone(),
+                            f64::from(data.buffer_scale()),
+                            data.buffer_transform(),
+                            Vec::new(),
+                        )
+                    } else if let Some(single_pixel_buffer_user_data) = data
+                        .buffer()
+                        .and_then(|buffer| get_single_pixel_buffer(buffer).ok())
+                    {
+                        let pixel: [u8; 4] = single_pixel_buffer_user_data.rgba8888();
+                        let argb_pixel = [pixel[3], pixel[1], pixel[2], pixel[0]];
 
-                let buffer = TextureBuffer::from_texture(
-                    renderer,
-                    texture.clone(),
-                    f64::from(data.buffer_scale()),
-                    data.buffer_transform(),
-                    Vec::new(),
-                );
+                        TextureBuffer::from_memory(
+                            renderer,
+                            &argb_pixel,
+                            Fourcc::Argb8888,
+                            Size::from((1, 1)),
+                            false,
+                            f64::from(data.buffer_scale()),
+                            data.buffer_transform(),
+                            Vec::new(),
+                        )
+                        .unwrap()
+                    } else {
+                        return;
+                    }
+                };
 
                 let baked = BakedBuffer {
                     buffer,
