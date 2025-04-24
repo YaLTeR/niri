@@ -2990,26 +2990,28 @@ impl Niri {
         let layer_toplevel_under = |layer| layer_surface_under(layer, false);
         let layer_popup_under = |layer| layer_surface_under(layer, true);
 
+        let mapped_hit_data = |(mapped, hit): (&Mapped, HitType)| {
+            let window = &mapped.window;
+            let surface_and_pos = if let HitType::Input { win_pos } = hit {
+                let win_pos_within_output = win_pos;
+                window
+                    .surface_under(
+                        pos_within_output - win_pos_within_output,
+                        WindowSurfaceType::ALL,
+                    )
+                    .map(|(s, pos_within_window)| {
+                        (s, pos_within_window.to_f64() + win_pos_within_output)
+                    })
+            } else {
+                None
+            };
+            (surface_and_pos, (Some((window.clone(), hit)), None))
+        };
+
         let window_under = || {
             self.layout
                 .window_under(output, pos_within_output)
-                .map(|(mapped, hit)| {
-                    let window = &mapped.window;
-                    let surface_and_pos = if let HitType::Input { win_pos } = hit {
-                        let win_pos_within_output = win_pos;
-                        window
-                            .surface_under(
-                                pos_within_output - win_pos_within_output,
-                                WindowSurfaceType::ALL,
-                            )
-                            .map(|(s, pos_within_window)| {
-                                (s, pos_within_window.to_f64() + win_pos_within_output)
-                            })
-                    } else {
-                        None
-                    };
-                    (surface_and_pos, (Some((window.clone(), hit)), None))
-                })
+                .map(mapped_hit_data)
         };
 
         let mon = self.layout.monitor_for_output(output).unwrap();
