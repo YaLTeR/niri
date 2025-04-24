@@ -576,6 +576,8 @@ enum Op {
     ViewOffsetGestureBegin {
         #[proptest(strategy = "1..=5usize")]
         output_idx: usize,
+        #[proptest(strategy = "proptest::option::of(0..=4usize)")]
+        workspace_idx: Option<usize>,
         is_touchpad: bool,
     },
     ViewOffsetGestureUpdate {
@@ -1344,6 +1346,7 @@ impl Op {
             }
             Op::ViewOffsetGestureBegin {
                 output_idx: id,
+                workspace_idx,
                 is_touchpad: normalize,
             } => {
                 let name = format!("output{id}");
@@ -1351,7 +1354,7 @@ impl Op {
                     return;
                 };
 
-                layout.view_offset_gesture_begin(&output, normalize);
+                layout.view_offset_gesture_begin(&output, workspace_idx, normalize);
             }
             Op::ViewOffsetGestureUpdate {
                 delta,
@@ -2260,6 +2263,7 @@ fn unfullscreen_view_offset_not_reset_on_gesture() {
         Op::FullscreenWindow(1),
         Op::ViewOffsetGestureBegin {
             output_idx: 1,
+            workspace_idx: None,
             is_touchpad: true,
         },
         Op::ViewOffsetGestureEnd {

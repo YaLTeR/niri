@@ -3601,7 +3601,12 @@ impl<W: LayoutElement> Layout<W> {
         None
     }
 
-    pub fn view_offset_gesture_begin(&mut self, output: &Output, is_touchpad: bool) {
+    pub fn view_offset_gesture_begin(
+        &mut self,
+        output: &Output,
+        workspace_idx: Option<usize>,
+        is_touchpad: bool,
+    ) {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => unreachable!(),
@@ -3610,7 +3615,9 @@ impl<W: LayoutElement> Layout<W> {
         for monitor in monitors {
             for (idx, ws) in monitor.workspaces.iter_mut().enumerate() {
                 // Cancel the gesture on other workspaces.
-                if &monitor.output != output || idx != monitor.active_workspace_idx {
+                if &monitor.output != output
+                    || idx != workspace_idx.unwrap_or(monitor.active_workspace_idx)
+                {
                     ws.view_offset_gesture_end(None);
                     continue;
                 }
