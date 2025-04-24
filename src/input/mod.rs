@@ -2238,7 +2238,14 @@ impl State {
             if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
                 let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                 if mod_down {
-                    if let Some(output) = self.niri.output_under_cursor() {
+                    let output_ws = self.niri.output_under_cursor().and_then(|output| {
+                        let mon = self.niri.layout.monitor_for_output(&output)?;
+                        Some((output, mon.active_workspace_ref()))
+                    });
+
+                    if let Some((output, ws)) = output_ws {
+                        let ws_id = ws.id();
+
                         self.niri.layout.focus_output(&output);
 
                         let location = pointer.current_location();
@@ -2247,7 +2254,7 @@ impl State {
                             button: button_code,
                             location,
                         };
-                        let grab = SpatialMovementGrab::new(start_data, output);
+                        let grab = SpatialMovementGrab::new(start_data, output, ws_id);
                         pointer.set_grab(self, grab, serial, Focus::Clear);
                         self.niri
                             .cursor_manager
@@ -2828,7 +2835,17 @@ impl State {
 
                 if let Some(output) = self.niri.output_under_cursor() {
                     if cx.abs() > cy.abs() {
-                        self.niri.layout.view_offset_gesture_begin(&output, true);
+                        let output_ws = self.niri.output_under_cursor().and_then(|output| {
+                            let mon = self.niri.layout.monitor_for_output(&output)?;
+                            Some((output, mon.active_workspace_ref()))
+                        });
+
+                        if let Some((output, ws)) = output_ws {
+                            let ws_idx = self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
+                            self.niri
+                                .layout
+                                .view_offset_gesture_begin(&output, Some(ws_idx), true);
+                        }
                     } else {
                         self.niri
                             .layout
