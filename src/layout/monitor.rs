@@ -14,7 +14,8 @@ use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
 use super::scrolling::{Column, ColumnWidth};
 use super::tile::Tile;
 use super::workspace::{
-    OutputId, Workspace, WorkspaceAddWindowTarget, WorkspaceId, WorkspaceRenderElement,
+    compute_working_area, OutputId, Workspace, WorkspaceAddWindowTarget, WorkspaceId,
+    WorkspaceRenderElement,
 };
 use super::{ActivateWindow, HitType, LayoutElement, Options};
 use crate::animation::{Animation, Clock};
@@ -40,6 +41,17 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) output: Output,
     /// Cached name of the output.
     output_name: String,
+    /// Latest known scale for this output.
+    scale: smithay::output::Scale,
+    /// Latest known size for this output.
+    view_size: Size<f64, Logical>,
+    /// Latest known working area for this output.
+    ///
+    /// Not rounded to physical pixels.
+    // FIXME: since this is used for things like DnD scrolling edges in the overview, ideally this
+    // should only consider overlay and top layer-shell surfaces. However, Smithay doesn't easily
+    // let you do this at the moment.
+    working_area: Rectangle<f64, Logical>,
     // Must always contain at least one.
     pub(super) workspaces: Vec<Workspace<W>>,
     /// Index of the currently active workspace.
@@ -182,9 +194,16 @@ impl<W: LayoutElement> Monitor<W> {
         clock: Clock,
         options: Rc<Options>,
     ) -> Self {
+        let scale = output.current_scale();
+        let view_size = output_size(&output);
+        let working_area = compute_working_area(&output);
+
         Self {
             output_name: output.name(),
             output,
+            scale,
+            view_size,
+            working_area,
             workspaces,
             active_workspace_idx: 0,
             previous_workspace_id: None,
@@ -795,6 +814,16 @@ impl<W: LayoutElement> Monitor<W> {
         self.insert_hint_element.update_shaders();
     }
 
+    pub fn update_output_size(&mut self) {
+        self.scale = self.output.current_scale();
+        self.view_size = output_size(&self.output);
+        self.working_area = compute_working_area(&self.output);
+
+        for ws in &mut self.workspaces {
+            ws.update_output_size();
+        }
+    }
+
     pub fn move_workspace_down(&mut self) {
         let mut new_idx = min(self.active_workspace_idx + 1, self.workspaces.len() - 1);
         if new_idx == self.active_workspace_idx {
@@ -914,8 +943,8 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn workspaces_render_geo(&self) -> impl Iterator<Item = Rectangle<f64, Logical>> {
-        let scale = self.output.current_scale().fractional_scale();
-        let size = output_size(&self.output);
+        let scale = self.scale.fractional_scale();
+        let size = self.view_size;
 
         // Ceil the workspace size in physical pixels.
         let ws_size = size.to_physical_precise_ceil(scale).to_logical(scale);
@@ -933,8 +962,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn workspaces_with_render_geo(
         &self,
     ) -> impl Iterator<Item = (&Workspace<W>, Rectangle<f64, Logical>)> {
-        let output_size = output_size(&self.output);
-        let output_geo = Rectangle::new(Point::from((0., 0.)), output_size);
+        let output_geo = Rectangle::from_size(self.view_size);
 
         let geo = self.workspaces_render_geo();
         zip(self.workspaces.iter(), geo)
@@ -945,8 +973,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn workspaces_with_render_geo_mut(
         &mut self,
     ) -> impl Iterator<Item = (&mut Workspace<W>, Rectangle<f64, Logical>)> {
-        let output_size = output_size(&self.output);
-        let output_geo = Rectangle::new(Point::from((0., 0.)), output_size);
+        let output_geo = Rectangle::from_size(self.view_size);
 
         let geo = self.workspaces_render_geo();
         zip(self.workspaces.iter_mut(), geo)
@@ -958,11 +985,10 @@ impl<W: LayoutElement> Monitor<W> {
         &self,
         pos_within_output: Point<f64, Logical>,
     ) -> Option<(&Workspace<W>, Rectangle<f64, Logical>)> {
-        let size = output_size(&self.output);
         let (ws, geo) = self.workspaces_with_render_geo().find_map(|(ws, geo)| {
             // Extend width to entire output.
             let loc = Point::from((0., geo.loc.y));
-            let size = Size::from((size.w, geo.size.h));
+            let size = Size::from((self.view_size.w, geo.size.h));
             let bounds = Rectangle::new(loc, size);
 
             bounds.contains(pos_within_output).then_some((ws, geo))
@@ -999,10 +1025,9 @@ impl<W: LayoutElement> Monitor<W> {
     ) -> impl Iterator<Item = MonitorRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Monitor::render_elements");
 
-        let scale = self.output.current_scale().fractional_scale();
-        let size = output_size(&self.output);
+        let scale = self.scale.fractional_scale();
         // Ceil the height in physical pixels.
-        let height = (size.h * scale).ceil() as i32;
+        let height = (self.view_size.h * scale).ceil() as i32;
 
         // Crop the elements to prevent them overflowing, currently visible during a workspace
         // switch.
@@ -1175,5 +1200,17 @@ impl<W: LayoutElement> Monitor<W> {
         )));
 
         true
+    }
+
+    pub fn scale(&self) -> smithay::output::Scale {
+        self.scale
+    }
+
+    pub fn view_size(&self) -> Size<f64, Logical> {
+        self.view_size
+    }
+
+    pub fn working_area(&self) -> Rectangle<f64, Logical> {
+        self.working_area
     }
 }
