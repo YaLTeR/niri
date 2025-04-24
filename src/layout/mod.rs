@@ -2272,6 +2272,23 @@ impl<W: LayoutElement> Layout<W> {
         mon.active_window().map(|win| (win, &mon.output))
     }
 
+    pub fn interactive_moved_window_under(
+        &self,
+        output: &Output,
+        pos_within_output: Point<f64, Logical>,
+    ) -> Option<(&W, HitType)> {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.output == *output {
+                let tile_pos = move_.tile_render_location(1.);
+                HitType::hit_tile(&move_.tile, tile_pos, pos_within_output)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     /// Returns the window under the cursor and the hit type.
     pub fn window_under(
         &self,
@@ -2280,11 +2297,6 @@ impl<W: LayoutElement> Layout<W> {
     ) -> Option<(&W, HitType)> {
         let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
             return None;
-        };
-
-        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            let tile_pos = move_.tile_render_location();
-            return HitType::hit_tile(&move_.tile, tile_pos, pos_within_output);
         };
 
         let mon = monitors.iter().find(|mon| &mon.output == output)?;

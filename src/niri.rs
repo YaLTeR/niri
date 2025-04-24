@@ -2902,6 +2902,13 @@ impl Niri {
             return None;
         }
 
+        if let Some((window, _loc)) = self
+            .layout
+            .interactive_moved_window_under(output, pos_within_output)
+        {
+            return Some(window);
+        }
+
         let (window, _loc) = self.layout.window_under(output, pos_within_output)?;
         Some(window)
     }
@@ -3008,6 +3015,11 @@ impl Niri {
             (surface_and_pos, (Some((window.clone(), hit)), None))
         };
 
+        let interactive_moved_window_under = || {
+            self.layout
+                .interactive_moved_window_under(output, pos_within_output)
+                .map(mapped_hit_data)
+        };
         let window_under = || {
             self.layout
                 .window_under(output, pos_within_output)
@@ -3023,6 +3035,7 @@ impl Niri {
         // Otherwise, we will render all layer-shell pop-ups and the top layer on top.
         if mon.render_above_top_layer() {
             under = under
+                .or_else(interactive_moved_window_under)
                 .or_else(window_under)
                 .or_else(|| layer_popup_under(Layer::Top))
                 .or_else(|| layer_toplevel_under(Layer::Top))
@@ -3036,6 +3049,7 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Top))
                 .or_else(|| layer_popup_under(Layer::Bottom))
                 .or_else(|| layer_popup_under(Layer::Background))
+                .or_else(interactive_moved_window_under)
                 .or_else(window_under)
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
