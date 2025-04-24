@@ -2837,7 +2837,7 @@ impl Niri {
         Some((output, pos_within_output))
     }
 
-    pub fn is_layout_obscured_under(
+    pub fn is_sticky_obscured_under(
         &self,
         output: &Output,
         pos_within_output: Point<f64, Logical>,
@@ -2876,11 +2876,34 @@ impl Niri {
             return false;
         }
 
-        if layer_popup_under(Layer::Top)
-            || layer_toplevel_under(Layer::Top)
-            || layer_popup_under(Layer::Bottom)
-            || layer_popup_under(Layer::Background)
-        {
+        if layer_popup_under(Layer::Top) || layer_toplevel_under(Layer::Top) {
+            return true;
+        }
+
+        false
+    }
+
+    pub fn is_layout_obscured_under(
+        &self,
+        output: &Output,
+        pos_within_output: Point<f64, Logical>,
+    ) -> bool {
+        // Check if some layer-shell surface is on top.
+        let layers = layer_map_for_output(output);
+        let layer_popup_under = |layer| {
+            layers
+                .layers_on(layer)
+                .rev()
+                .find_map(|layer| {
+                    let layer_pos_within_output =
+                        layers.layer_geometry(layer).unwrap().loc.to_f64();
+                    let surface_type = WindowSurfaceType::POPUP | WindowSurfaceType::SUBSURFACE;
+                    layer.surface_under(pos_within_output - layer_pos_within_output, surface_type)
+                })
+                .is_some()
+        };
+
+        if layer_popup_under(Layer::Bottom) || layer_popup_under(Layer::Background) {
             return true;
         }
 
@@ -2898,7 +2921,7 @@ impl Niri {
 
         let (output, pos_within_output) = self.output_under(pos)?;
 
-        if self.is_layout_obscured_under(output, pos_within_output) {
+        if self.is_sticky_obscured_under(output, pos_within_output) {
             return None;
         }
 
@@ -2907,6 +2930,10 @@ impl Niri {
             .interactive_moved_window_under(output, pos_within_output)
         {
             return Some(window);
+        }
+
+        if self.is_layout_obscured_under(output, pos_within_output) {
+            return None;
         }
 
         let (window, _loc) = self.layout.window_under(output, pos_within_output)?;
@@ -3047,9 +3074,9 @@ impl Niri {
             under = under
                 .or_else(|| layer_popup_under(Layer::Top))
                 .or_else(|| layer_toplevel_under(Layer::Top))
+                .or_else(interactive_moved_window_under)
                 .or_else(|| layer_popup_under(Layer::Bottom))
                 .or_else(|| layer_popup_under(Layer::Background))
-                .or_else(interactive_moved_window_under)
                 .or_else(window_under)
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
@@ -3847,13 +3874,15 @@ impl Niri {
             elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
         } else {
             elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
-            elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
 
             elements.extend(
                 int_move_elements
                     .into_iter()
                     .map(OutputRenderElements::from),
             );
+
+            elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
+
             elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
 
             elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
