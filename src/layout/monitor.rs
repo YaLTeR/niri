@@ -287,7 +287,15 @@ impl<W: LayoutElement> Monitor<W> {
         self.add_workspace_at(self.workspaces.len());
     }
 
-    fn activate_workspace(&mut self, idx: usize) {
+    pub fn activate_workspace(&mut self, idx: usize) {
+        self.activate_workspace_with_anim_config(idx, None);
+    }
+
+    pub fn activate_workspace_with_anim_config(
+        &mut self,
+        idx: usize,
+        config: Option<niri_config::Animation>,
+    ) {
         if self.active_workspace_idx == idx {
             return;
         }
@@ -299,12 +307,13 @@ impl<W: LayoutElement> Monitor<W> {
 
         self.active_workspace_idx = idx;
 
+        let config = config.unwrap_or(self.options.animations.workspace_switch.0);
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
             self.clock.clone(),
             current_idx,
             idx as f64,
             0.,
-            self.options.animations.workspace_switch.0,
+            config,
         )));
     }
 
