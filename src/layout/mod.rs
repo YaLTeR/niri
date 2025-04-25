@@ -2279,7 +2279,7 @@ impl<W: LayoutElement> Layout<W> {
     ) -> Option<(&W, HitType)> {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             if move_.output == *output {
-                let tile_pos = move_.tile_render_location(1.);
+                let tile_pos = move_.tile_render_location();
                 HitType::hit_tile(&move_.tile, tile_pos, pos_within_output)
             } else {
                 None

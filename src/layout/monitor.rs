@@ -25,7 +25,9 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::Transaction;
-use crate::utils::{output_size, ResizeEdge};
+use crate::utils::{
+    output_size, round_logical_in_physical, round_logical_in_physical_max1, ResizeEdge,
+};
 
 /// Amount of touchpad movement to scroll the height of one workspace.
 const WORKSPACE_GESTURE_MOVEMENT: f64 = 300.;
@@ -943,6 +945,23 @@ impl<W: LayoutElement> Monitor<W> {
         self.active_workspace_ref().active_tile_visual_rectangle()
     }
 
+    fn workspace_size(&self, zoom: f64) -> Size<f64, Logical> {
+        let ws_size = self.view_size.upscale(zoom);
+        let scale = self.scale.fractional_scale();
+        ws_size.to_physical_precise_ceil(scale).to_logical(scale)
+    }
+
+    fn workspace_gap(&self, zoom: f64) -> f64 {
+        let scale = self.scale.fractional_scale();
+        let gap = self.view_size.h * 0.1 * zoom;
+        round_logical_in_physical_max1(scale, gap)
+    }
+
+    fn workspace_size_with_gap(&self, zoom: f64) -> Size<f64, Logical> {
+        let gap = self.workspace_gap(zoom);
+        self.workspace_size(zoom) + Size::from((0., gap))
+    }
+
     pub fn workspace_render_idx(&self) -> f64 {
         if let Some(switch) = &self.workspace_switch {
             switch.current_idx()
@@ -953,17 +972,19 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn workspaces_render_geo(&self) -> impl Iterator<Item = Rectangle<f64, Logical>> {
         let scale = self.scale.fractional_scale();
-        let size = self.view_size;
+        let zoom = 1.;
 
-        // Ceil the workspace size in physical pixels.
-        let ws_size = size.to_physical_precise_ceil(scale).to_logical(scale);
+        let ws_size = self.workspace_size(zoom);
+        let gap = self.workspace_gap(zoom);
+        let ws_height_with_gap = ws_size.h + gap;
 
-        let first_ws_y = -self.workspace_render_idx() * ws_size.h;
+        let first_ws_y = -self.workspace_render_idx() * ws_height_with_gap;
+        let first_ws_y = round_logical_in_physical(scale, first_ws_y);
 
-        (0..self.workspaces.len()).map(move |idx| {
-            let y = first_ws_y + idx as f64 * ws_size.h;
+        // Return position for one-past-last workspace too.
+        (0..=self.workspaces.len()).map(move |idx| {
+            let y = first_ws_y + idx as f64 * ws_height_with_gap;
             let loc = Point::from((0., y));
-            let loc = loc.to_physical_precise_round(scale).to_logical(scale);
             Rectangle::new(loc, ws_size)
         })
     }
@@ -1031,7 +1052,12 @@ impl<W: LayoutElement> Monitor<W> {
         renderer: &'a mut R,
         target: RenderTarget,
         focus_ring: bool,
-    ) -> impl Iterator<Item = MonitorRenderElement<R>> + 'a {
+    ) -> impl Iterator<
+        Item = (
+            Rectangle<f64, Logical>,
+            impl Iterator<Item = MonitorRenderElement<R>> + 'a,
+        ),
+    > {
         let _span = tracy_client::span!("Monitor::render_elements");
 
         let scale = self.scale.fractional_scale();
@@ -1072,45 +1098,45 @@ impl<W: LayoutElement> Monitor<W> {
             }
         }
 
-        self.workspaces_with_render_geo()
-            .flat_map(move |(ws, geo)| {
-                let map_ws_contents = move |elem: WorkspaceRenderElement<R>| {
+        self.workspaces_with_render_geo().map(move |(ws, geo)| {
+            let map_ws_contents = move |elem: WorkspaceRenderElement<R>| {
+                let elem = CropRenderElement::from_element(elem, scale, crop_bounds)?;
+                let elem = MonitorInnerRenderElement::Workspace(elem);
+                Some(elem)
+            };
+
+            let (floating, scrolling) = ws.render_elements(renderer, target, focus_ring);
+            let floating = floating.filter_map(map_ws_contents);
+            let scrolling = scrolling.filter_map(map_ws_contents);
+
+            let hint = if matches!(insert_hint, Some((hint_ws_id, _)) if hint_ws_id == ws.id()) {
+                let iter = insert_hint.take().unwrap().1;
+                let iter = iter.filter_map(move |elem| {
                     let elem = CropRenderElement::from_element(elem, scale, crop_bounds)?;
-                    let elem = MonitorInnerRenderElement::Workspace(elem);
+                    let elem = MonitorInnerRenderElement::InsertHint(elem);
                     Some(elem)
-                };
+                });
+                Some(iter)
+            } else {
+                None
+            };
+            let hint = hint.into_iter().flatten();
 
-                let (floating, scrolling) = ws.render_elements(renderer, target, focus_ring);
-                let floating = floating.filter_map(map_ws_contents);
-                let scrolling = scrolling.filter_map(map_ws_contents);
+            let iter = floating.chain(hint).chain(scrolling);
 
-                let hint = if matches!(insert_hint, Some((hint_ws_id, _)) if hint_ws_id == ws.id())
-                {
-                    let iter = insert_hint.take().unwrap().1;
-                    let iter = iter.filter_map(move |elem| {
-                        let elem = CropRenderElement::from_element(elem, scale, crop_bounds)?;
-                        let elem = MonitorInnerRenderElement::InsertHint(elem);
-                        Some(elem)
-                    });
-                    Some(iter)
-                } else {
-                    None
-                };
-                let hint = hint.into_iter().flatten();
+            let iter = iter.map(move |elem| {
+                RelocateRenderElement::from_element(
+                    elem,
+                    // The offset we get from workspaces_with_render_positions() is already
+                    // rounded to physical pixels, but it's in the logical coordinate
+                    // space, so we need to convert it to physical.
+                    geo.loc.to_physical_precise_round(scale),
+                    Relocate::Relative,
+                )
+            });
 
-                let iter = floating.chain(hint).chain(scrolling);
-
-                iter.map(move |elem| {
-                    RelocateRenderElement::from_element(
-                        elem,
-                        // The offset we get from workspaces_with_render_positions() is already
-                        // rounded to physical pixels, but it's in the logical coordinate
-                        // space, so we need to convert it to physical.
-                        geo.loc.to_physical_precise_round(scale),
-                        Relocate::Relative,
-                    )
-                })
-            })
+            (geo, iter)
+        })
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, is_touchpad: bool) {
@@ -1133,7 +1159,7 @@ impl<W: LayoutElement> Monitor<W> {
         timestamp: Duration,
         is_touchpad: bool,
     ) -> Option<bool> {
-        let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
+        let Some(WorkspaceSwitch::Gesture(gesture)) = &self.workspace_switch else {
             return None;
         };
 
@@ -1141,13 +1167,18 @@ impl<W: LayoutElement> Monitor<W> {
             return None;
         }
 
-        gesture.tracker.push(delta_y, timestamp);
-
         let total_height = if gesture.is_touchpad {
             WORKSPACE_GESTURE_MOVEMENT
         } else {
-            self.workspaces[0].view_size().h
+            self.workspace_size_with_gap(1.).h
         };
+
+        let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
+            return None;
+        };
+
+        gesture.tracker.push(delta_y, timestamp);
+
         let pos = gesture.tracker.pos() / total_height;
 
         let (min, max) = gesture.min_max(self.workspaces.len());
@@ -1163,7 +1194,7 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn workspace_switch_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
-        let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
+        let Some(WorkspaceSwitch::Gesture(gesture)) = &self.workspace_switch else {
             return false;
         };
 
@@ -1171,15 +1202,19 @@ impl<W: LayoutElement> Monitor<W> {
             return false;
         }
 
-        // Take into account any idle time between the last event and now.
-        let now = self.clock.now_unadjusted();
-        gesture.tracker.push(0., now);
-
         let total_height = if gesture.is_touchpad {
             WORKSPACE_GESTURE_MOVEMENT
         } else {
-            self.workspaces[0].view_size().h
+            self.workspace_size_with_gap(1.).h
         };
+
+        let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
+            return false;
+        };
+
+        // Take into account any idle time between the last event and now.
+        let now = self.clock.now_unadjusted();
+        gesture.tracker.push(0., now);
 
         let mut velocity = gesture.tracker.velocity() / total_height;
         let current_pos = gesture.tracker.pos() / total_height;
