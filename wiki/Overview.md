@@ -29,8 +29,6 @@ https://github.com/user-attachments/assets/b76d5349-aa20-4889-ab90-0a51554c789d
 
 ### Configuration
 
-Overview settings are in the [`overview`](./Configuration:-Miscellaneous.md#overview) section at the top level of the config.
-
 You can set the zoom-out level like this:
 
 ```kdl
@@ -48,5 +46,13 @@ gestures {
     hot-corners {
         off
     }
+}
+```
+
+To change the color behind the workspaces, use the `backdrop-color` output setting:
+
+```kdl
+output "HDMI-A-1" {
+    backdrop-color "#777777"
 }
 ```
