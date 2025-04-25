@@ -588,6 +588,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     return self.compute_new_view_offset_for_column_fit(target_x, idx);
                 };
 
+                // Activating the same column.
+                if prev_idx == idx {
+                    return self.compute_new_view_offset_for_column_fit(target_x, idx);
+                }
+
                 // Always take the left or right neighbor of the target as the source.
                 let source_idx = if prev_idx > idx {
                     min(idx + 1, self.columns.len() - 1)
@@ -719,7 +724,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     fn activate_column_with_anim_config(&mut self, idx: usize, config: niri_config::Animation) {
-        if self.active_column_idx == idx {
+        if self.active_column_idx == idx
+            // During a DnD scroll, animate even when activating the same window, for DnD hold.
+            && (self.columns.is_empty() || !self.view_offset.is_dnd_scroll())
+        {
             return;
         }
 
@@ -730,12 +738,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             config,
         );
 
-        self.active_column_idx = idx;
+        if self.active_column_idx != idx {
+            self.active_column_idx = idx;
 
-        // A different column was activated; reset the flag.
-        self.activate_prev_column_on_removal = None;
-        self.view_offset_before_fullscreen = None;
-        self.interactive_resize = None;
+            // A different column was activated; reset the flag.
+            self.activate_prev_column_on_removal = None;
+            self.view_offset_before_fullscreen = None;
+            self.interactive_resize = None;
+        }
     }
 
     pub(super) fn insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
@@ -2869,14 +2879,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         Some(true)
     }
 
-    pub fn dnd_scroll_gesture_scroll(&mut self, delta: f64) {
+    pub fn dnd_scroll_gesture_scroll(&mut self, delta: f64) -> bool {
         let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
-            return;
+            return false;
         };
 
         let Some(last_time) = gesture.dnd_last_event_time else {
             // Not a DnD scroll.
-            return;
+            return false;
         };
 
         let config = &self.options.gestures.dnd_edge_view_scroll;
@@ -2887,7 +2897,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if delta == 0. {
             // We're outside the scrolling zone.
             gesture.dnd_nonzero_start_time = None;
-            return;
+            return false;
         }
 
         let nonzero_start = *gesture.dnd_nonzero_start_time.get_or_insert(now);
@@ -2896,7 +2906,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // monitors.
         let delay = Duration::from_millis(u64::from(config.delay_ms));
         if now.saturating_sub(nonzero_start) < delay {
-            return;
+            return true;
         }
 
         let time_delta = now.saturating_sub(last_time).as_secs_f64();
@@ -2940,6 +2950,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         gesture.delta_from_tracker += clamped_offset - view_offset;
         gesture.current_view_offset = clamped_offset;
+        true
     }
 
     pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
@@ -3558,6 +3569,10 @@ impl ViewOffset {
 
     pub fn is_gesture(&self) -> bool {
         matches!(self, Self::Gesture(_))
+    }
+
+    pub fn is_dnd_scroll(&self) -> bool {
+        matches!(&self, ViewOffset::Gesture(gesture) if gesture.dnd_last_event_time.is_some())
     }
 
     pub fn is_animation_ongoing(&self) -> bool {

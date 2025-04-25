@@ -298,7 +298,7 @@ pub struct Layout<W: LayoutElement> {
     /// Ongoing interactive move.
     interactive_move: Option<InteractiveMoveState<W>>,
     /// Ongoing drag-and-drop operation.
-    dnd: Option<DndData>,
+    dnd: Option<DndData<W>>,
     /// Clock for driving animations.
     clock: Clock,
     /// Time that we last updated render elements for.
@@ -433,11 +433,26 @@ struct InteractiveMoveData<W: LayoutElement> {
 }
 
 #[derive(Debug)]
-pub struct DndData {
+pub struct DndData<W: LayoutElement> {
     /// Output where the pointer is currently located.
     output: Output,
     /// Current pointer position within output.
     pointer_pos_within_output: Point<f64, Logical>,
+    /// Ongoing DnD hold to activate something.
+    hold: Option<DndHold<W>>,
+}
+
+#[derive(Debug)]
+struct DndHold<W: LayoutElement> {
+    /// Time when we started holding on the target.
+    start_time: Duration,
+    target: DndHoldTarget<W::Id>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum DndHoldTarget<WindowId> {
+    Window(WindowId),
+    Workspace(WorkspaceId),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2755,8 +2770,10 @@ impl<W: LayoutElement> Layout<W> {
         let _span = tracy_client::span!("Layout::advance_animations");
 
         let mut dnd_scroll = None;
+        let mut is_dnd = false;
         if let Some(dnd) = &self.dnd {
             dnd_scroll = Some((dnd.output.clone(), dnd.pointer_pos_within_output, true));
+            is_dnd = true;
         }
 
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
@@ -2771,11 +2788,15 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
+        let is_overview_open = self.overview_open;
+
         // Scroll the view if needed.
         if let Some((output, pos_within_output, is_scrolling)) = dnd_scroll {
             if let Some(mon) = self.monitor_for_output_mut(&output) {
+                let mut scrolled = false;
+
                 let zoom = mon.overview_zoom();
-                mon.dnd_scroll_gesture_scroll(pos_within_output, 1. / zoom);
+                scrolled |= mon.dnd_scroll_gesture_scroll(pos_within_output, 1. / zoom);
 
                 if is_scrolling {
                     if let Some((ws, geo)) = mon.workspace_under(pos_within_output) {
@@ -2788,7 +2809,77 @@ impl<W: LayoutElement> Layout<W> {
                         // As far as the DnD scroll gesture is concerned, the workspace spans across
                         // the whole monitor horizontally.
                         let ws_pos = Point::from((0., geo.loc.y));
-                        ws.dnd_scroll_gesture_scroll(pos_within_output - ws_pos, 1. / zoom);
+                        scrolled |=
+                            ws.dnd_scroll_gesture_scroll(pos_within_output - ws_pos, 1. / zoom);
+                    }
+                }
+
+                if scrolled {
+                    // Don't trigger DnD hold while scrolling.
+                    if let Some(dnd) = &mut self.dnd {
+                        dnd.hold = None;
+                    }
+                } else if is_dnd {
+                    let target = mon
+                        .window_under(pos_within_output)
+                        .map(|(win, _)| DndHoldTarget::Window(win.id().clone()))
+                        .or_else(|| {
+                            mon.workspace_under_narrow(pos_within_output)
+                                .map(|ws| DndHoldTarget::Workspace(ws.id()))
+                        });
+
+                    let dnd = self.dnd.as_mut().unwrap();
+                    if let Some(target) = target {
+                        let now = self.clock.now_unadjusted();
+                        let start_time = if let Some(hold) = &mut dnd.hold {
+                            if hold.target != target {
+                                hold.start_time = now;
+                            }
+                            hold.target = target;
+                            hold.start_time
+                        } else {
+                            let hold = dnd.hold.insert(DndHold {
+                                start_time: now,
+                                target,
+                            });
+                            hold.start_time
+                        };
+
+                        // Delay copied from gnome-shell.
+                        let delay = Duration::from_millis(750);
+                        if delay <= now.saturating_sub(start_time) {
+                            let hold = dnd.hold.take().unwrap();
+
+                            // Synchronize workspace switch to overview close to get a monotonic
+                            // animation.
+                            let config = is_overview_open
+                                .then_some(self.options.animations.overview_open_close.0);
+
+                            let mon = self.monitor_for_output_mut(&output).unwrap();
+
+                            let ws_idx = match hold.target {
+                                DndHoldTarget::Window(id) => mon
+                                    .workspaces
+                                    .iter_mut()
+                                    .position(|ws| ws.activate_window(&id))
+                                    .unwrap(),
+                                DndHoldTarget::Workspace(id) => {
+                                    mon.workspaces.iter().position(|ws| ws.id() == id).unwrap()
+                                }
+                            };
+
+                            mon.dnd_scroll_gesture_end();
+                            mon.activate_workspace_with_anim_config(ws_idx, config);
+
+                            self.focus_output(&output);
+
+                            if is_overview_open {
+                                self.close_overview();
+                            }
+                        }
+                    } else {
+                        // No target, reset the hold timer.
+                        dnd.hold = None;
                     }
                 }
             }
@@ -4459,6 +4550,7 @@ impl<W: LayoutElement> Layout<W> {
         self.dnd = Some(DndData {
             output,
             pointer_pos_within_output,
+            hold: None,
         });
 
         if begin_gesture {
