@@ -1210,6 +1210,8 @@ pub struct Gestures {
     pub dnd_edge_view_scroll: DndEdgeViewScroll,
     #[knuffel(child, default)]
     pub dnd_edge_workspace_switch: DndEdgeWorkspaceSwitch,
+    #[knuffel(child, default)]
+    pub hot_corners: HotCorners,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -1250,6 +1252,12 @@ impl Default for DndEdgeWorkspaceSwitch {
             max_speed: FloatOrInt(1500.),
         }
     }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct HotCorners {
+    #[knuffel(child)]
+    pub off: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -4586,6 +4594,9 @@ mod tests {
                     max_speed: FloatOrInt(
                         1500.0,
                     ),
+                },
+                hot_corners: HotCorners {
+                    off: false,
                 },
             },
             overview: Overview {
