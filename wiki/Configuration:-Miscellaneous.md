@@ -1,5 +1,3 @@
-### Overview
-
 This page documents all top-level options that don't otherwise have dedicated pages.
 
 Here are all of these options at a glance:
@@ -23,6 +21,10 @@ cursor {
 
     hide-when-typing
     hide-after-inactive-ms 1000
+}
+
+overview {
+    zoom 0.5
 }
 
 clipboard {
@@ -140,6 +142,22 @@ If set, the cursor will automatically hide once this number of milliseconds pass
 cursor {
     // Hide the cursor after one second of inactivity.
     hide-after-inactive-ms 1000
+}
+```
+
+### `overview`
+
+<sup>Since: next release</sup>
+
+Settings for the [Overview](./Overview.md).
+
+`zoom` controls how much the workspaces zoom out in the overview.
+It ranges from 0 to 0.75 where lower values make everything smaller.
+
+```kdl
+// Make workspaces four times smaller than normal in the overview.
+overview {
+    zoom 0.25
 }
 ```
 
