@@ -127,16 +127,22 @@ pub(super) enum InsertPosition {
     Floating,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum InsertWorkspace {
+    Existing(WorkspaceId),
+    NewAt(usize),
+}
+
 #[derive(Debug)]
 pub(super) struct InsertHint {
-    pub workspace: WorkspaceId,
+    pub workspace: InsertWorkspace,
     pub position: InsertPosition,
     pub corner_radius: CornerRadius,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct InsertHintRenderLoc {
-    workspace: WorkspaceId,
+    workspace: InsertWorkspace,
     location: Point<f64, Logical>,
 }
 
@@ -167,6 +173,7 @@ niri_render_elements! {
     MonitorInnerRenderElement<R> => {
         Workspace = CropRenderElement<WorkspaceRenderElement<R>>,
         InsertHint = CropRenderElement<InsertHintRenderElement>,
+        UncroppedInsertHint = InsertHintRenderElement,
         Shadow = ShadowRenderElement,
     }
 }
@@ -228,6 +235,15 @@ impl WorkspaceSwitchGesture {
     fn animate_from(&mut self, from: f64, clock: Clock, config: niri_config::Animation) {
         let current = self.animation.as_ref().map_or(0., Animation::value);
         self.animation = Some(Animation::new(clock, from + current, 0., 0., config));
+    }
+}
+
+impl InsertWorkspace {
+    fn existing_id(self) -> Option<WorkspaceId> {
+        match self {
+            InsertWorkspace::Existing(id) => Some(id),
+            InsertWorkspace::NewAt(_) => None,
+        }
     }
 }
 
@@ -885,7 +901,10 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn update_render_elements(&mut self, is_active: bool) {
         let mut insert_hint_ws_geo = None;
-        let insert_hint_ws_id = self.insert_hint.as_ref().map(|hint| hint.workspace);
+        let insert_hint_ws_id = self
+            .insert_hint
+            .as_ref()
+            .and_then(|hint| hint.workspace.existing_id());
 
         for (ws, geo) in self.workspaces_with_render_geo_mut() {
             ws.update_render_elements(is_active);
@@ -897,38 +916,75 @@ impl<W: LayoutElement> Monitor<W> {
 
         self.insert_hint_render_loc = None;
         if let Some(hint) = &self.insert_hint {
-            if let Some(ws) = self.workspaces.iter().find(|ws| ws.id() == hint.workspace) {
-                if let Some(mut area) = ws.insert_hint_area(hint.position) {
-                    let scale = ws.scale().fractional_scale();
-                    let view_size = ws.view_size();
+            match hint.workspace {
+                InsertWorkspace::Existing(ws_id) => {
+                    if let Some(ws) = self.workspaces.iter().find(|ws| ws.id() == ws_id) {
+                        if let Some(mut area) = ws.insert_hint_area(hint.position) {
+                            let scale = ws.scale().fractional_scale();
+                            let view_size = ws.view_size();
 
-                    // Make sure the hint is at least partially visible.
-                    if matches!(hint.position, InsertPosition::NewColumn(_)) {
-                        let zoom = self.overview_zoom();
-                        let geo = insert_hint_ws_geo.unwrap();
-                        let geo = geo.downscale(zoom);
+                            // Make sure the hint is at least partially visible.
+                            if matches!(hint.position, InsertPosition::NewColumn(_)) {
+                                let zoom = self.overview_zoom();
+                                let geo = insert_hint_ws_geo.unwrap();
+                                let geo = geo.downscale(zoom);
 
-                        area.loc.x = area.loc.x.max(-geo.loc.x - area.size.w / 2.);
-                        area.loc.x = area.loc.x.min(geo.loc.x + geo.size.w - area.size.w / 2.);
+                                area.loc.x = area.loc.x.max(-geo.loc.x - area.size.w / 2.);
+                                area.loc.x =
+                                    area.loc.x.min(geo.loc.x + geo.size.w - area.size.w / 2.);
+                            }
+
+                            // Round to physical pixels.
+                            area = area.to_physical_precise_round(scale).to_logical(scale);
+
+                            let view_rect = Rectangle::new(area.loc.upscale(-1.), view_size);
+                            self.insert_hint_element.update_render_elements(
+                                area.size,
+                                view_rect,
+                                hint.corner_radius,
+                                scale,
+                            );
+                            self.insert_hint_render_loc = Some(InsertHintRenderLoc {
+                                workspace: hint.workspace,
+                                location: area.loc,
+                            });
+                        }
+                    } else {
+                        error!("insert hint workspace missing from monitor");
                     }
+                }
+                InsertWorkspace::NewAt(ws_idx) => {
+                    let scale = self.scale.fractional_scale();
+                    let zoom = self.overview_zoom();
+                    let gap = self.workspace_gap(zoom);
 
-                    // Round to physical pixels.
-                    area = area.to_physical_precise_round(scale).to_logical(scale);
+                    let hint_gap = round_logical_in_physical(scale, gap * 0.1);
+                    let hint_height = gap - hint_gap * 2.;
 
-                    let view_rect = Rectangle::new(area.loc.upscale(-1.), view_size);
+                    let next_ws_geo = self.workspaces_render_geo().nth(ws_idx).unwrap();
+                    let hint_loc_diff = Point::from((0., hint_height + hint_gap));
+                    let hint_loc = next_ws_geo.loc - hint_loc_diff;
+                    let hint_size = Size::from((next_ws_geo.size.w, hint_height));
+
+                    // FIXME: sometimes the hint ends up 1 px wider than necessary and/or 1 px
+                    // narrower than necessary. The values here seem correct. Might have to do with
+                    // how zooming out currently doesn't round to output scale properly.
+
+                    // Compute view rect as if we're above the next workspace (rather than below
+                    // the previous one).
+                    let view_rect = Rectangle::new(hint_loc_diff, next_ws_geo.size);
+
                     self.insert_hint_element.update_render_elements(
-                        area.size,
+                        hint_size,
                         view_rect,
-                        hint.corner_radius,
+                        CornerRadius::default(),
                         scale,
                     );
                     self.insert_hint_render_loc = Some(InsertHintRenderLoc {
                         workspace: hint.workspace,
-                        location: area.loc,
+                        location: hint_loc,
                     });
                 }
-            } else {
-                error!("insert hint workspace missing from monitor");
             }
         }
     }
@@ -1239,6 +1295,17 @@ impl<W: LayoutElement> Monitor<W> {
             .filter(move |(_ws, geo)| geo.intersection(output_geo).is_some())
     }
 
+    pub fn workspaces_with_render_geo_idx(
+        &self,
+    ) -> impl Iterator<Item = ((usize, &Workspace<W>), Rectangle<f64, Logical>)> {
+        let output_geo = Rectangle::from_size(self.view_size);
+
+        let geo = self.workspaces_render_geo();
+        zip(self.workspaces.iter().enumerate(), geo)
+            // Cull out workspaces outside the output.
+            .filter(move |(_ws, geo)| geo.intersection(output_geo).is_some())
+    }
+
     pub fn workspaces_with_render_geo_mut(
         &mut self,
     ) -> impl Iterator<Item = (&mut Workspace<W>, Rectangle<f64, Logical>)> {
@@ -1298,6 +1365,55 @@ impl<W: LayoutElement> Monitor<W> {
         ws.resize_edges_under(pos_within_output - geo.loc)
     }
 
+    pub(super) fn insert_position(
+        &self,
+        pos_within_output: Point<f64, Logical>,
+    ) -> (InsertWorkspace, Rectangle<f64, Logical>) {
+        let mut iter = self.workspaces_with_render_geo_idx();
+
+        let dummy = Rectangle::default();
+
+        // Monitors always have at least one workspace.
+        let ((idx, ws), geo) = iter.next().unwrap();
+
+        // Check if above first.
+        if pos_within_output.y < geo.loc.y {
+            return (InsertWorkspace::NewAt(idx), dummy);
+        }
+
+        let contains = move |geo: Rectangle<f64, Logical>| {
+            geo.loc.y <= pos_within_output.y && pos_within_output.y < geo.loc.y + geo.size.h
+        };
+
+        // Check first.
+        if contains(geo) {
+            return (InsertWorkspace::Existing(ws.id()), geo);
+        }
+
+        let mut last_geo = geo;
+        let mut last_idx = idx;
+        for ((idx, ws), geo) in iter {
+            // Check gap above.
+            let gap_loc = Point::from((last_geo.loc.x, last_geo.loc.y + last_geo.size.h));
+            let gap_size = Size::from((geo.size.w, geo.loc.y - gap_loc.y));
+            let gap_geo = Rectangle::new(gap_loc, gap_size);
+            if contains(gap_geo) {
+                return (InsertWorkspace::NewAt(idx), dummy);
+            }
+
+            // Check workspace itself.
+            if contains(geo) {
+                return (InsertWorkspace::Existing(ws.id()), geo);
+            }
+
+            last_geo = geo;
+            last_idx = idx;
+        }
+
+        // Anything below.
+        (InsertWorkspace::NewAt(last_idx + 1), dummy)
+    }
+
     pub fn render_above_top_layer(&self) -> bool {
         // Render above the top layer only if the view is stationary.
         if self.workspace_switch.is_some() || self.overview_progress.is_some() {
@@ -1306,6 +1422,30 @@ impl<W: LayoutElement> Monitor<W> {
 
         let ws = &self.workspaces[self.active_workspace_idx];
         ws.render_above_top_layer()
+    }
+
+    pub fn render_insert_hint_between_workspaces<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+    ) -> impl Iterator<Item = MonitorRenderElement<R>> {
+        let mut rv = None;
+
+        if !self.options.insert_hint.off {
+            if let Some(render_loc) = self.insert_hint_render_loc {
+                if let InsertWorkspace::NewAt(_) = render_loc.workspace {
+                    let iter = self
+                        .insert_hint_element
+                        .render(renderer, render_loc.location)
+                        .map(MonitorInnerRenderElement::UncroppedInsertHint);
+                    rv = Some(iter);
+                }
+            }
+        }
+
+        rv.into_iter().flatten().map(|elem| {
+            let elem = RescaleRenderElement::from_element(elem, Point::default(), 1.);
+            RelocateRenderElement::from_element(elem, Point::default(), Relocate::Relative)
+        })
     }
 
     pub fn render_elements<'a, R: NiriRenderer>(
@@ -1354,11 +1494,13 @@ impl<W: LayoutElement> Monitor<W> {
         let mut insert_hint = None;
         if !self.options.insert_hint.off {
             if let Some(render_loc) = self.insert_hint_render_loc {
-                insert_hint = Some((
-                    render_loc.workspace,
-                    self.insert_hint_element
-                        .render(renderer, render_loc.location),
-                ));
+                if let InsertWorkspace::Existing(workspace_id) = render_loc.workspace {
+                    insert_hint = Some((
+                        workspace_id,
+                        self.insert_hint_element
+                            .render(renderer, render_loc.location),
+                    ));
+                }
             }
         }
 

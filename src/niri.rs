@@ -3971,6 +3971,7 @@ impl Niri {
             mon.render_elements(renderer, target, focus_ring)
                 .map(|(geo, iter)| (geo, Vec::from_iter(iter))),
         );
+        let insert_hint_elements = mon.render_insert_hint_between_workspaces(renderer);
         let int_move_elements: Vec<_> = self
             .layout
             .render_interactive_move_for_output(renderer, output, target)
@@ -4007,6 +4008,11 @@ impl Niri {
                     .map(OutputRenderElements::from),
             );
             elements.extend(
+                insert_hint_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
+            elements.extend(
                 monitor_elements
                     .into_iter()
                     .flat_map(|(_ws_geo, iter)| iter)
@@ -4023,6 +4029,12 @@ impl Niri {
 
             elements.extend(
                 int_move_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
+
+            elements.extend(
+                insert_hint_elements
                     .into_iter()
                     .map(OutputRenderElements::from),
             );
