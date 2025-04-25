@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use niri_config::CornerRadius;
 use smithay::backend::renderer::element::utils::{
-    CropRenderElement, Relocate, RelocateRenderElement,
+    CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Size};
@@ -17,11 +17,12 @@ use super::workspace::{
     compute_working_area, OutputId, Workspace, WorkspaceAddWindowTarget, WorkspaceId,
     WorkspaceRenderElement,
 };
-use super::{ActivateWindow, HitType, LayoutElement, Options};
+use super::{compute_overview_zoom, ActivateWindow, HitType, LayoutElement, Options};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::Transaction;
@@ -68,6 +69,10 @@ pub struct Monitor<W: LayoutElement> {
     insert_hint_element: InsertHintElement,
     /// Location to render the insert hint element.
     insert_hint_render_loc: Option<InsertHintRenderLoc>,
+    /// Whether the overview is open.
+    pub(super) overview_open: bool,
+    /// Progress of the overview zoom animation, 1 is fully in overview.
+    overview_progress: Option<OverviewProgress>,
     /// Clock for driving animations.
     pub(super) clock: Clock,
     /// Configurable properties of the layout.
@@ -94,6 +99,8 @@ pub struct WorkspaceSwitchGesture {
     tracker: SwipeTracker,
     /// Whether the gesture is controlled by the touchpad.
     is_touchpad: bool,
+    /// Whether the gesture is clamped to +-1 workspace around the center.
+    is_clamped: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,6 +121,12 @@ pub(super) struct InsertHint {
 struct InsertHintRenderLoc {
     workspace: WorkspaceId,
     location: Point<f64, Logical>,
+}
+
+#[derive(Debug)]
+pub(super) enum OverviewProgress {
+    Animation(Animation),
+    Value(f64),
 }
 
 /// Where to put a newly added window.
@@ -137,10 +150,12 @@ niri_render_elements! {
     MonitorInnerRenderElement<R> => {
         Workspace = CropRenderElement<WorkspaceRenderElement<R>>,
         InsertHint = CropRenderElement<InsertHintRenderElement>,
+        Shadow = ShadowRenderElement,
     }
 }
 
-pub type MonitorRenderElement<R> = RelocateRenderElement<MonitorInnerRenderElement<R>>;
+pub type MonitorRenderElement<R> =
+    RelocateRenderElement<RescaleRenderElement<MonitorInnerRenderElement<R>>>;
 
 impl WorkspaceSwitch {
     pub fn current_idx(&self) -> f64 {
@@ -183,9 +198,38 @@ impl WorkspaceSwitch {
 
 impl WorkspaceSwitchGesture {
     fn min_max(&self, workspace_count: usize) -> (f64, f64) {
-        let min = self.center_idx.saturating_sub(1) as f64;
-        let max = (self.center_idx + 1).min(workspace_count - 1) as f64;
-        (min, max)
+        if self.is_clamped {
+            let min = self.center_idx.saturating_sub(1) as f64;
+            let max = (self.center_idx + 1).min(workspace_count - 1) as f64;
+            (min, max)
+        } else {
+            (0., (workspace_count - 1) as f64)
+        }
+    }
+}
+
+impl OverviewProgress {
+    pub fn value(&self) -> f64 {
+        match self {
+            OverviewProgress::Animation(anim) => anim.value(),
+            OverviewProgress::Value(v) => *v,
+        }
+    }
+
+    pub fn clamped_value(&self) -> f64 {
+        match self {
+            OverviewProgress::Animation(anim) => anim.clamped_value(),
+            OverviewProgress::Value(v) => *v,
+        }
+    }
+}
+
+impl From<&super::OverviewProgress> for OverviewProgress {
+    fn from(value: &super::OverviewProgress) -> Self {
+        match value {
+            super::OverviewProgress::Animation(anim) => Self::Animation(anim.clone()),
+            super::OverviewProgress::Gesture(gesture) => Self::Value(gesture.value),
+        }
     }
 }
 
@@ -212,6 +256,8 @@ impl<W: LayoutElement> Monitor<W> {
             insert_hint: None,
             insert_hint_element: InsertHintElement::new(options.insert_hint),
             insert_hint_render_loc: None,
+            overview_open: false,
+            overview_progress: None,
             workspace_switch: None,
             clock,
             options,
@@ -769,7 +815,9 @@ impl<W: LayoutElement> Monitor<W> {
 
                     // Make sure the hint is at least partially visible.
                     if matches!(hint.position, InsertPosition::NewColumn(_)) {
+                        let zoom = self.overview_zoom();
                         let geo = insert_hint_ws_geo.unwrap();
+                        let geo = geo.downscale(zoom);
 
                         area.loc.x = area.loc.x.max(-geo.loc.x - area.size.w / 2.);
                         area.loc.x = area.loc.x.min(geo.loc.x + geo.size.w - area.size.w / 2.);
@@ -942,6 +990,10 @@ impl<W: LayoutElement> Monitor<W> {
     ///
     /// During animations, assumes the final view position.
     pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
+        if self.overview_open {
+            return None;
+        }
+
         self.active_workspace_ref().active_tile_visual_rectangle()
     }
 
@@ -962,7 +1014,100 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspace_size(zoom) + Size::from((0., gap))
     }
 
+    pub fn overview_zoom(&self) -> f64 {
+        let progress = self.overview_progress.as_ref().map(|p| p.value());
+        compute_overview_zoom(&self.options, progress)
+    }
+
+    pub(super) fn set_overview_progress(&mut self, progress: Option<&super::OverviewProgress>) {
+        let prev_render_idx = self.workspace_render_idx();
+        self.overview_progress = progress.map(OverviewProgress::from);
+        let new_render_idx = self.workspace_render_idx();
+
+        // If the view jumped (can happen when going from corrected to uncorrected render_idx, for
+        // example when toggling the overview in the middle of an overview animation), then restart
+        // the workspace switch to avoid jumps.
+        if prev_render_idx != new_render_idx {
+            if let Some(WorkspaceSwitch::Animation(anim)) = &mut self.workspace_switch {
+                // FIXME: maintain velocity.
+                *anim = anim.restarted(prev_render_idx, anim.to(), 0.);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn overview_progress_value(&self) -> Option<f64> {
+        self.overview_progress.as_ref().map(|p| p.value())
+    }
+
     pub fn workspace_render_idx(&self) -> f64 {
+        // If workspace switch and overview progress are matching animations, then compute a
+        // correction term to make the movement appear monotonic.
+        if let (
+            Some(WorkspaceSwitch::Animation(switch_anim)),
+            Some(OverviewProgress::Animation(progress_anim)),
+        ) = (&self.workspace_switch, &self.overview_progress)
+        {
+            if switch_anim.start_time() == progress_anim.start_time()
+                && (switch_anim.duration().as_secs_f64() - progress_anim.duration().as_secs_f64())
+                    .abs()
+                    <= 0.001
+            {
+                #[rustfmt::skip]
+                // How this was derived:
+                //
+                // - Assume we're animating a zoom + switch. Consider switch "from" and "to".
+                //   These are render_idx values, so first workspace to second would have switch
+                //   from = 0. and to = 1. regardless of the zoom level.
+                //
+                // - At the start, the point at "from" is at Y = 0. We're moving the point at "to"
+                //   to Y = 0. We want this to be a monotonic motion in apparent coordinates (after
+                //   zoom).
+                //
+                // - Height at the start:
+                //   from_height = (size.h + gap) * from_zoom.
+                //
+                // - Current height:
+                //   current_height = (size.h + gap) * zoom.
+                //
+                // - We're moving the "to" point to Y = 0:
+                //   to_y = 0.
+                //
+                // - The initial position of the point we're moving:
+                //   from_y = (to - from) * from_height.
+                //
+                // - We want this point to travel monotonically in apparent coordinates:
+                //   current_y = from_y + (to_y - from_y) * progress,
+                //   where progress is from 0 to 1, equals to the animation progress (switch and
+                //   zoom are the same since they are synchronized).
+                //
+                // - Derive the Y of the first workspace from this:
+                //   first_y = current_y - to * current_height.
+                //
+                // Now, let's substitute and rearrange the terms.
+                //
+                // - current_y = from_y + (0 - (to - from) * from_height) * progress
+                // - progress = (switch_anim.value() - from) / (to - from)
+                // - current_y = from_y - (to - from) * from_height * (switch_anim.value() - from) / (to - from)
+                // - current_y = from_y - from_height * (switch_anim.value() - from)
+                // - first_y = from_y - from_height * (switch_anim.value() - from) - to * current_height
+                // - first_y = (to - from) * from_height - from_height * (switch_anim.value() - from) - to * current_height
+                // - first_y = to * from_height - switch_anim.value() * from_height - to * current_height
+                // - first_y = -switch_anim.value() * from_height + to * (from_height - current_height)
+                let from = progress_anim.from();
+                let from_zoom = compute_overview_zoom(&self.options, Some(from));
+                let from_ws_height_with_gap = self.workspace_size_with_gap(from_zoom).h;
+
+                let zoom = self.overview_zoom();
+                let ws_height_with_gap = self.workspace_size_with_gap(zoom).h;
+
+                let first_ws_y = -switch_anim.value() * from_ws_height_with_gap
+                    + switch_anim.to() * (from_ws_height_with_gap - ws_height_with_gap);
+
+                return -first_ws_y / ws_height_with_gap;
+            }
+        };
+
         if let Some(switch) = &self.workspace_switch {
             switch.current_idx()
         } else {
@@ -972,11 +1117,16 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn workspaces_render_geo(&self) -> impl Iterator<Item = Rectangle<f64, Logical>> {
         let scale = self.scale.fractional_scale();
-        let zoom = 1.;
+        let zoom = self.overview_zoom();
 
         let ws_size = self.workspace_size(zoom);
         let gap = self.workspace_gap(zoom);
         let ws_height_with_gap = ws_size.h + gap;
+
+        let static_offset = (self.view_size.to_point() - ws_size.to_point()).downscale(2.);
+        let static_offset = static_offset
+            .to_physical_precise_round(scale)
+            .to_logical(scale);
 
         let first_ws_y = -self.workspace_render_idx() * ws_height_with_gap;
         let first_ws_y = round_logical_in_physical(scale, first_ws_y);
@@ -984,7 +1134,7 @@ impl<W: LayoutElement> Monitor<W> {
         // Return position for one-past-last workspace too.
         (0..=self.workspaces.len()).map(move |idx| {
             let y = first_ws_y + idx as f64 * ws_height_with_gap;
-            let loc = Point::from((0., y));
+            let loc = Point::from((0., y)) + static_offset;
             Rectangle::new(loc, ws_size)
         })
     }
@@ -1026,20 +1176,42 @@ impl<W: LayoutElement> Monitor<W> {
         Some((ws, geo))
     }
 
+    pub fn workspace_under_narrow(
+        &self,
+        pos_within_output: Point<f64, Logical>,
+    ) -> Option<&Workspace<W>> {
+        self.workspaces_with_render_geo()
+            .find_map(|(ws, geo)| geo.contains(pos_within_output).then_some(ws))
+    }
+
     pub fn window_under(&self, pos_within_output: Point<f64, Logical>) -> Option<(&W, HitType)> {
         let (ws, geo) = self.workspace_under(pos_within_output)?;
-        let (win, hit) = ws.window_under(pos_within_output - geo.loc)?;
-        Some((win, hit.offset_win_pos(geo.loc)))
+
+        if self.overview_progress.is_some() {
+            let zoom = self.overview_zoom();
+            let pos_within_workspace = (pos_within_output - geo.loc).downscale(zoom);
+            let (win, hit) = ws.window_under(pos_within_workspace)?;
+            // During the overview animation, we cannot do input hits because we cannot really
+            // represent scaled windows properly.
+            Some((win, hit.to_activate()))
+        } else {
+            let (win, hit) = ws.window_under(pos_within_output - geo.loc)?;
+            Some((win, hit.offset_win_pos(geo.loc)))
+        }
     }
 
     pub fn resize_edges_under(&self, pos_within_output: Point<f64, Logical>) -> Option<ResizeEdge> {
+        if self.overview_progress.is_some() {
+            return None;
+        }
+
         let (ws, geo) = self.workspace_under(pos_within_output)?;
         ws.resize_edges_under(pos_within_output - geo.loc)
     }
 
     pub fn render_above_top_layer(&self) -> bool {
         // Render above the top layer only if the view is stationary.
-        if self.workspace_switch.is_some() {
+        if self.workspace_switch.is_some() || self.overview_progress.is_some() {
             return false;
         }
 
@@ -1074,7 +1246,7 @@ impl<W: LayoutElement> Monitor<W> {
         // rendering for maximized GTK windows.
         //
         // FIXME: use proper bounds after fixing the Crop element.
-        let crop_bounds = if self.workspace_switch.is_some() {
+        let crop_bounds = if self.workspace_switch.is_some() || self.overview_progress.is_some() {
             Rectangle::new(
                 Point::from((-i32::MAX / 2, 0)),
                 Size::from((i32::MAX, height)),
@@ -1085,6 +1257,9 @@ impl<W: LayoutElement> Monitor<W> {
                 Size::from((i32::MAX, i32::MAX)),
             )
         };
+
+        let zoom = self.overview_zoom();
+        let overview_clamped_progress = self.overview_progress.as_ref().map(|p| p.clamped_value());
 
         // Draw the insert hint.
         let mut insert_hint = None;
@@ -1109,6 +1284,13 @@ impl<W: LayoutElement> Monitor<W> {
             let floating = floating.filter_map(map_ws_contents);
             let scrolling = scrolling.filter_map(map_ws_contents);
 
+            let shadow = overview_clamped_progress.map(|value| {
+                ws.render_shadow(renderer)
+                    .map(move |elem| elem.with_alpha(value.clamp(0., 1.) as f32))
+                    .map(MonitorInnerRenderElement::Shadow)
+            });
+            let shadow = shadow.into_iter().flatten();
+
             let hint = if matches!(insert_hint, Some((hint_ws_id, _)) if hint_ws_id == ws.id()) {
                 let iter = insert_hint.take().unwrap().1;
                 let iter = iter.filter_map(move |elem| {
@@ -1122,9 +1304,10 @@ impl<W: LayoutElement> Monitor<W> {
             };
             let hint = hint.into_iter().flatten();
 
-            let iter = floating.chain(hint).chain(scrolling);
+            let iter = floating.chain(hint).chain(scrolling).chain(shadow);
 
             let iter = iter.map(move |elem| {
+                let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
                 RelocateRenderElement::from_element(
                     elem,
                     // The offset we get from workspaces_with_render_positions() is already
@@ -1149,6 +1332,7 @@ impl<W: LayoutElement> Monitor<W> {
             current_idx,
             tracker: SwipeTracker::new(),
             is_touchpad,
+            is_clamped: !self.overview_open,
         };
         self.workspace_switch = Some(WorkspaceSwitch::Gesture(gesture));
     }
@@ -1167,6 +1351,7 @@ impl<W: LayoutElement> Monitor<W> {
             return None;
         }
 
+        let zoom = self.overview_zoom();
         let total_height = if gesture.is_touchpad {
             WORKSPACE_GESTURE_MOVEMENT
         } else {
@@ -1177,13 +1362,24 @@ impl<W: LayoutElement> Monitor<W> {
             return None;
         };
 
+        // Reduce the effect of zoom on the touchpad somewhat.
+        let delta_scale = if gesture.is_touchpad {
+            (zoom - 1.) / 2.5 + 1.
+        } else {
+            zoom
+        };
+
+        let delta_y = delta_y / delta_scale;
+        let mut rubber_band = WORKSPACE_GESTURE_RUBBER_BAND;
+        rubber_band.limit /= zoom;
+
         gesture.tracker.push(delta_y, timestamp);
 
         let pos = gesture.tracker.pos() / total_height;
 
         let (min, max) = gesture.min_max(self.workspaces.len());
         let new_idx = gesture.start_idx + pos;
-        let new_idx = WORKSPACE_GESTURE_RUBBER_BAND.clamp(min, max, new_idx);
+        let new_idx = rubber_band.clamp(min, max, new_idx);
 
         if gesture.current_idx == new_idx {
             return Some(false);
@@ -1202,6 +1398,7 @@ impl<W: LayoutElement> Monitor<W> {
             return false;
         }
 
+        let zoom = self.overview_zoom();
         let total_height = if gesture.is_touchpad {
             WORKSPACE_GESTURE_MOVEMENT
         } else {
@@ -1216,6 +1413,9 @@ impl<W: LayoutElement> Monitor<W> {
         let now = self.clock.now_unadjusted();
         gesture.tracker.push(0., now);
 
+        let mut rubber_band = WORKSPACE_GESTURE_RUBBER_BAND;
+        rubber_band.limit /= zoom;
+
         let mut velocity = gesture.tracker.velocity() / total_height;
         let current_pos = gesture.tracker.pos() / total_height;
         let pos = gesture.tracker.projected_end_pos() / total_height;
@@ -1223,14 +1423,10 @@ impl<W: LayoutElement> Monitor<W> {
         let (min, max) = gesture.min_max(self.workspaces.len());
         let new_idx = gesture.start_idx + pos;
 
-        let new_idx = WORKSPACE_GESTURE_RUBBER_BAND.clamp(min, max, new_idx);
+        let new_idx = new_idx.clamp(min, max);
         let new_idx = new_idx.round() as usize;
 
-        velocity *= WORKSPACE_GESTURE_RUBBER_BAND.clamp_derivative(
-            min,
-            max,
-            gesture.start_idx + current_pos,
-        );
+        velocity *= rubber_band.clamp_derivative(min, max, gesture.start_idx + current_pos);
 
         self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
 

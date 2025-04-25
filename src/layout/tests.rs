@@ -603,6 +603,13 @@ enum Op {
     WorkspaceSwitchGestureEnd {
         is_touchpad: Option<bool>,
     },
+    OverviewGestureBegin,
+    OverviewGestureUpdate {
+        #[proptest(strategy = "-400f64..400f64")]
+        delta: f64,
+        timestamp: Duration,
+    },
+    OverviewGestureEnd,
     InteractiveMoveBegin {
         #[proptest(strategy = "1..=5usize")]
         window: usize,
@@ -658,6 +665,7 @@ enum Op {
         #[proptest(strategy = "1..=5usize")]
         window: usize,
     },
+    ToggleOverview,
 }
 
 impl Op {
@@ -1387,6 +1395,15 @@ impl Op {
             Op::WorkspaceSwitchGestureEnd { is_touchpad } => {
                 layout.workspace_switch_gesture_end(is_touchpad);
             }
+            Op::OverviewGestureBegin => {
+                layout.overview_gesture_begin();
+            }
+            Op::OverviewGestureUpdate { delta, timestamp } => {
+                layout.overview_gesture_update(delta, timestamp);
+            }
+            Op::OverviewGestureEnd => {
+                layout.overview_gesture_end();
+            }
             Op::InteractiveMoveBegin {
                 window,
                 output_idx,
@@ -1439,6 +1456,9 @@ impl Op {
             }
             Op::InteractiveResizeEnd { window } => {
                 layout.interactive_resize_end(&window);
+            }
+            Op::ToggleOverview => {
+                layout.toggle_overview();
             }
         }
     }

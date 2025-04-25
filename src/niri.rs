@@ -133,7 +133,7 @@ use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
-use crate::layout::workspace::WorkspaceId;
+use crate::layout::workspace::{Workspace, WorkspaceId};
 use crate::layout::{HitType, Layout, LayoutElement as _, MonitorRenderElement};
 use crate::niri_render_elements;
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
@@ -470,6 +470,7 @@ pub enum KeyboardFocus {
     LayerShell { surface: WlSurface },
     LockScreen { surface: Option<WlSurface> },
     ScreenshotUi,
+    Overview,
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -566,6 +567,7 @@ impl KeyboardFocus {
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface.as_ref(),
             KeyboardFocus::ScreenshotUi => None,
+            KeyboardFocus::Overview => None,
         }
     }
 
@@ -575,11 +577,16 @@ impl KeyboardFocus {
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface,
             KeyboardFocus::ScreenshotUi => None,
+            KeyboardFocus::Overview => None,
         }
     }
 
     pub fn is_layout(&self) -> bool {
         matches!(self, KeyboardFocus::Layout { .. })
+    }
+
+    pub fn is_overview(&self) -> bool {
+        matches!(self, KeyboardFocus::Overview)
     }
 }
 
@@ -1026,13 +1033,18 @@ impl State {
             let focus_on_layer =
                 |layer| excl_focus_on_layer(layer).or_else(|| on_d_focus_on_layer(layer));
 
+            let is_overview_open = self.niri.layout.is_overview_open();
+
             let mut surface = grab_on_layer(Layer::Overlay);
             // FIXME: we shouldn't prioritize the top layer grabs over regular overlay input or a
             // fullscreen layout window. This will need tracking in grab() to avoid handing it out
             // in the first place. Or a better way to structure this code.
             surface = surface.or_else(|| grab_on_layer(Layer::Top));
-            surface = surface.or_else(|| grab_on_layer(Layer::Bottom));
-            surface = surface.or_else(|| grab_on_layer(Layer::Background));
+
+            if !is_overview_open {
+                surface = surface.or_else(|| grab_on_layer(Layer::Bottom));
+                surface = surface.or_else(|| grab_on_layer(Layer::Background));
+            }
 
             surface = surface.or_else(|| focus_on_layer(Layer::Overlay));
 
@@ -1043,6 +1055,11 @@ impl State {
                 surface = surface.or_else(|| focus_on_layer(Layer::Background));
             } else {
                 surface = surface.or_else(|| focus_on_layer(Layer::Top));
+
+                if is_overview_open {
+                    surface = Some(surface.unwrap_or(KeyboardFocus::Overview));
+                }
+
                 surface = surface.or_else(|| on_d_focus_on_layer(Layer::Bottom));
                 surface = surface.or_else(|| on_d_focus_on_layer(Layer::Background));
                 surface = surface.or_else(layout_focus);
@@ -1102,7 +1119,9 @@ impl State {
             // focused window.
             //
             // FIXME: Ideally this should happen inside Layout itself, then there wouldn't be any
-            // problems with layer-shell, etc.
+            // problems with layer-shell, etc. Or a similar problem now with the Overview where we
+            // don't update the previously focused window because the keyboard focus is on the
+            // Overview rather than on the Layout.
             if matches!(self.niri.keyboard_focus, KeyboardFocus::Layout { .. })
                 && matches!(focus, KeyboardFocus::Layout { .. })
             {
@@ -2910,6 +2929,10 @@ impl Niri {
         output: &Output,
         pos_within_output: Point<f64, Logical>,
     ) -> bool {
+        if self.layout.is_overview_open() {
+            return false;
+        }
+
         // Check if some layer-shell surface is on top.
         let layers = layer_map_for_output(output);
         let layer_popup_under = |layer| {
@@ -2937,6 +2960,42 @@ impl Niri {
         }
 
         false
+    }
+
+    /// Returns the workspace under the position to be activated.
+    ///
+    /// The return value is an output and a workspace index on it.
+    pub fn workspace_under(
+        &self,
+        extended_bounds: bool,
+        pos: Point<f64, Logical>,
+    ) -> Option<(Output, &Workspace<Mapped>)> {
+        if self.is_locked() || self.screenshot_ui.is_open() {
+            return None;
+        }
+
+        let (output, pos_within_output) = self.output_under(pos)?;
+
+        if self.is_sticky_obscured_under(output, pos_within_output) {
+            return None;
+        }
+
+        if self.is_layout_obscured_under(output, pos_within_output) {
+            return None;
+        }
+
+        let ws = self
+            .layout
+            .workspace_under(extended_bounds, output, pos_within_output)?;
+        Some((output.clone(), ws))
+    }
+
+    pub fn workspace_under_cursor(
+        &self,
+        extended_bounds: bool,
+    ) -> Option<(Output, &Workspace<Mapped>)> {
+        let pos = self.seat.get_pointer().unwrap().current_location();
+        self.workspace_under(extended_bounds, pos)
     }
 
     /// Returns the window under the position to be activated.
@@ -3039,6 +3098,8 @@ impl Niri {
                         let mon = self.layout.monitor_for_output(output)?;
                         let (_, geo) = mon.workspace_under(pos_within_output)?;
                         layer_pos_within_output += geo.loc;
+                        // Don't need to deal with zoom here because in the overview background and
+                        // bottom layers don't receive input.
                     }
 
                     let surface_type = if popup {
@@ -3096,6 +3157,8 @@ impl Niri {
         let mut under =
             layer_popup_under(Layer::Overlay).or_else(|| layer_toplevel_under(Layer::Overlay));
 
+        let is_overview_open = self.layout.is_overview_open();
+
         // When rendering above the top layer, we put the regular monitor elements first.
         // Otherwise, we will render all layer-shell pop-ups and the top layer on top.
         if mon.render_above_top_layer() {
@@ -3111,13 +3174,23 @@ impl Niri {
         } else {
             under = under
                 .or_else(|| layer_popup_under(Layer::Top))
-                .or_else(|| layer_toplevel_under(Layer::Top))
-                .or_else(interactive_moved_window_under)
-                .or_else(|| layer_popup_under(Layer::Bottom))
-                .or_else(|| layer_popup_under(Layer::Background))
-                .or_else(window_under)
-                .or_else(|| layer_toplevel_under(Layer::Bottom))
-                .or_else(|| layer_toplevel_under(Layer::Background));
+                .or_else(|| layer_toplevel_under(Layer::Top));
+
+            under = under.or_else(interactive_moved_window_under);
+
+            if !is_overview_open {
+                under = under
+                    .or_else(|| layer_popup_under(Layer::Bottom))
+                    .or_else(|| layer_popup_under(Layer::Background));
+            }
+
+            under = under.or_else(window_under);
+
+            if !is_overview_open {
+                under = under
+                    .or_else(|| layer_toplevel_under(Layer::Bottom))
+                    .or_else(|| layer_toplevel_under(Layer::Background));
+            }
         }
 
         let Some((mut surface_and_pos, (window, layer))) = under else {
@@ -3576,6 +3649,7 @@ impl Niri {
             // layer-shell, the layout will briefly draw as active, despite never having focus.
             KeyboardFocus::LockScreen { .. } => true,
             KeyboardFocus::ScreenshotUi => true,
+            KeyboardFocus::Overview => true,
         };
 
         self.layout.refresh(layout_is_active);
@@ -3877,7 +3951,7 @@ impl Niri {
 
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
-        let zoom = 1.;
+        let zoom = mon.overview_zoom();
         let monitor_elements = Vec::from_iter(
             mon.render_elements(renderer, target, focus_ring)
                 .map(|(geo, iter)| (geo, Vec::from_iter(iter))),
@@ -5560,7 +5634,7 @@ impl Niri {
         }
 
         if let Some(window) = &new_focus.window {
-            if current_focus.window.as_ref() != Some(window) {
+            if !self.layout.is_overview_open() && current_focus.window.as_ref() != Some(window) {
                 let (window, hit) = window;
 
                 // Don't trigger focus-follows-mouse over the tab indicator.
@@ -5809,7 +5883,7 @@ fn scale_relocate_crop<E: Element>(
 niri_render_elements! {
     OutputRenderElements<R> => {
         Monitor = MonitorRenderElement<R>,
-        Tile = TileRenderElement<R>,
+        RescaledTile = RescaleRenderElement<TileRenderElement<R>>,
         LayerSurface = LayerSurfaceRenderElement<R>,
         RelocatedLayerSurface = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
             LayerSurfaceRenderElement<R>
