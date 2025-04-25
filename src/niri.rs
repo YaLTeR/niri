@@ -15,7 +15,7 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
-    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKGROUND_COLOR,
+    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKDROP_COLOR, DEFAULT_BACKGROUND_COLOR,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -26,10 +26,12 @@ use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
 use smithay::backend::renderer::element::utils::{
-    select_dmabuf_feedback, Relocate, RelocateRenderElement,
+    select_dmabuf_feedback, CropRenderElement, Relocate, RelocateRenderElement,
+    RescaleRenderElement,
 };
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, Id, Kind, PrimaryScanoutOutput, RenderElementStates,
+    default_primary_scanout_output_compare, Element, Id, Kind, PrimaryScanoutOutput,
+    RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
@@ -428,6 +430,7 @@ pub struct OutputState {
     /// Solid color buffer for the background that we use instead of clearing to avoid damage
     /// tracking issues and make screenshots easier.
     pub background_buffer: SolidColorBuffer,
+    pub backdrop_buffer: SolidColorBuffer,
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
     pub lock_color_buffer: SolidColorBuffer,
@@ -1465,9 +1468,20 @@ impl State {
             background_color[3] = 1.;
             let background_color = Color32F::from(background_color);
 
+            let mut backdrop_color = config
+                .map(|c| c.backdrop_color)
+                .unwrap_or(DEFAULT_BACKDROP_COLOR)
+                .to_array_unpremul();
+            backdrop_color[3] = 1.;
+            let backdrop_color = Color32F::from(backdrop_color);
+
             if let Some(state) = self.niri.output_state.get_mut(output) {
                 if state.background_buffer.color() != background_color {
                     state.background_buffer.set_color(background_color);
+                    recolored_outputs.push(output.clone());
+                }
+                if state.backdrop_buffer.color() != backdrop_color {
+                    state.backdrop_buffer.set_color(backdrop_color);
                     recolored_outputs.push(output.clone());
                 }
             }
@@ -2640,6 +2654,12 @@ impl Niri {
             .to_array_unpremul();
         background_color[3] = 1.;
 
+        let mut backdrop_color = c
+            .map(|c| c.backdrop_color)
+            .unwrap_or(DEFAULT_BACKDROP_COLOR)
+            .to_array_unpremul();
+        backdrop_color[3] = 1.;
+
         // FIXME: fix winit damage on other transforms.
         if name.connector == "winit" {
             transform = Transform::Flipped180;
@@ -2673,6 +2693,7 @@ impl Niri {
             last_drm_sequence: None,
             frame_callback_sequence: 0,
             background_buffer: SolidColorBuffer::new(size, background_color),
+            backdrop_buffer: SolidColorBuffer::new(size, backdrop_color),
             lock_render_state,
             lock_surface: None,
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
@@ -2777,6 +2798,7 @@ impl Niri {
 
         if let Some(state) = self.output_state.get_mut(output) {
             state.background_buffer.resize(output_size);
+            state.backdrop_buffer.resize(output_size);
 
             state.lock_color_buffer.resize(output_size);
             if let Some(lock_surface) = &state.lock_surface {
@@ -2894,11 +2916,18 @@ impl Niri {
             layers
                 .layers_on(layer)
                 .rev()
-                .find_map(|layer| {
-                    let layer_pos_within_output =
-                        layers.layer_geometry(layer).unwrap().loc.to_f64();
+                .find_map(|layer_surface| {
+                    let mut layer_pos_within_output =
+                        layers.layer_geometry(layer_surface).unwrap().loc.to_f64();
+
+                    // Background and bottom layers move together with the workspaces.
+                    let mon = self.layout.monitor_for_output(output)?;
+                    let (_, geo) = mon.workspace_under(pos_within_output)?;
+                    layer_pos_within_output += geo.loc;
+
                     let surface_type = WindowSurfaceType::POPUP | WindowSurfaceType::SUBSURFACE;
-                    layer.surface_under(pos_within_output - layer_pos_within_output, surface_type)
+                    layer_surface
+                        .surface_under(pos_within_output - layer_pos_within_output, surface_type)
                 })
                 .is_some()
         };
@@ -3001,20 +3030,29 @@ impl Niri {
             layers
                 .layers_on(layer)
                 .rev()
-                .find_map(|layer| {
-                    let layer_pos_within_output =
-                        layers.layer_geometry(layer).unwrap().loc.to_f64();
+                .find_map(|layer_surface| {
+                    let mut layer_pos_within_output =
+                        layers.layer_geometry(layer_surface).unwrap().loc.to_f64();
+
+                    // Background and bottom layers move together with the workspaces.
+                    if matches!(layer, Layer::Background | Layer::Bottom) {
+                        let mon = self.layout.monitor_for_output(output)?;
+                        let (_, geo) = mon.workspace_under(pos_within_output)?;
+                        layer_pos_within_output += geo.loc;
+                    }
+
                     let surface_type = if popup {
                         WindowSurfaceType::POPUP
                     } else {
                         WindowSurfaceType::TOPLEVEL
                     } | WindowSurfaceType::SUBSURFACE;
-                    layer
+
+                    layer_surface
                         .surface_under(pos_within_output - layer_pos_within_output, surface_type)
                         .map(|(surface, pos_within_layer)| {
                             (
                                 (surface, pos_within_layer.to_f64() + layer_pos_within_output),
-                                layer,
+                                layer_surface,
                             )
                         })
                 })
@@ -3791,10 +3829,18 @@ impl Niri {
             return elements;
         }
 
-        // Prepare the background element.
+        // Prepare the background elements.
         let state = self.output_state.get(output).unwrap();
+        let background_buffer = state.background_buffer.clone();
         let background = SolidColorRenderElement::from_buffer(
-            &state.background_buffer,
+            &background_buffer,
+            (0, 0),
+            output_scale,
+            1.,
+            Kind::Unspecified,
+        );
+        let backdrop = SolidColorRenderElement::from_buffer(
+            &state.backdrop_buffer,
             (0, 0),
             output_scale,
             1.,
@@ -3811,8 +3857,8 @@ impl Niri {
                     .map(OutputRenderElements::from),
             );
 
-            // Add the background for outputs that were connected while the screenshot UI was open.
-            elements.push(background);
+            // Add the backdrop for outputs that were connected while the screenshot UI was open.
+            elements.push(backdrop);
 
             if self.debug_draw_opaque_regions {
                 draw_opaque_regions(&mut elements, output_scale);
@@ -3831,7 +3877,11 @@ impl Niri {
 
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
-        let monitor_elements: Vec<_> = mon.render_elements(renderer, target, focus_ring).collect();
+        let zoom = 1.;
+        let monitor_elements = Vec::from_iter(
+            mon.render_elements(renderer, target, focus_ring)
+                .map(|(geo, iter)| (geo, Vec::from_iter(iter))),
+        );
         let int_move_elements: Vec<_> = self
             .layout
             .render_interactive_move_for_output(renderer, output, target)
@@ -3854,24 +3904,31 @@ impl Niri {
         extend_from_layer(&mut layer_elems, Layer::Top);
         let top_layer = layer_elems;
 
-        // Collect all other layer-shell elements.
-        let mut layer_elems = SplitElements::default();
-        extend_from_layer(&mut layer_elems, Layer::Bottom);
-        extend_from_layer(&mut layer_elems, Layer::Background);
-
         // When rendering above the top layer, we put the regular monitor elements first.
         // Otherwise, we will render all layer-shell pop-ups and the top layer on top.
         if mon.render_above_top_layer() {
+            // Collect all other layer-shell elements.
+            let mut layer_elems = SplitElements::default();
+            extend_from_layer(&mut layer_elems, Layer::Bottom);
+            extend_from_layer(&mut layer_elems, Layer::Background);
+
             elements.extend(
                 int_move_elements
                     .into_iter()
                     .map(OutputRenderElements::from),
             );
-            elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
+            elements.extend(
+                monitor_elements
+                    .into_iter()
+                    .flat_map(|(_ws_geo, iter)| iter)
+                    .map(OutputRenderElements::from),
+            );
 
             elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
             elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
             elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
+
+            elements.push(OutputRenderElements::from(background));
         } else {
             elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
 
@@ -3881,15 +3938,40 @@ impl Niri {
                     .map(OutputRenderElements::from),
             );
 
-            elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
+            for (ws_geo, ws_elements) in monitor_elements {
+                // Collect all other layer-shell elements.
+                let mut layer_elems = SplitElements::default();
+                extend_from_layer(&mut layer_elems, Layer::Bottom);
+                extend_from_layer(&mut layer_elems, Layer::Background);
 
-            elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
+                elements.extend(
+                    layer_elems
+                        .popups
+                        .into_iter()
+                        .filter_map(|elem| scale_relocate_crop(elem, output_scale, zoom, ws_geo))
+                        .map(OutputRenderElements::from),
+                );
 
-            elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
+                elements.extend(ws_elements.into_iter().map(OutputRenderElements::from));
+
+                elements.extend(
+                    layer_elems
+                        .normal
+                        .into_iter()
+                        .filter_map(|elem| scale_relocate_crop(elem, output_scale, zoom, ws_geo))
+                        .map(OutputRenderElements::from),
+                );
+
+                if let Some(elem) =
+                    scale_relocate_crop(background.clone(), output_scale, zoom, ws_geo)
+                {
+                    elements.push(OutputRenderElements::from(elem));
+                }
+            }
         }
 
-        // Then the background.
-        elements.push(background);
+        // Then the backdrop.
+        elements.push(backdrop);
 
         if self.debug_draw_opaque_regions {
             draw_opaque_regions(&mut elements, output_scale);
@@ -5712,14 +5794,32 @@ impl ClientData for ClientState {
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }
 
+fn scale_relocate_crop<E: Element>(
+    elem: E,
+    output_scale: Scale<f64>,
+    zoom: f64,
+    ws_geo: Rectangle<f64, Logical>,
+) -> Option<CropRenderElement<RelocateRenderElement<RescaleRenderElement<E>>>> {
+    let ws_geo = ws_geo.to_physical_precise_round(output_scale);
+    let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
+    let elem = RelocateRenderElement::from_element(elem, ws_geo.loc, Relocate::Relative);
+    CropRenderElement::from_element(elem, output_scale, ws_geo)
+}
+
 niri_render_elements! {
     OutputRenderElements<R> => {
         Monitor = MonitorRenderElement<R>,
         Tile = TileRenderElement<R>,
         LayerSurface = LayerSurfaceRenderElement<R>,
+        RelocatedLayerSurface = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            LayerSurfaceRenderElement<R>
+        >>>,
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
+        RelocatedSolidColor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            SolidColorRenderElement
+        >>>,
         ScreenshotUi = ScreenshotUiRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.

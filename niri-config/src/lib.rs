@@ -23,7 +23,8 @@ use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
 use smithay::reexports::input;
 
-pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.2, 0.2, 0.2, 1.]);
+pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.25, 0.25, 0.25, 1.]);
+pub const DEFAULT_BACKDROP_COLOR: Color = Color::from_array_unpremul([0.15, 0.15, 0.15, 1.]);
 
 pub mod layer_rule;
 
@@ -444,6 +445,8 @@ pub struct Output {
     pub focus_at_startup: bool,
     #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
     pub background_color: Color,
+    #[knuffel(child, default = DEFAULT_BACKDROP_COLOR)]
+    pub backdrop_color: Color,
 }
 
 impl Output {
@@ -472,6 +475,7 @@ impl Default for Output {
             mode: None,
             variable_refresh_rate: None,
             background_color: DEFAULT_BACKGROUND_COLOR,
+            backdrop_color: DEFAULT_BACKDROP_COLOR,
         }
     }
 }
@@ -4125,6 +4129,12 @@ mod tests {
                             r: 0.09803922,
                             g: 0.09803922,
                             b: 0.4,
+                            a: 1.0,
+                        },
+                        backdrop_color: Color {
+                            r: 0.15,
+                            g: 0.15,
+                            b: 0.15,
                             a: 1.0,
                         },
                     },
