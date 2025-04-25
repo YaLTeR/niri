@@ -772,6 +772,10 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn move_workspace_to_idx(&mut self, old_idx: usize, new_idx: usize) {
+        if self.workspaces.len() <= old_idx {
+            return;
+        }
+
         let mut new_idx = new_idx.clamp(0, self.workspaces.len() - 1);
         if old_idx == new_idx {
             return;

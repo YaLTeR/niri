@@ -3218,7 +3218,13 @@ impl<W: LayoutElement> Layout<W> {
             if mon_idx == new_idx && ws_idx == workspace_idx {
                 return;
             }
-            let ws_id = monitors[new_idx].workspaces[workspace_idx].id();
+
+            let mon = &monitors[new_idx];
+            if mon.workspaces.len() <= workspace_idx {
+                return;
+            }
+
+            let ws_id = mon.workspaces[workspace_idx].id();
 
             let mon = &mut monitors[mon_idx];
             let activate = activate.map_smart(|| {
@@ -3388,6 +3394,10 @@ impl<W: LayoutElement> Layout<W> {
             .unwrap();
 
         let current = &mut monitors[current_idx];
+
+        if current.workspaces.len() <= old_idx {
+            return false;
+        }
 
         // Do not do anything if the output is already correct
         if current_idx == target_idx {
