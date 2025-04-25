@@ -33,13 +33,20 @@ impl SpatialMovementGrab {
         start_data: PointerGrabStartData<State>,
         output: Output,
         workspace_id: WorkspaceId,
+        is_view_offset: bool,
     ) -> Self {
+        let gesture = if is_view_offset {
+            GestureState::ViewOffset
+        } else {
+            GestureState::Recognizing
+        };
+
         Self {
             last_location: start_data.location,
             start_data,
             output,
             workspace_id,
-            gesture: GestureState::Recognizing,
+            gesture,
         }
     }
 

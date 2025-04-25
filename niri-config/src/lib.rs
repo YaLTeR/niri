@@ -62,6 +62,8 @@ pub struct Config {
     #[knuffel(child, default)]
     pub gestures: Gestures,
     #[knuffel(child, default)]
+    pub overview: Overview,
+    #[knuffel(child, default)]
     pub environment: Environment,
     #[knuffel(children(name = "window-rule"))]
     pub window_rules: Vec<WindowRule>,
@@ -988,6 +990,8 @@ pub struct Animations {
     pub config_notification_open_close: ConfigNotificationOpenCloseAnim,
     #[knuffel(child, default)]
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
+    #[knuffel(child, default)]
+    pub overview_open_close: OverviewOpenCloseAnim,
 }
 
 impl Default for Animations {
@@ -1003,6 +1007,7 @@ impl Default for Animations {
             window_resize: Default::default(),
             config_notification_open_close: Default::default(),
             screenshot_ui_open: Default::default(),
+            overview_open_close: Default::default(),
         }
     }
 }
@@ -1151,6 +1156,22 @@ impl Default for ScreenshotUiOpenAnim {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OverviewOpenCloseAnim(pub Animation);
+
+impl Default for OverviewOpenCloseAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Animation {
     pub off: bool,
     pub kind: AnimationKind,
@@ -1205,6 +1226,20 @@ impl Default for DndEdgeViewScroll {
             trigger_width: FloatOrInt(30.), // Taken from GTK 4.
             delay_ms: 100,
             max_speed: FloatOrInt(1500.),
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Overview {
+    #[knuffel(child, unwrap(argument), default = Self::default().zoom)]
+    pub zoom: FloatOrInt<0, 1>,
+}
+
+impl Default for Overview {
+    fn default() -> Self {
+        Self {
+            zoom: FloatOrInt(0.5),
         }
     }
 }
@@ -1720,6 +1755,9 @@ pub enum Action {
     SetDynamicCastWindowById(u64),
     SetDynamicCastMonitor(#[knuffel(argument)] Option<String>),
     ClearDynamicCastTarget,
+    ToggleOverview,
+    OpenOverview,
+    CloseOverview,
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1984,6 +2022,9 @@ impl From<niri_ipc::Action> for Action {
                 Self::SetDynamicCastMonitor(output)
             }
             niri_ipc::Action::ClearDynamicCastTarget {} => Self::ClearDynamicCastTarget,
+            niri_ipc::Action::ToggleOverview {} => Self::ToggleOverview,
+            niri_ipc::Action::OpenOverview {} => Self::OpenOverview,
+            niri_ipc::Action::CloseOverview {} => Self::CloseOverview,
         }
     }
 }
@@ -2954,6 +2995,21 @@ where
 }
 
 impl<S> knuffel::Decode<S> for ScreenshotUiOpenAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for OverviewOpenCloseAnim
 where
     S: knuffel::traits::ErrorSpan,
 {
@@ -4469,6 +4525,18 @@ mod tests {
                         ),
                     },
                 ),
+                overview_open_close: OverviewOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
             },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
@@ -4480,6 +4548,11 @@ mod tests {
                         50.0,
                     ),
                 },
+            },
+            overview: Overview {
+                zoom: FloatOrInt(
+                    0.5,
+                ),
             },
             environment: Environment(
                 [
