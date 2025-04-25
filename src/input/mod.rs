@@ -35,6 +35,7 @@ use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerCons
 use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 use touch_move_grab::TouchMoveGrab;
+use touch_overview_grab::TouchOverviewGrab;
 
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
@@ -56,6 +57,7 @@ pub mod scroll_tracker;
 pub mod spatial_movement_grab;
 pub mod swipe_tracker;
 pub mod touch_move_grab;
+pub mod touch_overview_grab;
 pub mod touch_resize_grab;
 
 use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
@@ -3467,12 +3469,45 @@ impl State {
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
         if !handle.is_grabbed() {
-            if let Some((window, _)) = under.window {
+            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+            let mods = modifiers_from_state(mods);
+            let mod_down = mods.contains(mod_key.to_modifiers());
+
+            if self.niri.layout.is_overview_open() && !mod_down && under.layer.is_none() {
+                let (output, pos_within_output) = self.niri.output_under(touch_location).unwrap();
+                let output = output.clone();
+
+                let mut matched_narrow = true;
+                let mut ws = self.niri.workspace_under(false, touch_location);
+                if ws.is_none() {
+                    matched_narrow = false;
+                    ws = self.niri.workspace_under(true, touch_location);
+                }
+                let ws_id = ws.map(|(_, ws)| ws.id());
+
+                let mapped = self.niri.window_under(touch_location);
+                let window = mapped.map(|mapped| mapped.window.clone());
+
+                let start_data = TouchGrabStartData {
+                    focus: None,
+                    slot: evt.slot(),
+                    location: touch_location,
+                };
+                let start_timestamp = Duration::from_micros(evt.time());
+                let grab = TouchOverviewGrab::new(
+                    start_data,
+                    start_timestamp,
+                    output,
+                    pos_within_output,
+                    ws_id,
+                    matched_narrow,
+                    window,
+                );
+                handle.set_grab(self, grab, serial);
+            } else if let Some((window, _)) = under.window {
                 self.niri.layout.activate_window(&window);
 
                 // Check if we need to start an interactive move.
-                let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
-                let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                 if mod_down {
                     let (output, pos_within_output) =
                         self.niri.output_under(touch_location).unwrap();
