@@ -895,12 +895,38 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::FocusColumnLeftUnderMouse => {
+                if let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
+                    let ws_id = ws.id();
+                    let ws = {
+                        let mut workspaces = self.niri.layout.workspaces_mut();
+                        workspaces.find(|ws| ws.id() == ws_id).unwrap()
+                    };
+                    ws.focus_left();
+                    self.maybe_warp_cursor_to_focus();
+                    self.niri.layer_shell_on_demand_focus = None;
+                    self.niri.queue_redraw(&output);
+                }
+            }
             Action::FocusColumnRight => {
                 self.niri.layout.focus_right();
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
+            }
+            Action::FocusColumnRightUnderMouse => {
+                if let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
+                    let ws_id = ws.id();
+                    let ws = {
+                        let mut workspaces = self.niri.layout.workspaces_mut();
+                        workspaces.find(|ws| ws.id() == ws_id).unwrap()
+                    };
+                    ws.focus_right();
+                    self.maybe_warp_cursor_to_focus();
+                    self.niri.layer_shell_on_demand_focus = None;
+                    self.niri.queue_redraw(&output);
+                }
             }
             Action::FocusColumnFirst => {
                 self.niri.layout.focus_column_first();
@@ -1252,12 +1278,32 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::FocusWorkspaceDownUnderMouse => {
+                if let Some(output) = self.niri.output_under_cursor() {
+                    if let Some(mon) = self.niri.layout.monitor_for_output_mut(&output) {
+                        mon.switch_workspace_down();
+                        self.maybe_warp_cursor_to_focus();
+                        self.niri.layer_shell_on_demand_focus = None;
+                        self.niri.queue_redraw(&output);
+                    }
+                }
+            }
             Action::FocusWorkspaceUp => {
                 self.niri.layout.switch_workspace_up();
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
+            }
+            Action::FocusWorkspaceUpUnderMouse => {
+                if let Some(output) = self.niri.output_under_cursor() {
+                    if let Some(mon) = self.niri.layout.monitor_for_output_mut(&output) {
+                        mon.switch_workspace_up();
+                        self.maybe_warp_cursor_to_focus();
+                        self.niri.layer_shell_on_demand_focus = None;
+                        self.niri.queue_redraw(&output);
+                    }
+                }
             }
             Action::FocusWorkspace(reference) => {
                 if let Some((mut output, index)) =
@@ -2525,23 +2571,81 @@ impl State {
         let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
         let vertical_amount_v120 = event.amount_v120(Axis::Vertical);
 
+        let is_overview_open = self.niri.layout.is_overview_open();
+
+        // We should only handle scrolling in the overview if the pointer is not over a (top or
+        // overlay) layer surface.
+        let should_handle_in_overview = if is_overview_open {
+            // FIXME: ideally this should happen after updating the pointer contents, which happens
+            // below. However, our pointer actions are supposed to act on the old surface, before
+            // updating the pointer contents.
+            pointer
+                .current_focus()
+                .map(|surface| self.niri.find_root_shell_surface(&surface))
+                .map_or(true, |root| {
+                    !self
+                        .niri
+                        .mapped_layer_surfaces
+                        .keys()
+                        .any(|layer| *layer.wl_surface() == root)
+                })
+        } else {
+            false
+        };
+
         // Handle wheel scroll bindings.
         if source == AxisSource::Wheel {
             // If we have a scroll bind with current modifiers, then accumulate and don't pass to
             // Wayland. If there's no bind, reset the accumulator.
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
-            if self.niri.mods_with_wheel_binds.contains(&modifiers) {
+            let should_handle =
+                should_handle_in_overview || self.niri.mods_with_wheel_binds.contains(&modifiers);
+            if should_handle {
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.horizontal_wheel_tracker.accumulate(horizontal);
                 if ticks != 0 {
-                    let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
-                    let bind_left =
-                        find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, mods);
-                    let bind_right =
-                        find_configured_bind(bindings, mod_key, Trigger::WheelScrollRight, mods);
-                    drop(config);
+                    let (bind_left, bind_right) = if should_handle_in_overview
+                        && modifiers.is_empty()
+                    {
+                        let bind_left = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollLeft,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusColumnLeftUnderMouse,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        let bind_right = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollRight,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusColumnRightUnderMouse,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        (bind_left, bind_right)
+                    } else {
+                        let config = self.niri.config.borrow();
+                        let bindings = &config.binds;
+                        let bind_left =
+                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, mods);
+                        let bind_right = find_configured_bind(
+                            bindings,
+                            mod_key,
+                            Trigger::WheelScrollRight,
+                            mods,
+                        );
+                        (bind_left, bind_right)
+                    };
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
@@ -2558,13 +2662,68 @@ impl State {
                 let vertical = vertical_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.vertical_wheel_tracker.accumulate(vertical);
                 if ticks != 0 {
-                    let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
-                    let bind_up =
-                        find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, mods);
-                    let bind_down =
-                        find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods);
-                    drop(config);
+                    let (bind_up, bind_down) = if should_handle_in_overview && modifiers.is_empty()
+                    {
+                        let bind_up = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollUp,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusWorkspaceUpUnderMouse,
+                            repeat: true,
+                            cooldown: Some(Duration::from_millis(50)),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        let bind_down = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollDown,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusWorkspaceDownUnderMouse,
+                            repeat: true,
+                            cooldown: Some(Duration::from_millis(50)),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        (bind_up, bind_down)
+                    } else if should_handle_in_overview && modifiers == Modifiers::SHIFT {
+                        let bind_up = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollUp,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusColumnLeftUnderMouse,
+                            repeat: true,
+                            cooldown: Some(Duration::from_millis(50)),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        let bind_down = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollDown,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusColumnRightUnderMouse,
+                            repeat: true,
+                            cooldown: Some(Duration::from_millis(50)),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        (bind_up, bind_down)
+                    } else {
+                        let config = self.niri.config.borrow();
+                        let bindings = &config.binds;
+                        let bind_up =
+                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, mods);
+                        let bind_down =
+                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods);
+                        (bind_up, bind_down)
+                    };
 
                     if let Some(down) = bind_down {
                         for _ in 0..ticks {
