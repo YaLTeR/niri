@@ -1678,7 +1678,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.dnd_scroll_gesture_begin();
     }
 
-    pub fn dnd_scroll_gesture_scroll(&mut self, pos: Point<f64, Logical>, speed: f64) {
+    pub fn dnd_scroll_gesture_scroll(&mut self, pos: Point<f64, Logical>, speed: f64) -> bool {
         let config = &self.options.gestures.dnd_edge_view_scroll;
         let trigger_width = config.trigger_width.0;
 
@@ -1706,7 +1706,7 @@ impl<W: LayoutElement> Workspace<W> {
         };
         let delta = delta * speed;
 
-        self.scrolling.dnd_scroll_gesture_scroll(delta);
+        self.scrolling.dnd_scroll_gesture_scroll(delta)
     }
 
     pub fn dnd_scroll_gesture_end(&mut self) {
