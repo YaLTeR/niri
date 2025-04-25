@@ -51,6 +51,7 @@ pub mod move_grab;
 pub mod pick_color_grab;
 pub mod pick_window_grab;
 pub mod resize_grab;
+pub mod scroll_swipe_gesture;
 pub mod scroll_tracker;
 pub mod spatial_movement_grab;
 pub mod swipe_tracker;
@@ -2568,6 +2569,8 @@ impl State {
         self.niri.pointer_hidden = false;
         self.niri.tablet_cursor_location = None;
 
+        let timestamp = Duration::from_micros(event.time());
+
         let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
         let vertical_amount_v120 = event.amount_v120(Axis::Vertical);
 
@@ -2751,8 +2754,106 @@ impl State {
         if source == AxisSource::Finger {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
+
+            let horizontal = horizontal_amount.unwrap_or(0.);
+            let vertical = vertical_amount.unwrap_or(0.);
+
+            if should_handle_in_overview && modifiers.is_empty() {
+                let mut redraw = false;
+
+                let action = self
+                    .niri
+                    .overview_scroll_swipe_gesture
+                    .update(horizontal, vertical);
+                let is_vertical = self.niri.overview_scroll_swipe_gesture.is_vertical();
+
+                if action.end() {
+                    if is_vertical {
+                        redraw |= self
+                            .niri
+                            .layout
+                            .workspace_switch_gesture_end(Some(true))
+                            .is_some();
+                    } else {
+                        redraw |= self
+                            .niri
+                            .layout
+                            .view_offset_gesture_end(Some(true))
+                            .is_some();
+                    }
+                } else {
+                    // Maybe begin, then update.
+                    if is_vertical {
+                        if action.begin() {
+                            if let Some(output) = self.niri.output_under_cursor() {
+                                self.niri
+                                    .layout
+                                    .workspace_switch_gesture_begin(&output, true);
+                                redraw = true;
+                            }
+                        }
+
+                        let res = self
+                            .niri
+                            .layout
+                            .workspace_switch_gesture_update(vertical, timestamp, true);
+                        if let Some(Some(_)) = res {
+                            redraw = true;
+                        }
+                    } else {
+                        if action.begin() {
+                            if let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
+                                let ws_id = ws.id();
+                                let ws_idx =
+                                    self.niri.layout.find_workspace_by_id(ws_id).unwrap().0;
+
+                                self.niri.layout.view_offset_gesture_begin(
+                                    &output,
+                                    Some(ws_idx),
+                                    true,
+                                );
+                                redraw = true;
+                            }
+                        }
+
+                        let res = self
+                            .niri
+                            .layout
+                            .view_offset_gesture_update(horizontal, timestamp, true);
+                        if let Some(Some(_)) = res {
+                            redraw = true;
+                        }
+                    }
+                }
+
+                if redraw {
+                    self.niri.queue_redraw_all();
+                }
+
+                return;
+            } else {
+                let mut redraw = false;
+                if self.niri.overview_scroll_swipe_gesture.reset() {
+                    if self.niri.overview_scroll_swipe_gesture.is_vertical() {
+                        redraw |= self
+                            .niri
+                            .layout
+                            .workspace_switch_gesture_end(Some(true))
+                            .is_some();
+                    } else {
+                        redraw |= self
+                            .niri
+                            .layout
+                            .view_offset_gesture_end(Some(true))
+                            .is_some();
+                    }
+                }
+                if redraw {
+                    self.niri.queue_redraw_all();
+                }
+            }
+
             if self.niri.mods_with_finger_scroll_binds.contains(&modifiers) {
-                let horizontal = horizontal_amount.unwrap_or(0.);
                 let ticks = self
                     .niri
                     .horizontal_finger_scroll_tracker
@@ -2778,7 +2879,6 @@ impl State {
                     }
                 }
 
-                let vertical = vertical_amount.unwrap_or(0.);
                 let ticks = self
                     .niri
                     .vertical_finger_scroll_tracker
