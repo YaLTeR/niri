@@ -4444,7 +4444,8 @@ impl<W: LayoutElement> Layout<W> {
                         let mon = &mut monitors[*active_monitor_idx];
                         let zoom = mon.overview_zoom();
                         // No point in trying to use the pointer position on the wrong output.
-                        let (ws, ws_geo) = mon.workspaces_with_render_geo().next().unwrap();
+                        let ws = &mon.workspaces[0];
+                        let ws_geo = mon.workspaces_render_geo().next().unwrap();
 
                         let position = if move_.is_floating {
                             InsertPosition::Floating
@@ -4552,7 +4553,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 // needed because empty_workspace_above_first could have modified the idx
                 let (tile, tile_render_loc, ws_geo) = mon
-                    .workspaces_with_render_geo_mut()
+                    .workspaces_with_render_geo_mut(false)
                     .find_map(|(ws, geo)| {
                         ws.tiles_with_render_positions_mut(false)
                             .find(|(tile, _)| tile.window().id() == &win_id)

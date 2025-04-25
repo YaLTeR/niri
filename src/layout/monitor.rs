@@ -906,7 +906,7 @@ impl<W: LayoutElement> Monitor<W> {
             .as_ref()
             .and_then(|hint| hint.workspace.existing_id());
 
-        for (ws, geo) in self.workspaces_with_render_geo_mut() {
+        for (ws, geo) in self.workspaces_with_render_geo_mut(true) {
             ws.update_render_elements(is_active);
 
             if Some(ws.id()) == insert_hint_ws_id {
@@ -1308,13 +1308,14 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn workspaces_with_render_geo_mut(
         &mut self,
+        cull: bool,
     ) -> impl Iterator<Item = (&mut Workspace<W>, Rectangle<f64, Logical>)> {
         let output_geo = Rectangle::from_size(self.view_size);
 
         let geo = self.workspaces_render_geo();
         zip(self.workspaces.iter_mut(), geo)
             // Cull out workspaces outside the output.
-            .filter(move |(_ws, geo)| geo.intersection(output_geo).is_some())
+            .filter(move |(_ws, geo)| !cull || geo.intersection(output_geo).is_some())
     }
 
     pub fn workspace_under(
