@@ -37,7 +37,7 @@ use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
 
-use monitor::{InsertHint, InsertPosition, MonitorAddWindowTarget};
+use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
 use niri_config::{
     CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
     Workspace as WorkspaceConfig, WorkspaceReference,
@@ -3031,40 +3031,51 @@ impl<W: LayoutElement> Layout<W> {
             return;
         }
 
-        // No insert hint when targeting floating.
-        if move_.is_floating {
-            self.interactive_move = Some(InteractiveMoveState::Moving(move_));
-            return;
-        }
-
         let _span = tracy_client::span!("Layout::update_insert_hint::update");
 
         if let Some(mon) = self.monitor_for_output_mut(&move_.output) {
             let zoom = mon.overview_zoom();
-            if let Some((ws, geo)) = mon.workspace_under(move_.pointer_pos_within_output) {
-                let ws_id = ws.id();
-                let ws = mon
-                    .workspaces
-                    .iter_mut()
-                    .find(|ws| ws.id() == ws_id)
-                    .unwrap();
-                let pos_within_workspace =
-                    (move_.pointer_pos_within_output - geo.loc).downscale(zoom);
-                let position = ws.scrolling_insert_position(pos_within_workspace);
+            let (insert_ws, geo) = mon.insert_position(move_.pointer_pos_within_output);
+            match insert_ws {
+                InsertWorkspace::Existing(ws_id) => {
+                    let ws = mon
+                        .workspaces
+                        .iter_mut()
+                        .find(|ws| ws.id() == ws_id)
+                        .unwrap();
+                    let pos_within_workspace =
+                        (move_.pointer_pos_within_output - geo.loc).downscale(zoom);
+                    let position = if move_.is_floating {
+                        InsertPosition::Floating
+                    } else {
+                        ws.scrolling_insert_position(pos_within_workspace)
+                    };
 
-                let rules = move_.tile.window().rules();
-                let border_width = move_.tile.effective_border_width().unwrap_or(0.);
-                let corner_radius = rules
-                    .geometry_corner_radius
-                    .map_or(CornerRadius::default(), |radius| {
-                        radius.expanded_by(border_width as f32)
+                    let rules = move_.tile.window().rules();
+                    let border_width = move_.tile.effective_border_width().unwrap_or(0.);
+                    let corner_radius = rules
+                        .geometry_corner_radius
+                        .map_or(CornerRadius::default(), |radius| {
+                            radius.expanded_by(border_width as f32)
+                        });
+                    mon.insert_hint = Some(InsertHint {
+                        workspace: insert_ws,
+                        position,
+                        corner_radius,
                     });
-
-                mon.insert_hint = Some(InsertHint {
-                    workspace: ws_id,
-                    position,
-                    corner_radius,
-                });
+                }
+                InsertWorkspace::NewAt(_) => {
+                    let position = if move_.is_floating {
+                        InsertPosition::Floating
+                    } else {
+                        InsertPosition::NewColumn(0)
+                    };
+                    mon.insert_hint = Some(InsertHint {
+                        workspace: insert_ws,
+                        position,
+                        corner_radius: CornerRadius::default(),
+                    });
+                }
             }
         }
 
@@ -4393,58 +4404,80 @@ impl<W: LayoutElement> Layout<W> {
                 active_monitor_idx,
                 ..
             } => {
-                let (mon, ws_idx, position, offset, zoom) = if let Some(mon) =
-                    monitors.iter_mut().find(|mon| mon.output == move_.output)
-                {
-                    let zoom = mon.overview_zoom();
+                let (mon, insert_ws, position, offset, zoom) =
+                    if let Some(mon) = monitors.iter_mut().find(|mon| mon.output == move_.output) {
+                        let zoom = mon.overview_zoom();
 
-                    let (ws, ws_geo) = mon
-                        .workspace_under(move_.pointer_pos_within_output)
-                        // If the pointer is somehow outside the move output and a workspace switch
-                        // is in progress, this won't necessarily do the expected thing.
-                        .unwrap_or_else(|| mon.workspaces_with_render_geo().next().unwrap());
+                        let (insert_ws, geo) = mon.insert_position(move_.pointer_pos_within_output);
+                        let (position, offset) = match insert_ws {
+                            InsertWorkspace::Existing(ws_id) => {
+                                let ws_idx = mon
+                                    .workspaces
+                                    .iter_mut()
+                                    .position(|ws| ws.id() == ws_id)
+                                    .unwrap();
 
-                    let ws_id = ws.id();
-                    let ws_idx = mon
-                        .workspaces
-                        .iter_mut()
-                        .position(|ws| ws.id() == ws_id)
-                        .unwrap();
+                                let position = if move_.is_floating {
+                                    InsertPosition::Floating
+                                } else {
+                                    let pos_within_workspace =
+                                        (move_.pointer_pos_within_output - geo.loc).downscale(zoom);
+                                    let ws = &mut mon.workspaces[ws_idx];
+                                    ws.scrolling_insert_position(pos_within_workspace)
+                                };
 
-                    let position = if move_.is_floating {
-                        InsertPosition::Floating
+                                (position, Some(geo.loc))
+                            }
+                            InsertWorkspace::NewAt(_) => {
+                                let position = if move_.is_floating {
+                                    InsertPosition::Floating
+                                } else {
+                                    InsertPosition::NewColumn(0)
+                                };
+
+                                (position, None)
+                            }
+                        };
+
+                        (mon, insert_ws, position, offset, zoom)
                     } else {
-                        let pos_within_workspace =
-                            (move_.pointer_pos_within_output - ws_geo.loc).downscale(zoom);
-                        let ws = &mut mon.workspaces[ws_idx];
-                        ws.scrolling_insert_position(pos_within_workspace)
+                        let mon = &mut monitors[*active_monitor_idx];
+                        let zoom = mon.overview_zoom();
+                        // No point in trying to use the pointer position on the wrong output.
+                        let (ws, ws_geo) = mon.workspaces_with_render_geo().next().unwrap();
+
+                        let position = if move_.is_floating {
+                            InsertPosition::Floating
+                        } else {
+                            ws.scrolling_insert_position(Point::from((0., 0.)))
+                        };
+
+                        let insert_ws = InsertWorkspace::Existing(ws.id());
+                        (mon, insert_ws, position, Some(ws_geo.loc), zoom)
                     };
-
-                    (mon, ws_idx, position, ws_geo.loc, zoom)
-                } else {
-                    let mon = &mut monitors[*active_monitor_idx];
-                    let zoom = mon.overview_zoom();
-                    // No point in trying to use the pointer position on the wrong output.
-                    let (ws, ws_geo) = mon.workspaces_with_render_geo().next().unwrap();
-
-                    let position = if move_.is_floating {
-                        InsertPosition::Floating
-                    } else {
-                        ws.scrolling_insert_position(Point::from((0., 0.)))
-                    };
-
-                    let ws_id = ws.id();
-                    let ws_idx = mon
-                        .workspaces
-                        .iter_mut()
-                        .position(|ws| ws.id() == ws_id)
-                        .unwrap();
-
-                    (mon, ws_idx, position, ws_geo.loc, zoom)
-                };
 
                 let win_id = move_.tile.window().id().clone();
                 let window_render_loc = move_.tile_render_location(zoom) + move_.tile.window_loc();
+
+                let ws_idx = match insert_ws {
+                    InsertWorkspace::Existing(ws_id) => mon
+                        .workspaces
+                        .iter()
+                        .position(|ws| ws.id() == ws_id)
+                        .unwrap(),
+                    InsertWorkspace::NewAt(ws_idx) => {
+                        if self.options.empty_workspace_above_first && ws_idx == 0 {
+                            // Reuse the top empty workspace.
+                            0
+                        } else if mon.workspaces.len() - 1 <= ws_idx {
+                            // Reuse the bottom empty workspace.
+                            mon.workspaces.len() - 1
+                        } else {
+                            mon.add_workspace_at(ws_idx);
+                            ws_idx
+                        }
+                    }
+                };
 
                 match position {
                     InsertPosition::NewColumn(column_idx) => {
@@ -4474,10 +4507,27 @@ impl<W: LayoutElement> Layout<W> {
                         let tile_render_loc = move_.tile_render_location(zoom);
 
                         let mut tile = move_.tile;
+                        tile.floating_pos = None;
 
-                        let pos = (tile_render_loc - offset).downscale(zoom);
-                        let pos = mon.workspaces[ws_idx].floating_logical_to_size_frac(pos);
-                        tile.floating_pos = Some(pos);
+                        match insert_ws {
+                            InsertWorkspace::Existing(_) => {
+                                if let Some(offset) = offset {
+                                    let pos = (tile_render_loc - offset).downscale(zoom);
+                                    let pos =
+                                        mon.workspaces[ws_idx].floating_logical_to_size_frac(pos);
+                                    tile.floating_pos = Some(pos);
+                                } else {
+                                    error!(
+                                        "offset unset for inserting a floating tile \
+                                         to existing workspace"
+                                    );
+                                }
+                            }
+                            InsertWorkspace::NewAt(_) => {
+                                // When putting a floating tile on a new workspace, we don't really
+                                // have a good pre-existing position.
+                            }
+                        }
 
                         // Set the floating size so it takes into account any window resizing that
                         // took place during the move.
