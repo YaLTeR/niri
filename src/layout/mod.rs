@@ -1177,6 +1177,12 @@ impl<W: LayoutElement> Layout<W> {
                             unreachable!()
                         };
 
+                        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+                            for mon in monitors {
+                                mon.dnd_scroll_gesture_end();
+                            }
+                        }
+
                         // Unlock the view on the workspaces.
                         for ws in self.workspaces_mut() {
                             ws.dnd_scroll_gesture_end();
@@ -2750,33 +2756,40 @@ impl<W: LayoutElement> Layout<W> {
 
         let mut dnd_scroll = None;
         if let Some(dnd) = &self.dnd {
-            dnd_scroll = Some((dnd.output.clone(), dnd.pointer_pos_within_output));
+            dnd_scroll = Some((dnd.output.clone(), dnd.pointer_pos_within_output, true));
         }
 
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             move_.tile.advance_animations();
 
-            if !move_.is_floating && dnd_scroll.is_none() {
-                dnd_scroll = Some((move_.output.clone(), move_.pointer_pos_within_output));
+            if dnd_scroll.is_none() {
+                dnd_scroll = Some((
+                    move_.output.clone(),
+                    move_.pointer_pos_within_output,
+                    !move_.is_floating,
+                ));
             }
         }
 
         // Scroll the view if needed.
-        if let Some((output, pos_within_output)) = dnd_scroll {
+        if let Some((output, pos_within_output, is_scrolling)) = dnd_scroll {
             if let Some(mon) = self.monitor_for_output_mut(&output) {
                 let zoom = mon.overview_zoom();
+                mon.dnd_scroll_gesture_scroll(pos_within_output, 1. / zoom);
 
-                if let Some((ws, geo)) = mon.workspace_under(pos_within_output) {
-                    let ws_id = ws.id();
-                    let ws = mon
-                        .workspaces
-                        .iter_mut()
-                        .find(|ws| ws.id() == ws_id)
-                        .unwrap();
-                    // As far as the DnD scroll gesture is concerned, the workspace spans across
-                    // the whole monitor horizontally.
-                    let ws_pos = Point::from((0., geo.loc.y));
-                    ws.dnd_scroll_gesture_scroll(pos_within_output - ws_pos, 1. / zoom);
+                if is_scrolling {
+                    if let Some((ws, geo)) = mon.workspace_under(pos_within_output) {
+                        let ws_id = ws.id();
+                        let ws = mon
+                            .workspaces
+                            .iter_mut()
+                            .find(|ws| ws.id() == ws_id)
+                            .unwrap();
+                        // As far as the DnD scroll gesture is concerned, the workspace spans across
+                        // the whole monitor horizontally.
+                        let ws_pos = Point::from((0., geo.loc.y));
+                        ws.dnd_scroll_gesture_scroll(pos_within_output - ws_pos, 1. / zoom);
+                    }
                 }
             }
         }
@@ -3948,6 +3961,12 @@ impl<W: LayoutElement> Layout<W> {
             pointer_ratio_within_window,
         });
 
+        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+            for mon in monitors {
+                mon.dnd_scroll_gesture_begin();
+            }
+        }
+
         // Lock the view for scrolling interactive move.
         if !is_floating {
             for ws in self.workspaces_mut() {
@@ -4181,6 +4200,12 @@ impl<W: LayoutElement> Layout<W> {
                     unreachable!()
                 };
 
+                if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+                    for mon in monitors {
+                        mon.dnd_scroll_gesture_end();
+                    }
+                }
+
                 let mut ws_id = None;
                 for ws in self.workspaces_mut() {
                     let id = ws.id();
@@ -4243,6 +4268,12 @@ impl<W: LayoutElement> Layout<W> {
         let Some(InteractiveMoveState::Moving(mut move_)) = self.interactive_move.take() else {
             unreachable!()
         };
+
+        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+            for mon in monitors {
+                mon.dnd_scroll_gesture_end();
+            }
+        }
 
         // Unlock the view on the workspaces.
         if !move_.is_floating {
@@ -4431,6 +4462,12 @@ impl<W: LayoutElement> Layout<W> {
         });
 
         if begin_gesture {
+            if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+                for mon in monitors {
+                    mon.dnd_scroll_gesture_begin();
+                }
+            }
+
             for ws in self.workspaces_mut() {
                 ws.dnd_scroll_gesture_begin();
             }
@@ -4443,6 +4480,12 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         self.dnd = None;
+
+        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+            for mon in monitors {
+                mon.dnd_scroll_gesture_end();
+            }
+        }
 
         for ws in self.workspaces_mut() {
             ws.dnd_scroll_gesture_end();
@@ -4912,6 +4955,14 @@ impl<W: LayoutElement> Layout<W> {
                     let is_active = self.is_active
                         && idx == *active_monitor_idx
                         && !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_)));
+
+                    if ongoing_scrolling_dnd.is_some() && self.overview_open {
+                        // Begin the scroll on new monitors and when opening the overview.
+                        mon.dnd_scroll_gesture_begin();
+                    } else if !self.overview_open {
+                        mon.dnd_scroll_gesture_end();
+                    }
+
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
                         ws.refresh(is_active);
 

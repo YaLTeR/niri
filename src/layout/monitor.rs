@@ -38,6 +38,11 @@ const WORKSPACE_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
     limit: 0.05,
 };
 
+/// Amount of DnD edge scrolling to scroll the height of one workspace.
+///
+/// This constant is tied to the default dnd-edge-workspace-switch max-speed setting.
+const WORKSPACE_DND_EDGE_SCROLL_MOVEMENT: f64 = 1500.;
+
 #[derive(Debug)]
 pub struct Monitor<W: LayoutElement> {
     /// Output for this monitor.
@@ -96,11 +101,23 @@ pub struct WorkspaceSwitchGesture {
     start_idx: f64,
     /// Current, fractional workspace index.
     pub(super) current_idx: f64,
+    /// Animation for the extra offset to the current position.
+    ///
+    /// For example, if there's a workspace switch during a DnD scroll.
+    animation: Option<Animation>,
     tracker: SwipeTracker,
     /// Whether the gesture is controlled by the touchpad.
     is_touchpad: bool,
     /// Whether the gesture is clamped to +-1 workspace around the center.
     is_clamped: bool,
+
+    // If this gesture is for drag-and-drop scrolling, this is the last event's unadjusted
+    // timestamp.
+    dnd_last_event_time: Option<Duration>,
+    // Time when the drag-and-drop scroll delta became non-zero, used for debouncing.
+    //
+    // If `None` then the scroll delta is currently zero.
+    dnd_nonzero_start_time: Option<Duration>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,7 +178,9 @@ impl WorkspaceSwitch {
     pub fn current_idx(&self) -> f64 {
         match self {
             WorkspaceSwitch::Animation(anim) => anim.value(),
-            WorkspaceSwitch::Gesture(gesture) => gesture.current_idx,
+            WorkspaceSwitch::Gesture(gesture) => {
+                gesture.current_idx + gesture.animation.as_ref().map_or(0., |anim| anim.value())
+            }
         }
     }
 
@@ -187,12 +206,11 @@ impl WorkspaceSwitch {
         }
     }
 
-    /// Returns `true` if the workspace switch is [`Animation`].
-    ///
-    /// [`Animation`]: WorkspaceSwitch::Animation
-    #[must_use]
-    fn is_animation(&self) -> bool {
-        matches!(self, Self::Animation(..))
+    fn is_animation_ongoing(&self) -> bool {
+        match self {
+            WorkspaceSwitch::Animation(_) => true,
+            WorkspaceSwitch::Gesture(gesture) => gesture.animation.is_some(),
+        }
     }
 }
 
@@ -205,6 +223,11 @@ impl WorkspaceSwitchGesture {
         } else {
             (0., (workspace_count - 1) as f64)
         }
+    }
+
+    fn animate_from(&mut self, from: f64, clock: Clock, config: niri_config::Animation) {
+        let current = self.animation.as_ref().map_or(0., Animation::value);
+        self.animation = Some(Animation::new(clock, from + current, 0., 0., config));
     }
 }
 
@@ -344,25 +367,47 @@ impl<W: LayoutElement> Monitor<W> {
         idx: usize,
         config: Option<niri_config::Animation>,
     ) {
-        if self.active_workspace_idx == idx {
-            return;
-        }
-
         // FIXME: also compute and use current velocity.
         let current_idx = self.workspace_render_idx();
 
-        self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
+        if self.active_workspace_idx != idx {
+            self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
+        }
 
+        let prev_active_idx = self.active_workspace_idx;
         self.active_workspace_idx = idx;
 
         let config = config.unwrap_or(self.options.animations.workspace_switch.0);
-        self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
-            self.clock.clone(),
-            current_idx,
-            idx as f64,
-            0.,
-            config,
-        )));
+
+        match &mut self.workspace_switch {
+            // During a DnD scroll, we want to visually animate even if idx matches the active idx.
+            Some(WorkspaceSwitch::Gesture(gesture)) if gesture.dnd_last_event_time.is_some() => {
+                gesture.center_idx = idx;
+
+                // Adjust start_idx to make current_idx point at idx.
+                let current_pos = gesture.current_idx - gesture.start_idx;
+                gesture.start_idx = idx as f64 - current_pos;
+                let prev_current_idx = gesture.current_idx;
+                gesture.current_idx = idx as f64;
+
+                let current_idx_delta = gesture.current_idx - prev_current_idx;
+                gesture.animate_from(-current_idx_delta, self.clock.clone(), config);
+            }
+            _ => {
+                // Don't animate if nothing changed.
+                if prev_active_idx == idx {
+                    return;
+                }
+
+                self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
+                    self.clock.clone(),
+                    current_idx,
+                    idx as f64,
+                    0.,
+                    config,
+                )));
+            }
+        }
     }
 
     pub fn add_window(
@@ -725,14 +770,31 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn switch_workspace_up(&mut self) {
-        self.activate_workspace(self.active_workspace_idx.saturating_sub(1));
+        let new_idx = match &self.workspace_switch {
+            // During a DnD scroll, select the prev apparent workspace.
+            Some(WorkspaceSwitch::Gesture(gesture)) if gesture.dnd_last_event_time.is_some() => {
+                let current = gesture.current_idx;
+                let new = current.ceil() - 1.;
+                new.clamp(0., (self.workspaces.len() - 1) as f64) as usize
+            }
+            _ => self.active_workspace_idx.saturating_sub(1),
+        };
+
+        self.activate_workspace(new_idx);
     }
 
     pub fn switch_workspace_down(&mut self) {
-        self.activate_workspace(min(
-            self.active_workspace_idx + 1,
-            self.workspaces.len() - 1,
-        ));
+        let new_idx = match &self.workspace_switch {
+            // During a DnD scroll, select the next apparent workspace.
+            Some(WorkspaceSwitch::Gesture(gesture)) if gesture.dnd_last_event_time.is_some() => {
+                let current = gesture.current_idx;
+                let new = current.floor() + 1.;
+                new.clamp(0., (self.workspaces.len() - 1) as f64) as usize
+            }
+            _ => min(self.active_workspace_idx + 1, self.workspaces.len() - 1),
+        };
+
+        self.activate_workspace(new_idx);
     }
 
     fn previous_workspace_idx(&self) -> Option<usize> {
@@ -767,11 +829,38 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn advance_animations(&mut self) {
-        if let Some(WorkspaceSwitch::Animation(anim)) = &mut self.workspace_switch {
-            if anim.is_done() {
-                self.workspace_switch = None;
-                self.clean_up_workspaces();
+        match &mut self.workspace_switch {
+            Some(WorkspaceSwitch::Animation(anim)) => {
+                if anim.is_done() {
+                    self.workspace_switch = None;
+                    self.clean_up_workspaces();
+                }
             }
+            Some(WorkspaceSwitch::Gesture(gesture)) => {
+                // Make sure the last event time doesn't go too much out of date (for
+                // monitors not under cursor), causing sudden jumps.
+                //
+                // This happens after any dnd_scroll_gesture_scroll() calls (in
+                // Layout::advance_animations()), so it doesn't mess up the time delta there.
+                if let Some(last_time) = &mut gesture.dnd_last_event_time {
+                    let now = self.clock.now_unadjusted();
+                    if *last_time != now {
+                        *last_time = now;
+
+                        // If last_time was already == now, then dnd_scroll_gesture_scroll() must've
+                        // updated the gesture already. Therefore, when this code runs, the pointer
+                        // must be outside the DnD scrolling zone.
+                        gesture.dnd_nonzero_start_time = None;
+                    }
+                }
+
+                if let Some(anim) = &mut gesture.animation {
+                    if anim.is_done() {
+                        gesture.animation = None;
+                    }
+                }
+            }
+            None => (),
         }
 
         for ws in &mut self.workspaces {
@@ -782,7 +871,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub(super) fn are_animations_ongoing(&self) -> bool {
         self.workspace_switch
             .as_ref()
-            .is_some_and(|s| s.is_animation())
+            .is_some_and(|s| s.is_animation_ongoing())
             || self.workspaces.iter().any(|ws| ws.are_animations_ongoing())
     }
 
@@ -1330,9 +1419,44 @@ impl<W: LayoutElement> Monitor<W> {
             center_idx,
             start_idx: current_idx,
             current_idx,
+            animation: None,
             tracker: SwipeTracker::new(),
             is_touchpad,
             is_clamped: !self.overview_open,
+            dnd_last_event_time: None,
+            dnd_nonzero_start_time: None,
+        };
+        self.workspace_switch = Some(WorkspaceSwitch::Gesture(gesture));
+    }
+
+    pub fn dnd_scroll_gesture_begin(&mut self) {
+        if let Some(WorkspaceSwitch::Gesture(WorkspaceSwitchGesture {
+            dnd_last_event_time: Some(_),
+            ..
+        })) = &self.workspace_switch
+        {
+            // Already active.
+            return;
+        }
+
+        if !self.overview_open {
+            // This gesture is only for the overview.
+            return;
+        }
+
+        let center_idx = self.active_workspace_idx;
+        let current_idx = self.workspace_render_idx();
+
+        let gesture = WorkspaceSwitchGesture {
+            center_idx,
+            start_idx: current_idx,
+            current_idx,
+            animation: None,
+            tracker: SwipeTracker::new(),
+            is_touchpad: false,
+            is_clamped: false,
+            dnd_last_event_time: Some(self.clock.now_unadjusted()),
+            dnd_nonzero_start_time: None,
         };
         self.workspace_switch = Some(WorkspaceSwitch::Gesture(gesture));
     }
@@ -1347,7 +1471,7 @@ impl<W: LayoutElement> Monitor<W> {
             return None;
         };
 
-        if gesture.is_touchpad != is_touchpad {
+        if gesture.is_touchpad != is_touchpad || gesture.dnd_last_event_time.is_some() {
             return None;
         }
 
@@ -1389,6 +1513,91 @@ impl<W: LayoutElement> Monitor<W> {
         Some(true)
     }
 
+    pub fn dnd_scroll_gesture_scroll(&mut self, pos: Point<f64, Logical>, speed: f64) -> bool {
+        let zoom = self.overview_zoom();
+
+        let Some(WorkspaceSwitch::Gesture(gesture)) = &mut self.workspace_switch else {
+            return false;
+        };
+
+        let Some(last_time) = gesture.dnd_last_event_time else {
+            // Not a DnD scroll.
+            return false;
+        };
+
+        let config = &self.options.gestures.dnd_edge_workspace_switch;
+        let trigger_height = config.trigger_height.0;
+
+        // Restrict the scrolling horizontally to the strip of workspaces to avoid unwanted trigger
+        // after using the hot corner or during horizontal scroll.
+        let width = self.view_size.w * zoom;
+        let x = pos.x - (self.view_size.w - width) / 2.;
+
+        // Consider the working area so layer-shell docks and such don't prevent scrolling.
+        let y = pos.y - self.working_area.loc.y;
+        let height = self.working_area.size.h;
+
+        let y = y.clamp(0., height);
+        let trigger_height = trigger_height.clamp(0., height / 2.);
+
+        let delta = if x < 0. || width <= x {
+            // Outside the bounds horizontally.
+            0.
+        } else if y < trigger_height {
+            -(trigger_height - y)
+        } else if height - y < trigger_height {
+            trigger_height - (height - y)
+        } else {
+            0.
+        };
+
+        let delta = if trigger_height < 0.01 {
+            // Sanity check for trigger-height 0 or small window sizes.
+            0.
+        } else {
+            // Normalize to [0, 1].
+            delta / trigger_height
+        };
+        let delta = delta * speed;
+
+        let now = self.clock.now_unadjusted();
+        gesture.dnd_last_event_time = Some(now);
+
+        if delta == 0. {
+            // We're outside the scrolling zone.
+            gesture.dnd_nonzero_start_time = None;
+            return false;
+        }
+
+        let nonzero_start = *gesture.dnd_nonzero_start_time.get_or_insert(now);
+
+        // Delay starting the gesture a bit to avoid unwanted movement when dragging across
+        // monitors.
+        let delay = Duration::from_millis(u64::from(config.delay_ms));
+        if now.saturating_sub(nonzero_start) < delay {
+            return true;
+        }
+
+        let time_delta = now.saturating_sub(last_time).as_secs_f64();
+
+        let delta = delta * time_delta * config.max_speed.0;
+
+        gesture.tracker.push(delta, now);
+
+        let total_height = WORKSPACE_DND_EDGE_SCROLL_MOVEMENT;
+        let pos = gesture.tracker.pos() / total_height;
+        let unclamped = gesture.start_idx + pos;
+
+        let (min, max) = gesture.min_max(self.workspaces.len());
+        let clamped = unclamped.clamp(min, max);
+
+        // Make sure that DnD scrolling too much outside the min/max does not "build up".
+        gesture.start_idx += clamped - unclamped;
+        gesture.current_idx = clamped;
+
+        true
+    }
+
     pub fn workspace_switch_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
         let Some(WorkspaceSwitch::Gesture(gesture)) = &self.workspace_switch else {
             return false;
@@ -1399,7 +1608,9 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let zoom = self.overview_zoom();
-        let total_height = if gesture.is_touchpad {
+        let total_height = if gesture.dnd_last_event_time.is_some() {
+            WORKSPACE_DND_EDGE_SCROLL_MOVEMENT
+        } else if gesture.is_touchpad {
             WORKSPACE_GESTURE_MOVEMENT
         } else {
             self.workspace_size_with_gap(1.).h
@@ -1440,6 +1651,21 @@ impl<W: LayoutElement> Monitor<W> {
         )));
 
         true
+    }
+
+    pub fn dnd_scroll_gesture_end(&mut self) {
+        if !matches!(
+            self.workspace_switch,
+            Some(WorkspaceSwitch::Gesture(WorkspaceSwitchGesture {
+                dnd_last_event_time: Some(_),
+                ..
+            }))
+        ) {
+            // Not a DnD scroll.
+            return;
+        };
+
+        self.workspace_switch_gesture_end(None);
     }
 
     pub fn scale(&self) -> smithay::output::Scale {
