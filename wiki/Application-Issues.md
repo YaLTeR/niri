@@ -77,6 +77,8 @@ On some systems, Steam will show a fully black window.
 To fix this, navigate to Settings -> Interface (via Steam's tray icon, or by blindly finding the Steam menu at the top left of the window), then **disable** GPU accelerated rendering in web views.
 Restart Steam and it should now work fine.
 
+If you do not want to disable GPU accelerated rendering you can instead try to pass the launch argument `-system-composer` instead.
+
 Steam notifications don't run through the standard notification daemon and show up as floating windows in the center of the screen.
 You can move them to a more convenient location by adding a window rule in your niri config:
 
