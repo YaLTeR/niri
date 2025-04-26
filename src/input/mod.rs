@@ -29,12 +29,13 @@ use smithay::input::touch::{
 };
 use smithay::input::SeatHandler;
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, Size, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 use touch_move_grab::TouchMoveGrab;
+use touch_overview_grab::TouchOverviewGrab;
 
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
@@ -51,10 +52,12 @@ pub mod move_grab;
 pub mod pick_color_grab;
 pub mod pick_window_grab;
 pub mod resize_grab;
+pub mod scroll_swipe_gesture;
 pub mod scroll_tracker;
 pub mod spatial_movement_grab;
 pub mod swipe_tracker;
 pub mod touch_move_grab;
+pub mod touch_overview_grab;
 pub mod touch_resize_grab;
 
 use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
@@ -394,7 +397,7 @@ impl State {
                 }
 
                 let bindings = &this.niri.config.borrow().binds;
-                should_intercept_key(
+                let res = should_intercept_key(
                     &mut this.niri.suppressed_keys,
                     bindings,
                     mod_key,
@@ -406,7 +409,20 @@ impl State {
                     &this.niri.screenshot_ui,
                     this.niri.config.borrow().input.disable_power_key_handling,
                     is_inhibiting_shortcuts,
-                )
+                );
+
+                if matches!(res, FilterResult::Forward) {
+                    // If we didn't find any bind, try other hardcoded keys.
+                    if this.niri.keyboard_focus.is_overview() && pressed {
+                        if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
+                        {
+                            this.niri.suppressed_keys.insert(key_code);
+                            return FilterResult::Intercept(Some(bind));
+                        }
+                    }
+                }
+
+                res
             },
         ) else {
             return;
@@ -882,12 +898,38 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::FocusColumnLeftUnderMouse => {
+                if let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
+                    let ws_id = ws.id();
+                    let ws = {
+                        let mut workspaces = self.niri.layout.workspaces_mut();
+                        workspaces.find(|ws| ws.id() == ws_id).unwrap()
+                    };
+                    ws.focus_left();
+                    self.maybe_warp_cursor_to_focus();
+                    self.niri.layer_shell_on_demand_focus = None;
+                    self.niri.queue_redraw(&output);
+                }
+            }
             Action::FocusColumnRight => {
                 self.niri.layout.focus_right();
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
+            }
+            Action::FocusColumnRightUnderMouse => {
+                if let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
+                    let ws_id = ws.id();
+                    let ws = {
+                        let mut workspaces = self.niri.layout.workspaces_mut();
+                        workspaces.find(|ws| ws.id() == ws_id).unwrap()
+                    };
+                    ws.focus_right();
+                    self.maybe_warp_cursor_to_focus();
+                    self.niri.layer_shell_on_demand_focus = None;
+                    self.niri.queue_redraw(&output);
+                }
             }
             Action::FocusColumnFirst => {
                 self.niri.layout.focus_column_first();
@@ -1239,12 +1281,32 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::FocusWorkspaceDownUnderMouse => {
+                if let Some(output) = self.niri.output_under_cursor() {
+                    if let Some(mon) = self.niri.layout.monitor_for_output_mut(&output) {
+                        mon.switch_workspace_down();
+                        self.maybe_warp_cursor_to_focus();
+                        self.niri.layer_shell_on_demand_focus = None;
+                        self.niri.queue_redraw(&output);
+                    }
+                }
+            }
             Action::FocusWorkspaceUp => {
                 self.niri.layout.switch_workspace_up();
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
+            }
+            Action::FocusWorkspaceUpUnderMouse => {
+                if let Some(output) = self.niri.output_under_cursor() {
+                    if let Some(mon) = self.niri.layout.monitor_for_output_mut(&output) {
+                        mon.switch_workspace_up();
+                        self.maybe_warp_cursor_to_focus();
+                        self.niri.layer_shell_on_demand_focus = None;
+                        self.niri.queue_redraw(&output);
+                    }
+                }
             }
             Action::FocusWorkspace(reference) => {
                 if let Some((mut output, index)) =
@@ -1915,10 +1977,28 @@ impl State {
             Action::ClearDynamicCastTarget => {
                 self.set_dynamic_cast_target(CastTarget::Nothing);
             }
+            Action::ToggleOverview => {
+                self.niri.layout.toggle_overview();
+                self.niri.queue_redraw_all();
+            }
+            Action::OpenOverview => {
+                if self.niri.layout.open_overview() {
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::CloseOverview => {
+                if self.niri.layout.close_overview() {
+                    self.niri.queue_redraw_all();
+                }
+            }
         }
     }
 
     fn on_pointer_motion<I: InputBackend>(&mut self, event: I::PointerMotionEvent) {
+        let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
+        // Any of the early returns here mean that the pointer is not inside the hot corner.
+        self.niri.pointer_inside_hot_corner = false;
+
         // We need an output to be able to move the pointer.
         if self.niri.global_space.outputs().next().is_none() {
             return;
@@ -2095,6 +2175,22 @@ impl State {
 
         pointer.frame(self);
 
+        // contents_under() will return no surface when the hot corner should trigger.
+        let hot_corners = self.niri.config.borrow().gestures.hot_corners;
+        if !hot_corners.off
+            && pointer.current_focus().is_none()
+            && !self.niri.screenshot_ui.is_open()
+        {
+            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
+            if let Some((_, pos_within_output)) = self.niri.output_under(pos) {
+                let inside_hot_corner = hot_corner.contains(pos_within_output);
+                if inside_hot_corner && !was_inside_hot_corner {
+                    self.niri.layout.toggle_overview();
+                }
+                self.niri.pointer_inside_hot_corner = inside_hot_corner;
+            }
+        }
+
         // Activate a new confinement if necessary.
         self.niri.maybe_activate_pointer_constraint();
 
@@ -2119,6 +2215,10 @@ impl State {
         &mut self,
         event: I::PointerMotionAbsoluteEvent,
     ) {
+        let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
+        // Any of the early returns here mean that the pointer is not inside the hot corner.
+        self.niri.pointer_inside_hot_corner = false;
+
         let Some(pos) = self.compute_absolute_location(&event, None).or_else(|| {
             self.global_bounding_rectangle().map(|output_geo| {
                 event.position_transformed(output_geo.size) + output_geo.loc.to_f64()
@@ -2163,6 +2263,22 @@ impl State {
         );
 
         pointer.frame(self);
+
+        // contents_under() will return no surface when the hot corner should trigger.
+        let hot_corners = self.niri.config.borrow().gestures.hot_corners;
+        if !hot_corners.off
+            && pointer.current_focus().is_none()
+            && !self.niri.screenshot_ui.is_open()
+        {
+            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
+            if let Some((_, pos_within_output)) = self.niri.output_under(pos) {
+                let inside_hot_corner = hot_corner.contains(pos_within_output);
+                if inside_hot_corner && !was_inside_hot_corner {
+                    self.niri.layout.toggle_overview();
+                }
+                self.niri.pointer_inside_hot_corner = inside_hot_corner;
+            }
+        }
 
         self.niri.maybe_activate_pointer_constraint();
 
@@ -2235,10 +2351,53 @@ impl State {
             self.niri.pointer_hidden = false;
             self.niri.tablet_cursor_location = None;
 
+            let is_overview_open = self.niri.layout.is_overview_open();
+
+            if is_overview_open && !pointer.is_grabbed() && button == Some(MouseButton::Right) {
+                if let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
+                    let ws_id = ws.id();
+                    let ws_idx = self.niri.layout.find_workspace_by_id(ws_id).unwrap().0;
+
+                    self.niri.layout.focus_output(&output);
+
+                    let location = pointer.current_location();
+                    let start_data = PointerGrabStartData {
+                        focus: None,
+                        button: button_code,
+                        location,
+                    };
+                    self.niri
+                        .layout
+                        .view_offset_gesture_begin(&output, Some(ws_idx), false);
+                    let grab = SpatialMovementGrab::new(start_data, output, ws_id, true);
+                    pointer.set_grab(self, grab, serial, Focus::Clear);
+                    self.niri
+                        .cursor_manager
+                        .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));
+
+                    // FIXME: granular.
+                    self.niri.queue_redraw_all();
+                    return;
+                }
+            }
+
             if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
                 let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                 if mod_down {
-                    if let Some(output) = self.niri.output_under_cursor() {
+                    let output_ws = if is_overview_open {
+                        self.niri.workspace_under_cursor(true)
+                    } else {
+                        // We don't want to accidentally "catch" the wrong workspace during
+                        // animations.
+                        self.niri.output_under_cursor().and_then(|output| {
+                            let mon = self.niri.layout.monitor_for_output(&output)?;
+                            Some((output, mon.active_workspace_ref()))
+                        })
+                    };
+
+                    if let Some((output, ws)) = output_ws {
+                        let ws_id = ws.id();
+
                         self.niri.layout.focus_output(&output);
 
                         let location = pointer.current_location();
@@ -2247,7 +2406,7 @@ impl State {
                             button: button_code,
                             location,
                         };
-                        let grab = SpatialMovementGrab::new(start_data, output);
+                        let grab = SpatialMovementGrab::new(start_data, output, ws_id, false);
                         pointer.set_grab(self, grab, serial, Focus::Clear);
                         self.niri
                             .cursor_manager
@@ -2269,12 +2428,14 @@ impl State {
                 // Check if we need to start an interactive move.
                 if button == Some(MouseButton::Left) && !pointer.is_grabbed() {
                     let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
-                    if mod_down {
+                    if is_overview_open || mod_down {
                         let location = pointer.current_location();
                         let (output, pos_within_output) = self.niri.output_under(location).unwrap();
                         let output = output.clone();
 
-                        self.niri.layout.activate_window(&window);
+                        if !is_overview_open {
+                            self.niri.layout.activate_window(&window);
+                        }
 
                         if self.niri.layout.interactive_move_begin(
                             window.clone(),
@@ -2286,11 +2447,14 @@ impl State {
                                 button: button_code,
                                 location,
                             };
-                            let grab = MoveGrab::new(start_data, window.clone());
+                            let grab = MoveGrab::new(start_data, window.clone(), is_overview_open);
                             pointer.set_grab(self, grab, serial, Focus::Clear);
-                            self.niri
-                                .cursor_manager
-                                .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
+
+                            if !is_overview_open {
+                                self.niri
+                                    .cursor_manager
+                                    .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
+                            }
                         }
                     }
                 }
@@ -2365,7 +2529,20 @@ impl State {
                     }
                 }
 
-                self.niri.layout.activate_window(&window);
+                if !is_overview_open {
+                    self.niri.layout.activate_window(&window);
+                }
+
+                // FIXME: granular.
+                self.niri.queue_redraw_all();
+            } else if let Some((output, ws)) = is_overview_open
+                .then(|| self.niri.workspace_under_cursor(false))
+                .flatten()
+            {
+                let ws_idx = self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
+
+                self.niri.layout.focus_output(&output);
+                self.niri.layout.toggle_overview_to_workspace(ws_idx);
 
                 // FIXME: granular.
                 self.niri.queue_redraw_all();
@@ -2434,8 +2611,32 @@ impl State {
         self.niri.pointer_hidden = false;
         self.niri.tablet_cursor_location = None;
 
+        let timestamp = Duration::from_micros(event.time());
+
         let horizontal_amount_v120 = event.amount_v120(Axis::Horizontal);
         let vertical_amount_v120 = event.amount_v120(Axis::Vertical);
+
+        let is_overview_open = self.niri.layout.is_overview_open();
+
+        // We should only handle scrolling in the overview if the pointer is not over a (top or
+        // overlay) layer surface.
+        let should_handle_in_overview = if is_overview_open {
+            // FIXME: ideally this should happen after updating the pointer contents, which happens
+            // below. However, our pointer actions are supposed to act on the old surface, before
+            // updating the pointer contents.
+            pointer
+                .current_focus()
+                .map(|surface| self.niri.find_root_shell_surface(&surface))
+                .map_or(true, |root| {
+                    !self
+                        .niri
+                        .mapped_layer_surfaces
+                        .keys()
+                        .any(|layer| *layer.wl_surface() == root)
+                })
+        } else {
+            false
+        };
 
         // Handle wheel scroll bindings.
         if source == AxisSource::Wheel {
@@ -2443,17 +2644,53 @@ impl State {
             // Wayland. If there's no bind, reset the accumulator.
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
-            if self.niri.mods_with_wheel_binds.contains(&modifiers) {
+            let should_handle =
+                should_handle_in_overview || self.niri.mods_with_wheel_binds.contains(&modifiers);
+            if should_handle {
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.horizontal_wheel_tracker.accumulate(horizontal);
                 if ticks != 0 {
-                    let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
-                    let bind_left =
-                        find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, mods);
-                    let bind_right =
-                        find_configured_bind(bindings, mod_key, Trigger::WheelScrollRight, mods);
-                    drop(config);
+                    let (bind_left, bind_right) = if should_handle_in_overview
+                        && modifiers.is_empty()
+                    {
+                        let bind_left = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollLeft,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusColumnLeftUnderMouse,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        let bind_right = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollRight,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusColumnRightUnderMouse,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        (bind_left, bind_right)
+                    } else {
+                        let config = self.niri.config.borrow();
+                        let bindings = &config.binds;
+                        let bind_left =
+                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, mods);
+                        let bind_right = find_configured_bind(
+                            bindings,
+                            mod_key,
+                            Trigger::WheelScrollRight,
+                            mods,
+                        );
+                        (bind_left, bind_right)
+                    };
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
@@ -2470,13 +2707,68 @@ impl State {
                 let vertical = vertical_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.vertical_wheel_tracker.accumulate(vertical);
                 if ticks != 0 {
-                    let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
-                    let bind_up =
-                        find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, mods);
-                    let bind_down =
-                        find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods);
-                    drop(config);
+                    let (bind_up, bind_down) = if should_handle_in_overview && modifiers.is_empty()
+                    {
+                        let bind_up = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollUp,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusWorkspaceUpUnderMouse,
+                            repeat: true,
+                            cooldown: Some(Duration::from_millis(50)),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        let bind_down = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollDown,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusWorkspaceDownUnderMouse,
+                            repeat: true,
+                            cooldown: Some(Duration::from_millis(50)),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        (bind_up, bind_down)
+                    } else if should_handle_in_overview && modifiers == Modifiers::SHIFT {
+                        let bind_up = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollUp,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusColumnLeftUnderMouse,
+                            repeat: true,
+                            cooldown: Some(Duration::from_millis(50)),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        let bind_down = Some(Bind {
+                            key: Key {
+                                trigger: Trigger::WheelScrollDown,
+                                modifiers: Modifiers::empty(),
+                            },
+                            action: Action::FocusColumnRightUnderMouse,
+                            repeat: true,
+                            cooldown: Some(Duration::from_millis(50)),
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        });
+                        (bind_up, bind_down)
+                    } else {
+                        let config = self.niri.config.borrow();
+                        let bindings = &config.binds;
+                        let bind_up =
+                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, mods);
+                        let bind_down =
+                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods);
+                        (bind_up, bind_down)
+                    };
 
                     if let Some(down) = bind_down {
                         for _ in 0..ticks {
@@ -2504,8 +2796,106 @@ impl State {
         if source == AxisSource::Finger {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
+
+            let horizontal = horizontal_amount.unwrap_or(0.);
+            let vertical = vertical_amount.unwrap_or(0.);
+
+            if should_handle_in_overview && modifiers.is_empty() {
+                let mut redraw = false;
+
+                let action = self
+                    .niri
+                    .overview_scroll_swipe_gesture
+                    .update(horizontal, vertical);
+                let is_vertical = self.niri.overview_scroll_swipe_gesture.is_vertical();
+
+                if action.end() {
+                    if is_vertical {
+                        redraw |= self
+                            .niri
+                            .layout
+                            .workspace_switch_gesture_end(Some(true))
+                            .is_some();
+                    } else {
+                        redraw |= self
+                            .niri
+                            .layout
+                            .view_offset_gesture_end(Some(true))
+                            .is_some();
+                    }
+                } else {
+                    // Maybe begin, then update.
+                    if is_vertical {
+                        if action.begin() {
+                            if let Some(output) = self.niri.output_under_cursor() {
+                                self.niri
+                                    .layout
+                                    .workspace_switch_gesture_begin(&output, true);
+                                redraw = true;
+                            }
+                        }
+
+                        let res = self
+                            .niri
+                            .layout
+                            .workspace_switch_gesture_update(vertical, timestamp, true);
+                        if let Some(Some(_)) = res {
+                            redraw = true;
+                        }
+                    } else {
+                        if action.begin() {
+                            if let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
+                                let ws_id = ws.id();
+                                let ws_idx =
+                                    self.niri.layout.find_workspace_by_id(ws_id).unwrap().0;
+
+                                self.niri.layout.view_offset_gesture_begin(
+                                    &output,
+                                    Some(ws_idx),
+                                    true,
+                                );
+                                redraw = true;
+                            }
+                        }
+
+                        let res = self
+                            .niri
+                            .layout
+                            .view_offset_gesture_update(horizontal, timestamp, true);
+                        if let Some(Some(_)) = res {
+                            redraw = true;
+                        }
+                    }
+                }
+
+                if redraw {
+                    self.niri.queue_redraw_all();
+                }
+
+                return;
+            } else {
+                let mut redraw = false;
+                if self.niri.overview_scroll_swipe_gesture.reset() {
+                    if self.niri.overview_scroll_swipe_gesture.is_vertical() {
+                        redraw |= self
+                            .niri
+                            .layout
+                            .workspace_switch_gesture_end(Some(true))
+                            .is_some();
+                    } else {
+                        redraw |= self
+                            .niri
+                            .layout
+                            .view_offset_gesture_end(Some(true))
+                            .is_some();
+                    }
+                }
+                if redraw {
+                    self.niri.queue_redraw_all();
+                }
+            }
+
             if self.niri.mods_with_finger_scroll_binds.contains(&modifiers) {
-                let horizontal = horizontal_amount.unwrap_or(0.);
                 let ticks = self
                     .niri
                     .horizontal_finger_scroll_tracker
@@ -2531,7 +2921,6 @@ impl State {
                     }
                 }
 
-                let vertical = vertical_amount.unwrap_or(0.);
                 let ticks = self
                     .niri
                     .vertical_finger_scroll_tracker
@@ -2571,13 +2960,14 @@ impl State {
             AxisSource::Finger => self.niri.config.borrow().input.touchpad.scroll_factor,
             _ => None,
         };
+        let scroll_factor = scroll_factor.map(|x| x.0).unwrap_or(1.);
+
         let window_scroll_factor = pointer
             .current_focus()
             .map(|focused| self.niri.find_root_shell_surface(&focused))
             .and_then(|root| self.niri.layout.find_window_and_output(&root).unzip().0)
             .and_then(|window| window.rules().scroll_factor);
-        let scroll_factor =
-            scroll_factor.map(|x| x.0).unwrap_or(1.) * window_scroll_factor.unwrap_or(1.);
+        let scroll_factor = scroll_factor * window_scroll_factor.unwrap_or(1.);
 
         let horizontal_amount = horizontal_amount.unwrap_or_else(|| {
             // Winit backend, discrete scrolling.
@@ -2676,6 +3066,8 @@ impl State {
         let tool = self.niri.seat.tablet_seat().get_tool(&event.tool());
 
         if let Some(tool) = tool {
+            let is_overview_open = self.niri.layout.is_overview_open();
+
             match event.tip_state() {
                 TabletToolTipState::Down => {
                     let serial = SERIAL_COUNTER.next_serial();
@@ -2684,7 +3076,30 @@ impl State {
                     if let Some(pos) = self.niri.tablet_cursor_location {
                         let under = self.niri.contents_under(pos);
                         if let Some((window, _)) = under.window {
+                            if let Some(output) = is_overview_open.then_some(under.output).flatten()
+                            {
+                                let mut workspaces = self.niri.layout.workspaces();
+                                if let Some(ws_idx) = workspaces.find_map(|(_, ws_idx, ws)| {
+                                    ws.windows().any(|w| w.window == window).then_some(ws_idx)
+                                }) {
+                                    drop(workspaces);
+                                    self.niri.layout.focus_output(&output);
+                                    self.niri.layout.toggle_overview_to_workspace(ws_idx);
+                                }
+                            }
+
                             self.niri.layout.activate_window(&window);
+
+                            // FIXME: granular.
+                            self.niri.queue_redraw_all();
+                        } else if let Some((output, ws)) = is_overview_open
+                            .then(|| self.niri.workspace_under(false, pos))
+                            .flatten()
+                        {
+                            let ws_idx = self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
+
+                            self.niri.layout.focus_output(&output);
+                            self.niri.layout.toggle_overview_to_workspace(ws_idx);
 
                             // FIXME: granular.
                             self.niri.queue_redraw_all();
@@ -2773,6 +3188,12 @@ impl State {
 
             // We handled this event.
             return;
+        } else if event.fingers() == 4 {
+            self.niri.layout.overview_gesture_begin();
+            self.niri.queue_redraw_all();
+
+            // We handled this event.
+            return;
         }
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -2808,6 +3229,8 @@ impl State {
             delta_y = libinput_event.dy_unaccelerated();
         }
 
+        let uninverted_delta_y = delta_y;
+
         let device = event.device();
         if let Some(device) = (&device as &dyn Any).downcast_ref::<input::Device>() {
             if device.config_scroll_natural_scroll_enabled() {
@@ -2815,6 +3238,8 @@ impl State {
                 delta_y = -delta_y;
             }
         }
+
+        let is_overview_open = self.niri.layout.is_overview_open();
 
         if let Some((cx, cy)) = &mut self.niri.gesture_swipe_3f_cumulative {
             *cx += delta_x;
@@ -2827,7 +3252,23 @@ impl State {
 
                 if let Some(output) = self.niri.output_under_cursor() {
                     if cx.abs() > cy.abs() {
-                        self.niri.layout.view_offset_gesture_begin(&output, true);
+                        let output_ws = if is_overview_open {
+                            self.niri.workspace_under_cursor(true)
+                        } else {
+                            // We don't want to accidentally "catch" the wrong workspace during
+                            // animations.
+                            self.niri.output_under_cursor().and_then(|output| {
+                                let mon = self.niri.layout.monitor_for_output(&output)?;
+                                Some((output, mon.active_workspace_ref()))
+                            })
+                        };
+
+                        if let Some((output, ws)) = output_ws {
+                            let ws_idx = self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
+                            self.niri
+                                .layout
+                                .view_offset_gesture_begin(&output, Some(ws_idx), true);
+                        }
                     } else {
                         self.niri
                             .layout
@@ -2862,6 +3303,17 @@ impl State {
             handled = true;
         }
 
+        let res = self
+            .niri
+            .layout
+            .overview_gesture_update(-uninverted_delta_y, timestamp);
+        if let Some(redraw) = res {
+            if redraw {
+                self.niri.queue_redraw_all();
+            }
+            handled = true;
+        }
+
         if handled {
             // We handled this event.
             return;
@@ -2886,21 +3338,21 @@ impl State {
         self.niri.gesture_swipe_3f_cumulative = None;
 
         let mut handled = false;
-        let res = self
-            .niri
-            .layout
-            .workspace_switch_gesture_end(event.cancelled(), Some(true));
+        let res = self.niri.layout.workspace_switch_gesture_end(Some(true));
         if let Some(output) = res {
             self.niri.queue_redraw(&output);
             handled = true;
         }
 
-        let res = self
-            .niri
-            .layout
-            .view_offset_gesture_end(event.cancelled(), Some(true));
+        let res = self.niri.layout.view_offset_gesture_end(Some(true));
         if let Some(output) = res {
             self.niri.queue_redraw(&output);
+            handled = true;
+        }
+
+        let res = self.niri.layout.overview_gesture_end();
+        if res {
+            self.niri.queue_redraw_all();
             handled = true;
         }
 
@@ -3057,12 +3509,45 @@ impl State {
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
         if !handle.is_grabbed() {
-            if let Some((window, _)) = under.window {
+            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+            let mods = modifiers_from_state(mods);
+            let mod_down = mods.contains(mod_key.to_modifiers());
+
+            if self.niri.layout.is_overview_open() && !mod_down && under.layer.is_none() {
+                let (output, pos_within_output) = self.niri.output_under(touch_location).unwrap();
+                let output = output.clone();
+
+                let mut matched_narrow = true;
+                let mut ws = self.niri.workspace_under(false, touch_location);
+                if ws.is_none() {
+                    matched_narrow = false;
+                    ws = self.niri.workspace_under(true, touch_location);
+                }
+                let ws_id = ws.map(|(_, ws)| ws.id());
+
+                let mapped = self.niri.window_under(touch_location);
+                let window = mapped.map(|mapped| mapped.window.clone());
+
+                let start_data = TouchGrabStartData {
+                    focus: None,
+                    slot: evt.slot(),
+                    location: touch_location,
+                };
+                let start_timestamp = Duration::from_micros(evt.time());
+                let grab = TouchOverviewGrab::new(
+                    start_data,
+                    start_timestamp,
+                    output,
+                    pos_within_output,
+                    ws_id,
+                    matched_narrow,
+                    window,
+                );
+                handle.set_grab(self, grab, serial);
+            } else if let Some((window, _)) = under.window {
                 self.niri.layout.activate_window(&window);
 
                 // Check if we need to start an interactive move.
-                let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
-                let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                 if mod_down {
                     let (output, pos_within_output) =
                         self.niri.output_under(touch_location).unwrap();
@@ -3498,6 +3983,41 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::SetWindowHeight(_)
             | Action::SetColumnWidth(_)
     )
+}
+
+fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
+    let mods = modifiers_from_state(mods);
+    if !mods.is_empty() {
+        return None;
+    }
+
+    let mut repeat = true;
+    let action = match raw {
+        Keysym::Escape | Keysym::Return => {
+            repeat = false;
+            Action::ToggleOverview
+        }
+        Keysym::Left => Action::FocusColumnLeft,
+        Keysym::Right => Action::FocusColumnRight,
+        Keysym::Up => Action::FocusWindowOrWorkspaceUp,
+        Keysym::Down => Action::FocusWindowOrWorkspaceDown,
+        _ => {
+            return None;
+        }
+    };
+
+    Some(Bind {
+        key: Key {
+            trigger: Trigger::Keysym(raw),
+            modifiers: Modifiers::empty(),
+        },
+        action,
+        repeat,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: false,
+        hotkey_overlay_title: None,
+    })
 }
 
 pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::Device) {

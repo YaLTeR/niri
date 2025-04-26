@@ -50,6 +50,10 @@ animations {
         duration-ms 200
         curve "ease-out-quad"
     }
+
+    overview-open-close {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
 }
 ```
 
@@ -370,6 +374,20 @@ animations {
     screenshot-ui-open {
         duration-ms 200
         curve "ease-out-quad"
+    }
+}
+```
+
+#### `overview-open-close`
+
+<sup>Since: next release</sup>
+
+The open/close zoom animation of the [Overview](./Overview.md).
+
+```kdl
+animations {
+    overview-open-close {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
 }
 ```

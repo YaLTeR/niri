@@ -14,6 +14,16 @@ gestures {
         delay-ms 100
         max-speed 1500
     }
+
+    dnd-edge-workspace-switch {
+        trigger-height 50
+        delay-ms 100
+        max-speed 1500
+    }
+
+    hot-corners {
+        // off
+    }
 }
 ```
 
@@ -38,6 +48,49 @@ gestures {
     dnd-edge-view-scroll {
         trigger-width 100
         max-speed 3000
+    }
+}
+```
+
+### `dnd-edge-workspace-switch`
+
+<sup>Since: next release</sup>
+
+Scroll the workspaces up/down when moving the mouse cursor against a monitor edge during drag-and-drop (DnD) while in the overview.
+Also works on a touchscreen.
+
+The options are:
+
+- `trigger-height`: size of the area near the monitor edge that will trigger the scrolling, in logical pixels.
+- `delay-ms`: delay in milliseconds before the scrolling starts.
+Avoids unwanted scrolling when dragging things across monitors.
+- `max-speed`: maximum scrolling speed; 1500 corresponds to one screen height per second.
+The scrolling speed increases linearly as you move your mouse cursor from `trigger-width` to the very edge of the monitor.
+
+```kdl
+gestures {
+    // Increase the trigger area and maximum speed.
+    dnd-edge-workspace-switch {
+        trigger-height 100
+        max-speed 3000
+    }
+}
+```
+
+### `hot-corners`
+
+<sup>Since: next release</sup>
+
+Put your mouse at the very top-left corner of a monitor to toggle the overview.
+Also works during drag-and-dropping something.
+
+`off` disables the hot corners.
+
+```kdl
+// Disable the hot corners.
+gestures {
+    hot-corners {
+        off
     }
 }
 ```

@@ -3,14 +3,14 @@ use std::iter::{self, zip};
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CenterFocusedColumn, CornerRadius, PresetSize, Struts};
+use niri_config::{CenterFocusedColumn, PresetSize, Struts};
 use niri_ipc::{ColumnDisplay, SizeChange};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
-use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
+use super::monitor::InsertPosition;
 use super::tab_indicator::{TabIndicator, TabIndicatorRenderElement, TabInfo};
 use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
 use super::workspace::{InteractiveResize, ResolvedSize};
@@ -67,12 +67,6 @@ pub struct ScrollingSpace<W: LayoutElement> {
     /// Windows in the closing animation.
     closing_windows: Vec<ClosingWindow>,
 
-    /// Indication where an interactively-moved window is about to be placed.
-    insert_hint: Option<InsertHint>,
-
-    /// Insert hint element for rendering.
-    insert_hint_element: InsertHintElement,
-
     /// View size for this space.
     view_size: Size<f64, Logical>,
 
@@ -96,21 +90,7 @@ niri_render_elements! {
         Tile = TileRenderElement<R>,
         ClosingWindow = ClosingWindowRenderElement,
         TabIndicator = TabIndicatorRenderElement,
-        InsertHint = InsertHintRenderElement,
     }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum InsertPosition {
-    NewColumn(usize),
-    InColumn(usize, usize),
-    Floating,
-}
-
-#[derive(Debug)]
-pub struct InsertHint {
-    pub position: InsertPosition,
-    pub corner_radius: CornerRadius,
 }
 
 /// Extra per-column data.
@@ -133,6 +113,10 @@ pub(super) enum ViewOffset {
 #[derive(Debug)]
 pub(super) struct ViewGesture {
     current_view_offset: f64,
+    /// Animation for the extra offset to the current position.
+    ///
+    /// For example, when we need to activate a specific window during a DnD scroll.
+    animation: Option<Animation>,
     tracker: SwipeTracker,
     delta_from_tracker: f64,
     // The view offset we'll use if needed for activate_prev_column_on_removal.
@@ -283,8 +267,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             activate_prev_column_on_removal: None,
             view_offset_before_fullscreen: None,
             closing_windows: Vec::new(),
-            insert_hint: None,
-            insert_hint_element: InsertHintElement::new(options.insert_hint),
             view_size,
             working_area,
             scale,
@@ -307,8 +289,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             data.update(column);
         }
 
-        self.insert_hint_element.update_config(options.insert_hint);
-
         self.view_size = view_size;
         self.working_area = working_area;
         self.scale = scale;
@@ -319,8 +299,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         for tile in self.tiles_mut() {
             tile.update_shaders();
         }
-
-        self.insert_hint_element.update_shaders();
     }
 
     pub fn advance_animations(&mut self) {
@@ -347,6 +325,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     gesture.dnd_nonzero_start_time = None;
                 }
             }
+
+            if let Some(anim) = &mut gesture.animation {
+                if anim.is_done() {
+                    gesture.animation = None;
+                }
+            }
         }
 
         for col in &mut self.columns {
@@ -360,7 +344,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.view_offset.is_animation()
+        self.view_offset.is_animation_ongoing()
             || self.columns.iter().any(Column::are_animations_ongoing)
             || !self.closing_windows.is_empty()
     }
@@ -381,18 +365,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let col_pos = view_pos - col_off - col.render_offset();
             let view_rect = Rectangle::new(col_pos, view_size);
             col.update_render_elements(is_active, view_rect);
-        }
-
-        if let Some(insert_hint) = &self.insert_hint {
-            if let Some(area) = self.insert_hint_area(insert_hint) {
-                let view_rect = Rectangle::new(area.loc.upscale(-1.), view_size);
-                self.insert_hint_element.update_render_elements(
-                    area.size,
-                    view_rect,
-                    insert_hint.corner_radius,
-                    self.scale,
-                );
-            }
         }
     }
 
@@ -616,6 +588,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     return self.compute_new_view_offset_for_column_fit(target_x, idx);
                 };
 
+                // Activating the same column.
+                if prev_idx == idx {
+                    return self.compute_new_view_offset_for_column_fit(target_x, idx);
+                }
+
                 // Always take the left or right neighbor of the target as the source.
                 let source_idx = if prev_idx > idx {
                     min(idx + 1, self.columns.len() - 1)
@@ -664,8 +641,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         new_view_offset: f64,
         config: niri_config::Animation,
     ) {
-        self.view_offset.cancel_gesture();
-
         let new_col_x = self.column_x(idx);
         let old_col_x = self.column_x(self.active_column_idx);
         let offset_delta = old_col_x - new_col_x;
@@ -682,14 +657,28 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        // FIXME: also compute and use current velocity.
-        self.view_offset = ViewOffset::Animation(Animation::new(
-            self.clock.clone(),
-            self.view_offset.current(),
-            new_view_offset,
-            0.,
-            config,
-        ));
+        match &mut self.view_offset {
+            ViewOffset::Gesture(gesture) if gesture.dnd_last_event_time.is_some() => {
+                gesture.stationary_view_offset = new_view_offset;
+
+                let current_pos = gesture.current_view_offset - gesture.delta_from_tracker;
+                gesture.delta_from_tracker = new_view_offset - current_pos;
+                let offset_delta = new_view_offset - gesture.current_view_offset;
+                gesture.current_view_offset = new_view_offset;
+
+                gesture.animate_from(-offset_delta, self.clock.clone(), config);
+            }
+            _ => {
+                // FIXME: also compute and use current velocity.
+                self.view_offset = ViewOffset::Animation(Animation::new(
+                    self.clock.clone(),
+                    self.view_offset.current(),
+                    new_view_offset,
+                    0.,
+                    config,
+                ));
+            }
+        }
     }
 
     fn animate_view_offset_to_column_centered(
@@ -735,7 +724,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     fn activate_column_with_anim_config(&mut self, idx: usize, config: niri_config::Animation) {
-        if self.active_column_idx == idx {
+        if self.active_column_idx == idx
+            // During a DnD scroll, animate even when activating the same window, for DnD hold.
+            && (self.columns.is_empty() || !self.view_offset.is_dnd_scroll())
+        {
             return;
         }
 
@@ -746,26 +738,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             config,
         );
 
-        self.active_column_idx = idx;
+        if self.active_column_idx != idx {
+            self.active_column_idx = idx;
 
-        // A different column was activated; reset the flag.
-        self.activate_prev_column_on_removal = None;
-        self.view_offset_before_fullscreen = None;
-        self.interactive_resize = None;
-    }
-
-    pub fn set_insert_hint(&mut self, insert_hint: InsertHint) {
-        if self.options.insert_hint.off {
-            return;
+            // A different column was activated; reset the flag.
+            self.activate_prev_column_on_removal = None;
+            self.view_offset_before_fullscreen = None;
+            self.interactive_resize = None;
         }
-        self.insert_hint = Some(insert_hint);
     }
 
-    pub fn clear_insert_hint(&mut self) {
-        self.insert_hint = None;
-    }
-
-    pub fn get_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
+    pub(super) fn insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
         if self.columns.is_empty() {
             return InsertPosition::NewColumn(0);
         }
@@ -1612,7 +1595,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Preserve the camera position when moving to the left.
         let view_offset_delta = -self.column_x(self.active_column_idx) + current_col_x;
-        self.view_offset.cancel_gesture();
         self.view_offset.offset(view_offset_delta);
 
         // The column we just moved is offset by the difference between its new and old position.
@@ -2244,8 +2226,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             })
     }
 
-    fn insert_hint_area(&self, insert_hint: &InsertHint) -> Option<Rectangle<f64, Logical>> {
-        let mut hint_area = match insert_hint.position {
+    pub(super) fn insert_hint_area(
+        &self,
+        position: InsertPosition,
+    ) -> Option<Rectangle<f64, Logical>> {
+        let mut hint_area = match position {
             InsertPosition::NewColumn(column_index) => {
                 if column_index == 0 || column_index == self.columns.len() {
                     let size =
@@ -2335,19 +2320,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         } else {
             hint_area.loc.x -= self.view_pos();
         }
-
-        let view_size = self.view_size;
-
-        // Make sure the hint is at least partially visible.
-        if matches!(insert_hint.position, InsertPosition::NewColumn(_)) {
-            hint_area.loc.x = hint_area.loc.x.max(-hint_area.size.w / 2.);
-            hint_area.loc.x = hint_area.loc.x.min(view_size.w - hint_area.size.w / 2.);
-        }
-
-        // Round to physical pixels.
-        hint_area = hint_area
-            .to_physical_precise_round(self.scale)
-            .to_logical(self.scale);
 
         Some(hint_area)
     }
@@ -2699,17 +2671,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let scale = Scale::from(self.scale);
 
-        // Draw the insert hint.
-        if let Some(insert_hint) = &self.insert_hint {
-            if let Some(area) = self.insert_hint_area(insert_hint) {
-                rv.extend(
-                    self.insert_hint_element
-                        .render(renderer, area.loc)
-                        .map(ScrollingSpaceRenderElement::InsertHint),
-                );
-            }
-        }
-
         // Draw the closing windows on top of the other windows.
         let view_rect = Rectangle::new(Point::from((self.view_pos(), 0.)), self.view_size);
         for closing in self.closing_windows.iter().rev() {
@@ -2824,6 +2785,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let gesture = ViewGesture {
             current_view_offset: self.view_offset.current(),
+            animation: None,
             tracker: SwipeTracker::new(),
             delta_from_tracker: self.view_offset.current(),
             stationary_view_offset: self.view_offset.stationary(),
@@ -2846,6 +2808,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let gesture = ViewGesture {
             current_view_offset: self.view_offset.current(),
+            animation: None,
             tracker: SwipeTracker::new(),
             delta_from_tracker: self.view_offset.current(),
             stationary_view_offset: self.view_offset.stationary(),
@@ -2886,14 +2849,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         Some(true)
     }
 
-    pub fn dnd_scroll_gesture_scroll(&mut self, delta: f64) {
+    pub fn dnd_scroll_gesture_scroll(&mut self, delta: f64) -> bool {
         let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
-            return;
+            return false;
         };
 
         let Some(last_time) = gesture.dnd_last_event_time else {
             // Not a DnD scroll.
-            return;
+            return false;
         };
 
         let config = &self.options.gestures.dnd_edge_view_scroll;
@@ -2904,7 +2867,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if delta == 0. {
             // We're outside the scrolling zone.
             gesture.dnd_nonzero_start_time = None;
-            return;
+            return false;
         }
 
         let nonzero_start = *gesture.dnd_nonzero_start_time.get_or_insert(now);
@@ -2913,7 +2876,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // monitors.
         let delay = Duration::from_millis(u64::from(config.delay_ms));
         if now.saturating_sub(nonzero_start) < delay {
-            return;
+            return true;
         }
 
         let time_delta = now.saturating_sub(last_time).as_secs_f64();
@@ -2957,9 +2920,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         gesture.delta_from_tracker += clamped_offset - view_offset;
         gesture.current_view_offset = clamped_offset;
+        true
     }
 
-    pub fn view_offset_gesture_end(&mut self, _cancelled: bool, is_touchpad: Option<bool>) -> bool {
+    pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
         let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
             return false;
         };
@@ -3249,7 +3213,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        self.view_offset_gesture_end(false, None);
+        self.view_offset_gesture_end(None);
     }
 
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
@@ -3541,7 +3505,10 @@ impl ViewOffset {
         match self {
             ViewOffset::Static(offset) => *offset,
             ViewOffset::Animation(anim) => anim.value(),
-            ViewOffset::Gesture(gesture) => gesture.current_view_offset,
+            ViewOffset::Gesture(gesture) => {
+                gesture.current_view_offset
+                    + gesture.animation.as_ref().map_or(0., |anim| anim.value())
+            }
         }
     }
 
@@ -3571,21 +3538,30 @@ impl ViewOffset {
         matches!(self, Self::Static(_))
     }
 
-    pub fn is_animation(&self) -> bool {
-        matches!(self, Self::Animation(_))
-    }
-
     pub fn is_gesture(&self) -> bool {
         matches!(self, Self::Gesture(_))
+    }
+
+    pub fn is_dnd_scroll(&self) -> bool {
+        matches!(&self, ViewOffset::Gesture(gesture) if gesture.dnd_last_event_time.is_some())
+    }
+
+    pub fn is_animation_ongoing(&self) -> bool {
+        match self {
+            ViewOffset::Static(_) => false,
+            ViewOffset::Animation(_) => true,
+            ViewOffset::Gesture(gesture) => gesture.animation.is_some(),
+        }
     }
 
     pub fn offset(&mut self, delta: f64) {
         match self {
             ViewOffset::Static(offset) => *offset += delta,
             ViewOffset::Animation(anim) => anim.offset(delta),
-            ViewOffset::Gesture(_gesture) => {
-                // Is this needed?
-                error!("cancel gesture before offsetting");
+            ViewOffset::Gesture(gesture) => {
+                gesture.stationary_view_offset += delta;
+                gesture.delta_from_tracker += delta;
+                gesture.current_view_offset += delta;
             }
         }
     }
@@ -3598,6 +3574,13 @@ impl ViewOffset {
 
     pub fn stop_anim_and_gesture(&mut self) {
         *self = ViewOffset::Static(self.current());
+    }
+}
+
+impl ViewGesture {
+    fn animate_from(&mut self, from: f64, clock: Clock, config: niri_config::Animation) {
+        let current = self.animation.as_ref().map_or(0., Animation::value);
+        self.animation = Some(Animation::new(clock, from + current, 0., 0., config));
     }
 }
 
