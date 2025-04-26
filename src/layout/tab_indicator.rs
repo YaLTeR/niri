@@ -84,7 +84,8 @@ impl TabIndicator {
         let progress = self.open_anim.as_ref().map_or(1., |a| a.value().max(0.));
 
         let width = round_max1(self.config.width.0);
-        let gap = round_max1(self.config.gap.0);
+        let gap = self.config.gap.0;
+        let gap = round_max1(gap.abs()).copysign(gap);
         let gaps_between = round_max1(self.config.gaps_between_tabs.0);
 
         let position = self.config.position;
