@@ -15,7 +15,8 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
-    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKDROP_COLOR, DEFAULT_BACKGROUND_COLOR, DEFAULT_MRU_COMMIT_MS,
+    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKDROP_COLOR, DEFAULT_BACKGROUND_COLOR,
+    DEFAULT_MRU_COMMIT_MS,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -398,7 +399,7 @@ pub struct Niri {
     // Only defined when there is an active traversal in progress
     pub window_mru: Option<WindowMRU>,
 
-    pending_mru_commit: Option<PendingMruCommit>,    
+    pending_mru_commit: Option<PendingMruCommit>,
 }
 
 #[derive(Debug)]
@@ -2572,7 +2573,7 @@ impl Niri {
             dynamic_cast_id_for_portal: MappedId::next(),
 
             window_mru: None,
-            pending_mru_commit: None,            
+            pending_mru_commit: None,
         };
 
         niri.reset_pointer_inactivity_timer();
