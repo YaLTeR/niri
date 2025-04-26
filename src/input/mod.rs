@@ -2,7 +2,7 @@ use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
@@ -381,48 +381,77 @@ impl State {
                     }
                 }
 
-                if pressed
-                    && raw == Some(Keysym::Escape)
-                    && (this.niri.pick_window.is_some() || this.niri.pick_color.is_some())
-                {
-                    // We window picking state so the pick window grab must be active.
-                    // Unsetting it cancels window picking.
-                    this.niri
-                        .seat
-                        .get_pointer()
-                        .unwrap()
-                        .unset_grab(this, serial, time);
-                    this.niri.suppressed_keys.insert(key_code);
-                    return FilterResult::Intercept(None);
-                }
-
-                let bindings = &this.niri.config.borrow().binds;
-                let res = should_intercept_key(
-                    &mut this.niri.suppressed_keys,
-                    bindings,
-                    mod_key,
-                    key_code,
-                    modified,
-                    raw,
-                    pressed,
-                    *mods,
-                    &this.niri.screenshot_ui,
-                    this.niri.config.borrow().input.disable_power_key_handling,
-                    is_inhibiting_shortcuts,
-                );
-
-                if matches!(res, FilterResult::Forward) {
-                    // If we didn't find any bind, try other hardcoded keys.
-                    if this.niri.keyboard_focus.is_overview() && pressed {
-                        if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
-                        {
-                            this.niri.suppressed_keys.insert(key_code);
-                            return FilterResult::Intercept(Some(bind));
-                        }
+                // check if alt key was released while there was an active
+                // window-mru list. If so,  drop the list and update the current window's timestamp.
+                // window-mru is cancelled *even* when state is locked, however the
+                // focus timestamp on the active window will not be updated
+                if !mods.alt && this.niri.window_mru.take().is_some() && !this.niri.is_locked() {
+                    if let Some(m) = this
+                        .niri
+                        .layout
+                        .active_workspace_mut()
+                        .and_then(|ws| ws.active_window_mut())
+                    {
+                        m.update_focus_timestamp(Instant::now());
                     }
                 }
 
-                res
+                if pressed && raw == Some(Keysym::Escape) {
+                    // If the ESC key was pressed with the Alt modifier and
+                    // there is an active window-mru, cancel the window-mru and
+                    // refocus the initial window (first in the list).
+                    if mods.alt {
+                        if let Some(id) = this
+                            .niri
+                            .window_mru
+                            .take()
+                            .and_then(|wmru| wmru.ids.into_iter().next())
+                        {
+                            this.niri.suppressed_keys.insert(key_code);
+                            let window = this.niri.layout.windows().find(|(_, m)| m.id() == id);
+                            let window = window.map(|(_, m)| m.window.clone());
+                            if let Some(window) = window {
+                                this.focus_window(&window);
+                                return FilterResult::Intercept(None);
+                            }
+                        }
+                    }
+                    if this.niri.pick_window.is_some() || this.niri.pick_color.is_some() {
+                        // We window picking state so the pick window grab must be active.
+                        // Unsetting it cancels window picking.
+                        this.niri
+                            .seat
+                            .get_pointer()
+                            .unwrap()
+                            .unset_grab(this, serial, time);
+                        this.niri.suppressed_keys.insert(key_code);
+                        return FilterResult::Intercept(None);
+                    }
+                }
+
+                let intercept_result = {
+                    let bindings = &this.niri.config.borrow().binds;
+                    should_intercept_key(
+                        &mut this.niri.suppressed_keys,
+                        bindings,
+                        mod_key,
+                        key_code,
+                        modified,
+                        raw,
+                        pressed,
+                        *mods,
+                        &this.niri.screenshot_ui,
+                        this.niri.config.borrow().input.disable_power_key_handling,
+                        is_inhibiting_shortcuts,
+                    )
+                };
+                if matches!(intercept_result, FilterResult::Forward) {
+                    // Interaction with the active window, immediately update
+                    // the active window's focus timestamp without waiting for a
+                    // possible pending MRU lock-in delay.
+                    this.niri.mru_commit();
+                }
+                intercept_result
             },
         ) else {
             return;
@@ -739,6 +768,12 @@ impl State {
                 if let Some(window) = self.niri.previously_focused_window.clone() {
                     self.focus_window(&window);
                 }
+            }
+            Action::FocusWindowMruNext => {
+                self.focus_window_mru_next();
+            }
+            Action::FocusWindowMruPrevious => {
+                self.focus_window_mru_previous();
             }
             Action::SwitchLayout(action) => {
                 let keyboard = &self.niri.seat.get_keyboard().unwrap();
@@ -2586,6 +2621,10 @@ impl State {
             }
         }
 
+        // The event is getting forwarded to a client, consider that the
+        // MRU Window order shoud be committed.
+        self.niri.mru_commit();
+
         pointer.button(
             self,
             &ButtonEvent {
@@ -3010,6 +3049,8 @@ impl State {
 
         pointer.axis(self, frame);
         pointer.frame(self);
+
+        self.niri.mru_commit();
     }
 
     fn on_tablet_tool_axis<I: InputBackend>(&mut self, event: I::TabletToolAxisEvent)
@@ -3055,6 +3096,8 @@ impl State {
 
             self.niri.pointer_hidden = false;
             self.niri.tablet_cursor_location = Some(pos);
+
+            self.niri.mru_commit();
         }
 
         // Redraw to update the cursor position.
@@ -3110,6 +3153,7 @@ impl State {
                             self.niri.queue_redraw_all();
                         }
                         self.niri.focus_layer_surface_if_on_demand(under.layer);
+                        self.niri.mru_commit();
                     }
                 }
                 TabletToolTipState::Up => {
@@ -3144,6 +3188,7 @@ impl State {
                             SERIAL_COUNTER.next_serial(),
                             event.time_msec(),
                         );
+                        self.niri.mru_commit();
                     }
                     self.niri.pointer_hidden = false;
                     self.niri.tablet_cursor_location = Some(pos);
@@ -3179,6 +3224,7 @@ impl State {
                 SERIAL_COUNTER.next_serial(),
                 event.time_msec(),
             );
+            self.niri.mru_commit();
         }
     }
 
@@ -3211,6 +3257,7 @@ impl State {
                 fingers: event.fingers(),
             },
         );
+        self.niri.mru_commit();
     }
 
     fn on_gesture_swipe_update<I: InputBackend + 'static>(
@@ -3394,6 +3441,7 @@ impl State {
                 fingers: event.fingers(),
             },
         );
+        self.niri.mru_commit();
     }
 
     fn on_gesture_pinch_update<I: InputBackend>(&mut self, event: I::GesturePinchUpdateEvent) {
@@ -3448,6 +3496,7 @@ impl State {
                 fingers: event.fingers(),
             },
         );
+        self.niri.mru_commit();
     }
 
     fn on_gesture_hold_end<I: InputBackend>(&mut self, event: I::GestureHoldEndEvent) {
@@ -3592,6 +3641,7 @@ impl State {
 
         // We're using touch, hide the pointer.
         self.niri.pointer_hidden = true;
+        self.niri.mru_commit();
     }
     fn on_touch_up<I: InputBackend>(&mut self, evt: I::TouchUpEvent) {
         let Some(handle) = self.niri.seat.get_touch() else {
@@ -3807,6 +3857,41 @@ fn find_bind(
     find_configured_bind(bindings, mod_key, trigger, mods)
 }
 
+/// Preset bindings can be overridden in the user configuration.
+/// The reason for treating them differently is that their key + modifier
+/// combination needs to be frozen for some reason.
+const PRESET_BINDINGS: &[Bind] = &[
+    // The following two bindings cover MRU window navigation. They are
+    // preset because the `Alt` key is treated specially in `on_keyboard`.
+    // When it is released the active MRU traversal is considered to have
+    // completed. If the user were allowed to change the MRU bindings
+    // below, the navigation mechanism would no longer work as intended.
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::Tab),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::FocusWindowMruNext,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::Tab),
+            modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
+        },
+        action: Action::FocusWindowMruPrevious,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+];
+
 fn find_configured_bind(
     bindings: &Binds,
     mod_key: ModKey,
@@ -3821,7 +3906,9 @@ fn find_configured_bind(
         modifiers |= Modifiers::COMPOSITOR;
     }
 
-    for bind in &bindings.0 {
+    // iterate through configured bindings looking for a match, and
+    // then check in  `PRESET_BINDINGS` if none were found
+    for bind in bindings.0.iter().chain(PRESET_BINDINGS.iter()) {
         if bind.key.trigger != trigger {
             continue;
         }

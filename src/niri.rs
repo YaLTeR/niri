@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::{env, mem, thread};
+use std::{cmp, env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::{bail, ensure, Context};
@@ -16,6 +16,7 @@ use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
     WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKDROP_COLOR, DEFAULT_BACKGROUND_COLOR,
+    DEFAULT_MRU_COMMIT_MS,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -393,6 +394,12 @@ pub struct Niri {
     /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
     #[cfg(feature = "xdp-gnome-screencast")]
     pub dynamic_cast_id_for_portal: MappedId,
+
+    // List of windows for MRU prev/next traversal.
+    // Only defined when there is an active traversal in progress
+    pub window_mru: Option<WindowMRU>,
+
+    pending_mru_commit: Option<PendingMruCommit>,
 }
 
 #[derive(Debug)]
@@ -532,6 +539,24 @@ pub enum CastTarget {
     Nothing,
     Output(WeakOutput),
     Window { id: u64 },
+}
+
+/// Window MRU traversal context.
+#[derive(Debug)]
+pub struct WindowMRU {
+    /// List of window ids to be traversed in MRU order.
+    pub ids: Vec<MappedId>,
+
+    /// Current index in the MRU traversal.
+    pub current: usize,
+}
+
+/// Pending update to a window's focus timestamp.
+#[derive(Debug)]
+struct PendingMruCommit {
+    id: MappedId,
+    token: RegistrationToken,
+    stamp: Instant,
 }
 
 impl RedrawState {
@@ -853,6 +878,34 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    /// Focus the next window in MRU order.
+    pub fn focus_window_mru_next(&mut self) {
+        let mut wmru = self
+            .niri
+            .window_mru
+            .take()
+            .unwrap_or_else(|| WindowMRU::new(&mut self.niri));
+
+        if let Some(window) = wmru.advance(&self.niri, false) {
+            self.focus_window(&window);
+        }
+        self.niri.window_mru.replace(wmru);
+    }
+
+    /// Focus the previous window in MRU order.
+    pub fn focus_window_mru_previous(&mut self) {
+        let mut wmru = self
+            .niri
+            .window_mru
+            .take()
+            .unwrap_or_else(|| WindowMRU::new(&mut self.niri));
+
+        if let Some(window) = wmru.advance(&self.niri, true) {
+            self.focus_window(&window);
+        }
+        self.niri.window_mru.replace(wmru);
+    }
+
     pub fn maybe_warp_cursor_to_focus(&mut self) -> bool {
         let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
             None => return false,
@@ -1103,6 +1156,51 @@ impl State {
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(true);
+
+                    // If `mapped` does not have a most_recent_timestamp,
+                    // then the window is newly created/mapped and
+                    // a timestamp is unconditionally created.
+                    //
+                    // If `mapped` already has a timestamp,
+                    // *and* there is no active window-mru,
+                    // the timestamp will be updated for `mapped`, but only
+                    // after the focus lock-in period has gone by without
+                    // the focus having elsewhere.
+                    let stamp = Instant::now();
+                    let focus_id = mapped.id();
+
+                    if mapped.get_focus_timestamp().is_none() {
+                        mapped.update_focus_timestamp(stamp);
+
+                        // if there was an active windows-mru, insert this
+                        // new window into the list to avoid surprising the
+                        // user if they focus another window and then want
+                        // to immediately return to the newly created window
+                        if let Some(ref mut wmru) = self.niri.window_mru {
+                            wmru.ids.insert(wmru.current, focus_id);
+                        }
+                    } else if self.niri.window_mru.is_none() {
+                        let timer =
+                            Timer::from_duration(Duration::from_millis(DEFAULT_MRU_COMMIT_MS));
+
+                        let focus_token = self
+                            .niri
+                            .event_loop
+                            .insert_source(timer, move |_, _, state| {
+                                state.niri.mru_commit();
+                                TimeoutAction::Drop
+                            })
+                            .unwrap();
+                        if let Some(PendingMruCommit { token, .. }) =
+                            self.niri.pending_mru_commit.replace(PendingMruCommit {
+                                id: focus_id,
+                                token: focus_token,
+                                stamp,
+                            })
+                        {
+                            self.niri.event_loop.remove(token);
+                        }
+                    }
                 }
             }
 
@@ -2473,6 +2571,9 @@ impl Niri {
 
             #[cfg(feature = "xdp-gnome-screencast")]
             dynamic_cast_id_for_portal: MappedId::next(),
+
+            window_mru: None,
+            pending_mru_commit: None,
         };
 
         niri.reset_pointer_inactivity_timer();
@@ -3320,6 +3421,13 @@ impl Niri {
 
         let target_output = target_workspace.current_output();
         Some((target_output.cloned(), target_workspace_index))
+    }
+
+    pub fn find_window_by_id(&self, id: MappedId) -> Option<Window> {
+        self.layout
+            .windows()
+            .find(|(_, m)| m.id() == id)
+            .map(|(_, m)| m.window.clone())
     }
 
     pub fn output_down(&self) -> Option<Output> {
@@ -5872,6 +5980,22 @@ impl Niri {
 
         self.notified_activity_this_iteration = true;
     }
+
+    // Consume the active `PendingMruCommit`, if any, and use the information
+    // it contains to update the (active) window's focus timestamp
+    pub fn mru_commit(&mut self) {
+        if let Some(pending) = self.pending_mru_commit.take() {
+            if let Some(window) = self
+                .layout
+                .workspaces_mut()
+                .flat_map(|ws| ws.windows_mut())
+                .find(|w| w.id() == pending.id)
+            {
+                window.update_focus_timestamp(pending.stamp);
+            }
+            self.event_loop.remove(pending.token);
+        }
+    }
 }
 
 pub struct NewClient {
@@ -5893,6 +6017,49 @@ pub struct ClientState {
 impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {}
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
+}
+
+impl WindowMRU {
+    fn new(niri: &mut Niri) -> Self {
+        // update the focus timestamp on the currently active window and
+        // prepare a new WindowMRU
+        niri.mru_commit();
+
+        // and build a list of MappedId sorted by timestamp
+        let mut ts_ids: Vec<(Option<Instant>, MappedId)> = niri
+            .layout
+            .windows()
+            .map(|(_, w)| (w.get_focus_timestamp(), w.id()))
+            .collect();
+        ts_ids.sort_by(|(t1, _), (t2, _)| match (t1, t2) {
+            (None, None) => cmp::Ordering::Equal,
+            (Some(_), None) => cmp::Ordering::Less,
+            (None, Some(_)) => cmp::Ordering::Greater,
+            (Some(t1), Some(t2)) => t1.cmp(t2).reverse(),
+        });
+
+        let ids = ts_ids.into_iter().map(|(_, id)| id).collect();
+
+        WindowMRU { ids, current: 0 }
+    }
+
+    fn advance(&mut self, niri: &Niri, reversed: bool) -> Option<Window> {
+        while !self.ids.is_empty() {
+            self.current = if reversed {
+                self.current.checked_sub(1).unwrap_or(self.ids.len() - 1)
+            } else {
+                (self.current + 1) % self.ids.len()
+            };
+
+            if let Some(id) = self.ids.get(self.current) {
+                if let Some(window) = niri.find_window_by_id(*id) {
+                    return Some(window);
+                }
+                self.ids.remove(self.current);
+            }
+        }
+        None
+    }
 }
 
 fn scale_relocate_crop<E: Element>(
