@@ -3543,6 +3543,7 @@ impl<W: LayoutElement> Layout<W> {
                     column_idx: None,
                 },
                 activate,
+                true,
                 removed.width,
                 removed.is_full_width,
                 removed.is_floating,
@@ -4392,11 +4393,7 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         // Dragging in the overview shouldn't switch the workspace and so on.
-        let activate = if self.overview_open {
-            ActivateWindow::No
-        } else {
-            ActivateWindow::Yes
-        };
+        let allow_to_activate_workspace = !self.overview_open;
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -4489,7 +4486,8 @@ impl<W: LayoutElement> Layout<W> {
                                 id: ws_id,
                                 column_idx: Some(column_idx),
                             },
-                            activate,
+                            ActivateWindow::Yes,
+                            allow_to_activate_workspace,
                             move_.width,
                             move_.is_full_width,
                             false,
@@ -4501,7 +4499,8 @@ impl<W: LayoutElement> Layout<W> {
                             column_idx,
                             Some(tile_idx),
                             move_.tile,
-                            activate == ActivateWindow::Yes,
+                            true,
+                            allow_to_activate_workspace,
                         );
                     }
                     InsertPosition::Floating => {
@@ -4543,7 +4542,8 @@ impl<W: LayoutElement> Layout<W> {
                                 id: ws_id,
                                 column_idx: None,
                             },
-                            activate,
+                            ActivateWindow::Yes,
+                            allow_to_activate_workspace,
                             move_.width,
                             move_.is_full_width,
                             true,
@@ -4578,7 +4578,7 @@ impl<W: LayoutElement> Layout<W> {
                 ws.add_tile(
                     move_.tile,
                     WorkspaceAddWindowTarget::Auto,
-                    activate,
+                    ActivateWindow::Yes,
                     move_.width,
                     move_.is_full_width,
                     move_.is_floating,

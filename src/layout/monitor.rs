@@ -439,7 +439,15 @@ impl<W: LayoutElement> Monitor<W> {
         // monitor. So we can use any workspace, not necessarily the exact target workspace.
         let tile = self.workspaces[0].make_tile(window);
 
-        self.add_tile(tile, target, activate, width, is_full_width, is_floating);
+        self.add_tile(
+            tile,
+            target,
+            activate,
+            true,
+            width,
+            is_full_width,
+            is_floating,
+        );
     }
 
     pub fn add_column(&mut self, mut workspace_idx: usize, column: Column<W>, activate: bool) {
@@ -465,11 +473,14 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_tile(
         &mut self,
         tile: Tile<W>,
         target: MonitorAddWindowTarget<W>,
         activate: ActivateWindow,
+        // FIXME: Refactor ActivateWindow enum to make this better.
+        allow_to_activate_workspace: bool,
         width: ColumnWidth,
         is_full_width: bool,
         is_floating: bool,
@@ -516,7 +527,7 @@ impl<W: LayoutElement> Monitor<W> {
             workspace_idx += 1;
         }
 
-        if activate.map_smart(|| false) {
+        if allow_to_activate_workspace && activate.map_smart(|| false) {
             self.activate_workspace(workspace_idx);
         }
     }
@@ -528,6 +539,8 @@ impl<W: LayoutElement> Monitor<W> {
         tile_idx: Option<usize>,
         tile: Tile<W>,
         activate: bool,
+        // FIXME: Refactor ActivateWindow enum to make this better.
+        allow_to_activate_workspace: bool,
     ) {
         let workspace = &mut self.workspaces[workspace_idx];
 
@@ -541,7 +554,7 @@ impl<W: LayoutElement> Monitor<W> {
         // Since we're adding window to an existing column, the workspace isn't empty, and
         // therefore cannot be the last one, so we never need to insert a new empty workspace.
 
-        if activate {
+        if allow_to_activate_workspace && activate {
             self.activate_workspace(workspace_idx);
         }
     }
@@ -631,6 +644,7 @@ impl<W: LayoutElement> Monitor<W> {
                 column_idx: None,
             },
             ActivateWindow::Yes,
+            true,
             removed.width,
             removed.is_full_width,
             removed.is_floating,
@@ -658,6 +672,7 @@ impl<W: LayoutElement> Monitor<W> {
                 column_idx: None,
             },
             ActivateWindow::Yes,
+            true,
             removed.width,
             removed.is_full_width,
             removed.is_floating,
@@ -712,6 +727,7 @@ impl<W: LayoutElement> Monitor<W> {
             } else {
                 ActivateWindow::No
             },
+            true,
             removed.width,
             removed.is_full_width,
             removed.is_floating,
