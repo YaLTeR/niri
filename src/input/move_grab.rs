@@ -1,10 +1,11 @@
 use smithay::backend::input::ButtonState;
 use smithay::desktop::Window;
 use smithay::input::pointer::{
-    AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
-    GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent, GestureSwipeBeginEvent,
-    GestureSwipeEndEvent, GestureSwipeUpdateEvent, GrabStartData as PointerGrabStartData,
-    MotionEvent, PointerGrab, PointerInnerHandle, RelativeMotionEvent,
+    AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, GestureHoldBeginEvent,
+    GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
+    GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
+    GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab, PointerInnerHandle,
+    RelativeMotionEvent,
 };
 use smithay::input::SeatHandler;
 use smithay::utils::{IsAlive, Logical, Point};
@@ -15,14 +16,32 @@ pub struct MoveGrab {
     start_data: PointerGrabStartData<State>,
     last_location: Point<f64, Logical>,
     window: Window,
+    gesture: GestureState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GestureState {
+    Recognizing,
+    Move,
 }
 
 impl MoveGrab {
-    pub fn new(start_data: PointerGrabStartData<State>, window: Window) -> Self {
+    pub fn new(
+        start_data: PointerGrabStartData<State>,
+        window: Window,
+        use_threshold: bool,
+    ) -> Self {
+        let gesture = if use_threshold {
+            GestureState::Recognizing
+        } else {
+            GestureState::Move
+        };
+
         Self {
             last_location: start_data.location,
             start_data,
             window,
+            gesture,
         }
     }
 
@@ -53,6 +72,24 @@ impl PointerGrab<State> for MoveGrab {
                 let output = output.clone();
                 let event_delta = event.location - self.last_location;
                 self.last_location = event.location;
+
+                if self.gesture == GestureState::Recognizing {
+                    let c = event.location - self.start_data.location;
+
+                    // Check if the gesture moved far enough to decide.
+                    if c.x * c.x + c.y * c.y >= 8. * 8. {
+                        self.gesture = GestureState::Move;
+
+                        data.niri
+                            .cursor_manager
+                            .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
+                    }
+                }
+
+                if self.gesture != GestureState::Move {
+                    return;
+                }
+
                 let ongoing = data.niri.layout.interactive_move_update(
                     &self.window,
                     event_delta,

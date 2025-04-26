@@ -576,6 +576,8 @@ enum Op {
     ViewOffsetGestureBegin {
         #[proptest(strategy = "1..=5usize")]
         output_idx: usize,
+        #[proptest(strategy = "proptest::option::of(0..=4usize)")]
+        workspace_idx: Option<usize>,
         is_touchpad: bool,
     },
     ViewOffsetGestureUpdate {
@@ -599,9 +601,15 @@ enum Op {
         is_touchpad: bool,
     },
     WorkspaceSwitchGestureEnd {
-        cancelled: bool,
         is_touchpad: Option<bool>,
     },
+    OverviewGestureBegin,
+    OverviewGestureUpdate {
+        #[proptest(strategy = "-400f64..400f64")]
+        delta: f64,
+        timestamp: Duration,
+    },
+    OverviewGestureEnd,
     InteractiveMoveBegin {
         #[proptest(strategy = "1..=5usize")]
         window: usize,
@@ -657,6 +665,7 @@ enum Op {
         #[proptest(strategy = "1..=5usize")]
         window: usize,
     },
+    ToggleOverview,
 }
 
 impl Op {
@@ -1345,6 +1354,7 @@ impl Op {
             }
             Op::ViewOffsetGestureBegin {
                 output_idx: id,
+                workspace_idx,
                 is_touchpad: normalize,
             } => {
                 let name = format!("output{id}");
@@ -1352,7 +1362,7 @@ impl Op {
                     return;
                 };
 
-                layout.view_offset_gesture_begin(&output, normalize);
+                layout.view_offset_gesture_begin(&output, workspace_idx, normalize);
             }
             Op::ViewOffsetGestureUpdate {
                 delta,
@@ -1362,8 +1372,7 @@ impl Op {
                 layout.view_offset_gesture_update(delta, timestamp, is_touchpad);
             }
             Op::ViewOffsetGestureEnd { is_touchpad } => {
-                // We don't handle cancels in this gesture.
-                layout.view_offset_gesture_end(false, is_touchpad);
+                layout.view_offset_gesture_end(is_touchpad);
             }
             Op::WorkspaceSwitchGestureBegin {
                 output_idx: id,
@@ -1383,11 +1392,17 @@ impl Op {
             } => {
                 layout.workspace_switch_gesture_update(delta, timestamp, is_touchpad);
             }
-            Op::WorkspaceSwitchGestureEnd {
-                cancelled,
-                is_touchpad,
-            } => {
-                layout.workspace_switch_gesture_end(cancelled, is_touchpad);
+            Op::WorkspaceSwitchGestureEnd { is_touchpad } => {
+                layout.workspace_switch_gesture_end(is_touchpad);
+            }
+            Op::OverviewGestureBegin => {
+                layout.overview_gesture_begin();
+            }
+            Op::OverviewGestureUpdate { delta, timestamp } => {
+                layout.overview_gesture_update(delta, timestamp);
+            }
+            Op::OverviewGestureEnd => {
+                layout.overview_gesture_end();
             }
             Op::InteractiveMoveBegin {
                 window,
@@ -1441,6 +1456,9 @@ impl Op {
             }
             Op::InteractiveResizeEnd { window } => {
                 layout.interactive_resize_end(&window);
+            }
+            Op::ToggleOverview => {
+                layout.toggle_overview();
             }
         }
     }
@@ -2265,6 +2283,7 @@ fn unfullscreen_view_offset_not_reset_on_gesture() {
         Op::FullscreenWindow(1),
         Op::ViewOffsetGestureBegin {
             output_idx: 1,
+            workspace_idx: None,
             is_touchpad: true,
         },
         Op::ViewOffsetGestureEnd {
