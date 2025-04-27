@@ -211,7 +211,7 @@ impl PointerConstraintsHandler for State {
         pointer.set_location(target);
 
         // Redraw to update the cursor position if it's visible.
-        if !self.niri.pointer_hidden {
+        if self.niri.pointer_visibility.is_visible() {
             // FIXME: redraw only outputs overlapping the cursor.
             self.niri.queue_redraw_all();
         }
@@ -369,7 +369,7 @@ impl ClientDndGrabHandler for State {
             // parameters from Smithay I guess.
             //
             // Assume that hidden pointer means touch DnD.
-            if !self.niri.pointer_hidden {
+            if self.niri.pointer_visibility.is_visible() {
                 // We can't even get the current pointer location because it's locked (we're deep
                 // in the grab call stack here). So use the last known one.
                 if let Some(output) = &self.niri.pointer_contents.output {
