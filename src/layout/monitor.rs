@@ -586,16 +586,20 @@ impl<W: LayoutElement> Monitor<W> {
         true
     }
 
-    pub fn move_down_or_to_workspace_down(&mut self) {
+    pub fn move_down_or_to_workspace_down(&mut self) -> bool {
         if !self.active_workspace().move_down() {
             self.move_to_workspace_down();
+            return true;
         }
+        false
     }
 
-    pub fn move_up_or_to_workspace_up(&mut self) {
+    pub fn move_up_or_to_workspace_up(&mut self) -> bool {
         if !self.active_workspace().move_up() {
             self.move_to_workspace_up();
+            return true;
         }
+        false
     }
 
     pub fn focus_window_or_workspace_down(&mut self) -> bool {
@@ -614,18 +618,19 @@ impl<W: LayoutElement> Monitor<W> {
         false
     }
 
-    pub fn move_to_workspace_up(&mut self) {
+    pub fn move_to_workspace_up(&mut self) -> bool {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = source_workspace_idx.saturating_sub(1);
         if new_idx == source_workspace_idx {
-            return;
+            return false;
         }
         let new_id = self.workspaces[new_idx].id();
 
         let workspace = &mut self.workspaces[source_workspace_idx];
+
         let Some(removed) = workspace.remove_active_tile(Transaction::new()) else {
-            return;
+            return false;
         };
 
         self.add_tile(
@@ -639,20 +644,21 @@ impl<W: LayoutElement> Monitor<W> {
             removed.is_full_width,
             removed.is_floating,
         );
+        true
     }
 
-    pub fn move_to_workspace_down(&mut self) {
+    pub fn move_to_workspace_down(&mut self) -> bool {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
         if new_idx == source_workspace_idx {
-            return;
+            return false;
         }
         let new_id = self.workspaces[new_idx].id();
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         let Some(removed) = workspace.remove_active_tile(Transaction::new()) else {
-            return;
+            return false;
         };
 
         self.add_tile(
@@ -666,6 +672,7 @@ impl<W: LayoutElement> Monitor<W> {
             removed.is_full_width,
             removed.is_floating,
         );
+        true
     }
 
     pub fn move_to_workspace(

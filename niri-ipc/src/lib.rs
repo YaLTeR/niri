@@ -355,6 +355,21 @@ pub enum Action {
     MoveWindowDownOrToWorkspaceDown {},
     /// Move the focused window up in a column or to the workspace above.
     MoveWindowUpOrToWorkspaceUp {},
+    /// Move the focused window up, to the workspace above, or to the monitor above, optionally
+    /// skipping empty workspaces.
+    MoveWindowUpOrToWorkspaceUpOrToMonitorUp {
+        /// Whether to skip empty workspaces.
+        #[cfg_attr(feature = "clap", arg(long))]
+        skip_empty: bool,
+    },
+
+    /// Move the focused window down, to the workspace below, or to the monitor below, optionally
+    /// skipping empty workspaces.
+    MoveWindowDownOrToWorkspaceDownOrToMonitorDown {
+        /// Whether to skip empty workspaces.
+        #[cfg_attr(feature = "clap", arg(long))]
+        skip_empty: bool,
+    },
     /// Consume or expel a window left.
     #[cfg_attr(
         feature = "clap",
@@ -571,6 +586,10 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg())]
         output: String,
     },
+    /// Move the focused window up or to the monitor above.
+    MoveWindowUpOrToMonitorUp {},
+    /// Move the focused window down or to the monitor below.
+    MoveWindowDownOrToMonitorDown {},
     /// Change the width of a window.
     #[cfg_attr(
         feature = "clap",

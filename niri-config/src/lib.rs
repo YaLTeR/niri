@@ -1652,6 +1652,14 @@ pub enum Action {
     MoveWindowUp,
     MoveWindowDownOrToWorkspaceDown,
     MoveWindowUpOrToWorkspaceUp,
+    MoveWindowUpOrToMonitorUp,
+    MoveWindowDownOrToMonitorDown,
+    MoveWindowUpOrToWorkspaceUpOrToMonitorUp(
+        #[knuffel(property(name = "skip-empty"), default = true)] bool,
+    ),
+    MoveWindowDownOrToWorkspaceDownOrToMonitorDown(
+        #[knuffel(property(name = "skip-empty"), default = true)] bool,
+    ),
     ConsumeOrExpelWindowLeft,
     #[knuffel(skip)]
     ConsumeOrExpelWindowLeftById(u64),
@@ -1869,6 +1877,16 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::FocusWindowOrWorkspaceOrMonitorDown { skip_empty } => {
                 Self::FocusWindowOrWorkspaceOrMonitorDown(skip_empty)
+            }
+            niri_ipc::Action::MoveWindowUpOrToMonitorUp {} => Self::MoveWindowUpOrToMonitorUp,
+            niri_ipc::Action::MoveWindowDownOrToMonitorDown {} => {
+                Self::MoveWindowDownOrToMonitorDown
+            }
+            niri_ipc::Action::MoveWindowUpOrToWorkspaceUpOrToMonitorUp { skip_empty } => {
+                Self::MoveWindowUpOrToWorkspaceUpOrToMonitorUp(skip_empty)
+            }
+            niri_ipc::Action::MoveWindowDownOrToWorkspaceDownOrToMonitorDown { skip_empty } => {
+                Self::MoveWindowDownOrToWorkspaceDownOrToMonitorDown(skip_empty)
             }
             niri_ipc::Action::MoveColumnLeft {} => Self::MoveColumnLeft,
             niri_ipc::Action::MoveColumnRight {} => Self::MoveColumnRight,

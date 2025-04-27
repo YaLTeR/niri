@@ -1910,32 +1910,32 @@ impl<W: LayoutElement> Layout<W> {
         workspace.move_column_to_index(index);
     }
 
-    pub fn move_down(&mut self) {
+    pub fn move_down(&mut self) -> bool {
         let Some(workspace) = self.active_workspace_mut() else {
-            return;
+            return false;
         };
-        workspace.move_down();
+        workspace.move_down()
     }
 
-    pub fn move_up(&mut self) {
+    pub fn move_up(&mut self) -> bool {
         let Some(workspace) = self.active_workspace_mut() else {
-            return;
+            return false;
         };
-        workspace.move_up();
+        workspace.move_up()
     }
 
-    pub fn move_down_or_to_workspace_down(&mut self) {
+    pub fn move_down_or_to_workspace_down(&mut self) -> bool {
         let Some(monitor) = self.active_monitor() else {
-            return;
+            return false;
         };
-        monitor.move_down_or_to_workspace_down();
+        monitor.move_down_or_to_workspace_down()
     }
 
-    pub fn move_up_or_to_workspace_up(&mut self) {
+    pub fn move_up_or_to_workspace_up(&mut self) -> bool {
         let Some(monitor) = self.active_monitor() else {
-            return;
+            return false;
         };
-        monitor.move_up_or_to_workspace_up();
+        monitor.move_up_or_to_workspace_up()
     }
 
     pub fn consume_or_expel_window_left(&mut self, window: Option<&W::Id>) {
@@ -2227,6 +2227,42 @@ impl<W: LayoutElement> Layout<W> {
             true
         } else {
             self.focus_output(output);
+            false
+        }
+    }
+
+    pub fn move_window_up_or_to_output(&mut self, output: &Output) -> bool {
+        if self.move_up() {
+            true
+        } else {
+            self.move_to_output(None, output, None, ActivateWindow::Smart);
+            false
+        }
+    }
+
+    pub fn move_window_down_or_to_output(&mut self, output: &Output) -> bool {
+        if self.move_down() {
+            true
+        } else {
+            self.move_to_output(None, output, None, ActivateWindow::Smart);
+            false
+        }
+    }
+
+    pub fn move_window_up_or_to_workspace_up_or_to_output(&mut self, output: &Output) -> bool {
+        if self.move_up_or_to_workspace_up() {
+            true
+        } else {
+            self.move_to_output(None, output, None, ActivateWindow::Smart);
+            false
+        }
+    }
+
+    pub fn move_window_down_or_to_workspace_down_or_to_output(&mut self, output: &Output) -> bool {
+        if self.move_down_or_to_workspace_down() {
+            true
+        } else {
+            self.move_to_output(None, output, None, ActivateWindow::Smart);
             false
         }
     }
