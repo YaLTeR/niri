@@ -598,16 +598,20 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn focus_window_or_workspace_down(&mut self) {
+    pub fn focus_window_or_workspace_down(&mut self) -> bool {
         if !self.active_workspace().focus_down() {
             self.switch_workspace_down();
+            return true;
         }
+        false
     }
 
-    pub fn focus_window_or_workspace_up(&mut self) {
+    pub fn focus_window_or_workspace_up(&mut self) -> bool {
         if !self.active_workspace().focus_up() {
             self.switch_workspace_up();
+            return true;
         }
+        false
     }
 
     pub fn move_to_workspace_up(&mut self) {

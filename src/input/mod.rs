@@ -1122,6 +1122,46 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
+            Action::FocusWindowOrWorkspaceOrMonitorUp(_skip_empty) => {
+                if let Some(output) = self.niri.output_up() {
+                    if self
+                        .niri
+                        .layout
+                        .focus_window_or_workspace_up_or_output(&output)
+                        && !self.maybe_warp_cursor_to_focus_centered()
+                    {
+                        self.move_cursor_to_output(&output);
+                    } else {
+                        self.maybe_warp_cursor_to_focus();
+                    }
+                } else {
+                    self.niri.layout.focus_window_or_workspace_up();
+                    self.maybe_warp_cursor_to_focus();
+                }
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::FocusWindowOrWorkspaceOrMonitorDown(_skip_empty) => {
+                if let Some(output) = self.niri.output_down() {
+                    if self
+                        .niri
+                        .layout
+                        .focus_window_or_workspace_down_or_output(&output)
+                        && !self.maybe_warp_cursor_to_focus_centered()
+                    {
+                        self.move_cursor_to_output(&output);
+                    } else {
+                        self.maybe_warp_cursor_to_focus();
+                    }
+                } else {
+                    self.niri.layout.focus_window_or_workspace_down();
+                    self.maybe_warp_cursor_to_focus();
+                }
+                self.niri.layer_shell_on_demand_focus = None;
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::MoveWindowToWorkspaceDown => {
                 self.niri.layout.move_to_workspace_down();
                 self.maybe_warp_cursor_to_focus();

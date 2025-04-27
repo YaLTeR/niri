@@ -2126,18 +2126,18 @@ impl<W: LayoutElement> Layout<W> {
         workspace.focus_up_or_right();
     }
 
-    pub fn focus_window_or_workspace_down(&mut self) {
+    pub fn focus_window_or_workspace_down(&mut self) -> bool {
         let Some(monitor) = self.active_monitor() else {
-            return;
+            return false;
         };
-        monitor.focus_window_or_workspace_down();
+        monitor.focus_window_or_workspace_down()
     }
 
-    pub fn focus_window_or_workspace_up(&mut self) {
+    pub fn focus_window_or_workspace_up(&mut self) -> bool {
         let Some(monitor) = self.active_monitor() else {
-            return;
+            return false;
         };
-        monitor.focus_window_or_workspace_up();
+        monitor.focus_window_or_workspace_up()
     }
 
     pub fn focus_window_top(&mut self) {
@@ -2211,6 +2211,24 @@ impl<W: LayoutElement> Layout<W> {
             monitor
         };
         monitor.move_to_workspace(window, idx, activate);
+    }
+
+    pub fn focus_window_or_workspace_up_or_output(&mut self, output: &Output) -> bool {
+        if self.focus_window_or_workspace_up() {
+            true
+        } else {
+            self.focus_output(output);
+            false
+        }
+    }
+
+    pub fn focus_window_or_workspace_down_or_output(&mut self, output: &Output) -> bool {
+        if self.focus_window_or_workspace_down() {
+            true
+        } else {
+            self.focus_output(output);
+            false
+        }
     }
 
     pub fn move_column_to_workspace_up(&mut self) {

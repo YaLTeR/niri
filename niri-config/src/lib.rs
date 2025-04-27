@@ -1635,6 +1635,12 @@ pub enum Action {
     FocusWindowBottom,
     FocusWindowDownOrTop,
     FocusWindowUpOrBottom,
+    FocusWindowOrWorkspaceOrMonitorUp(
+        #[knuffel(property(name = "skip-empty"), default = true)] bool,
+    ),
+    FocusWindowOrWorkspaceOrMonitorDown(
+        #[knuffel(property(name = "skip-empty"), default = true)] bool,
+    ),
     MoveColumnLeft,
     MoveColumnRight,
     MoveColumnToFirst,
@@ -1858,6 +1864,12 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusWindowBottom {} => Self::FocusWindowBottom,
             niri_ipc::Action::FocusWindowDownOrTop {} => Self::FocusWindowDownOrTop,
             niri_ipc::Action::FocusWindowUpOrBottom {} => Self::FocusWindowUpOrBottom,
+            niri_ipc::Action::FocusWindowOrWorkspaceOrMonitorUp { skip_empty } => {
+                Self::FocusWindowOrWorkspaceOrMonitorUp(skip_empty)
+            }
+            niri_ipc::Action::FocusWindowOrWorkspaceOrMonitorDown { skip_empty } => {
+                Self::FocusWindowOrWorkspaceOrMonitorDown(skip_empty)
+            }
             niri_ipc::Action::MoveColumnLeft {} => Self::MoveColumnLeft,
             niri_ipc::Action::MoveColumnRight {} => Self::MoveColumnRight,
             niri_ipc::Action::MoveColumnToFirst {} => Self::MoveColumnToFirst,

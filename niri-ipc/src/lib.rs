@@ -315,6 +315,18 @@ pub enum Action {
     FocusWindowDownOrTop {},
     /// Focus the window above or the bottommost window.
     FocusWindowUpOrBottom {},
+    /// Focus the window, workspace, or monitor above, optionally skipping empty workspaces.
+    FocusWindowOrWorkspaceOrMonitorUp {
+        /// Whether to skip empty workspaces.
+        #[cfg_attr(feature = "clap", arg(long))]
+        skip_empty: bool,
+    },
+    /// Focus the window, workspace, or monitor below, optionally skipping empty workspaces.
+    FocusWindowOrWorkspaceOrMonitorDown {
+        /// Whether to skip empty workspaces.
+        #[cfg_attr(feature = "clap", arg(long))]
+        skip_empty: bool,
+    },
     /// Move the focused column to the left.
     MoveColumnLeft {},
     /// Move the focused column to the right.
