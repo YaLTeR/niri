@@ -331,7 +331,6 @@ pub struct Niri {
     /// taking grabs into account is expected, because we pass the information to pointer.motion()
     /// which passes it down through grabs, which decide what to do with it as they see fit.
     pub pointer_contents: PointContents,
-    /// Pointer visibility state
     pub pointer_visibility: PointerVisibility,
     pub pointer_inactivity_timer: Option<RegistrationToken>,
     /// Whether the pointer inactivity timer got reset this event loop iteration.
@@ -392,16 +391,19 @@ pub struct Niri {
     pub dynamic_cast_id_for_portal: MappedId,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PointerVisibility {
-    /// Cursor is in its normal state.
-    #[default]
+    /// The pointer is visible.
     Visible,
-    /// Cursor is invisible, but remains its current focus.
-    Hidden,
-    /// Cursor is invisible and loses any focus, for example due to a previous touch input.
+    /// The pointer is invisible, but retains its focus.
     ///
-    /// This is so that touch can prevent various tooltips from sticking around.
+    /// This state is set temporarily after auto-hiding the pointer to keep tooltips open and grabs
+    /// ongoing.
+    Hidden,
+    /// The pointer is invisible and cannot focus.
+    ///
+    /// Corresponds to a fully disabled pointer, for example after a touchscreen input, or after
+    /// the pointer contents changed in a Hidden state.
     Disabled,
 }
 
@@ -938,7 +940,7 @@ impl State {
             return false;
         }
 
-        // Disable the hidden pointer if content underneath has changed
+        // Disable the hidden pointer if the contents underneath have changed.
         if !self.niri.pointer_visibility.is_visible() {
             self.niri.pointer_visibility = PointerVisibility::Disabled;
         }
@@ -2444,7 +2446,7 @@ impl Niri {
             cursor_shape_manager_state,
             dnd_icon: None,
             pointer_contents: PointContents::default(),
-            pointer_visibility: PointerVisibility::default(),
+            pointer_visibility: PointerVisibility::Visible,
             pointer_inactivity_timer: None,
             pointer_inactivity_timer_got_reset: false,
             notified_activity_this_iteration: false,

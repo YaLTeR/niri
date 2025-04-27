@@ -477,8 +477,8 @@ impl State {
         }
 
         // niri keeps this set only while actively using a tablet, which means the cursor position
-        // is likely to change almost immediately, causing pointer_hidden to just flicker back and
-        // forth.
+        // is likely to change almost immediately, causing pointer_visibility to just flicker back
+        // and forth.
         if self.niri.tablet_cursor_location.is_some() {
             return;
         }
