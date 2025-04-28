@@ -38,6 +38,14 @@ overview {
 }
 ```
 
+To change the color behind the workspaces, use the `backdrop-color` setting:
+
+```kdl
+overview {
+    backdrop-color "#777777"
+}
+```
+
 You can also disable the hot corner:
 
 ```kdl
@@ -46,13 +54,5 @@ gestures {
     hot-corners {
         off
     }
-}
-```
-
-To change the color behind the workspaces, use the `backdrop-color` output setting:
-
-```kdl
-output "HDMI-A-1" {
-    backdrop-color "#777777"
 }
 ```

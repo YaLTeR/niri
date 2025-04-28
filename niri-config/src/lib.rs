@@ -447,8 +447,8 @@ pub struct Output {
     pub focus_at_startup: bool,
     #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
     pub background_color: Color,
-    #[knuffel(child, default = DEFAULT_BACKDROP_COLOR)]
-    pub backdrop_color: Color,
+    #[knuffel(child)]
+    pub backdrop_color: Option<Color>,
 }
 
 impl Output {
@@ -477,7 +477,7 @@ impl Default for Output {
             mode: None,
             variable_refresh_rate: None,
             background_color: DEFAULT_BACKGROUND_COLOR,
-            backdrop_color: DEFAULT_BACKDROP_COLOR,
+            backdrop_color: None,
         }
     }
 }
@@ -1264,12 +1264,15 @@ pub struct HotCorners {
 pub struct Overview {
     #[knuffel(child, unwrap(argument), default = Self::default().zoom)]
     pub zoom: FloatOrInt<0, 1>,
+    #[knuffel(child, default = Self::default().backdrop_color)]
+    pub backdrop_color: Color,
 }
 
 impl Default for Overview {
     fn default() -> Self {
         Self {
             zoom: FloatOrInt(0.5),
+            backdrop_color: DEFAULT_BACKDROP_COLOR,
         }
     }
 }
@@ -4225,12 +4228,7 @@ mod tests {
                             b: 0.4,
                             a: 1.0,
                         },
-                        backdrop_color: Color {
-                            r: 0.15,
-                            g: 0.15,
-                            b: 0.15,
-                            a: 1.0,
-                        },
+                        backdrop_color: None,
                     },
                 ],
             ),
@@ -4603,6 +4601,12 @@ mod tests {
                 zoom: FloatOrInt(
                     0.5,
                 ),
+                backdrop_color: Color {
+                    r: 0.15,
+                    g: 0.15,
+                    b: 0.15,
+                    a: 1.0,
+                },
             },
             environment: Environment(
                 [

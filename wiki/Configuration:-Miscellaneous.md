@@ -25,6 +25,7 @@ cursor {
 
 overview {
     zoom 0.5
+    backdrop-color "#262626"
 }
 
 clipboard {
@@ -158,6 +159,17 @@ It ranges from 0 to 0.75 where lower values make everything smaller.
 // Make workspaces four times smaller than normal in the overview.
 overview {
     zoom 0.25
+}
+```
+
+`backdrop-color` sets the backdrop color behind workspaces in the overview.
+The backdrop is also visible between workspaces when switching.
+
+The alpha channel for this color will be ignored.
+
+```kdl
+overview {
+    backdrop-color "#262626"
 }
 ```
 

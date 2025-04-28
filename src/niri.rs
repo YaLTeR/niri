@@ -15,7 +15,7 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
-    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKDROP_COLOR, DEFAULT_BACKGROUND_COLOR,
+    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKGROUND_COLOR,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -1394,6 +1394,11 @@ impl State {
             output_config_changed = true;
         }
 
+        // FIXME: move backdrop rendering into layout::Monitor, then this will become unnecessary.
+        if config.overview.backdrop_color != old_config.overview.backdrop_color {
+            output_config_changed = true;
+        }
+
         *old_config = config;
 
         if let Some(outputs) = preserved_output_config {
@@ -1471,8 +1476,8 @@ impl State {
 
         for output in self.niri.global_space.outputs() {
             let name = output.user_data().get::<OutputName>().unwrap();
-            let config = self.niri.config.borrow_mut();
-            let config = config.outputs.find(name);
+            let full_config = self.niri.config.borrow_mut();
+            let config = full_config.outputs.find(name);
 
             let scale = config
                 .and_then(|c| c.scale)
@@ -1513,8 +1518,8 @@ impl State {
             let background_color = Color32F::from(background_color);
 
             let mut backdrop_color = config
-                .map(|c| c.backdrop_color)
-                .unwrap_or(DEFAULT_BACKDROP_COLOR)
+                .and_then(|c| c.backdrop_color)
+                .unwrap_or(full_config.overview.backdrop_color)
                 .to_array_unpremul();
             backdrop_color[3] = 1.;
             let backdrop_color = Color32F::from(backdrop_color);
@@ -2701,8 +2706,8 @@ impl Niri {
         background_color[3] = 1.;
 
         let mut backdrop_color = c
-            .map(|c| c.backdrop_color)
-            .unwrap_or(DEFAULT_BACKDROP_COLOR)
+            .and_then(|c| c.backdrop_color)
+            .unwrap_or(config.overview.backdrop_color)
             .to_array_unpremul();
         backdrop_color[3] = 1.;
 
