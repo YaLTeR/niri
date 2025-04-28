@@ -21,7 +21,6 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
-use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
@@ -149,6 +148,7 @@ use crate::pw_utils::{CastSizeChange, PwToNiri};
 use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
     encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
@@ -2729,7 +2729,7 @@ impl Niri {
             LockRenderState::Unlocked
         };
 
-        let size = output_size(&output).to_i32_round();
+        let size = output_size(&output);
         let state = OutputState {
             global,
             redraw_state: RedrawState::Idle,
@@ -2826,7 +2826,7 @@ impl Niri {
     }
 
     pub fn output_resized(&mut self, output: &Output) {
-        let output_size = output_size(output).to_i32_round();
+        let output_size = output_size(output);
         let scale = output.current_scale();
         let transform = output.current_transform();
 
@@ -3926,8 +3926,7 @@ impl Niri {
             elements.push(
                 SolidColorRenderElement::from_buffer(
                     &state.lock_color_buffer,
-                    (0, 0),
-                    output_scale,
+                    (0., 0.),
                     1.,
                     Kind::Unspecified,
                 )
@@ -3945,15 +3944,13 @@ impl Niri {
         let background_buffer = state.background_buffer.clone();
         let background = SolidColorRenderElement::from_buffer(
             &background_buffer,
-            (0, 0),
-            output_scale,
+            (0., 0.),
             1.,
             Kind::Unspecified,
         );
         let backdrop = SolidColorRenderElement::from_buffer(
             &state.backdrop_buffer,
-            (0, 0),
-            output_scale,
+            (0., 0.),
             1.,
             Kind::Unspecified,
         )
