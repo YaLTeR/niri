@@ -41,6 +41,7 @@ overview {
 To change the color behind the workspaces, use the `backdrop-color` setting:
 
 ```kdl
+// Make the backdrop light.
 overview {
     backdrop-color "#777777"
 }

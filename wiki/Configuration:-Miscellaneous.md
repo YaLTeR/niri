@@ -168,8 +168,9 @@ The backdrop is also visible between workspaces when switching.
 The alpha channel for this color will be ignored.
 
 ```kdl
+// Make the backdrop light.
 overview {
-    backdrop-color "#262626"
+    backdrop-color "#777777"
 }
 ```
 
