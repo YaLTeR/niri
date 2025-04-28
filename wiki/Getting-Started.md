@@ -17,7 +17,7 @@ Then it will open as a window, where you can give it a try.
 Note that this windowed mode is mainly meant for development, so it is a bit buggy (in particular, there are issues with hotkeys).
 
 Next, see the [list of important software](./Important-Software.md) required for normal desktop use, like a notification daemon and portals.
-Also, check the [configuration overview](./Configuration:-Overview.md) page to get started configuring niri.
+Also, check the [configuration introduction](./Configuration:-Introduction.md) page to get started configuring niri.
 There you can find links to other pages containing thorough documentation and examples for all options.
 Finally, the [Xwayland](./Xwayland.md) page explains how to run X11 applications on niri.
 
