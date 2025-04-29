@@ -2949,9 +2949,12 @@ impl Niri {
             return false;
         }
 
-        let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-        if hot_corner.contains(pos_within_output) {
-            return true;
+        let hot_corners = self.config.borrow().gestures.hot_corners;
+        if !hot_corners.off {
+            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
+            if hot_corner.contains(pos_within_output) {
+                return true;
+            }
         }
 
         if layer_popup_under(Layer::Top) || layer_toplevel_under(Layer::Top) {
@@ -3209,9 +3212,12 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
-            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-            if hot_corner.contains(pos_within_output) {
-                return rv;
+            let hot_corners = self.config.borrow().gestures.hot_corners;
+            if !hot_corners.off {
+                let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
+                if hot_corner.contains(pos_within_output) {
+                    return rv;
+                }
             }
 
             under = under
