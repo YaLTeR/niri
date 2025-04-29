@@ -9,8 +9,11 @@ use atomic::Ordering;
 use calloop::ping::{make_ping, Ping};
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::LoopHandle;
-use smithay::reexports::wayland_server::Client;
-use smithay::wayland::compositor::{Blocker, BlockerState};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::{Client, DisplayHandle};
+use smithay::wayland::compositor::{
+    add_blocker, Blocker, BlockerState, CompositorHandler, SurfaceBarrier,
+};
 
 /// Default time limit, after which the transaction completes.
 ///
@@ -33,6 +36,7 @@ const TIME_LIMIT: Duration = Duration::from_millis(300);
 pub struct Transaction {
     inner: Arc<Inner>,
     deadline: Rc<RefCell<Deadline>>,
+    surface_barrier: Rc<RefCell<Option<SurfaceBarrier>>>,
 }
 
 /// Blocker for a [`Transaction`].
@@ -62,7 +66,38 @@ impl Transaction {
             deadline: Rc::new(RefCell::new(Deadline::NotRegistered(
                 Instant::now() + TIME_LIMIT,
             ))),
+            surface_barrier: Rc::new(RefCell::new(None)),
         }
+    }
+
+    pub fn register_surface<T: CompositorHandler + 'static>(
+        &self,
+        surface: &WlSurface,
+        event_loop: &LoopHandle<'static, T>,
+        dh: &DisplayHandle,
+    ) {
+        let mut surface_barrier = self.surface_barrier.borrow_mut();
+        if surface_barrier.is_none() {
+            let (ping, ping_source) = make_ping().unwrap();
+            let barrier = SurfaceBarrier::new(ping);
+            event_loop
+                .insert_source(ping_source, {
+                    let barrier = barrier.clone();
+                    let dh = dh.clone();
+                    move |_, _, state| {
+                        barrier.release(&dh, state);
+                    }
+                })
+                .unwrap();
+            *surface_barrier = Some(barrier);
+        }
+
+        trace!(transaction = ?Arc::as_ptr(&self.inner), "generating blocker");
+        surface_barrier
+            .as_mut()
+            .unwrap()
+            .register_surfaces([surface]);
+        add_blocker(surface, TransactionBlocker(Arc::downgrade(&self.inner)));
     }
 
     /// Gets a blocker for this transaction.
@@ -83,13 +118,19 @@ impl Transaction {
     }
 
     /// Registers this transaction's deadline timer on an event loop.
-    pub fn register_deadline_timer<T: 'static>(&self, event_loop: &LoopHandle<'static, T>) {
+    pub fn register_deadline_timer<T: CompositorHandler + 'static>(
+        &self,
+        event_loop: &LoopHandle<'static, T>,
+        dh: &DisplayHandle,
+    ) {
         let mut cell = self.deadline.borrow_mut();
         if let Deadline::NotRegistered(deadline) = *cell {
             let timer = Timer::from_deadline(deadline);
             let inner = Arc::downgrade(&self.inner);
+            let surface_barrier = self.surface_barrier.clone();
+            let dh = dh.clone();
             let token = event_loop
-                .insert_source(timer, move |_, _, _| {
+                .insert_source(timer, move |_, _, state| {
                     let _span = trace_span!("deadline timer", transaction = ?Weak::as_ptr(&inner))
                         .entered();
 
@@ -101,6 +142,10 @@ impl Transaction {
                         // just happen to run while the ping callback is scheduled, leading to this
                         // branch being legitimately taken.
                         trace!("transaction completed without removing the timer");
+                    }
+
+                    if let Some(surface_barrier) = surface_barrier.borrow_mut().take() {
+                        surface_barrier.release(&dh, state);
                     }
 
                     TimeoutAction::Drop

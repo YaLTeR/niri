@@ -674,12 +674,11 @@ impl XdgShellHandler for State {
         let was_active = active_window == Some(&window);
 
         self.niri.layout.remove_window(&window, transaction.clone());
-        self.add_default_dmabuf_pre_commit_hook(surface.wl_surface());
 
         // If this is the only instance, then this transaction will complete immediately, so no
         // need to set the timer.
         if !transaction.is_last() {
-            transaction.register_deadline_timer(&self.niri.event_loop);
+            transaction.register_deadline_timer(&self.niri.event_loop, &self.niri.display_handle);
         }
 
         if was_active {
@@ -1226,16 +1225,13 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
             return;
         };
 
-        let (got_unmapped, dmabuf, commit_serial) = with_states(surface, |states| {
-            let (got_unmapped, dmabuf) = {
+        let (got_unmapped, commit_serial) = with_states(surface, |states| {
+            let got_unmapped = {
                 let mut guard = states.cached_state.get::<SurfaceAttributes>();
                 match guard.pending().buffer.as_ref() {
-                    Some(BufferAssignment::NewBuffer(buffer)) => {
-                        let dmabuf = get_dmabuf(buffer).cloned().ok();
-                        (false, dmabuf)
-                    }
-                    Some(BufferAssignment::Removed) => (true, None),
-                    None => (false, None),
+                    Some(BufferAssignment::NewBuffer(_)) => false,
+                    Some(BufferAssignment::Removed) => true,
+                    None => false,
                 }
             };
 
@@ -1246,10 +1242,9 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
                 .lock()
                 .unwrap();
 
-            (got_unmapped, dmabuf, role.configure_serial)
+            (got_unmapped, role.configure_serial)
         });
 
-        let mut transaction_for_dmabuf = None;
         let mut animate = false;
         if let Some(serial) = commit_serial {
             if !span.is_disabled() {
@@ -1263,30 +1258,22 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
                 if !transaction.is_completed() && !disable {
                     // Register the deadline even if this is the last pending, since dmabuf
                     // rendering can still run over the deadline.
-                    transaction.register_deadline_timer(&state.niri.event_loop);
+                    transaction.register_deadline_timer(
+                        &state.niri.event_loop,
+                        &state.niri.display_handle,
+                    );
 
-                    let is_last = transaction.is_last();
-
-                    // If this is the last transaction, we don't need to add a separate
-                    // notification, because the transaction will complete in our dmabuf blocker
-                    // callback, which already calls blocker_cleared(), or by the end of this
-                    // function, in which case there would be no blocker in the first place.
-                    if !is_last {
-                        // Waiting for some other surface; register a notification and add a
-                        // transaction blocker.
-                        if let Some(client) = surface.client() {
-                            transaction.add_notification(
-                                state.niri.blocker_cleared_tx.clone(),
-                                client.clone(),
-                            );
-                            add_blocker(surface, transaction.blocker());
-                        }
+                    if let Some(client) = surface.client() {
+                        transaction.add_notification(
+                            state.niri.blocker_cleared_tx.clone(),
+                            client.clone(),
+                        );
+                        transaction.register_surface(
+                            surface,
+                            &state.niri.event_loop,
+                            &state.niri.display_handle,
+                        );
                     }
-
-                    // Delay dropping (and completing) the transaction until the dmabuf is ready.
-                    // If there's no dmabuf, this will be dropped by the end of this pre-commit
-                    // hook.
-                    transaction_for_dmabuf = Some(transaction);
                 }
             }
 
@@ -1294,31 +1281,6 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
         } else {
             error!("commit on a mapped surface without a configured serial");
         };
-
-        if let Some((blocker, source)) =
-            dmabuf.and_then(|dmabuf| dmabuf.generate_blocker(Interest::READ).ok())
-        {
-            if let Some(client) = surface.client() {
-                let res = state
-                    .niri
-                    .event_loop
-                    .insert_source(source, move |_, _, state| {
-                        // This surface is now ready for the transaction.
-                        drop(transaction_for_dmabuf.take());
-
-                        let display_handle = state.niri.display_handle.clone();
-                        state
-                            .client_compositor_state(&client)
-                            .blocker_cleared(state, &display_handle);
-
-                        Ok(())
-                    });
-                if res.is_ok() {
-                    add_blocker(surface, blocker);
-                    trace!("added dmabuf blocker");
-                }
-            }
-        }
 
         let window = mapped.window.clone();
         if got_unmapped {
