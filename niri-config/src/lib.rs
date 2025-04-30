@@ -174,6 +174,7 @@ pub enum CenterFocusedColumn {
     /// Focusing a column will center it if it doesn't fit on the screen together with the
     /// previously focused column.
     OnOverflow,
+    Enclosed,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]
