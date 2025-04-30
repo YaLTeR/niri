@@ -3354,6 +3354,44 @@ fn interactive_resize_on_pending_unfullscreen_column() {
     check_ops(&ops);
 }
 
+#[test]
+fn interactive_move_unfullscreen_to_floating_stops_dnd_scroll() {
+    let ops = [
+        Op::AddOutput(3),
+        Op::AddWindow {
+            params: TestWindowParams {
+                is_floating: true,
+                ..TestWindowParams::new(4)
+            },
+        },
+        // This moves the window to tiling.
+        Op::SetFullscreenWindow {
+            window: 4,
+            is_fullscreen: true,
+        },
+        // This starts a DnD scroll since we're dragging a tiled window.
+        Op::InteractiveMoveBegin {
+            window: 4,
+            output_idx: 3,
+            px: 0.0,
+            py: 0.0,
+        },
+        // This will cause the window to unfullscreen to floating, and should stop the DnD scroll
+        // since we're no longer dragging a tiled window, but rather a floating one.
+        Op::InteractiveMoveUpdate {
+            window: 4,
+            dx: 0.0,
+            dy: 15035.31210741684,
+            output_idx: 3,
+            px: 0.0,
+            py: 0.0,
+        },
+        Op::InteractiveMoveEnd { window: 4 },
+    ];
+
+    check_ops(&ops);
+}
+
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
     if parent_id == id {
         return true;

@@ -4225,8 +4225,14 @@ impl<W: LayoutElement> Layout<W> {
                     is_floating = unfullscreen_to_floating;
                 }
 
-                // Animate to semitransparent.
-                if !is_floating {
+                if is_floating {
+                    // Unlock the view in case we locked it moving a fullscreen window that is
+                    // going to unfullscreen to floating.
+                    for ws in self.workspaces_mut() {
+                        ws.dnd_scroll_gesture_end();
+                    }
+                } else {
+                    // Animate to semitransparent.
                     tile.animate_alpha(
                         1.,
                         INTERACTIVE_MOVE_ALPHA,
