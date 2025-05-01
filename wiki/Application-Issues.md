@@ -1,5 +1,7 @@
 ### Electron applications
 
+#### Wayland
+
 Electron-based applications can run directly on Wayland, but it's not the default.
 
 For Electron > 28, you can set an environment variable:
@@ -14,7 +16,23 @@ For previous versions, you need to pass command-line flags to the target applica
 --enable-features=UseOzonePlatform --ozone-platform-hint=auto
 ```
 
+
+
+#### Keyring
+
+Electron apps that store sensitive information use keyring providers. On [some desktop environments](https://www.electronjs.org/docs/latest/api/safe-storage), Electron will automatically 
+select the right keyring provider that the environment provides. When using Niri, you have to inform the Electron runtime about the keyring provider you want to use for a given app.
+As mentioned in the [Important Software section](./Important-Software.md), you will most likely want to install the `gnome-keyring` component on your system. To use it with Electron apps,
+you will have to provide the following flags to the app:
+
+```
+--password-store="gnome-libsecret" --ignore-additional-command-line-flags
+```
+
+---
+
 If the application has a [desktop entry](https://specifications.freedesktop.org/menu-spec/latest/menu-add-example.html), you can put the command-line arguments into the `Exec` section.
+
 
 ### VSCode
 
