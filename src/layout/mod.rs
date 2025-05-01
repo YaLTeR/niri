@@ -1888,7 +1888,7 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        self.move_column_to_output(output);
+        self.move_column_to_output(output, None, true);
         true
     }
 
@@ -1899,7 +1899,7 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        self.move_column_to_output(output);
+        self.move_column_to_output(output, None, true);
         true
     }
 
@@ -2213,31 +2213,25 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_to_workspace(window, idx, activate);
     }
 
-    pub fn move_column_to_workspace_up(&mut self) {
+    pub fn move_column_to_workspace_up(&mut self, activate: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_column_to_workspace_up();
+        monitor.move_column_to_workspace_up(activate);
     }
 
-    pub fn move_column_to_workspace_down(&mut self) {
+    pub fn move_column_to_workspace_down(&mut self, activate: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_column_to_workspace_down();
+        monitor.move_column_to_workspace_down(activate);
     }
 
-    pub fn move_column_to_workspace(&mut self, idx: usize) {
+    pub fn move_column_to_workspace(&mut self, idx: usize, activate: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_column_to_workspace(idx);
-    }
-
-    pub fn move_column_to_workspace_on_output(&mut self, output: &Output, idx: usize) {
-        self.move_column_to_output(output);
-        self.focus_output(output);
-        self.move_column_to_workspace(idx);
+        monitor.move_column_to_workspace(idx, activate);
     }
 
     pub fn switch_workspace_up(&mut self) {
@@ -3559,7 +3553,12 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn move_column_to_output(&mut self, output: &Output) {
+    pub fn move_column_to_output(
+        &mut self,
+        output: &Output,
+        target_ws_idx: Option<usize>,
+        activate: bool,
+    ) {
         if let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -3583,8 +3582,10 @@ impl<W: LayoutElement> Layout<W> {
                 return;
             };
 
-            let workspace_idx = monitors[new_idx].active_workspace_idx;
-            self.add_column_by_idx(new_idx, workspace_idx, column, true);
+            let workspace_idx = target_ws_idx
+                .unwrap_or(monitors[new_idx].active_workspace_idx)
+                .min(monitors[new_idx].workspaces.len() - 1);
+            self.add_column_by_idx(new_idx, workspace_idx, column, activate);
         }
     }
 
