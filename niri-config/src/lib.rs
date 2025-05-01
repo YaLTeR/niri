@@ -776,9 +776,9 @@ impl Default for WorkspaceShadow {
                 x: FloatOrInt(0.),
                 y: FloatOrInt(10.),
             },
-            softness: FloatOrInt(80.),
+            softness: FloatOrInt(40.),
             spread: FloatOrInt(10.),
-            color: Color::from_rgba8_unpremul(0, 0, 0, 0x70),
+            color: Color::from_rgba8_unpremul(0, 0, 0, 0x50),
         }
     }
 }
@@ -4668,7 +4668,7 @@ mod tests {
                         ),
                     },
                     softness: FloatOrInt(
-                        80.0,
+                        40.0,
                     ),
                     spread: FloatOrInt(
                         10.0,
@@ -4677,7 +4677,7 @@ mod tests {
                         r: 0.0,
                         g: 0.0,
                         b: 0.0,
-                        a: 0.4392157,
+                        a: 0.3137255,
                     },
                 },
             },

@@ -29,10 +29,10 @@ overview {
 
     workspace-shadow {
         // off
-        softness 80
+        softness 40
         spread 10
         offset x=0 y=10
-        color "#00000070"
+        color "#00000050"
     }
 }
 
