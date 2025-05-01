@@ -235,6 +235,9 @@ impl<W: LayoutElement> Workspace<W> {
             options.clone(),
         );
 
+        let shadow_config =
+            compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
+
         Self {
             scrolling,
             floating,
@@ -244,7 +247,7 @@ impl<W: LayoutElement> Workspace<W> {
             transform: output.current_transform(),
             view_size,
             working_area,
-            shadow: Shadow::new(niri_config::Shadow::from(options.overview.workspace_shadow)),
+            shadow: Shadow::new(shadow_config),
             output: Some(output),
             clock,
             base_options,
@@ -289,6 +292,9 @@ impl<W: LayoutElement> Workspace<W> {
             options.clone(),
         );
 
+        let shadow_config =
+            compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
+
         Self {
             scrolling,
             floating,
@@ -299,7 +305,7 @@ impl<W: LayoutElement> Workspace<W> {
             original_output,
             view_size,
             working_area,
-            shadow: Shadow::new(niri_config::Shadow::from(options.overview.workspace_shadow)),
+            shadow: Shadow::new(shadow_config),
             clock,
             base_options,
             options,
@@ -380,7 +386,8 @@ impl<W: LayoutElement> Workspace<W> {
             options.clone(),
         );
 
-        let shadow_config = niri_config::Shadow::from(options.overview.workspace_shadow);
+        let shadow_config =
+            compute_workspace_shadow_config(options.overview.workspace_shadow, self.view_size);
         self.shadow.update_config(shadow_config);
 
         self.base_options = base_options;
@@ -522,6 +529,10 @@ impl<W: LayoutElement> Workspace<W> {
                 scale.fractional_scale(),
                 self.options.clone(),
             );
+
+            let shadow_config =
+                compute_workspace_shadow_config(self.options.overview.workspace_shadow, size);
+            self.shadow.update_config(shadow_config);
         }
 
         if scale_transform_changed {
@@ -1812,4 +1823,21 @@ impl<W: LayoutElement> Workspace<W> {
 
 pub(super) fn compute_working_area(output: &Output) -> Rectangle<f64, Logical> {
     layer_map_for_output(output).non_exclusive_zone().to_f64()
+}
+
+fn compute_workspace_shadow_config(
+    config: niri_config::WorkspaceShadow,
+    view_size: Size<f64, Logical>,
+) -> niri_config::Shadow {
+    // Gaps between workspaces are a multiple of the view height, so shadow settings should also be
+    // normalized to the view height to prevent them from overlapping on lower resolutions.
+    let norm = view_size.h / 1080.;
+
+    let mut config = niri_config::Shadow::from(config);
+    config.softness.0 *= norm;
+    config.spread.0 *= norm;
+    config.offset.x.0 *= norm;
+    config.offset.y.0 *= norm;
+
+    config
 }

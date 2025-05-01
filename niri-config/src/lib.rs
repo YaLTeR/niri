@@ -774,10 +774,10 @@ impl Default for WorkspaceShadow {
             off: false,
             offset: ShadowOffset {
                 x: FloatOrInt(0.),
-                y: FloatOrInt(20.),
+                y: FloatOrInt(10.),
             },
-            softness: FloatOrInt(120.),
-            spread: FloatOrInt(20.),
+            softness: FloatOrInt(80.),
+            spread: FloatOrInt(10.),
             color: Color::from_rgba8_unpremul(0, 0, 0, 0x70),
         }
     }
@@ -4664,14 +4664,14 @@ mod tests {
                             0.0,
                         ),
                         y: FloatOrInt(
-                            20.0,
+                            10.0,
                         ),
                     },
                     softness: FloatOrInt(
-                        120.0,
+                        80.0,
                     ),
                     spread: FloatOrInt(
-                        20.0,
+                        10.0,
                     ),
                     color: Color {
                         r: 0.0,
