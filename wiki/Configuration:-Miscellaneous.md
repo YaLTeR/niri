@@ -152,8 +152,10 @@ cursor {
 
 Settings for the [Overview](./Overview.md).
 
-`zoom` controls how much the workspaces zoom out in the overview.
-It ranges from 0 to 0.75 where lower values make everything smaller.
+#### `zoom`
+
+Control how much the workspaces zoom out in the overview.
+`zoom` ranges from 0 to 0.75 where lower values make everything smaller.
 
 ```kdl
 // Make workspaces four times smaller than normal in the overview.
@@ -162,7 +164,9 @@ overview {
 }
 ```
 
-`backdrop-color` sets the backdrop color behind workspaces in the overview.
+#### `backdrop-color`
+
+Set the backdrop color behind workspaces in the overview.
 The backdrop is also visible between workspaces when switching.
 
 The alpha channel for this color will be ignored.
