@@ -3,8 +3,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{
-    CenterFocusedColumn, CornerRadius, FloatOrInt, OutputName, PresetSize,
-    Workspace as WorkspaceConfig,
+    CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -236,17 +235,6 @@ impl<W: LayoutElement> Workspace<W> {
             options.clone(),
         );
 
-        let shadow_config = niri_config::Shadow {
-            on: true,
-            offset: niri_config::ShadowOffset {
-                x: FloatOrInt(0.),
-                y: FloatOrInt(20.),
-            },
-            softness: FloatOrInt(120.),
-            spread: FloatOrInt(20.),
-            ..Default::default()
-        };
-
         Self {
             scrolling,
             floating,
@@ -256,7 +244,7 @@ impl<W: LayoutElement> Workspace<W> {
             transform: output.current_transform(),
             view_size,
             working_area,
-            shadow: Shadow::new(shadow_config),
+            shadow: Shadow::new(niri_config::Shadow::from(options.overview.workspace_shadow)),
             output: Some(output),
             clock,
             base_options,
@@ -301,17 +289,6 @@ impl<W: LayoutElement> Workspace<W> {
             options.clone(),
         );
 
-        let shadow_config = niri_config::Shadow {
-            on: true,
-            offset: niri_config::ShadowOffset {
-                x: FloatOrInt(0.),
-                y: FloatOrInt(20.),
-            },
-            softness: FloatOrInt(120.),
-            spread: FloatOrInt(20.),
-            ..Default::default()
-        };
-
         Self {
             scrolling,
             floating,
@@ -322,7 +299,7 @@ impl<W: LayoutElement> Workspace<W> {
             original_output,
             view_size,
             working_area,
-            shadow: Shadow::new(shadow_config),
+            shadow: Shadow::new(niri_config::Shadow::from(options.overview.workspace_shadow)),
             clock,
             base_options,
             options,
@@ -402,6 +379,9 @@ impl<W: LayoutElement> Workspace<W> {
             self.scale.fractional_scale(),
             options.clone(),
         );
+
+        let shadow_config = niri_config::Shadow::from(options.overview.workspace_shadow);
+        self.shadow.update_config(shadow_config);
 
         self.base_options = base_options;
         self.options = options;
