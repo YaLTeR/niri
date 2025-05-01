@@ -4009,6 +4009,7 @@ impl Niri {
             mon.render_elements(renderer, target, focus_ring)
                 .map(|(geo, iter)| (geo, Vec::from_iter(iter))),
         );
+        let workspace_shadow_elements = Vec::from_iter(mon.render_workspace_shadows(renderer));
         let insert_hint_elements = mon.render_insert_hint_between_workspaces(renderer);
         let int_move_elements: Vec<_> = self
             .layout
@@ -4062,6 +4063,12 @@ impl Niri {
             elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
 
             elements.push(OutputRenderElements::from(background));
+
+            elements.extend(
+                workspace_shadow_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
         } else {
             elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
 
@@ -4107,6 +4114,12 @@ impl Niri {
                     elements.push(OutputRenderElements::from(elem));
                 }
             }
+
+            elements.extend(
+                workspace_shadow_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
         }
 
         // Then the backdrop.
