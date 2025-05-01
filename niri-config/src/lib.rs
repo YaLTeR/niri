@@ -1734,9 +1734,12 @@ pub enum Action {
         reference: WorkspaceReference,
         focus: bool,
     },
-    MoveColumnToWorkspaceDown,
-    MoveColumnToWorkspaceUp,
-    MoveColumnToWorkspace(#[knuffel(argument)] WorkspaceReference),
+    MoveColumnToWorkspaceDown(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnToWorkspaceUp(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnToWorkspace(
+        #[knuffel(argument)] WorkspaceReference,
+        #[knuffel(property(name = "focus"), default = true)] bool,
+    ),
     MoveWorkspaceDown,
     MoveWorkspaceUp,
     MoveWorkspaceToIndex(#[knuffel(argument)] usize),
@@ -1970,10 +1973,14 @@ impl From<niri_ipc::Action> for Action {
                 reference: WorkspaceReference::from(reference),
                 focus,
             },
-            niri_ipc::Action::MoveColumnToWorkspaceDown {} => Self::MoveColumnToWorkspaceDown,
-            niri_ipc::Action::MoveColumnToWorkspaceUp {} => Self::MoveColumnToWorkspaceUp,
-            niri_ipc::Action::MoveColumnToWorkspace { reference } => {
-                Self::MoveColumnToWorkspace(WorkspaceReference::from(reference))
+            niri_ipc::Action::MoveColumnToWorkspaceDown { focus } => {
+                Self::MoveColumnToWorkspaceDown(focus)
+            }
+            niri_ipc::Action::MoveColumnToWorkspaceUp { focus } => {
+                Self::MoveColumnToWorkspaceUp(focus)
+            }
+            niri_ipc::Action::MoveColumnToWorkspace { reference, focus } => {
+                Self::MoveColumnToWorkspace(WorkspaceReference::from(reference), focus)
             }
             niri_ipc::Action::MoveWorkspaceDown {} => Self::MoveWorkspaceDown,
             niri_ipc::Action::MoveWorkspaceUp {} => Self::MoveWorkspaceUp,

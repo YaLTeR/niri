@@ -738,7 +738,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn move_column_to_workspace_up(&mut self) {
+    pub fn move_column_to_workspace_up(&mut self, activate: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = source_workspace_idx.saturating_sub(1);
@@ -756,10 +756,10 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_column(new_idx, column, true);
+        self.add_column(new_idx, column, activate);
     }
 
-    pub fn move_column_to_workspace_down(&mut self) {
+    pub fn move_column_to_workspace_down(&mut self, activate: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
@@ -777,10 +777,10 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_column(new_idx, column, true);
+        self.add_column(new_idx, column, activate);
     }
 
-    pub fn move_column_to_workspace(&mut self, idx: usize) {
+    pub fn move_column_to_workspace(&mut self, idx: usize, activate: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = min(idx, self.workspaces.len() - 1);
@@ -798,7 +798,7 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_column(new_idx, column, true);
+        self.add_column(new_idx, column, activate);
     }
 
     pub fn switch_workspace_up(&mut self) {
