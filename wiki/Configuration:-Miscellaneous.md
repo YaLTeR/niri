@@ -26,6 +26,14 @@ cursor {
 overview {
     zoom 0.5
     backdrop-color "#262626"
+
+    workspace-shadow {
+        // off
+        softness 40
+        spread 10
+        offset x=0 y=10
+        color "#00000050"
+    }
 }
 
 clipboard {
@@ -152,8 +160,10 @@ cursor {
 
 Settings for the [Overview](./Overview.md).
 
-`zoom` controls how much the workspaces zoom out in the overview.
-It ranges from 0 to 0.75 where lower values make everything smaller.
+#### `zoom`
+
+Control how much the workspaces zoom out in the overview.
+`zoom` ranges from 0 to 0.75 where lower values make everything smaller.
 
 ```kdl
 // Make workspaces four times smaller than normal in the overview.
@@ -162,7 +172,9 @@ overview {
 }
 ```
 
-`backdrop-color` sets the backdrop color behind workspaces in the overview.
+#### `backdrop-color`
+
+Set the backdrop color behind workspaces in the overview.
 The backdrop is also visible between workspaces when switching.
 
 The alpha channel for this color will be ignored.
@@ -171,6 +183,24 @@ The alpha channel for this color will be ignored.
 // Make the backdrop light.
 overview {
     backdrop-color "#777777"
+}
+```
+
+#### `workspace-shadow`
+
+Control the shadow behind workspaces visible in the overview.
+
+Settings here mirror the normal [`shadow` config in the layout section](./Configuration:-Layout.md#shadow), so check the documentation there.
+
+Workspace shadows are configured for a workspace size normalized to 1080 pixels tall, then zoomed out together with the workspace.
+Practically, this means that you'll want bigger spread, offset, and softness compared to window shadows.
+
+```kdl
+// Disable workspace shadows in the overview.
+overview {
+    workspace-shadow {
+        off
+    }
 }
 ```
 

@@ -29,6 +29,8 @@ https://github.com/user-attachments/assets/b76d5349-aa20-4889-ab90-0a51554c789d
 
 ### Configuration
 
+See the full documentation for the `overview {}` section [here](./Configuration:-Miscellaneous.md#overview).
+
 You can set the zoom-out level like this:
 
 ```kdl

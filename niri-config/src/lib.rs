@@ -756,6 +756,49 @@ pub struct ShadowOffset {
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct WorkspaceShadow {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, default = Self::default().offset)]
+    pub offset: ShadowOffset,
+    #[knuffel(child, unwrap(argument), default = Self::default().softness)]
+    pub softness: FloatOrInt<0, 1024>,
+    #[knuffel(child, unwrap(argument), default = Self::default().spread)]
+    pub spread: FloatOrInt<-1024, 1024>,
+    #[knuffel(child, default = Self::default().color)]
+    pub color: Color,
+}
+
+impl Default for WorkspaceShadow {
+    fn default() -> Self {
+        Self {
+            off: false,
+            offset: ShadowOffset {
+                x: FloatOrInt(0.),
+                y: FloatOrInt(10.),
+            },
+            softness: FloatOrInt(40.),
+            spread: FloatOrInt(10.),
+            color: Color::from_rgba8_unpremul(0, 0, 0, 0x50),
+        }
+    }
+}
+
+impl From<WorkspaceShadow> for Shadow {
+    fn from(value: WorkspaceShadow) -> Self {
+        Self {
+            on: !value.off,
+            offset: value.offset,
+            softness: value.softness,
+            spread: value.spread,
+            draw_behind_window: false,
+            color: value.color,
+            inactive_color: None,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct TabIndicator {
     #[knuffel(child)]
     pub off: bool,
@@ -1270,6 +1313,8 @@ pub struct Overview {
     pub zoom: FloatOrInt<0, 1>,
     #[knuffel(child, default = Self::default().backdrop_color)]
     pub backdrop_color: Color,
+    #[knuffel(child, default)]
+    pub workspace_shadow: WorkspaceShadow,
 }
 
 impl Default for Overview {
@@ -1277,6 +1322,7 @@ impl Default for Overview {
         Self {
             zoom: FloatOrInt(0.5),
             backdrop_color: DEFAULT_BACKDROP_COLOR,
+            workspace_shadow: WorkspaceShadow::default(),
         }
     }
 }
@@ -4611,6 +4657,29 @@ mod tests {
                     g: 0.15,
                     b: 0.15,
                     a: 1.0,
+                },
+                workspace_shadow: WorkspaceShadow {
+                    off: false,
+                    offset: ShadowOffset {
+                        x: FloatOrInt(
+                            0.0,
+                        ),
+                        y: FloatOrInt(
+                            10.0,
+                        ),
+                    },
+                    softness: FloatOrInt(
+                        40.0,
+                    ),
+                    spread: FloatOrInt(
+                        10.0,
+                    ),
+                    color: Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 0.3137255,
+                    },
                 },
             },
             environment: Environment(

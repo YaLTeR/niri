@@ -1505,7 +1505,6 @@ impl<W: LayoutElement> Monitor<W> {
         };
 
         let zoom = self.overview_zoom();
-        let overview_clamped_progress = self.overview_progress.as_ref().map(|p| p.clamped_value());
 
         // Draw the insert hint.
         let mut insert_hint = None;
@@ -1532,13 +1531,6 @@ impl<W: LayoutElement> Monitor<W> {
             let floating = floating.filter_map(map_ws_contents);
             let scrolling = scrolling.filter_map(map_ws_contents);
 
-            let shadow = overview_clamped_progress.map(|value| {
-                ws.render_shadow(renderer)
-                    .map(move |elem| elem.with_alpha(value.clamp(0., 1.) as f32))
-                    .map(MonitorInnerRenderElement::Shadow)
-            });
-            let shadow = shadow.into_iter().flatten();
-
             let hint = if matches!(insert_hint, Some((hint_ws_id, _)) if hint_ws_id == ws.id()) {
                 let iter = insert_hint.take().unwrap().1;
                 let iter = iter.filter_map(move |elem| {
@@ -1552,7 +1544,7 @@ impl<W: LayoutElement> Monitor<W> {
             };
             let hint = hint.into_iter().flatten();
 
-            let iter = floating.chain(hint).chain(scrolling).chain(shadow);
+            let iter = floating.chain(hint).chain(scrolling);
 
             let iter = iter.map(move |elem| {
                 let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
@@ -1568,6 +1560,36 @@ impl<W: LayoutElement> Monitor<W> {
 
             (geo, iter)
         })
+    }
+
+    pub fn render_workspace_shadows<'a, R: NiriRenderer>(
+        &'a self,
+        renderer: &'a mut R,
+    ) -> impl Iterator<Item = MonitorRenderElement<R>> + 'a {
+        let _span = tracy_client::span!("Monitor::render_workspace_shadows");
+
+        let scale = self.scale.fractional_scale();
+        let zoom = self.overview_zoom();
+        let overview_clamped_progress = self.overview_progress.as_ref().map(|p| p.clamped_value());
+
+        self.workspaces_with_render_geo()
+            .flat_map(move |(ws, geo)| {
+                let shadow = overview_clamped_progress.map(|value| {
+                    ws.render_shadow(renderer)
+                        .map(move |elem| elem.with_alpha(value.clamp(0., 1.) as f32))
+                        .map(MonitorInnerRenderElement::Shadow)
+                });
+                let iter = shadow.into_iter().flatten();
+
+                iter.map(move |elem| {
+                    let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
+                    RelocateRenderElement::from_element(
+                        elem,
+                        geo.loc.to_physical_precise_round(scale),
+                        Relocate::Relative,
+                    )
+                })
+            })
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, is_touchpad: bool) {
