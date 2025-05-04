@@ -6,7 +6,7 @@ use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response,
-    Transform, Window,
+    Transform, Window, Overview,
 };
 use serde_json::json;
 
@@ -32,6 +32,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
+        Msg::Overview => Request::Overview,
     };
 
     let socket = Socket::connect().context("error connecting to the niri socket")?;
@@ -435,8 +436,26 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::KeyboardLayoutSwitched { idx } => {
                         println!("Keyboard layout switched: {idx}");
                     }
+                    Event::OverviewToggled { opened } => {
+                        println!("Overview toggled: {opened}");
+                    }
                 }
             }
+        }
+        Msg::Overview => {
+            let Response::Overview(response) = response else {
+                bail!("unexpected response: expected Overview, got {response:?}");
+            };
+
+            if json {
+                let response =
+                    serde_json::to_string(&response).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+
+            let Overview { opened } = response;
+            println!("Overview: {opened}");
         }
     }
 

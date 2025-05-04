@@ -105,4 +105,6 @@ pub enum Msg {
     Version,
     /// Request an error from the running niri instance.
     RequestError,
+    /// Print the overview state.
+    Overview,
 }

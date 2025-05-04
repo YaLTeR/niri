@@ -40,6 +40,9 @@ pub struct EventStreamState {
 
     /// State of the keyboard layouts.
     pub keyboard_layouts: KeyboardLayoutsState,
+
+    /// State of the overview.
+    pub overview: OverviewState,
 }
 
 /// The workspaces state communicated over the event stream.
@@ -61,6 +64,13 @@ pub struct WindowsState {
 pub struct KeyboardLayoutsState {
     /// Configured keyboard layouts.
     pub keyboard_layouts: Option<KeyboardLayouts>,
+}
+
+/// The overview state communicated over the event stream.
+#[derive(Debug, Default)]
+pub struct OverviewState {
+    /// State of the overview
+    pub opened: bool,
 }
 
 impl EventStreamStatePart for EventStreamState {
@@ -186,6 +196,22 @@ impl EventStreamStatePart for KeyboardLayoutsState {
                 let kb = self.keyboard_layouts.as_mut();
                 let kb = kb.expect("keyboard layouts must be set before a layout can be switched");
                 kb.current_idx = idx;
+            }
+            event => return Some(event),
+        }
+        None
+    }
+}
+
+impl EventStreamStatePart for OverviewState {
+    fn replicate(&self) -> Vec<Event> {
+        vec![Event::OverviewToggled { opened: self.opened }]
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::OverviewToggled { opened } => {
+                self.opened = opened;
             }
             event => return Some(event),
         }

@@ -16,7 +16,7 @@ use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
-use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, Workspace};
+use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response, Workspace};
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, Focus, GrabStartData as PointerGrabStartData,
@@ -428,6 +428,16 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::FocusedOutput(output)
         }
         Request::EventStream => Response::Handled,
+        Request::Overview => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let overview_state = state.niri.layout.is_overview_open();
+                let _ = tx.send_blocking(overview_state);
+            });
+            let result = rx.recv().await;
+            let overview_state: bool = result.map_err(|_| String::from("error getting overview info"))?;
+            Response::Overview(Overview { opened: overview_state })
+        }
     };
 
     Ok(response)
@@ -689,5 +699,23 @@ impl State {
             state.apply(event.clone());
             server.send_event(event);
         }
+    }
+
+    pub fn ipc_overview_toggled(&mut self) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.overview;
+        let opened = self.niri.layout.is_overview_open();
+
+        if state.opened == opened {
+            return;
+        }
+
+        let event = Event::OverviewToggled { opened };
+        state.apply(event.clone());
+        server.send_event(event);
     }
 }

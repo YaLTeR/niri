@@ -663,7 +663,7 @@ impl State {
         state.ipc_keyboard_layouts_changed();
         // Focus the default monitor if set by the user.
         state.focus_default_monitor();
-
+        
         Ok(state)
     }
 
@@ -728,6 +728,7 @@ impl State {
         self.refresh_ipc_outputs();
         self.ipc_refresh_layout();
         self.ipc_refresh_keyboard_layout_index();
+        self.ipc_overview_toggled();
     }
 
     fn notify_blocker_cleared(&mut self) {
