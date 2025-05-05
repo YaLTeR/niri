@@ -704,13 +704,13 @@ impl State {
 
         let mut state = server.event_stream_state.borrow_mut();
         let state = &mut state.overview;
-        let opened = self.niri.layout.is_overview_open();
+        let is_open = self.niri.layout.is_overview_open();
 
-        if state.is_open == opened {
+        if state.is_open == is_open {
             return;
         }
 
-        let event = Event::OverviewOpenedOrClosed { is_open: opened };
+        let event = Event::OverviewOpenedOrClosed { is_open };
         state.apply(event.clone());
         server.send_event(event);
     }

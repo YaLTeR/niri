@@ -210,8 +210,8 @@ impl EventStreamStatePart for OverviewState {
 
     fn apply(&mut self, event: Event) -> Option<Event> {
         match event {
-            Event::OverviewOpenedOrClosed { is_open: opened } => {
-                self.is_open = opened;
+            Event::OverviewOpenedOrClosed { is_open } => {
+                self.is_open = is_open;
             }
             event => return Some(event),
         }
