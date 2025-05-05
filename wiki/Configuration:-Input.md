@@ -169,6 +169,8 @@ input {
 
 #### Num Lock
 
+<sup>Since: next release</sup>
+
 Set the `numlock` flag to turn on Num Lock automatically at startup.
 
 You might want to disable (comment out) `numlock` if you're using a laptop with a keyboard that overlays Num Lock keys on top of regular keys.
