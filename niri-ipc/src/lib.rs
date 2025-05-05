@@ -150,7 +150,7 @@ pub enum Response {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Overview {
     /// Overview opened state
-    pub opened: bool,
+    pub is_open: bool,
 }
 
 /// Color picked from the screen.
@@ -1281,10 +1281,10 @@ pub enum Event {
         /// Index of the newly active layout.
         idx: u8,
     },
-    /// The overview opened.
-    OverviewToggled {
-        /// Opened state of the overview
-        opened: bool,
+    /// The overview was opened or closed.
+    OverviewOpenedOrClosed {
+        /// The new state of the overview.
+        is_open: bool,
     },
 }
 

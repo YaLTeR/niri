@@ -436,7 +436,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::KeyboardLayoutSwitched { idx } => {
                         println!("Keyboard layout switched: {idx}");
                     }
-                    Event::OverviewToggled { opened } => {
+                    Event::OverviewOpenedOrClosed { is_open: opened } => {
                         println!("Overview toggled: {opened}");
                     }
                 }
@@ -454,8 +454,12 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            let Overview { opened } = response;
-            println!("Overview: {opened}");
+            let Overview { is_open: opened } = response;
+            if is_open {
+                println!("Overview is open");
+            } else {
+                println!("Overview is closed");
+            }
         }
     }
 

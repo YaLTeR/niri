@@ -70,7 +70,7 @@ pub struct KeyboardLayoutsState {
 #[derive(Debug, Default)]
 pub struct OverviewState {
     /// State of the overview
-    pub opened: bool,
+    pub is_open: bool,
 }
 
 impl EventStreamStatePart for EventStreamState {
@@ -205,13 +205,13 @@ impl EventStreamStatePart for KeyboardLayoutsState {
 
 impl EventStreamStatePart for OverviewState {
     fn replicate(&self) -> Vec<Event> {
-        vec![Event::OverviewToggled { opened: self.opened }]
+        vec![Event::OverviewOpenedOrClosed { is_open: self.is_open }]
     }
 
     fn apply(&mut self, event: Event) -> Option<Event> {
         match event {
-            Event::OverviewToggled { opened } => {
-                self.opened = opened;
+            Event::OverviewOpenedOrClosed { is_open: opened } => {
+                self.is_open = opened;
             }
             event => return Some(event),
         }

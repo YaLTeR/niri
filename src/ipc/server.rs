@@ -429,14 +429,9 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
         }
         Request::EventStream => Response::Handled,
         Request::Overview => {
-            let (tx, rx) = async_channel::bounded(1);
-            ctx.event_loop.insert_idle(move |state| {
-                let overview_state = state.niri.layout.is_overview_open();
-                let _ = tx.send_blocking(overview_state);
-            });
-            let result = rx.recv().await;
-            let overview_state: bool = result.map_err(|_| String::from("error getting overview info"))?;
-            Response::Overview(Overview { opened: overview_state })
+            let state = ctx.event_stream_state.borrow();
+            let is_open = state.overview.is_open;
+            Response::Overview(Overview { is_open })
         }
     };
 
@@ -534,6 +529,7 @@ impl State {
     pub fn ipc_refresh_layout(&mut self) {
         self.ipc_refresh_workspaces();
         self.ipc_refresh_windows();
+        self.ipc_refresh_overview();
     }
 
     fn ipc_refresh_workspaces(&mut self) {
@@ -701,7 +697,7 @@ impl State {
         }
     }
 
-    pub fn ipc_overview_toggled(&mut self) {
+    pub fn ipc_refresh_overview(&mut self) {
         let Some(server) = &self.niri.ipc_server else {
             return;
         };
@@ -710,11 +706,11 @@ impl State {
         let state = &mut state.overview;
         let opened = self.niri.layout.is_overview_open();
 
-        if state.opened == opened {
+        if state.is_open == opened {
             return;
         }
 
-        let event = Event::OverviewToggled { opened };
+        let event = Event::OverviewOpenedOrClosed { is_open: opened };
         state.apply(event.clone());
         server.send_event(event);
     }
