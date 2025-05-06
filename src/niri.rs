@@ -1036,11 +1036,14 @@ impl State {
 
             let excl_focus_on_layer = |layer| {
                 layers.layers_on(layer).find_map(|surface| {
-                    let can_receive_exclusive_focus = surface.cached_state().keyboard_interactivity
-                        == wlr_layer::KeyboardInteractivity::Exclusive;
-                    can_receive_exclusive_focus
-                        .then(|| surface.wl_surface().clone())
-                        .map(|surface| KeyboardFocus::LayerShell { surface })
+                    if surface.cached_state().keyboard_interactivity
+                        != wlr_layer::KeyboardInteractivity::Exclusive
+                    {
+                        return None;
+                    }
+
+                    let surface = surface.wl_surface().clone();
+                    Some(KeyboardFocus::LayerShell { surface })
                 })
             };
 
