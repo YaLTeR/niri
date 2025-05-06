@@ -164,6 +164,7 @@ layer-rule {
 Set to `true` to place the surface into the backdrop visible in the [Overview](./Overview.md) and between workspaces.
 
 This will only work for *background* layer surfaces that ignore exclusive zones (typical for wallpaper tools).
+Layers within the backdrop will ignore all input.
 
 ```kdl
 // Put swaybg inside the overview backdrop.
