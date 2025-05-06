@@ -186,6 +186,8 @@ overview {
 }
 ```
 
+You can also set the color per-output [in the output config](./Configuration:-Outputs.md#backdrop-color).
+
 #### `workspace-shadow`
 
 Control the shadow behind workspaces visible in the overview.
