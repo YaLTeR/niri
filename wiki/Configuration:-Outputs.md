@@ -195,7 +195,7 @@ output "DP-2" {
 Set the background color that niri draws for workspaces on this output.
 This is visible when you're not using any background tools like swaybg.
 
-The alpha channel for this color will be ignored.
+<sup>Until: next release</sup> The alpha channel for this color will be ignored.
 
 ```kdl
 output "HDMI-A-1" {
@@ -210,7 +210,7 @@ output "HDMI-A-1" {
 Set the backdrop color that niri draws for this output.
 This is visible between workspaces or in the overview.
 
-<sup>Until: next release</sup> The alpha channel for this color will be ignored.
+The alpha channel for this color will be ignored.
 
 ```kdl
 output "HDMI-A-1" {
