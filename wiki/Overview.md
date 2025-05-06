@@ -76,3 +76,27 @@ This will only work for *background* layer surfaces that ignore exclusive zones 
 
 You can run two different wallpaper tools (like swaybg and swww), one for the backdrop and one for the normal workspace background.
 This way you could set the backdrop one to a blurred version of the wallpaper for a nice effect.
+
+You can also combine this with a transparent background color if you don't like the wallpaper moving together with workspaces:
+
+```kdl
+// Make the wallpaper stationary, rather than moving with workspaces.
+layer-rule {
+    // This is for swaybg; change for other wallpaper tools.
+    // Find the right namespace by running niri msg layers.
+    match namespace="^wallpaper$"
+    place-within-backdrop true
+}
+
+// Set transparent workspace background color.
+layout {
+    background-color "transparent"
+}
+
+// Optionally, disable the workspace shadows in the overview.
+overview {
+    workspace-shadow {
+        off
+    }
+}
+```

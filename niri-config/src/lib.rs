@@ -448,8 +448,8 @@ pub struct Output {
     pub variable_refresh_rate: Option<Vrr>,
     #[knuffel(child)]
     pub focus_at_startup: bool,
-    #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
-    pub background_color: Color,
+    #[knuffel(child)]
+    pub background_color: Option<Color>,
     #[knuffel(child)]
     pub backdrop_color: Option<Color>,
 }
@@ -479,7 +479,7 @@ impl Default for Output {
             position: None,
             mode: None,
             variable_refresh_rate: None,
-            background_color: DEFAULT_BACKGROUND_COLOR,
+            background_color: None,
             backdrop_color: None,
         }
     }
@@ -541,6 +541,8 @@ pub struct Layout {
     pub gaps: FloatOrInt<0, 65535>,
     #[knuffel(child, default)]
     pub struts: Struts,
+    #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
+    pub background_color: Color,
 }
 
 impl Default for Layout {
@@ -560,6 +562,7 @@ impl Default for Layout {
             gaps: FloatOrInt(16.),
             struts: Default::default(),
             preset_window_heights: Default::default(),
+            background_color: DEFAULT_BACKGROUND_COLOR,
         }
     }
 }
@@ -4279,12 +4282,14 @@ mod tests {
                             },
                         ),
                         focus_at_startup: true,
-                        background_color: Color {
-                            r: 0.09803922,
-                            g: 0.09803922,
-                            b: 0.4,
-                            a: 1.0,
-                        },
+                        background_color: Some(
+                            Color {
+                                r: 0.09803922,
+                                g: 0.09803922,
+                                b: 0.4,
+                                a: 1.0,
+                            },
+                        ),
                         backdrop_color: None,
                     },
                 ],
@@ -4500,6 +4505,12 @@ mod tests {
                     bottom: FloatOrInt(
                         0.0,
                     ),
+                },
+                background_color: Color {
+                    r: 0.25,
+                    g: 0.25,
+                    b: 0.25,
+                    a: 1.0,
                 },
             },
             prefer_no_csd: true,

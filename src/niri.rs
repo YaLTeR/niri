@@ -15,7 +15,7 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
-    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKGROUND_COLOR,
+    WarpMouseToFocusMode, WorkspaceReference,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -1416,6 +1416,9 @@ impl State {
         if config.overview.backdrop_color != old_config.overview.backdrop_color {
             output_config_changed = true;
         }
+        if config.layout.background_color != old_config.layout.background_color {
+            output_config_changed = true;
+        }
 
         *old_config = config;
 
@@ -1529,8 +1532,8 @@ impl State {
             }
 
             let background_color = config
-                .map(|c| c.background_color)
-                .unwrap_or(DEFAULT_BACKGROUND_COLOR)
+                .and_then(|c| c.background_color)
+                .unwrap_or(full_config.layout.background_color)
                 .to_array_unpremul();
             let background_color = Color32F::from(background_color);
 
@@ -2725,8 +2728,8 @@ impl Niri {
             .unwrap_or(Transform::Normal);
 
         let background_color = c
-            .map(|c| c.background_color)
-            .unwrap_or(DEFAULT_BACKGROUND_COLOR)
+            .and_then(|c| c.background_color)
+            .unwrap_or(config.layout.background_color)
             .to_array_unpremul();
 
         let mut backdrop_color = c

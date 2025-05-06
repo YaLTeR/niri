@@ -11,6 +11,7 @@ layout {
     always-center-single-column
     empty-workspace-above-first
     default-column-display "tabbed"
+    background-color "#003300"
 
     preset-column-widths {
         proportion 0.33333
@@ -526,3 +527,18 @@ layout {
     }
 }
 ```
+
+### `background-color`
+
+<sup>Since: next release</sup>
+
+Set the default background color that niri draws for workspaces.
+This is visible when you're not using any background tools like swaybg.
+
+```kdl
+layout {
+    background-color "#003300"
+}
+```
+
+You can also set the color per-output [in the output config](./Configuration:-Outputs.md#background-color).
