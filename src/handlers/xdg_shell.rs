@@ -319,10 +319,17 @@ impl XdgShellHandler for State {
             // FIXME: somewhere here we probably need to check is_overview_open to match the logic
             // in update_keyboard_focus().
 
-            if layers
-                .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)
-                .is_none()
-            {
+            if let Some(layer) = layers.layer_for_surface(&root, WindowSurfaceType::TOPLEVEL) {
+                // This is a grab for a layer surface.
+
+                if let Some(mapped) = self.niri.mapped_layer_surfaces.get(layer) {
+                    if mapped.place_within_backdrop() {
+                        trace!("ignoring popup grab for a layer surface within overview backdrop");
+                        let _ = PopupManager::dismiss_popup(&root, &popup);
+                        return;
+                    }
+                }
+            } else {
                 // This is a grab for a regular window; check that there's no layer surface with a
                 // higher input priority.
 

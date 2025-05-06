@@ -4888,6 +4888,7 @@ mod tests {
                         inactive_color: None,
                     },
                     geometry_corner_radius: None,
+                    place_within_backdrop: None,
                 },
             ],
             binds: Binds(
