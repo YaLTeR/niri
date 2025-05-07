@@ -2,7 +2,9 @@
 extern crate tracing;
 
 use std::collections::HashSet;
+use std::error::Error as StdError;
 use std::ffi::OsStr;
+use std::fmt::{self, Display, Formatter};
 use std::ops::{Mul, MulAssign};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -12,7 +14,7 @@ use bitflags::bitflags;
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
 use layer_rule::LayerRule;
-use miette::{miette, Context, IntoDiagnostic};
+use miette::{miette, Context, Diagnostic, IntoDiagnostic};
 use niri_ipc::{
     ColumnDisplay, ConfiguredMode, LayoutSwitchTarget, PositionChange, SizeChange, Transform,
     WorkspaceReferenceArg,
@@ -2294,6 +2296,30 @@ pub enum PreviewRender {
     ScreenCapture,
 }
 
+#[derive(Debug, Diagnostic)]
+pub enum ConfigParseError {
+    KnuffleError(knuffel::Error),
+    IoError(std::io::Error),
+}
+
+impl Display for ConfigParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::KnuffleError(e) => write!(f, "{}", e),
+            Self::IoError(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl StdError for ConfigParseError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            Self::KnuffleError(e) => Some(e),
+            Self::IoError(e) => Some(e),
+        }
+    }
+}
+
 impl Config {
     pub fn load(path: &Path) -> miette::Result<Self> {
         let _span = tracy_client::span!("Config::load");
@@ -2301,9 +2327,7 @@ impl Config {
     }
 
     fn load_internal(path: &Path) -> miette::Result<Self> {
-        let contents = std::fs::read_to_string(path)
-            .into_diagnostic()
-            .with_context(|| format!("error reading {path:?}"))?;
+        let contents = utils::expand_source_file(path).context("failed to expand config file")?;
 
         let config = Self::parse(
             path.file_name()
@@ -2316,9 +2340,9 @@ impl Config {
         Ok(config)
     }
 
-    pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
+    pub fn parse(filename: &str, text: &str) -> Result<Self, ConfigParseError> {
         let _span = tracy_client::span!("Config::parse");
-        knuffel::parse(filename, text)
+        knuffel::parse(filename, text).map_err(ConfigParseError::KnuffleError)
     }
 }
 
