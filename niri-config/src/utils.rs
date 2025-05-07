@@ -1,9 +1,9 @@
 use std::cell::LazyCell;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use regex::{Regex, RegexBuilder};
-use smithay::reexports::rustix::path::Arg;
 
 use crate::{Config, ConfigParseError};
 
@@ -15,13 +15,16 @@ pub const SOURCE_FILE_RE: LazyCell<Regex> = LazyCell::new(|| {
         .unwrap()
 });
 
-pub fn expand_source_file(file_path: &Path) -> Result<String, ConfigParseError> {
+pub fn expand_source_file(
+    file_path: &Path,
+    sourced_paths: &mut HashMap<PathBuf, ()>,
+) -> Result<String, ConfigParseError> {
     let file_content = std::fs::read_to_string(file_path).map_err(ConfigParseError::IoError)?;
     let base_path = file_path.parent().unwrap();
     let mut last_match_pos = 0;
     let mut expanded_file_content = String::new();
 
-    let parse_error: Option<ConfigParseError> = None;
+    let mut parse_error: Option<ConfigParseError> = None;
 
     for caps in SOURCE_FILE_RE.captures_iter(file_content.as_str()) {
         if let Some(source_file) = caps.name("source_file") {
@@ -30,14 +33,27 @@ pub fn expand_source_file(file_path: &Path) -> Result<String, ConfigParseError> 
             let source_file_str = source_file.as_str();
             let user_source_path = Path::new(source_file_str);
             let absolute_source_path = base_path.join(source_file_str);
-
-            let sourced_content = expand_source_file(if user_source_path.is_absolute() {
+            let final_source_path = if user_source_path.is_absolute() {
                 user_source_path
             } else {
                 absolute_source_path.as_path()
-            })?;
+            };
 
-            if let Err(e) = Config::parse(file_path.as_str(), sourced_content.as_str()) {
+            if sourced_paths
+                .insert(final_source_path.to_path_buf(), ())
+                .is_some()
+            {
+                return Err(ConfigParseError::CircularSourceError(
+                    file_path.to_path_buf(),
+                    final_source_path.to_path_buf(),
+                ));
+            }
+
+            let sourced_content = expand_source_file(final_source_path, sourced_paths)?;
+
+            sourced_paths.remove(&final_source_path.to_path_buf());
+
+            if let Err(e) = Config::parse(file_path.to_str().unwrap(), sourced_content.as_str()) {
                 parse_error = Some(e);
                 break;
             } else {

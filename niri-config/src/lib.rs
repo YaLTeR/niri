@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate tracing;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::error::Error as StdError;
 use std::ffi::OsStr;
 use std::fmt::{self, Display, Formatter};
@@ -2300,6 +2300,7 @@ pub enum PreviewRender {
 pub enum ConfigParseError {
     KnuffleError(knuffel::Error),
     IoError(std::io::Error),
+    CircularSourceError(PathBuf, PathBuf),
 }
 
 impl Display for ConfigParseError {
@@ -2307,6 +2308,14 @@ impl Display for ConfigParseError {
         match self {
             Self::KnuffleError(e) => write!(f, "{}", e),
             Self::IoError(e) => write!(f, "{}", e),
+            Self::CircularSourceError(file_path, source_path) => {
+                write!(
+                    f,
+                    "Circular source file: sourcing {} from {}",
+                    source_path.display(),
+                    file_path.display()
+                )
+            }
         }
     }
 }
@@ -2316,6 +2325,7 @@ impl StdError for ConfigParseError {
         match self {
             Self::KnuffleError(e) => Some(e),
             Self::IoError(e) => Some(e),
+            Self::CircularSourceError(_, _) => None,
         }
     }
 }
@@ -2327,7 +2337,10 @@ impl Config {
     }
 
     fn load_internal(path: &Path) -> miette::Result<Self> {
-        let contents = utils::expand_source_file(path).context("failed to expand config file")?;
+        let mut sourced_paths = HashMap::new();
+
+        let contents = utils::expand_source_file(path, &mut sourced_paths)
+            .context("failed to expand config file")?;
 
         let config = Self::parse(
             path.file_name()
