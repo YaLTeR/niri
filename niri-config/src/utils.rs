@@ -3,6 +3,7 @@ use std::path::Path;
 use std::str::FromStr;
 
 use regex::{Regex, RegexBuilder};
+use smithay::reexports::rustix::path::Arg;
 
 use crate::{Config, ConfigParseError};
 
@@ -20,6 +21,8 @@ pub fn expand_source_file(file_path: &Path) -> Result<String, ConfigParseError> 
     let mut last_match_pos = 0;
     let mut expanded_file_content = String::new();
 
+    let parse_error: Option<ConfigParseError> = None;
+
     for caps in SOURCE_FILE_RE.captures_iter(file_content.as_str()) {
         if let Some(source_file) = caps.name("source_file") {
             expanded_file_content.push_str(&file_content[last_match_pos..source_file.start()]);
@@ -28,21 +31,30 @@ pub fn expand_source_file(file_path: &Path) -> Result<String, ConfigParseError> 
             let user_source_path = Path::new(source_file_str);
             let absolute_source_path = base_path.join(source_file_str);
 
-            expanded_file_content.push_str(&expand_source_file(
-                if user_source_path.is_absolute() {
-                    user_source_path
-                } else {
-                    absolute_source_path.as_path()
-                },
-            )?);
+            let sourced_content = expand_source_file(if user_source_path.is_absolute() {
+                user_source_path
+            } else {
+                absolute_source_path.as_path()
+            })?;
+
+            if let Err(e) = Config::parse(file_path.as_str(), sourced_content.as_str()) {
+                parse_error = Some(e);
+                break;
+            } else {
+                expanded_file_content.push_str(&sourced_content);
+            }
 
             last_match_pos = source_file.end();
         }
     }
 
-    expanded_file_content.push_str(&file_content[last_match_pos..]);
+    if let Some(e) = parse_error {
+        Err(e)
+    } else {
+        expanded_file_content.push_str(&file_content[last_match_pos..]);
 
-    Ok(expanded_file_content)
+        Ok(expanded_file_content)
+    }
 }
 
 /// `Regex` that implements `PartialEq` by its string form.
