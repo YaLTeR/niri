@@ -2298,7 +2298,7 @@ pub enum PreviewRender {
 
 #[derive(Debug, Diagnostic)]
 pub enum ConfigParseError {
-    KnuffleError(knuffel::Error),
+    KnuffleError(#[diagnostic_source] knuffel::Error),
     IoError(std::io::Error),
     CircularSourceError(PathBuf, PathBuf),
 }
