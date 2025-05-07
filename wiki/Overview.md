@@ -14,7 +14,7 @@ While in the overview, all keyboard binds keep working, while pointing devices g
 
 > [!TIP]
 > The overview needs to draw a background under every workspace.
-> So, layer-shell surfaces work this way: the *background* and *bottom* layers zoom out and remain under workspaces, while the *top* and *overlay* layers remain on top of the overview.
+> So, layer-shell surfaces work this way: the *background* and *bottom* layers zoom out and remain on the workspaces, while the *top* and *overlay* layers remain on top of the overview.
 >
 > Put your bar on the *top* layer.
 
@@ -55,6 +55,47 @@ You can also disable the hot corner:
 // Disable the hot corners.
 gestures {
     hot-corners {
+        off
+    }
+}
+```
+
+### Backdrop customization
+
+Apart from setting a custom backdrop color like described above, you can also put a layer-shell wallpaper into the backdrop with a [layer rule](./Configuration:-Layer-Rules.md#place-within-backdrop), for example:
+
+```kdl
+// Put swaybg inside the overview backdrop.
+layer-rule {
+    match namespace="^wallpaper$"
+    place-within-backdrop true
+}
+```
+
+This will only work for *background* layer surfaces that ignore exclusive zones (typical for wallpaper tools).
+
+You can run two different wallpaper tools (like swaybg and swww), one for the backdrop and one for the normal workspace background.
+This way you could set the backdrop one to a blurred version of the wallpaper for a nice effect.
+
+You can also combine this with a transparent background color if you don't like the wallpaper moving together with workspaces:
+
+```kdl
+// Make the wallpaper stationary, rather than moving with workspaces.
+layer-rule {
+    // This is for swaybg; change for other wallpaper tools.
+    // Find the right namespace by running niri msg layers.
+    match namespace="^wallpaper$"
+    place-within-backdrop true
+}
+
+// Set transparent workspace background color.
+layout {
+    background-color "transparent"
+}
+
+// Optionally, disable the workspace shadows in the overview.
+overview {
+    workspace-shadow {
         off
     }
 }

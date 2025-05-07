@@ -15,7 +15,7 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
-    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKGROUND_COLOR,
+    WarpMouseToFocusMode, WorkspaceReference,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -992,9 +992,19 @@ impl State {
         // Clean up on-demand layer surface focus if necessary.
         if let Some(surface) = &self.niri.layer_shell_on_demand_focus {
             // Still alive and has on-demand interactivity.
-            let good = surface.alive()
+            let mut good = surface.alive()
                 && surface.cached_state().keyboard_interactivity
                     == wlr_layer::KeyboardInteractivity::OnDemand;
+
+            // Check if it moved to the overview backdrop.
+            if let Some(mapped) = self.niri.mapped_layer_surfaces.get(surface) {
+                if mapped.place_within_backdrop() {
+                    good = false;
+                }
+            } else {
+                good = false;
+            }
+
             if !good {
                 self.niri.layer_shell_on_demand_focus = None;
             }
@@ -1036,11 +1046,19 @@ impl State {
 
             let excl_focus_on_layer = |layer| {
                 layers.layers_on(layer).find_map(|surface| {
-                    let can_receive_exclusive_focus = surface.cached_state().keyboard_interactivity
-                        == wlr_layer::KeyboardInteractivity::Exclusive;
-                    can_receive_exclusive_focus
-                        .then(|| surface.wl_surface().clone())
-                        .map(|surface| KeyboardFocus::LayerShell { surface })
+                    if surface.cached_state().keyboard_interactivity
+                        != wlr_layer::KeyboardInteractivity::Exclusive
+                    {
+                        return None;
+                    }
+
+                    let mapped = self.niri.mapped_layer_surfaces.get(surface)?;
+                    if mapped.place_within_backdrop() {
+                        return None;
+                    }
+
+                    let surface = surface.wl_surface().clone();
+                    Some(KeyboardFocus::LayerShell { surface })
                 })
             };
 
@@ -1398,6 +1416,9 @@ impl State {
         if config.overview.backdrop_color != old_config.overview.backdrop_color {
             output_config_changed = true;
         }
+        if config.layout.background_color != old_config.layout.background_color {
+            output_config_changed = true;
+        }
 
         *old_config = config;
 
@@ -1510,11 +1531,10 @@ impl State {
                 resized_outputs.push(output.clone());
             }
 
-            let mut background_color = config
-                .map(|c| c.background_color)
-                .unwrap_or(DEFAULT_BACKGROUND_COLOR)
+            let background_color = config
+                .and_then(|c| c.background_color)
+                .unwrap_or(full_config.layout.background_color)
                 .to_array_unpremul();
-            background_color[3] = 1.;
             let background_color = Color32F::from(background_color);
 
             let mut backdrop_color = config
@@ -2707,11 +2727,10 @@ impl Niri {
             .map(|c| ipc_transform_to_smithay(c.transform))
             .unwrap_or(Transform::Normal);
 
-        let mut background_color = c
-            .map(|c| c.background_color)
-            .unwrap_or(DEFAULT_BACKGROUND_COLOR)
+        let background_color = c
+            .and_then(|c| c.background_color)
+            .unwrap_or(config.layout.background_color)
             .to_array_unpremul();
-        background_color[3] = 1.;
 
         let mut backdrop_color = c
             .and_then(|c| c.backdrop_color)
@@ -2988,6 +3007,11 @@ impl Niri {
                 .layers_on(layer)
                 .rev()
                 .find_map(|layer_surface| {
+                    let mapped = self.mapped_layer_surfaces.get(layer_surface)?;
+                    if mapped.place_within_backdrop() {
+                        return None;
+                    }
+
                     let mut layer_pos_within_output =
                         layers.layer_geometry(layer_surface).unwrap().loc.to_f64();
 
@@ -3138,6 +3162,11 @@ impl Niri {
                 .layers_on(layer)
                 .rev()
                 .find_map(|layer_surface| {
+                    let mapped = self.mapped_layer_surfaces.get(layer_surface)?;
+                    if mapped.place_within_backdrop() {
+                        return None;
+                    }
+
                     let mut layer_pos_within_output =
                         layers.layer_geometry(layer_surface).unwrap().loc.to_f64();
 
@@ -4018,19 +4047,27 @@ impl Niri {
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
-        let mut extend_from_layer = |elements: &mut SplitElements<LayerSurfaceRenderElement<R>>,
-                                     layer| {
-            self.render_layer(renderer, target, output_scale, &layer_map, layer, elements);
-        };
+        let mut extend_from_layer =
+            |elements: &mut SplitElements<LayerSurfaceRenderElement<R>>, layer, for_backdrop| {
+                self.render_layer(
+                    renderer,
+                    target,
+                    output_scale,
+                    &layer_map,
+                    layer,
+                    elements,
+                    for_backdrop,
+                );
+            };
 
         // The overlay layer elements go next.
         let mut layer_elems = SplitElements::default();
-        extend_from_layer(&mut layer_elems, Layer::Overlay);
+        extend_from_layer(&mut layer_elems, Layer::Overlay, false);
         elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
 
         // Collect the top layer elements.
         let mut layer_elems = SplitElements::default();
-        extend_from_layer(&mut layer_elems, Layer::Top);
+        extend_from_layer(&mut layer_elems, Layer::Top, false);
         let top_layer = layer_elems;
 
         // When rendering above the top layer, we put the regular monitor elements first.
@@ -4038,8 +4075,8 @@ impl Niri {
         if mon.render_above_top_layer() {
             // Collect all other layer-shell elements.
             let mut layer_elems = SplitElements::default();
-            extend_from_layer(&mut layer_elems, Layer::Bottom);
-            extend_from_layer(&mut layer_elems, Layer::Background);
+            extend_from_layer(&mut layer_elems, Layer::Bottom, false);
+            extend_from_layer(&mut layer_elems, Layer::Background, false);
 
             elements.extend(
                 int_move_elements
@@ -4059,8 +4096,7 @@ impl Niri {
             );
 
             elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
-            elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
-            elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
+            elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
 
             elements.push(OutputRenderElements::from(background));
 
@@ -4087,8 +4123,8 @@ impl Niri {
             for (ws_geo, ws_elements) in monitor_elements {
                 // Collect all other layer-shell elements.
                 let mut layer_elems = SplitElements::default();
-                extend_from_layer(&mut layer_elems, Layer::Bottom);
-                extend_from_layer(&mut layer_elems, Layer::Background);
+                extend_from_layer(&mut layer_elems, Layer::Bottom, false);
+                extend_from_layer(&mut layer_elems, Layer::Background, false);
 
                 elements.extend(
                     layer_elems
@@ -4123,6 +4159,10 @@ impl Niri {
         }
 
         // Then the backdrop.
+        let mut layer_elems = SplitElements::default();
+        extend_from_layer(&mut layer_elems, Layer::Background, true);
+        elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
+
         elements.push(backdrop);
 
         if self.debug_draw_opaque_regions {
@@ -4132,6 +4172,7 @@ impl Niri {
         elements
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_layer<R: NiriRenderer>(
         &self,
         renderer: &mut R,
@@ -4140,10 +4181,16 @@ impl Niri {
         layer_map: &LayerMap,
         layer: Layer,
         elements: &mut SplitElements<LayerSurfaceRenderElement<R>>,
+        for_backdrop: bool,
     ) {
         // LayerMap returns layers in reverse stacking order.
         let iter = layer_map.layers_on(layer).rev().filter_map(|surface| {
             let mapped = self.mapped_layer_surfaces.get(surface)?;
+
+            if for_backdrop != mapped.place_within_backdrop() {
+                return None;
+            }
+
             let geo = layer_map.layer_geometry(surface)?;
             Some((mapped, geo))
         });
