@@ -1724,6 +1724,7 @@ pub enum Action {
     SetDynamicCastWindowById(u64),
     SetDynamicCastMonitor(#[knuffel(argument)] Option<String>),
     ClearDynamicCastTarget,
+    ToggleWindowMruUi,
 }
 
 impl From<niri_ipc::Action> for Action {

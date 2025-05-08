@@ -41,7 +41,7 @@ use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
-use crate::niri::{CastTarget, State};
+use crate::niri::{CastTarget, State, WindowMRU};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
@@ -1962,6 +1962,18 @@ impl State {
             }
             Action::ClearDynamicCastTarget => {
                 self.set_dynamic_cast_target(CastTarget::Nothing);
+            }
+            Action::ToggleWindowMruUi => {
+                if self.niri.window_mru_ui.is_open() {
+                    self.niri.window_mru_ui.close()
+                } else {
+                    let mut wmru = WindowMRU::new(&mut self.niri);
+                    wmru.advance(&self.niri, false);
+                    let config = self.niri.config.borrow().layout.focus_ring;
+                    self.niri.window_mru_ui.open(wmru, config);
+                }
+                // FIXME: granular
+                self.niri.queue_redraw_all();
             }
         }
     }

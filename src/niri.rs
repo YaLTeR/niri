@@ -156,6 +156,7 @@ use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
+use crate::ui::window_mru_ui::{WindowMruUi, WindowMruUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::CHILD_ENV;
 use crate::utils::{
@@ -357,6 +358,7 @@ pub struct Niri {
     pub lock_state: LockState,
 
     pub screenshot_ui: ScreenshotUi,
+    pub window_mru_ui: WindowMruUi,
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
@@ -393,7 +395,7 @@ pub struct Niri {
     // Only defined when there is an active traversal in progress
     pub window_mru: Option<WindowMRU>,
 
-    pending_mru_commit: Option<PendingMruCommit>,    
+    pending_mru_commit: Option<PendingMruCommit>,
 }
 
 #[derive(Debug)]
@@ -2311,6 +2313,7 @@ impl Niri {
         let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
+        let window_mru_ui = WindowMruUi::new();
         let config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
 
@@ -2504,6 +2507,7 @@ impl Niri {
             lock_state: LockState::Unlocked,
 
             screenshot_ui,
+            window_mru_ui,
             config_error_notification,
             hotkey_overlay,
             exit_confirm_dialog,
@@ -2534,7 +2538,7 @@ impl Niri {
             dynamic_cast_id_for_portal: MappedId::next(),
 
             window_mru: None,
-            pending_mru_commit: None,            
+            pending_mru_commit: None,
         };
 
         niri.reset_pointer_inactivity_timer();
@@ -3867,6 +3871,15 @@ impl Niri {
                 draw_opaque_regions(&mut elements, output_scale);
             }
             return elements;
+        }
+
+        if self.window_mru_ui.is_open() && Some(output) == self.layout.active_output() {
+            elements.extend(
+                self.window_mru_ui
+                    .render_output(self, output, target, renderer.as_gles_renderer())
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            )
         }
 
         // Draw the hotkey overlay on top.
@@ -5773,7 +5786,7 @@ impl ClientData for ClientState {
 }
 
 impl WindowMRU {
-    fn new(niri: &mut Niri) -> Self {
+    pub(crate) fn new(niri: &mut Niri) -> Self {
         // update the focus timestamp on the currently active window and
         // prepare a new WindowMRU
         niri.mru_commit();
@@ -5796,7 +5809,7 @@ impl WindowMRU {
         WindowMRU { ids, current: 0 }
     }
 
-    fn advance(&mut self, niri: &Niri, reversed: bool) -> Option<Window> {
+    pub(crate) fn advance(&mut self, niri: &Niri, reversed: bool) -> Option<Window> {
         while !self.ids.is_empty() {
             self.current = if reversed {
                 self.current.checked_sub(1).unwrap_or(self.ids.len() - 1)
@@ -5824,6 +5837,7 @@ niri_render_elements! {
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         ScreenshotUi = ScreenshotUiRenderElement,
+        WindowMruUi = WindowMruUiRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
