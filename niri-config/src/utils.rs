@@ -24,8 +24,6 @@ pub fn expand_source_file(
     let mut last_match_pos = 0;
     let mut expanded_file_content = String::new();
 
-    let mut parse_error: Option<ConfigParseError> = None;
-
     for caps in SOURCE_FILE_RE.captures_iter(file_content.as_str()) {
         if let Some(source_file) = caps.name("source_file") {
             expanded_file_content.push_str(&file_content[last_match_pos..source_file.start()]);
@@ -53,24 +51,15 @@ pub fn expand_source_file(
 
             sourced_paths.remove(&final_source_path.to_path_buf());
 
-            if let Err(e) = Config::parse(file_path.to_str().unwrap(), sourced_content.as_str()) {
-                parse_error = Some(e);
-                break;
-            } else {
-                expanded_file_content.push_str(&sourced_content);
-            }
+            Config::parse(file_path.to_str().unwrap(), sourced_content.as_str())?;
 
+            expanded_file_content.push_str(&sourced_content);
             last_match_pos = source_file.end();
         }
     }
 
-    if let Some(e) = parse_error {
-        Err(e)
-    } else {
-        expanded_file_content.push_str(&file_content[last_match_pos..]);
-
-        Ok(expanded_file_content)
-    }
+    expanded_file_content.push_str(&file_content[last_match_pos..]);
+    Ok(expanded_file_content)
 }
 
 /// `Regex` that implements `PartialEq` by its string form.
