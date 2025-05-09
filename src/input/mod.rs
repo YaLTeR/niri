@@ -2561,8 +2561,12 @@ impl State {
                         self.niri.queue_redraw_all();
                     }
                 }
-            } else if self.niri.screenshot_ui.pointer_up(None) {
-                self.niri.queue_redraw_all();
+            } else if let Some(capture) = self.niri.screenshot_ui.pointer_up(None) {
+                if capture {
+                    self.confirm_screenshot(true);
+                } else {
+                    self.niri.queue_redraw_all();
+                }
             }
         }
 
@@ -3129,8 +3133,12 @@ impl State {
                 }
             }
             TabletToolTipState::Up => {
-                if self.niri.screenshot_ui.pointer_up(None) {
-                    self.niri.queue_redraw_all();
+                if let Some(capture) = self.niri.screenshot_ui.pointer_up(None) {
+                    if capture {
+                        self.confirm_screenshot(true);
+                    } else {
+                        self.niri.queue_redraw_all();
+                    }
                 }
 
                 tool.tip_up(event.time_msec());
@@ -3639,8 +3647,12 @@ impl State {
         };
         let slot = evt.slot();
 
-        if self.niri.screenshot_ui.pointer_up(Some(slot)) {
-            self.niri.queue_redraw_all();
+        if let Some(capture) = self.niri.screenshot_ui.pointer_up(Some(slot)) {
+            if capture {
+                self.confirm_screenshot(true);
+            } else {
+                self.niri.queue_redraw_all();
+            }
         }
 
         let serial = SERIAL_COUNTER.next_serial();
