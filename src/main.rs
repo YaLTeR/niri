@@ -355,7 +355,7 @@ fn config_path(cli_path: Option<PathBuf>) -> (PathBuf, PathBuf, bool) {
     let system_path = system_config_path();
     if let Some(path) = default_config_path() {
         if path.exists() {
-            return (path.clone(), path, true);
+            return (path.clone(), path, false);
         }
 
         if system_path.exists() {
