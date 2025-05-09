@@ -3542,6 +3542,7 @@ impl State {
         let Some(pos) = self.compute_touch_location(&evt) else {
             return;
         };
+        let slot = evt.slot();
 
         let serial = SERIAL_COUNTER.next_serial();
 
@@ -3571,7 +3572,7 @@ impl State {
 
                 let start_data = TouchGrabStartData {
                     focus: None,
-                    slot: evt.slot(),
+                    slot,
                     location: pos,
                 };
                 let start_timestamp = Duration::from_micros(evt.time());
@@ -3600,7 +3601,7 @@ impl State {
                     ) {
                         let start_data = TouchGrabStartData {
                             focus: None,
-                            slot: evt.slot(),
+                            slot,
                             location: pos,
                         };
                         let grab = TouchMoveGrab::new(start_data, window.clone());
@@ -3623,7 +3624,7 @@ impl State {
             self,
             under.surface,
             &DownEvent {
-                slot: evt.slot(),
+                slot,
                 location: pos,
                 serial,
                 time: evt.time_msec(),
