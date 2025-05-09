@@ -3539,13 +3539,13 @@ impl State {
         let Some(handle) = self.niri.seat.get_touch() else {
             return;
         };
-        let Some(touch_location) = self.compute_touch_location(&evt) else {
+        let Some(pos) = self.compute_touch_location(&evt) else {
             return;
         };
 
         let serial = SERIAL_COUNTER.next_serial();
 
-        let under = self.niri.contents_under(touch_location);
+        let under = self.niri.contents_under(pos);
 
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
@@ -3555,24 +3555,24 @@ impl State {
             let mod_down = mods.contains(mod_key.to_modifiers());
 
             if self.niri.layout.is_overview_open() && !mod_down && under.layer.is_none() {
-                let (output, pos_within_output) = self.niri.output_under(touch_location).unwrap();
+                let (output, pos_within_output) = self.niri.output_under(pos).unwrap();
                 let output = output.clone();
 
                 let mut matched_narrow = true;
-                let mut ws = self.niri.workspace_under(false, touch_location);
+                let mut ws = self.niri.workspace_under(false, pos);
                 if ws.is_none() {
                     matched_narrow = false;
-                    ws = self.niri.workspace_under(true, touch_location);
+                    ws = self.niri.workspace_under(true, pos);
                 }
                 let ws_id = ws.map(|(_, ws)| ws.id());
 
-                let mapped = self.niri.window_under(touch_location);
+                let mapped = self.niri.window_under(pos);
                 let window = mapped.map(|mapped| mapped.window.clone());
 
                 let start_data = TouchGrabStartData {
                     focus: None,
                     slot: evt.slot(),
-                    location: touch_location,
+                    location: pos,
                 };
                 let start_timestamp = Duration::from_micros(evt.time());
                 let grab = TouchOverviewGrab::new(
@@ -3590,8 +3590,7 @@ impl State {
 
                 // Check if we need to start an interactive move.
                 if mod_down {
-                    let (output, pos_within_output) =
-                        self.niri.output_under(touch_location).unwrap();
+                    let (output, pos_within_output) = self.niri.output_under(pos).unwrap();
                     let output = output.clone();
 
                     if self.niri.layout.interactive_move_begin(
@@ -3602,7 +3601,7 @@ impl State {
                         let start_data = TouchGrabStartData {
                             focus: None,
                             slot: evt.slot(),
-                            location: touch_location,
+                            location: pos,
                         };
                         let grab = TouchMoveGrab::new(start_data, window.clone());
                         handle.set_grab(self, grab, serial);
@@ -3625,7 +3624,7 @@ impl State {
             under.surface,
             &DownEvent {
                 slot: evt.slot(),
-                location: touch_location,
+                location: pos,
                 serial,
                 time: evt.time_msec(),
             },
@@ -3652,16 +3651,16 @@ impl State {
         let Some(handle) = self.niri.seat.get_touch() else {
             return;
         };
-        let Some(touch_location) = self.compute_touch_location(&evt) else {
+        let Some(pos) = self.compute_touch_location(&evt) else {
             return;
         };
-        let under = self.niri.contents_under(touch_location);
+        let under = self.niri.contents_under(pos);
         handle.motion(
             self,
             under.surface,
             &TouchMotionEvent {
                 slot: evt.slot(),
-                location: touch_location,
+                location: pos,
                 time: evt.time_msec(),
             },
         );
@@ -3672,7 +3671,7 @@ impl State {
             is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
         });
         if is_dnd_grab {
-            if let Some((output, pos_within_output)) = self.niri.output_under(touch_location) {
+            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
                 let output = output.clone();
                 self.niri.layout.dnd_update(output, pos_within_output);
             }
