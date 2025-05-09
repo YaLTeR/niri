@@ -97,6 +97,8 @@ pub enum Request {
     EventStream,
     /// Respond with an error (for testing error handling).
     ReturnError,
+    /// Request information about the overview.
+    OverviewState,
 }
 
 /// Reply from niri to client.
@@ -139,6 +141,16 @@ pub enum Response {
     PickedColor(Option<PickedColor>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
+    /// Information about the overview.
+    OverviewState(Overview),
+}
+
+/// Overview information.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Overview {
+    /// Whether the overview is currently open.
+    pub is_open: bool,
 }
 
 /// Color picked from the screen.
@@ -1268,6 +1280,11 @@ pub enum Event {
     KeyboardLayoutSwitched {
         /// Index of the newly active layout.
         idx: u8,
+    },
+    /// The overview was opened or closed.
+    OverviewOpenedOrClosed {
+        /// The new state of the overview.
+        is_open: bool,
     },
 }
 

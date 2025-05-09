@@ -5,8 +5,8 @@ use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
-    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response,
-    Transform, Window,
+    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview, Request,
+    Response, Transform, Window,
 };
 use serde_json::json;
 
@@ -32,6 +32,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
+        Msg::OverviewState => Request::OverviewState,
     };
 
     let socket = Socket::connect().context("error connecting to the niri socket")?;
@@ -435,7 +436,29 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::KeyboardLayoutSwitched { idx } => {
                         println!("Keyboard layout switched: {idx}");
                     }
+                    Event::OverviewOpenedOrClosed { is_open: opened } => {
+                        println!("Overview toggled: {opened}");
+                    }
                 }
+            }
+        }
+        Msg::OverviewState => {
+            let Response::OverviewState(response) = response else {
+                bail!("unexpected response: expected Overview, got {response:?}");
+            };
+
+            if json {
+                let response =
+                    serde_json::to_string(&response).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+
+            let Overview { is_open } = response;
+            if is_open {
+                println!("Overview is open.");
+            } else {
+                println!("Overview is closed.");
             }
         }
     }

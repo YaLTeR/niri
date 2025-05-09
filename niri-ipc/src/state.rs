@@ -40,6 +40,9 @@ pub struct EventStreamState {
 
     /// State of the keyboard layouts.
     pub keyboard_layouts: KeyboardLayoutsState,
+
+    /// State of the overview.
+    pub overview: OverviewState,
 }
 
 /// The workspaces state communicated over the event stream.
@@ -63,12 +66,20 @@ pub struct KeyboardLayoutsState {
     pub keyboard_layouts: Option<KeyboardLayouts>,
 }
 
+/// The overview state communicated over the event stream.
+#[derive(Debug, Default)]
+pub struct OverviewState {
+    /// Whether the overview is currently open.
+    pub is_open: bool,
+}
+
 impl EventStreamStatePart for EventStreamState {
     fn replicate(&self) -> Vec<Event> {
         let mut events = Vec::new();
         events.extend(self.workspaces.replicate());
         events.extend(self.windows.replicate());
         events.extend(self.keyboard_layouts.replicate());
+        events.extend(self.overview.replicate());
         events
     }
 
@@ -76,6 +87,7 @@ impl EventStreamStatePart for EventStreamState {
         let event = self.workspaces.apply(event)?;
         let event = self.windows.apply(event)?;
         let event = self.keyboard_layouts.apply(event)?;
+        let event = self.overview.apply(event)?;
         Some(event)
     }
 }
@@ -186,6 +198,24 @@ impl EventStreamStatePart for KeyboardLayoutsState {
                 let kb = self.keyboard_layouts.as_mut();
                 let kb = kb.expect("keyboard layouts must be set before a layout can be switched");
                 kb.current_idx = idx;
+            }
+            event => return Some(event),
+        }
+        None
+    }
+}
+
+impl EventStreamStatePart for OverviewState {
+    fn replicate(&self) -> Vec<Event> {
+        vec![Event::OverviewOpenedOrClosed {
+            is_open: self.is_open,
+        }]
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::OverviewOpenedOrClosed { is_open } => {
+                self.is_open = is_open;
             }
             event => return Some(event),
         }

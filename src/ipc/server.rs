@@ -16,7 +16,9 @@ use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
-use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, Workspace};
+use niri_ipc::{
+    Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response, Workspace,
+};
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, Focus, GrabStartData as PointerGrabStartData,
@@ -428,6 +430,11 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::FocusedOutput(output)
         }
         Request::EventStream => Response::Handled,
+        Request::OverviewState => {
+            let state = ctx.event_stream_state.borrow();
+            let is_open = state.overview.is_open;
+            Response::OverviewState(Overview { is_open })
+        }
     };
 
     Ok(response)
@@ -524,6 +531,7 @@ impl State {
     pub fn ipc_refresh_layout(&mut self) {
         self.ipc_refresh_workspaces();
         self.ipc_refresh_windows();
+        self.ipc_refresh_overview();
     }
 
     fn ipc_refresh_workspaces(&mut self) {
@@ -689,5 +697,23 @@ impl State {
             state.apply(event.clone());
             server.send_event(event);
         }
+    }
+
+    pub fn ipc_refresh_overview(&mut self) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.overview;
+        let is_open = self.niri.layout.is_overview_open();
+
+        if state.is_open == is_open {
+            return;
+        }
+
+        let event = Event::OverviewOpenedOrClosed { is_open };
+        state.apply(event.clone());
+        server.send_event(event);
     }
 }
