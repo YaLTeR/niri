@@ -2564,25 +2564,27 @@ impl State {
         }
 
         if button == Some(MouseButton::Left) && self.niri.screenshot_ui.is_open() {
-            let pos = pointer.current_location();
-            if let Some((output, _)) = self.niri.output_under(pos) {
-                let output = output.clone();
-                let geom = self.niri.global_space.output_geometry(&output).unwrap();
-                let mut point = (pos - geom.loc.to_f64())
-                    .to_physical(output.current_scale().fractional_scale())
-                    .to_i32_round();
+            if button_state == ButtonState::Pressed {
+                let pos = pointer.current_location();
+                if let Some((output, _)) = self.niri.output_under(pos) {
+                    let output = output.clone();
+                    let geom = self.niri.global_space.output_geometry(&output).unwrap();
+                    let mut point = (pos - geom.loc.to_f64())
+                        .to_physical(output.current_scale().fractional_scale())
+                        .to_i32_round();
 
-                let size = output.current_mode().unwrap().size;
-                let transform = output.current_transform();
-                let size = transform.transform_size(size);
-                point.x = min(size.w - 1, point.x);
-                point.y = min(size.h - 1, point.y);
+                    let size = output.current_mode().unwrap().size;
+                    let transform = output.current_transform();
+                    let size = transform.transform_size(size);
+                    point.x = min(size.w - 1, point.x);
+                    point.y = min(size.h - 1, point.y);
 
-                let down = button_state == ButtonState::Pressed;
-
-                if self.niri.screenshot_ui.pointer_button(output, point, down) {
-                    self.niri.queue_redraw_all();
+                    if self.niri.screenshot_ui.pointer_down(output, point) {
+                        self.niri.queue_redraw_all();
+                    }
                 }
+            } else if self.niri.screenshot_ui.pointer_up() {
+                self.niri.queue_redraw_all();
             }
         }
 
@@ -3085,30 +3087,6 @@ impl State {
         };
         let tip_state = event.tip_state();
 
-        if self.niri.screenshot_ui.is_open() {
-            if let Some(pos) = self.niri.tablet_cursor_location {
-                if let Some((output, _)) = self.niri.output_under(pos) {
-                    let output = output.clone();
-                    let geom = self.niri.global_space.output_geometry(&output).unwrap();
-                    let mut point = (pos - geom.loc.to_f64())
-                        .to_physical(output.current_scale().fractional_scale())
-                        .to_i32_round();
-
-                    let size = output.current_mode().unwrap().size;
-                    let transform = output.current_transform();
-                    let size = transform.transform_size(size);
-                    point.x = min(size.w - 1, point.x);
-                    point.y = min(size.h - 1, point.y);
-
-                    let down = tip_state == TabletToolTipState::Down;
-
-                    if self.niri.screenshot_ui.pointer_button(output, point, down) {
-                        self.niri.queue_redraw_all();
-                    }
-                }
-            }
-        }
-
         let is_overview_open = self.niri.layout.is_overview_open();
 
         match tip_state {
@@ -3118,7 +3096,25 @@ impl State {
 
                 if let Some(pos) = self.niri.tablet_cursor_location {
                     let under = self.niri.contents_under(pos);
-                    if let Some((window, _)) = under.window {
+
+                    if self.niri.screenshot_ui.is_open() {
+                        if let Some(output) = under.output.clone() {
+                            let geom = self.niri.global_space.output_geometry(&output).unwrap();
+                            let mut point = (pos - geom.loc.to_f64())
+                                .to_physical(output.current_scale().fractional_scale())
+                                .to_i32_round();
+
+                            let size = output.current_mode().unwrap().size;
+                            let transform = output.current_transform();
+                            let size = transform.transform_size(size);
+                            point.x = min(size.w - 1, point.x);
+                            point.y = min(size.h - 1, point.y);
+
+                            if self.niri.screenshot_ui.pointer_down(output, point) {
+                                self.niri.queue_redraw_all();
+                            }
+                        }
+                    } else if let Some((window, _)) = under.window {
                         if let Some(output) = is_overview_open.then_some(under.output).flatten() {
                             let mut workspaces = self.niri.layout.workspaces();
                             if let Some(ws_idx) = workspaces.find_map(|(_, ws_idx, ws)| {
@@ -3155,6 +3151,10 @@ impl State {
                 }
             }
             TabletToolTipState::Up => {
+                if self.niri.screenshot_ui.pointer_up() {
+                    self.niri.queue_redraw_all();
+                }
+
                 tool.tip_up(event.time_msec());
             }
         }

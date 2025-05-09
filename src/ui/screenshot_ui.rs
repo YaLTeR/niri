@@ -673,12 +673,7 @@ impl ScreenshotUi {
         self.update_buffers();
     }
 
-    pub fn pointer_button(
-        &mut self,
-        output: Output,
-        point: Point<i32, Physical>,
-        down: bool,
-    ) -> bool {
+    pub fn pointer_down(&mut self, output: Output, point: Point<i32, Physical>) -> bool {
         let Self::Open {
             selection,
             output_data,
@@ -689,34 +684,53 @@ impl ScreenshotUi {
             return false;
         };
 
-        if *mouse_down == down {
+        if *mouse_down {
             return false;
         }
 
-        if down && !output_data.contains_key(&output) {
+        if !output_data.contains_key(&output) {
             return false;
         }
 
-        *mouse_down = down;
+        *mouse_down = true;
+        *selection = (output, point, point);
 
-        if down {
-            *selection = (output, point, point);
-        } else {
-            // Check if the resulting selection is zero-sized, and try to come up with a small
-            // default rectangle.
-            let (output, a, b) = selection;
-            let mut rect = rect_from_corner_points(*a, *b);
-            if rect.size.is_empty() || rect.size == Size::from((1, 1)) {
-                let data = &output_data[output];
-                rect = Rectangle::new(
-                    Point::from((rect.loc.x - 16, rect.loc.y - 16)),
-                    Size::from((32, 32)),
-                )
-                .intersection(Rectangle::from_size(data.size))
-                .unwrap_or_default();
-                *a = rect.loc;
-                *b = rect.loc + rect.size - Size::from((1, 1));
-            }
+        self.update_buffers();
+
+        true
+    }
+
+    pub fn pointer_up(&mut self) -> bool {
+        let Self::Open {
+            selection,
+            output_data,
+            mouse_down,
+            ..
+        } = self
+        else {
+            return false;
+        };
+
+        if !*mouse_down {
+            return false;
+        }
+
+        *mouse_down = false;
+
+        // Check if the resulting selection is zero-sized, and try to come up with a small
+        // default rectangle.
+        let (output, a, b) = selection;
+        let mut rect = rect_from_corner_points(*a, *b);
+        if rect.size.is_empty() || rect.size == Size::from((1, 1)) {
+            let data = &output_data[output];
+            rect = Rectangle::new(
+                Point::from((rect.loc.x - 16, rect.loc.y - 16)),
+                Size::from((32, 32)),
+            )
+            .intersection(Rectangle::from_size(data.size))
+            .unwrap_or_default();
+            *a = rect.loc;
+            *b = rect.loc + rect.size - Size::from((1, 1));
         }
 
         self.update_buffers();
