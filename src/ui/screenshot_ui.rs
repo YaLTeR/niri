@@ -11,6 +11,7 @@ use niri_ipc::SizeChange;
 use pango::{Alignment, FontDescription};
 use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
+use smithay::backend::input::TouchSlot;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -56,6 +57,7 @@ pub enum ScreenshotUi {
         selection: (Output, Point<i32, Physical>, Point<i32, Physical>),
         output_data: HashMap<Output, OutputData>,
         mouse_down: bool,
+        touch_slot: Option<TouchSlot>,
         show_pointer: bool,
         open_anim: Animation,
         clock: Clock,
@@ -193,6 +195,7 @@ impl ScreenshotUi {
             selection,
             output_data,
             mouse_down: false,
+            touch_slot: None,
             show_pointer,
             open_anim,
             clock: clock.clone(),
@@ -659,25 +662,36 @@ impl ScreenshotUi {
     }
 
     /// The pointer has moved to `point` relative to the current selection output.
-    pub fn pointer_motion(&mut self, point: Point<i32, Physical>) {
+    pub fn pointer_motion(&mut self, point: Point<i32, Physical>, slot: Option<TouchSlot>) {
         let Self::Open {
             selection,
             mouse_down: true,
+            touch_slot,
             ..
         } = self
         else {
             return;
         };
 
+        if *touch_slot != slot {
+            return;
+        }
+
         selection.2 = point;
         self.update_buffers();
     }
 
-    pub fn pointer_down(&mut self, output: Output, point: Point<i32, Physical>) -> bool {
+    pub fn pointer_down(
+        &mut self,
+        output: Output,
+        point: Point<i32, Physical>,
+        slot: Option<TouchSlot>,
+    ) -> bool {
         let Self::Open {
             selection,
             output_data,
             mouse_down,
+            touch_slot,
             ..
         } = self
         else {
@@ -694,17 +708,19 @@ impl ScreenshotUi {
 
         *mouse_down = true;
         *selection = (output, point, point);
+        *touch_slot = slot;
 
         self.update_buffers();
 
         true
     }
 
-    pub fn pointer_up(&mut self) -> bool {
+    pub fn pointer_up(&mut self, slot: Option<TouchSlot>) -> bool {
         let Self::Open {
             selection,
             output_data,
             mouse_down,
+            touch_slot,
             ..
         } = self
         else {
@@ -715,7 +731,12 @@ impl ScreenshotUi {
             return false;
         }
 
+        if *touch_slot != slot {
+            return false;
+        }
+
         *mouse_down = false;
+        *touch_slot = None;
 
         // Check if the resulting selection is zero-sized, and try to come up with a small
         // default rectangle.

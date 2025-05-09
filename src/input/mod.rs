@@ -2112,7 +2112,7 @@ impl State {
             point.x = point.x.clamp(0, size.w - 1);
             point.y = point.y.clamp(0, size.h - 1);
 
-            self.niri.screenshot_ui.pointer_motion(point);
+            self.niri.screenshot_ui.pointer_motion(point, None);
         }
 
         let under = self.niri.contents_under(new_pos);
@@ -2245,7 +2245,7 @@ impl State {
             point.x = point.x.clamp(0, size.w - 1);
             point.y = point.y.clamp(0, size.h - 1);
 
-            self.niri.screenshot_ui.pointer_motion(point);
+            self.niri.screenshot_ui.pointer_motion(point, None);
         }
 
         let under = self.niri.contents_under(pos);
@@ -2579,11 +2579,11 @@ impl State {
                     point.x = min(size.w - 1, point.x);
                     point.y = min(size.h - 1, point.y);
 
-                    if self.niri.screenshot_ui.pointer_down(output, point) {
+                    if self.niri.screenshot_ui.pointer_down(output, point, None) {
                         self.niri.queue_redraw_all();
                     }
                 }
-            } else if self.niri.screenshot_ui.pointer_up() {
+            } else if self.niri.screenshot_ui.pointer_up(None) {
                 self.niri.queue_redraw_all();
             }
         }
@@ -3034,7 +3034,7 @@ impl State {
             point.x = point.x.clamp(0, size.w - 1);
             point.y = point.y.clamp(0, size.h - 1);
 
-            self.niri.screenshot_ui.pointer_motion(point);
+            self.niri.screenshot_ui.pointer_motion(point, None);
         }
 
         let under = self.niri.contents_under(pos);
@@ -3110,7 +3110,7 @@ impl State {
                             point.x = min(size.w - 1, point.x);
                             point.y = min(size.h - 1, point.y);
 
-                            if self.niri.screenshot_ui.pointer_down(output, point) {
+                            if self.niri.screenshot_ui.pointer_down(output, point, None) {
                                 self.niri.queue_redraw_all();
                             }
                         }
@@ -3151,7 +3151,7 @@ impl State {
                 }
             }
             TabletToolTipState::Up => {
-                if self.niri.screenshot_ui.pointer_up() {
+                if self.niri.screenshot_ui.pointer_up(None) {
                     self.niri.queue_redraw_all();
                 }
 
@@ -3550,7 +3550,28 @@ impl State {
 
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
-        if !handle.is_grabbed() {
+        if self.niri.screenshot_ui.is_open() {
+            if let Some(output) = under.output.clone() {
+                let geom = self.niri.global_space.output_geometry(&output).unwrap();
+                let mut point = (pos - geom.loc.to_f64())
+                    .to_physical(output.current_scale().fractional_scale())
+                    .to_i32_round();
+
+                let size = output.current_mode().unwrap().size;
+                let transform = output.current_transform();
+                let size = transform.transform_size(size);
+                point.x = min(size.w - 1, point.x);
+                point.y = min(size.h - 1, point.y);
+
+                if self
+                    .niri
+                    .screenshot_ui
+                    .pointer_down(output, point, Some(slot))
+                {
+                    self.niri.queue_redraw_all();
+                }
+            }
+        } else if !handle.is_grabbed() {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let mods = modifiers_from_state(mods);
             let mod_down = mods.contains(mod_key.to_modifiers());
@@ -3638,11 +3659,17 @@ impl State {
         let Some(handle) = self.niri.seat.get_touch() else {
             return;
         };
+        let slot = evt.slot();
+
+        if self.niri.screenshot_ui.pointer_up(Some(slot)) {
+            self.niri.queue_redraw_all();
+        }
+
         let serial = SERIAL_COUNTER.next_serial();
         handle.up(
             self,
             &UpEvent {
-                slot: evt.slot(),
+                slot,
                 serial,
                 time: evt.time_msec(),
             },
@@ -3655,12 +3682,30 @@ impl State {
         let Some(pos) = self.compute_touch_location(&evt) else {
             return;
         };
+        let slot = evt.slot();
+
+        if let Some(output) = self.niri.screenshot_ui.selection_output().cloned() {
+            let geom = self.niri.global_space.output_geometry(&output).unwrap();
+            let mut point = (pos - geom.loc.to_f64())
+                .to_physical(output.current_scale().fractional_scale())
+                .to_i32_round::<i32>();
+
+            let size = output.current_mode().unwrap().size;
+            let transform = output.current_transform();
+            let size = transform.transform_size(size);
+            point.x = point.x.clamp(0, size.w - 1);
+            point.y = point.y.clamp(0, size.h - 1);
+
+            self.niri.screenshot_ui.pointer_motion(point, Some(slot));
+            self.niri.queue_redraw(&output);
+        }
+
         let under = self.niri.contents_under(pos);
         handle.motion(
             self,
             under.surface,
             &TouchMotionEvent {
-                slot: evt.slot(),
+                slot,
                 location: pos,
                 time: evt.time_msec(),
             },

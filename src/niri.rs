@@ -1712,6 +1712,9 @@ impl State {
             SERIAL_COUNTER.next_serial(),
             get_monotonic_time().as_millis() as u32,
         );
+        if let Some(touch) = self.niri.seat.get_touch() {
+            touch.unset_grab(self);
+        }
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri
