@@ -456,7 +456,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
 
             let Overview { is_open } = response;
             if is_open {
-                println!("Overview is open");
+                println!("Overview is open.");
             } else {
                 println!("Overview is closed");
             }
