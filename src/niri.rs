@@ -1744,6 +1744,31 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    pub fn confirm_screenshot(&mut self, write_to_disk: bool) {
+        if !self.niri.screenshot_ui.is_open() {
+            return;
+        }
+
+        self.backend.with_primary_renderer(|renderer| {
+            match self.niri.screenshot_ui.capture(renderer) {
+                Ok((size, pixels)) => {
+                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk) {
+                        warn!("error saving screenshot: {err:?}");
+                    }
+                }
+                Err(err) => {
+                    warn!("error capturing screenshot: {err:?}");
+                }
+            }
+        });
+
+        self.niri.screenshot_ui.close();
+        self.niri
+            .cursor_manager
+            .set_cursor_image(CursorImageStatus::default_named());
+        self.niri.queue_redraw_all();
+    }
+
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn on_pw_msg(&mut self, msg: PwToNiri) {
         match msg {

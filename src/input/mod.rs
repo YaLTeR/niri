@@ -593,29 +593,7 @@ impl State {
                 }
             }
             Action::ConfirmScreenshot { write_to_disk } => {
-                if !self.niri.screenshot_ui.is_open() {
-                    return;
-                }
-
-                self.backend.with_primary_renderer(|renderer| {
-                    match self.niri.screenshot_ui.capture(renderer) {
-                        Ok((size, pixels)) => {
-                            if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk)
-                            {
-                                warn!("error saving screenshot: {err:?}");
-                            }
-                        }
-                        Err(err) => {
-                            warn!("error capturing screenshot: {err:?}");
-                        }
-                    }
-                });
-
-                self.niri.screenshot_ui.close();
-                self.niri
-                    .cursor_manager
-                    .set_cursor_image(CursorImageStatus::default_named());
-                self.niri.queue_redraw_all();
+                self.confirm_screenshot(write_to_disk);
             }
             Action::CancelScreenshot => {
                 if !self.niri.screenshot_ui.is_open() {
