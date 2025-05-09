@@ -5,8 +5,8 @@ use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
-    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response,
-    Transform, Window, Overview,
+    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview, Request,
+    Response, Transform, Window,
 };
 use serde_json::json;
 

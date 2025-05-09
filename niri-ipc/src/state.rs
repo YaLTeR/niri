@@ -207,7 +207,9 @@ impl EventStreamStatePart for KeyboardLayoutsState {
 
 impl EventStreamStatePart for OverviewState {
     fn replicate(&self) -> Vec<Event> {
-        vec![Event::OverviewOpenedOrClosed { is_open: self.is_open }]
+        vec![Event::OverviewOpenedOrClosed {
+            is_open: self.is_open,
+        }]
     }
 
     fn apply(&mut self, event: Event) -> Option<Event> {
