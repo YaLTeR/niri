@@ -149,7 +149,7 @@ pub enum Response {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Overview {
-    /// Overview opened state
+    /// Whether the overview is currently open.
     pub is_open: bool,
 }
 
