@@ -69,7 +69,7 @@ pub struct KeyboardLayoutsState {
 /// The overview state communicated over the event stream.
 #[derive(Debug, Default)]
 pub struct OverviewState {
-    /// State of the overview
+    /// Whether the overview is currently open.
     pub is_open: bool,
 }
 
