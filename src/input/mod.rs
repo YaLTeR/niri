@@ -2563,7 +2563,7 @@ impl State {
             self.niri.focus_layer_surface_if_on_demand(layer_under);
         }
 
-        if let Some(button) = button {
+        if button == Some(MouseButton::Left) && self.niri.screenshot_ui.is_open() {
             let pos = pointer.current_location();
             if let Some((output, _)) = self.niri.output_under(pos) {
                 let output = output.clone();
@@ -2578,11 +2578,9 @@ impl State {
                 point.x = min(size.w - 1, point.x);
                 point.y = min(size.h - 1, point.y);
 
-                if self
-                    .niri
-                    .screenshot_ui
-                    .pointer_button(output, point, button, button_state)
-                {
+                let down = button_state == ButtonState::Pressed;
+
+                if self.niri.screenshot_ui.pointer_button(output, point, down) {
                     self.niri.queue_redraw_all();
                 }
             }

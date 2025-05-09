@@ -11,7 +11,6 @@ use niri_ipc::SizeChange;
 use pango::{Alignment, FontDescription};
 use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::input::{ButtonState, MouseButton};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -678,8 +677,7 @@ impl ScreenshotUi {
         &mut self,
         output: Output,
         point: Point<i32, Physical>,
-        button: MouseButton,
-        state: ButtonState,
+        down: bool,
     ) -> bool {
         let Self::Open {
             selection,
@@ -691,11 +689,6 @@ impl ScreenshotUi {
             return false;
         };
 
-        if button != MouseButton::Left {
-            return false;
-        }
-
-        let down = state == ButtonState::Pressed;
         if *mouse_down == down {
             return false;
         }
