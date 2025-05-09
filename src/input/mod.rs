@@ -3065,56 +3065,57 @@ impl State {
     fn on_tablet_tool_tip<I: InputBackend>(&mut self, event: I::TabletToolTipEvent) {
         let tool = self.niri.seat.tablet_seat().get_tool(&event.tool());
 
-        if let Some(tool) = tool {
-            let is_overview_open = self.niri.layout.is_overview_open();
+        let Some(tool) = tool else {
+            return;
+        };
 
-            match event.tip_state() {
-                TabletToolTipState::Down => {
-                    let serial = SERIAL_COUNTER.next_serial();
-                    tool.tip_down(serial, event.time_msec());
+        let is_overview_open = self.niri.layout.is_overview_open();
 
-                    if let Some(pos) = self.niri.tablet_cursor_location {
-                        let under = self.niri.contents_under(pos);
-                        if let Some((window, _)) = under.window {
-                            if let Some(output) = is_overview_open.then_some(under.output).flatten()
-                            {
-                                let mut workspaces = self.niri.layout.workspaces();
-                                if let Some(ws_idx) = workspaces.find_map(|(_, ws_idx, ws)| {
-                                    ws.windows().any(|w| w.window == window).then_some(ws_idx)
-                                }) {
-                                    drop(workspaces);
-                                    self.niri.layout.focus_output(&output);
-                                    self.niri.layout.toggle_overview_to_workspace(ws_idx);
-                                }
+        match event.tip_state() {
+            TabletToolTipState::Down => {
+                let serial = SERIAL_COUNTER.next_serial();
+                tool.tip_down(serial, event.time_msec());
+
+                if let Some(pos) = self.niri.tablet_cursor_location {
+                    let under = self.niri.contents_under(pos);
+                    if let Some((window, _)) = under.window {
+                        if let Some(output) = is_overview_open.then_some(under.output).flatten() {
+                            let mut workspaces = self.niri.layout.workspaces();
+                            if let Some(ws_idx) = workspaces.find_map(|(_, ws_idx, ws)| {
+                                ws.windows().any(|w| w.window == window).then_some(ws_idx)
+                            }) {
+                                drop(workspaces);
+                                self.niri.layout.focus_output(&output);
+                                self.niri.layout.toggle_overview_to_workspace(ws_idx);
                             }
-
-                            self.niri.layout.activate_window(&window);
-
-                            // FIXME: granular.
-                            self.niri.queue_redraw_all();
-                        } else if let Some((output, ws)) = is_overview_open
-                            .then(|| self.niri.workspace_under(false, pos))
-                            .flatten()
-                        {
-                            let ws_idx = self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
-
-                            self.niri.layout.focus_output(&output);
-                            self.niri.layout.toggle_overview_to_workspace(ws_idx);
-
-                            // FIXME: granular.
-                            self.niri.queue_redraw_all();
-                        } else if let Some(output) = under.output {
-                            self.niri.layout.focus_output(&output);
-
-                            // FIXME: granular.
-                            self.niri.queue_redraw_all();
                         }
-                        self.niri.focus_layer_surface_if_on_demand(under.layer);
+
+                        self.niri.layout.activate_window(&window);
+
+                        // FIXME: granular.
+                        self.niri.queue_redraw_all();
+                    } else if let Some((output, ws)) = is_overview_open
+                        .then(|| self.niri.workspace_under(false, pos))
+                        .flatten()
+                    {
+                        let ws_idx = self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
+
+                        self.niri.layout.focus_output(&output);
+                        self.niri.layout.toggle_overview_to_workspace(ws_idx);
+
+                        // FIXME: granular.
+                        self.niri.queue_redraw_all();
+                    } else if let Some(output) = under.output {
+                        self.niri.layout.focus_output(&output);
+
+                        // FIXME: granular.
+                        self.niri.queue_redraw_all();
                     }
+                    self.niri.focus_layer_surface_if_on_demand(under.layer);
                 }
-                TabletToolTipState::Up => {
-                    tool.tip_up(event.time_msec());
-                }
+            }
+            TabletToolTipState::Up => {
+                tool.tip_up(event.time_msec());
             }
         }
     }
