@@ -79,6 +79,7 @@ impl EventStreamStatePart for EventStreamState {
         events.extend(self.workspaces.replicate());
         events.extend(self.windows.replicate());
         events.extend(self.keyboard_layouts.replicate());
+        events.extend(self.overview.replicate());
         events
     }
 
@@ -86,6 +87,7 @@ impl EventStreamStatePart for EventStreamState {
         let event = self.workspaces.apply(event)?;
         let event = self.windows.apply(event)?;
         let event = self.keyboard_layouts.apply(event)?;
+        let event = self.overview.apply(event)?;
         Some(event)
     }
 }
