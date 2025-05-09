@@ -3020,6 +3020,21 @@ impl State {
             return;
         };
 
+        if let Some(output) = self.niri.screenshot_ui.selection_output() {
+            let geom = self.niri.global_space.output_geometry(output).unwrap();
+            let mut point = (pos - geom.loc.to_f64())
+                .to_physical(output.current_scale().fractional_scale())
+                .to_i32_round::<i32>();
+
+            let size = output.current_mode().unwrap().size;
+            let transform = output.current_transform();
+            let size = transform.transform_size(size);
+            point.x = point.x.clamp(0, size.w - 1);
+            point.y = point.y.clamp(0, size.h - 1);
+
+            self.niri.screenshot_ui.pointer_motion(point);
+        }
+
         let under = self.niri.contents_under(pos);
 
         let tablet_seat = self.niri.seat.tablet_seat();
@@ -3068,10 +3083,35 @@ impl State {
         let Some(tool) = tool else {
             return;
         };
+        let tip_state = event.tip_state();
+
+        if self.niri.screenshot_ui.is_open() {
+            if let Some(pos) = self.niri.tablet_cursor_location {
+                if let Some((output, _)) = self.niri.output_under(pos) {
+                    let output = output.clone();
+                    let geom = self.niri.global_space.output_geometry(&output).unwrap();
+                    let mut point = (pos - geom.loc.to_f64())
+                        .to_physical(output.current_scale().fractional_scale())
+                        .to_i32_round();
+
+                    let size = output.current_mode().unwrap().size;
+                    let transform = output.current_transform();
+                    let size = transform.transform_size(size);
+                    point.x = min(size.w - 1, point.x);
+                    point.y = min(size.h - 1, point.y);
+
+                    let down = tip_state == TabletToolTipState::Down;
+
+                    if self.niri.screenshot_ui.pointer_button(output, point, down) {
+                        self.niri.queue_redraw_all();
+                    }
+                }
+            }
+        }
 
         let is_overview_open = self.niri.layout.is_overview_open();
 
-        match event.tip_state() {
+        match tip_state {
             TabletToolTipState::Down => {
                 let serial = SERIAL_COUNTER.next_serial();
                 tool.tip_down(serial, event.time_msec());
