@@ -98,7 +98,7 @@ pub enum Request {
     /// Respond with an error (for testing error handling).
     ReturnError,
     /// Request information about the overview.
-    Overview,
+    OverviewState,
 }
 
 /// Reply from niri to client.
@@ -142,7 +142,7 @@ pub enum Response {
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
     /// Information about the overview.
-    Overview(Overview),
+    OverviewState(Overview),
 }
 
 /// Overview information.

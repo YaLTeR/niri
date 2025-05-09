@@ -32,7 +32,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
-        Msg::Overview => Request::Overview,
+        Msg::OverviewState => Request::OverviewState,
     };
 
     let socket = Socket::connect().context("error connecting to the niri socket")?;
@@ -442,8 +442,8 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 }
             }
         }
-        Msg::Overview => {
-            let Response::Overview(response) = response else {
+        Msg::OverviewState => {
+            let Response::OverviewState(response) = response else {
                 bail!("unexpected response: expected Overview, got {response:?}");
             };
 

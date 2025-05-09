@@ -430,10 +430,10 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::FocusedOutput(output)
         }
         Request::EventStream => Response::Handled,
-        Request::Overview => {
+        Request::OverviewState => {
             let state = ctx.event_stream_state.borrow();
             let is_open = state.overview.is_open;
-            Response::Overview(Overview { is_open })
+            Response::OverviewState(Overview { is_open })
         }
     };
 
