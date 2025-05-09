@@ -56,13 +56,18 @@ pub enum ScreenshotUi {
     Open {
         selection: (Output, Point<i32, Physical>, Point<i32, Physical>),
         output_data: HashMap<Output, OutputData>,
-        mouse_down: bool,
-        touch_slot: Option<TouchSlot>,
+        button: Button,
         show_pointer: bool,
         open_anim: Animation,
         clock: Clock,
         config: Rc<RefCell<Config>>,
     },
+}
+
+#[derive(Clone, Copy)]
+enum Button {
+    Up,
+    Down { touch_slot: Option<TouchSlot> },
 }
 
 pub struct OutputData {
@@ -86,6 +91,12 @@ niri_render_elements! {
     ScreenshotUiRenderElement => {
         Screenshot = PrimaryGpuTextureRenderElement,
         SolidColor = SolidColorRenderElement,
+    }
+}
+
+impl Button {
+    fn is_down(&self) -> bool {
+        matches!(self, Self::Down { .. })
     }
 }
 
@@ -194,8 +205,7 @@ impl ScreenshotUi {
         *self = Self::Open {
             selection,
             output_data,
-            mouse_down: false,
-            touch_slot: None,
+            button: Button::Up,
             show_pointer,
             open_anim,
             clock: clock.clone(),
@@ -491,7 +501,7 @@ impl ScreenshotUi {
         let Self::Open {
             output_data,
             show_pointer,
-            mouse_down,
+            button,
             open_anim,
             ..
         } = self
@@ -520,7 +530,7 @@ impl ScreenshotUi {
                 .to_f64()
                 .to_logical(scale);
 
-            let alpha = if *mouse_down { 0.3 } else { 0.9 };
+            let alpha = if button.is_down() { 0.3 } else { 0.9 };
 
             let elem = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
                 buffer.clone(),
@@ -665,8 +675,7 @@ impl ScreenshotUi {
     pub fn pointer_motion(&mut self, point: Point<i32, Physical>, slot: Option<TouchSlot>) {
         let Self::Open {
             selection,
-            mouse_down: true,
-            touch_slot,
+            button: Button::Down { touch_slot },
             ..
         } = self
         else {
@@ -690,15 +699,15 @@ impl ScreenshotUi {
         let Self::Open {
             selection,
             output_data,
-            mouse_down,
-            touch_slot,
+            show_pointer,
+            button,
             ..
         } = self
         else {
             return false;
         };
 
-        if *mouse_down {
+        if button.is_down() {
             return false;
         }
 
@@ -706,9 +715,8 @@ impl ScreenshotUi {
             return false;
         }
 
-        *mouse_down = true;
+        *button = Button::Down { touch_slot: slot };
         *selection = (output, point, point);
-        *touch_slot = slot;
 
         self.update_buffers();
 
@@ -719,24 +727,22 @@ impl ScreenshotUi {
         let Self::Open {
             selection,
             output_data,
-            mouse_down,
-            touch_slot,
+            button,
             ..
         } = self
         else {
             return false;
         };
 
-        if !*mouse_down {
+        let Button::Down { touch_slot } = *button else {
+            return false;
+        };
+
+        if touch_slot != slot {
             return false;
         }
 
-        if *touch_slot != slot {
-            return false;
-        }
-
-        *mouse_down = false;
-        *touch_slot = None;
+        *button = Button::Up;
 
         // Check if the resulting selection is zero-sized, and try to come up with a small
         // default rectangle.
