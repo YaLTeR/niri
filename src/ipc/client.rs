@@ -433,6 +433,9 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowFocusChanged { id } => {
                         println!("Window focus changed: {id:?}");
                     }
+                    Event::WindowUrgencyChanged { id, urgent } => {
+                        println!("Window {id}: urgency changed to {urgent}");
+                    }
                     Event::KeyboardLayoutsChanged { keyboard_layouts } => {
                         println!("Keyboard layouts changed: {keyboard_layouts:?}");
                     }
