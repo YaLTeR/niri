@@ -71,8 +71,10 @@ layout {
         corner-radius 8
         active-color "red"
         inactive-color "gray"
+        urgent-color "blue"
         // active-gradient from="#80c8ff" to="#bbddff" angle=45
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+        // urgent-gradient from="#800" to="#a33" angle=45
     }
 
     insert-hint {
@@ -448,7 +450,7 @@ It can be `left`, `right`, `top`, or `bottom`.
 `corner-radius` sets the rounded corner radius for tabs in the indicator in logical pixels.
 When `gaps-between-tabs` is zero, only the first and the last tabs have rounded corners, otherwise all tabs do.
 
-`active-color`, `inactive-color`, `active-gradient`, `inactive-gradient` let you override the colors for the tabs.
+`active-color`, `inactive-color`, `urgent-color`, `active-gradient`, `inactive-gradient`, `urgent-gradient` let you override the colors for the tabs.
 They have the same semantics as the border and focus ring colors and gradients.
 
 Tab colors are picked in this order:

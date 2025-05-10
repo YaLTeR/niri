@@ -220,8 +220,10 @@ impl ResolvedWindowRules {
             tab_indicator: TabIndicatorRule {
                 active_color: None,
                 inactive_color: None,
+                urgent_color: None,
                 active_gradient: None,
                 inactive_gradient: None,
+                urgent_gradient: None,
             },
             draw_border_with_background: None,
             opacity: None,

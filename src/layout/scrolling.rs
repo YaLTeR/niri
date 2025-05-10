@@ -3820,8 +3820,9 @@ impl<W: LayoutElement> Column<W> {
             .enumerate()
             .map(|(tile_idx, (tile, tile_off))| {
                 let is_active = tile_idx == active_idx;
+                let is_urgent = tile.window().is_urgent();
                 let tile_pos = tile_off + tile.render_offset();
-                TabInfo::from_tile(tile, tile_pos, is_active, &config)
+                TabInfo::from_tile(tile, tile_pos, is_active, is_urgent, &config)
             });
 
         // Hide the tab indicator in fullscreen. If you have it configured to overlap the window,

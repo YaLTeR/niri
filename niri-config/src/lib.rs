@@ -841,9 +841,13 @@ pub struct TabIndicator {
     #[knuffel(child)]
     pub inactive_color: Option<Color>,
     #[knuffel(child)]
+    pub urgent_color: Option<Color>,
+    #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub urgent_gradient: Option<Gradient>,
 }
 
 impl Default for TabIndicator {
@@ -862,8 +866,10 @@ impl Default for TabIndicator {
             corner_radius: FloatOrInt(0.),
             active_color: None,
             inactive_color: None,
+            urgent_color: None,
             active_gradient: None,
             inactive_gradient: None,
+            urgent_gradient: None,
         }
     }
 }
@@ -1539,9 +1545,13 @@ pub struct TabIndicatorRule {
     #[knuffel(child)]
     pub inactive_color: Option<Color>,
     #[knuffel(child)]
+    pub urgent_color: Option<Color>,
+    #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub urgent_gradient: Option<Gradient>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -2500,11 +2510,17 @@ impl TabIndicatorRule {
         if let Some(x) = other.inactive_color {
             self.inactive_color = Some(x);
         }
+        if let Some(x) = other.urgent_color {
+            self.urgent_color = Some(x);
+        }
         if let Some(x) = other.active_gradient {
             self.active_gradient = Some(x);
         }
         if let Some(x) = other.inactive_gradient {
             self.inactive_gradient = Some(x);
+        }
+        if let Some(x) = other.urgent_gradient {
+            self.urgent_gradient = Some(x);
         }
     }
 }
@@ -4470,8 +4486,10 @@ mod tests {
                     ),
                     active_color: None,
                     inactive_color: None,
+                    urgent_color: None,
                     active_gradient: None,
                     inactive_gradient: None,
+                    urgent_gradient: None,
                 },
                 insert_hint: InsertHint {
                     off: false,
@@ -4901,8 +4919,10 @@ mod tests {
                             },
                         ),
                         inactive_color: None,
+                        urgent_color: None,
                         active_gradient: None,
                         inactive_gradient: None,
+                        urgent_gradient: None,
                     },
                     draw_border_with_background: None,
                     opacity: None,
