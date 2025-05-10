@@ -17,7 +17,7 @@ pub const SOURCE_FILE_RE: LazyCell<Regex> = LazyCell::new(|| {
 
 pub fn expand_source_file(
     file_path: &Path,
-    sourced_paths: &mut HashMap<PathBuf, ()>,
+    sourced_paths: &mut HashMap<PathBuf, bool>,
 ) -> Result<String, ConfigParseError> {
     let file_content = std::fs::read_to_string(file_path).map_err(ConfigParseError::IoError)?;
     let base_path = file_path.parent().unwrap();
@@ -25,37 +25,39 @@ pub fn expand_source_file(
     let mut expanded_file_content = String::new();
 
     for caps in SOURCE_FILE_RE.captures_iter(file_content.as_str()) {
-        if let Some(source_file) = caps.name("source_file") {
-            expanded_file_content.push_str(&file_content[last_match_pos..source_file.start()]);
+        let Some(source_file) = caps.name("source_file") else {
+            unreachable!("source_file must always be available")
+        };
 
-            let source_file_str = source_file.as_str();
-            let user_source_path = Path::new(source_file_str);
-            let absolute_source_path = base_path.join(source_file_str);
-            let final_source_path = if user_source_path.is_absolute() {
-                user_source_path
-            } else {
-                absolute_source_path.as_path()
-            };
+        expanded_file_content.push_str(&file_content[last_match_pos..source_file.start()]);
 
-            if sourced_paths
-                .insert(final_source_path.to_path_buf(), ())
-                .is_some()
-            {
-                return Err(ConfigParseError::CircularSourceError(
-                    file_path.to_path_buf(),
-                    final_source_path.to_path_buf(),
-                ));
-            }
+        let source_file_str = source_file.as_str();
+        let user_source_path = Path::new(source_file_str);
+        let absolute_source_path = base_path.join(source_file_str);
+        let final_source_path = if user_source_path.is_absolute() {
+            user_source_path
+        } else {
+            absolute_source_path.as_path()
+        };
 
-            let sourced_content = expand_source_file(final_source_path, sourced_paths)?;
-
-            sourced_paths.remove(&final_source_path.to_path_buf());
-
-            Config::parse(file_path.to_str().unwrap(), sourced_content.as_str())?;
-
-            expanded_file_content.push_str(&sourced_content);
-            last_match_pos = source_file.end();
+        if sourced_paths
+            .insert(final_source_path.to_path_buf(), true)
+            .is_some_and(|v| v)
+        {
+            return Err(ConfigParseError::CircularSourceError(
+                file_path.to_path_buf(),
+                final_source_path.to_path_buf(),
+            ));
         }
+
+        let sourced_content = expand_source_file(final_source_path, sourced_paths)?;
+
+        sourced_paths.insert(final_source_path.to_path_buf(), false);
+
+        Config::parse(file_path.to_str().unwrap(), sourced_content.as_str())?;
+
+        expanded_file_content.push_str(&sourced_content);
+        last_match_pos = source_file.end();
     }
 
     expanded_file_content.push_str(&file_content[last_match_pos..]);

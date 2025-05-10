@@ -35,6 +35,8 @@ pub use utils::RegexEq;
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {
+    #[doc(hidden)]
+    pub _dependencies: Vec<PathBuf>,
     #[knuffel(child, default)]
     pub input: Input,
     #[knuffel(children(name = "output"))]
@@ -2342,7 +2344,7 @@ impl Config {
         let contents = utils::expand_source_file(path, &mut sourced_paths)
             .context("failed to expand config file")?;
 
-        let config = Self::parse(
+        let mut config = Self::parse(
             path.file_name()
                 .and_then(OsStr::to_str)
                 .unwrap_or("config.kdl"),
@@ -2350,6 +2352,9 @@ impl Config {
         )
         .context("error parsing")?;
         debug!("loaded config from {path:?}");
+
+        config._dependencies = sourced_paths.into_keys().collect();
+
         Ok(config)
     }
 
