@@ -440,6 +440,12 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
         }
     }
 
+    if let Some(is_urgent) = m.is_urgent {
+        if window.is_urgent() != is_urgent {
+            return false;
+        }
+    }
+
     if let Some(is_active) = m.is_active {
         // Our "is-active" definition corresponds to the window having a pending Activated state.
         let pending_activated = server_pending

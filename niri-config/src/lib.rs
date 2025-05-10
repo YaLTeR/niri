@@ -1457,6 +1457,8 @@ pub struct Match {
     #[knuffel(property)]
     pub is_window_cast_target: Option<bool>,
     #[knuffel(property)]
+    pub is_urgent: Option<bool>,
+    #[knuffel(property)]
     pub at_startup: Option<bool>,
 }
 
@@ -4804,6 +4806,7 @@ mod tests {
                             is_active_in_column: None,
                             is_floating: None,
                             is_window_cast_target: None,
+                            is_urgent: None,
                             at_startup: None,
                         },
                     ],
@@ -4822,6 +4825,7 @@ mod tests {
                             is_active_in_column: None,
                             is_floating: None,
                             is_window_cast_target: None,
+                            is_urgent: None,
                             at_startup: None,
                         },
                         Match {
@@ -4836,6 +4840,7 @@ mod tests {
                             is_active_in_column: None,
                             is_floating: None,
                             is_window_cast_target: None,
+                            is_urgent: None,
                             at_startup: None,
                         },
                     ],

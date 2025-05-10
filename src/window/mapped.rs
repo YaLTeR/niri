@@ -520,6 +520,7 @@ impl Mapped {
         if self.is_focused && urgent {
             return;
         }
+
         let changed = self.is_urgent != urgent;
         self.is_urgent = urgent;
         self.need_to_recompute_rules |= changed;

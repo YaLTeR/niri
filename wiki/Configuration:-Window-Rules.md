@@ -35,6 +35,7 @@ window-rule {
     match is-active-in-column=true
     match is-floating=true
     match is-window-cast-target=true
+    match is-urgent=true
     match at-startup=true
 
     // Properties that apply once upon window opening.
@@ -285,6 +286,19 @@ window-rule {
 Example:
 
 ![](https://github.com/user-attachments/assets/375b381e-3a87-4e94-8676-44404971d893)
+
+#### `is-urgent`
+
+<sup>Since: next release</sup>
+
+Can be `true` or `false`.
+Matches windows that request the user's attention.
+
+```kdl
+window-rule {
+    match is-urgent=true
+}
+```
 
 #### `at-startup`
 
