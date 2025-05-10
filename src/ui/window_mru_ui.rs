@@ -1,13 +1,15 @@
 /*
 Todo:
 
-- Keybindings in the MruUi, e.g. Close window, Quit, Focus selected, prev, next
+- Animation. Likely to need a position cache as for Tiles
+- Transition when wrapping around during Mru navigation
+- support clicking on the target thumbnail
+x Unfocus the current Tile while the MruUi is up and refocus as necessary when
+  the UI is closed.
+x Keybindings in the MruUi, e.g. Close window, Quit, Focus selected, prev, next
 x Mru list should contain an Option<BakedBuffer> to cache the texture
   once rendered and then reused as needed.
-- Animation. Likely to need a position cache as for Tiles
-- Unfocus the current Tile while the MruUi is up and refocus as necessary when
-  the UI is closed.
-- support clicking on the target thumbnail
+x Transition when opening/closing MruUI
 
 */
 use std::cell::RefCell;
@@ -16,8 +18,7 @@ use std::iter;
 use std::ops::ControlFlow;
 use std::time::Instant;
 
-use niri_config::{Bind, Key, Modifiers, Trigger};
-use niri_ipc::Action;
+use niri_config::{Action, Bind, Key, Modifiers, Trigger};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -51,6 +52,9 @@ const FOCUS_RING_ALPHA: f32 = 0.9;
 
 // Background color for the UI
 const BACKGROUND: Color32F = Color32F::new(0., 0., 0., 0.7);
+
+// Transition delay in ms for MRU UI open/close and wrap-arounds
+pub const MRU_UI_TRANSITION_DELAY: u16 = 20;
 
 /// Window MRU traversal context.
 #[derive(Debug)]
@@ -112,7 +116,11 @@ impl WindowMru {
     }
 
     pub fn forward(&mut self) {
-        self.current = (self.current + 1) % self.ids.len()
+        self.current = if self.ids.is_empty() {
+            0
+        } else {
+            (self.current + 1) % self.ids.len()
+        }
     }
 
     pub fn backward(&mut self) {
@@ -131,11 +139,13 @@ pub enum WindowMruUi {
     },
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum MruDirection {
     Forward,  // From most recently used to least
     Backward, // From least recently used to most
 }
 
+#[derive(Clone, Copy, Debug)]
 enum MruAlign {
     Center,
     Right,
@@ -174,6 +184,40 @@ impl WindowMruUi {
         *self = Self::Closed {};
     }
 
+    pub fn forward(&mut self) {
+        let Self::Open { wmru, .. } = self else {
+            return;
+        };
+        wmru.forward();
+    }
+
+    pub fn backward(&mut self) {
+        let Self::Open { wmru, .. } = self else {
+            return;
+        };
+        wmru.backward();
+    }
+
+    pub fn current_window_id(&self) -> Option<MappedId> {
+        let Self::Open { wmru, .. } = self else {
+            panic!("Call to current_window_id while WindowMruUi was closed");
+        };
+        wmru.ids.get(wmru.current).copied()
+    }
+
+    pub fn remove_window(&mut self, id: MappedId) {
+        let Self::Open { wmru, textures, .. } = self else {
+            return;
+        };
+        if let Some(idx) = wmru.ids.iter().position(|v| *v == id) {
+            wmru.ids.remove(idx);
+            if wmru.current >= wmru.ids.len() {
+                wmru.current = wmru.current.saturating_sub(1);
+            }
+            textures.borrow_mut().textures.remove(idx);
+        }
+    }
+
     pub fn render_output(
         &self,
         niri: &Niri,
@@ -192,158 +236,155 @@ impl WindowMruUi {
             panic!("render_output on a non-open WindowMruUi");
         };
 
-        let mut textures = textures.borrow_mut();
-
         let mut elements = Vec::new();
-
         let output_size = output_size(output);
 
-        let allowance = output_size.w - 2. * SPACING;
+        if !wmru.ids.is_empty() {
+            let mut textures = textures.borrow_mut();
 
-        let current = wmru.current;
-        let current_texture_width = {
-            let Some(t) = textures.get(niri, renderer, &wmru, current) else {
-                return vec![];
+            let allowance = output_size.w - 2. * SPACING;
+
+            let current = wmru.current;
+            let current_texture_width = {
+                let Some(t) = textures.get(niri, renderer, wmru, current) else {
+                    return vec![];
+                };
+                t.buffer.logical_size().w
             };
-            t.buffer.logical_size().w
-        };
-        let mut total_width = current_texture_width;
+            let mut total_width = current_texture_width;
 
-        // define iterators over the mru list that move away from the "current" element in the MRU list
-        let after_it = (current + 1..wmru.ids.len())
-            .map(Some)
-            .chain(iter::repeat(None));
-        let before_it = (0..current).map(Some).chain(iter::repeat(None));
+            // define iterators over the mru list that move away from the "current" element in the MRU list
+            let after_it = (current + 1..wmru.ids.len())
+                .map(Some)
+                .chain(iter::repeat(None));
+            let before_it = (0..current).rev().map(Some).chain(iter::repeat(None));
 
-        // the texture cache gets updated for all textures that fit within the allowance
-        let (mut align, left, right) = match after_it.zip(before_it).try_fold(
-            (MruAlign::Center, current, current),
-            |(align, l, r), (a, b)| {
-                let (align, l, r) = match (a, b) {
-                    (None, None) => {
-                        // all textures fit in the allowance
-                        return ControlFlow::Break((align, l, r));
-                    }
-                    (Some(a), None) => {
-                        if let Some(t) = textures.get(niri, renderer, wmru, a) {
-                            total_width += t.buffer.logical_size().w + SPACING;
+            // the texture cache gets updated for all textures that fit within the allowance
+            let (align, left, right) = match after_it.zip(before_it).try_fold(
+                (MruAlign::Center, current, current),
+                |(align, l, r), (a, b)| {
+                    let (align, l, r) = match (a, b) {
+                        (None, None) => {
+                            // all textures fit in the allowance
+                            return ControlFlow::Break((MruAlign::Left, l, r));
                         }
-                        (MruAlign::Right, l, a)
-                    }
-                    (None, Some(b)) => {
-                        if let Some(t) = textures.get(niri, renderer, wmru, b) {
-                            total_width += t.buffer.logical_size().w + SPACING;
+                        (Some(a), None) => {
+                            if let Some(t) = textures.get(niri, renderer, wmru, a) {
+                                total_width += t.buffer.logical_size().w + SPACING;
+                            }
+                            (MruAlign::Left, l, a)
                         }
-                        (MruAlign::Left, b, r)
-                    }
-                    (Some(a), Some(b)) => {
-                        if let Some(t) = textures.get(niri, renderer, wmru, a) {
-                            total_width += t.buffer.logical_size().w + SPACING;
+                        (None, Some(b)) => {
+                            if let Some(t) = textures.get(niri, renderer, wmru, b) {
+                                total_width += t.buffer.logical_size().w + SPACING;
+                            }
+                            (MruAlign::Right, b, r)
                         }
-                        if let Some(t) = textures.get(niri, renderer, wmru, b) {
-                            total_width += t.buffer.logical_size().w + SPACING;
+                        (Some(a), Some(b)) => {
+                            if let Some(t) = textures.get(niri, renderer, wmru, a) {
+                                total_width += t.buffer.logical_size().w + SPACING;
+                            }
+                            if let Some(t) = textures.get(niri, renderer, wmru, b) {
+                                total_width += t.buffer.logical_size().w + SPACING;
+                            }
+                            (align, b, a)
                         }
-                        (align, b, a)
+                    };
+                    if total_width >= allowance {
+                        ControlFlow::Break((align, l, r))
+                    } else {
+                        ControlFlow::Continue((align, l, r))
                     }
-                };
-                if total_width >= allowance {
-                    ControlFlow::Break((align, l, r))
-                } else {
-                    ControlFlow::Continue((align, l, r))
-                }
-            },
-        ) {
-            c @ ControlFlow::Continue(_) => c.continue_value().unwrap(),
-            b @ ControlFlow::Break(_) => b.break_value().unwrap(),
-        };
+                },
+            ) {
+                c @ ControlFlow::Continue(_) => c.continue_value().unwrap(),
+                b @ ControlFlow::Break(_) => b.break_value().unwrap(),
+            };
 
-        if total_width <= allowance {
-            align = MruAlign::Left;
-        }
-
-        match align {
-            MruAlign::Left => {
-                let mut location: Point<f64, Logical> = if total_width <= allowance {
-                    Point::from(((output_size.w - total_width) / 2., output_size.h / 2.))
-                } else {
-                    Point::from((SPACING, output_size.h / 2.))
-                };
-                for idx in left..=right {
-                    if let Some(t) = textures.get(niri, renderer, wmru, idx) {
-                        render_elements_for_thumbnail(
-                            t,
-                            &mut location,
-                            true,
-                            renderer,
-                            if idx == current {
-                                Some(focus_ring)
-                            } else {
-                                None
-                            },
-                            &mut elements,
-                        );
+            match align {
+                MruAlign::Left => {
+                    let mut location: Point<f64, Logical> = if total_width <= allowance {
+                        Point::from(((output_size.w - total_width) / 2., output_size.h / 2.))
+                    } else {
+                        Point::from((SPACING, output_size.h / 2.))
+                    };
+                    for idx in left..=right {
+                        if let Some(t) = textures.get(niri, renderer, wmru, idx) {
+                            render_elements_for_thumbnail(
+                                t,
+                                &mut location,
+                                true,
+                                renderer,
+                                if idx == current {
+                                    Some(focus_ring)
+                                } else {
+                                    None
+                                },
+                                &mut elements,
+                            );
+                        }
                     }
                 }
-            }
-            MruAlign::Center => {
-                // fill from the center
-                let center = Point::from((output_size.w / 2., output_size.h / 2.));
-                let mut location = center - Point::from((current_texture_width / 2., 0.));
+                MruAlign::Center => {
+                    // fill from the center
+                    let center = Point::from((output_size.w / 2., output_size.h / 2.));
+                    let mut location = center - Point::from((current_texture_width / 2., 0.));
 
-                for idx in current..=right {
-                    if let Some(t) = textures.get(niri, renderer, wmru, idx) {
-                        render_elements_for_thumbnail(
-                            t,
-                            &mut location,
-                            true,
-                            renderer,
-                            if idx == current {
-                                Some(focus_ring)
-                            } else {
-                                None
-                            },
-                            &mut elements,
-                        );
+                    for idx in current..=right {
+                        if let Some(t) = textures.get(niri, renderer, wmru, idx) {
+                            render_elements_for_thumbnail(
+                                t,
+                                &mut location,
+                                true,
+                                renderer,
+                                if idx == current {
+                                    Some(focus_ring)
+                                } else {
+                                    None
+                                },
+                                &mut elements,
+                            );
+                        }
+                    }
+
+                    let mut location =
+                        center - Point::from((current_texture_width / 2. + SPACING, 0.));
+                    for idx in (left..current).rev() {
+                        if let Some(t) = textures.get(niri, renderer, wmru, idx) {
+                            render_elements_for_thumbnail(
+                                t,
+                                &mut location,
+                                false,
+                                renderer,
+                                None,
+                                &mut elements,
+                            );
+                        }
                     }
                 }
+                MruAlign::Right => {
+                    // fill from the right
+                    let mut location = Point::from((output_size.w - SPACING, output_size.h / 2.));
 
-                let mut location = center - Point::from((current_texture_width / 2. + SPACING, 0.));
-                for idx in (left..current).rev() {
-                    if let Some(t) = textures.get(niri, renderer, wmru, idx) {
-                        render_elements_for_thumbnail(
-                            t,
-                            &mut location,
-                            false,
-                            renderer,
-                            None,
-                            &mut elements,
-                        );
-                    }
-                }
-            }
-            MruAlign::Right => {
-                // fill from the right
-                let mut location = Point::from((output_size.w - SPACING, output_size.h / 2.));
-
-                for idx in (left..=right).rev() {
-                    if let Some(t) = textures.get(niri, renderer, wmru, idx) {
-                        render_elements_for_thumbnail(
-                            t,
-                            &mut location,
-                            false,
-                            renderer,
-                            if idx == current {
-                                Some(focus_ring)
-                            } else {
-                                None
-                            },
-                            &mut elements,
-                        );
+                    for idx in (left..=right).rev() {
+                        if let Some(t) = textures.get(niri, renderer, wmru, idx) {
+                            render_elements_for_thumbnail(
+                                t,
+                                &mut location,
+                                false,
+                                renderer,
+                                if idx == current {
+                                    Some(focus_ring)
+                                } else {
+                                    None
+                                },
+                                &mut elements,
+                            );
+                        }
                     }
                 }
             }
         }
-
         // Put a panel above the current View to contrast the thumbnails
         let size = Size::from((output_size.w, output_size.h / 16. * 14.));
         let buffer = SolidColorBuffer::new(size, BACKGROUND);
@@ -556,10 +597,22 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
     },
     Bind {
         key: Key {
-            trigger: Trigger::Keysym(Keysym::Q),
+            trigger: Trigger::Keysym(Keysym::q),
             modifiers: Modifiers::ALT,
         },
         action: Action::CloseCurrentMruWindow,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::Return),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::ToggleWindowMruUi,
         repeat: true,
         cooldown: None,
         allow_when_locked: false,

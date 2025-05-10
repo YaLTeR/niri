@@ -651,9 +651,9 @@ impl XdgShellHandler for State {
         let window = mapped.window.clone();
         let output = output.cloned();
 
-        self.niri.stop_casts_for_target(CastTarget::Window {
-            id: mapped.id().get(),
-        });
+        let id = mapped.id();
+        self.niri
+            .stop_casts_for_target(CastTarget::Window { id: id.get() });
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri.layout.store_unmap_snapshot(renderer, &window);
@@ -671,6 +671,7 @@ impl XdgShellHandler for State {
         let was_active = active_window == Some(&window);
 
         self.niri.layout.remove_window(&window, transaction.clone());
+        self.niri.window_mru_ui.remove_window(id);
         self.add_default_dmabuf_pre_commit_hook(surface.wl_surface());
 
         // If this is the only instance, then this transaction will complete immediately, so no

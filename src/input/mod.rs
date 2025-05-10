@@ -41,8 +41,9 @@ use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
-use crate::niri::{CastTarget, State, WindowMRU};
+use crate::niri::{CastTarget, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
+use crate::ui::window_mru_ui::{MruDirection, WindowMru, MRU_UI_BINDINGS, MRU_UI_TRANSITION_DELAY};
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
@@ -426,8 +427,14 @@ impl State {
                     }
                 }
 
-                let intercept_result = {
-                    let bindings = &this.niri.config.borrow().binds;
+                let mut intercept_result = {
+                    let mru_bindings;
+                    let bindings = if this.niri.window_mru_ui.is_open() {
+                        mru_bindings = Binds(MRU_UI_BINDINGS.to_vec());
+                        &mru_bindings
+                    } else {
+                        &this.niri.config.borrow().binds
+                    };
                     should_intercept_key(
                         &mut this.niri.suppressed_keys,
                         bindings,
@@ -442,7 +449,12 @@ impl State {
                         is_inhibiting_shortcuts,
                     )
                 };
-                if matches!(intercept_result, FilterResult::Forward) {
+                if this.niri.window_mru_ui.is_open() {
+                    // MRU UI prevents interaction with regular windows
+                    if matches!(intercept_result, FilterResult::Forward) {
+                        intercept_result = FilterResult::Intercept(None);
+                    }
+                } else if matches!(intercept_result, FilterResult::Forward) {
                     // Interaction with the active window, immediately update
                     // the active window's focus timestamp without waiting for a
                     // possible pending MRU lock-in delay.
@@ -1965,15 +1977,78 @@ impl State {
             }
             Action::ToggleWindowMruUi => {
                 if self.niri.window_mru_ui.is_open() {
-                    self.niri.window_mru_ui.close()
+                    if let Some(id) = self.niri.window_mru_ui.current_window_id() {
+                        if let Some(window) = self.niri.find_window_by_id(id) {
+                            self.focus_window(&window)
+                        }
+                    }
+                    self.backend.with_primary_renderer(|renderer| {
+                        self.niri
+                            .do_screen_transition(renderer, Some(MRU_UI_TRANSITION_DELAY));
+                    });
+                    self.niri.window_mru_ui.close();
                 } else {
-                    let mut wmru = WindowMRU::new(&mut self.niri);
-                    wmru.advance(&self.niri, false);
+                    // update the focus timestamp on the currently active window and
+                    // prepare a new WindowMRU
+                    self.niri.mru_commit();
                     let config = self.niri.config.borrow().layout.focus_ring;
-                    self.niri.window_mru_ui.open(wmru, config);
+                    let wmru = WindowMru::new(&self.niri, MruDirection::Forward);
+                    self.backend.with_primary_renderer(|renderer| {
+                        self.niri
+                            .do_screen_transition(renderer, Some(MRU_UI_TRANSITION_DELAY));
+                    });
+                    self.niri.window_mru_ui.open(config, wmru);
                 }
                 // FIXME: granular
                 self.niri.queue_redraw_all();
+            }
+            Action::CancelMru => {
+                if self.niri.window_mru_ui.is_open() {
+                    self.backend.with_primary_renderer(|renderer| {
+                        self.niri
+                            .do_screen_transition(renderer, Some(MRU_UI_TRANSITION_DELAY));
+                    });
+                    self.niri.window_mru_ui.close();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::MruForward => {
+                if self.niri.window_mru_ui.is_open() {
+                    self.niri.window_mru_ui.forward();
+                } else {
+                    self.niri.mru_commit();
+                    let config = self.niri.config.borrow().layout.focus_ring;
+                    let wmru = WindowMru::new(&self.niri, MruDirection::Forward);
+                    self.niri.window_mru_ui.open(config, wmru);
+                }
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::MruBackward => {
+                if self.niri.window_mru_ui.is_open() {
+                    self.niri.window_mru_ui.backward();
+                } else {
+                    self.niri.mru_commit();
+                    let config = self.niri.config.borrow().layout.focus_ring;
+                    let wmru = WindowMru::new(&self.niri, MruDirection::Backward);
+                    self.niri.window_mru_ui.open(config, wmru);
+                }
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::CloseCurrentMruWindow => {
+                if self.niri.window_mru_ui.is_open() {
+                    if let Some(id) = self.niri.window_mru_ui.current_window_id() {
+                        if let Some(w) = self.niri.find_window_by_id(id) {
+                            if let Some(tl) = w.toplevel() {
+                                tl.send_close();
+                            }
+                        }
+                    }
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
         }
     }

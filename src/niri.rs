@@ -3889,7 +3889,10 @@ impl Niri {
 
         // Don't draw the focus ring on the workspaces while interactively moving above those
         // workspaces, since the interactively-moved window already has a focus ring.
-        let focus_ring = !self.layout.interactive_move_is_moving_above_output(output);
+        // Likewise, don't draw the focus ring while the MRU UI is open to avoid the confusion
+        // of having two focus rings on screen.
+        let focus_ring = !(self.layout.interactive_move_is_moving_above_output(output)
+            || self.window_mru_ui.is_open());
 
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
