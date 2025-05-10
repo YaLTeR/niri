@@ -1543,10 +1543,6 @@ pub enum Action {
     FocusWindow(u64),
     FocusWindowInColumn(#[knuffel(argument)] u8),
     FocusWindowPrevious,
-    #[knuffel(skip)]
-    FocusWindowMruNext,
-    #[knuffel(skip)]
-    FocusWindowMruPrevious,
     FocusColumnLeft,
     FocusColumnRight,
     FocusColumnFirst,
@@ -1730,7 +1726,9 @@ pub enum Action {
     CancelMru,
     #[knuffel(skip)]
     CloseCurrentMruWindow,
+    #[knuffel(skip)]
     MruBackward,
+    #[knuffel(skip)]
     MruForward,
 }
 
@@ -1771,8 +1769,6 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
             niri_ipc::Action::FocusWindowInColumn { index } => Self::FocusWindowInColumn(index),
             niri_ipc::Action::FocusWindowPrevious {} => Self::FocusWindowPrevious,
-            niri_ipc::Action::FocusWindowMruNext {} => Self::FocusWindowMruNext,
-            niri_ipc::Action::FocusWindowMruPrevious {} => Self::FocusWindowMruPrevious,
             niri_ipc::Action::FocusColumnLeft {} => Self::FocusColumnLeft,
             niri_ipc::Action::FocusColumnRight {} => Self::FocusColumnRight,
             niri_ipc::Action::FocusColumnFirst {} => Self::FocusColumnFirst,

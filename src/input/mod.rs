@@ -2,7 +2,7 @@ use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
@@ -383,37 +383,11 @@ impl State {
                 // window-mru list. If so,  drop the list and update the current window's timestamp.
                 // window-mru is cancelled *even* when state is locked, however the
                 // focus timestamp on the active window will not be updated
-                if !mods.alt && this.niri.window_mru.take().is_some() && !this.niri.is_locked() {
-                    if let Some(m) = this
-                        .niri
-                        .layout
-                        .active_workspace_mut()
-                        .and_then(|ws| ws.active_window_mut())
-                    {
-                        m.update_focus_timestamp(Instant::now());
-                    }
+                if !mods.alt && this.niri.window_mru_ui.is_open() {
+                    this.niri.window_mru_ui.close();
                 }
 
                 if pressed && raw == Some(Keysym::Escape) {
-                    // If the ESC key was pressed with the Alt modifier and
-                    // there is an active window-mru, cancel the window-mru and
-                    // refocus the initial window (first in the list).
-                    if mods.alt {
-                        if let Some(id) = this
-                            .niri
-                            .window_mru
-                            .take()
-                            .and_then(|wmru| wmru.ids.into_iter().next())
-                        {
-                            this.niri.suppressed_keys.insert(key_code);
-                            let window = this.niri.layout.windows().find(|(_, m)| m.id() == id);
-                            let window = window.map(|(_, m)| m.window.clone());
-                            if let Some(window) = window {
-                                this.focus_window(&window);
-                                return FilterResult::Intercept(None);
-                            }
-                        }
-                    }
                     if this.niri.pick_window.is_some() || this.niri.pick_color.is_some() {
                         // We window picking state so the pick window grab must be active.
                         // Unsetting it cancels window picking.
@@ -777,12 +751,6 @@ impl State {
                 if let Some(window) = self.niri.previously_focused_window.clone() {
                     self.focus_window(&window);
                 }
-            }
-            Action::FocusWindowMruNext => {
-                self.focus_window_mru_next();
-            }
-            Action::FocusWindowMruPrevious => {
-                self.focus_window_mru_previous();
             }
             Action::SwitchLayout(action) => {
                 let keyboard = &self.niri.seat.get_keyboard().unwrap();
@@ -3486,7 +3454,7 @@ const PRESET_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Tab),
             modifiers: Modifiers::ALT,
         },
-        action: Action::FocusWindowMruNext,
+        action: Action::MruForward,
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -3498,7 +3466,7 @@ const PRESET_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Tab),
             modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
         },
-        action: Action::FocusWindowMruPrevious,
+        action: Action::MruBackward,
         repeat: true,
         cooldown: None,
         allow_when_locked: false,

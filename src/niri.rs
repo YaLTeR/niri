@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::{cmp, env, mem, thread};
+use std::{env, mem, thread};
 
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::{bail, ensure, Context};
@@ -390,10 +390,6 @@ pub struct Niri {
     /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
     #[cfg(feature = "xdp-gnome-screencast")]
     pub dynamic_cast_id_for_portal: MappedId,
-
-    // List of windows for MRU prev/next traversal.
-    // Only defined when there is an active traversal in progress
-    pub window_mru: Option<WindowMRU>,
 
     pending_mru_commit: Option<PendingMruCommit>,
 }
@@ -866,34 +862,6 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    /// Focus the next window in MRU order.
-    pub fn focus_window_mru_next(&mut self) {
-        let mut wmru = self
-            .niri
-            .window_mru
-            .take()
-            .unwrap_or_else(|| WindowMRU::new(&mut self.niri));
-
-        if let Some(window) = wmru.advance(&self.niri, false) {
-            self.focus_window(&window);
-        }
-        self.niri.window_mru.replace(wmru);
-    }
-
-    /// Focus the previous window in MRU order.
-    pub fn focus_window_mru_previous(&mut self) {
-        let mut wmru = self
-            .niri
-            .window_mru
-            .take()
-            .unwrap_or_else(|| WindowMRU::new(&mut self.niri));
-
-        if let Some(window) = wmru.advance(&self.niri, true) {
-            self.focus_window(&window);
-        }
-        self.niri.window_mru.replace(wmru);
-    }
-
     pub fn maybe_warp_cursor_to_focus(&mut self) -> bool {
         let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
             None => return false,
@@ -1149,15 +1117,7 @@ impl State {
 
                     if mapped.get_focus_timestamp().is_none() {
                         mapped.update_focus_timestamp(stamp);
-
-                        // if there was an active windows-mru, insert this
-                        // new window into the list to avoid surprising the
-                        // user if they focus another window and then want
-                        // to immediately return to the newly created window
-                        if let Some(ref mut wmru) = self.niri.window_mru {
-                            wmru.ids.insert(wmru.current, focus_id);
-                        }
-                    } else if self.niri.window_mru.is_none() {
+                    } else {
                         let timer =
                             Timer::from_duration(Duration::from_millis(DEFAULT_MRU_COMMIT_MS));
 
@@ -2537,7 +2497,6 @@ impl Niri {
             #[cfg(feature = "xdp-gnome-screencast")]
             dynamic_cast_id_for_portal: MappedId::next(),
 
-            window_mru: None,
             pending_mru_commit: None,
         };
 
@@ -5786,49 +5745,6 @@ pub struct ClientState {
 impl ClientData for ClientState {
     fn initialized(&self, _client_id: ClientId) {}
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
-}
-
-impl WindowMRU {
-    pub(crate) fn new(niri: &mut Niri) -> Self {
-        // update the focus timestamp on the currently active window and
-        // prepare a new WindowMRU
-        niri.mru_commit();
-
-        // and build a list of MappedId sorted by timestamp
-        let mut ts_ids: Vec<(Option<Instant>, MappedId)> = niri
-            .layout
-            .windows()
-            .map(|(_, w)| (w.get_focus_timestamp(), w.id()))
-            .collect();
-        ts_ids.sort_by(|(t1, _), (t2, _)| match (t1, t2) {
-            (None, None) => cmp::Ordering::Equal,
-            (Some(_), None) => cmp::Ordering::Less,
-            (None, Some(_)) => cmp::Ordering::Greater,
-            (Some(t1), Some(t2)) => t1.cmp(t2).reverse(),
-        });
-
-        let ids = ts_ids.into_iter().map(|(_, id)| id).collect();
-
-        WindowMRU { ids, current: 0 }
-    }
-
-    pub(crate) fn advance(&mut self, niri: &Niri, reversed: bool) -> Option<Window> {
-        while !self.ids.is_empty() {
-            self.current = if reversed {
-                self.current.checked_sub(1).unwrap_or(self.ids.len() - 1)
-            } else {
-                (self.current + 1) % self.ids.len()
-            };
-
-            if let Some(id) = self.ids.get(self.current) {
-                if let Some(window) = niri.find_window_by_id(*id) {
-                    return Some(window);
-                }
-                self.ids.remove(self.current);
-            }
-        }
-        None
-    }
 }
 
 niri_render_elements! {

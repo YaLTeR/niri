@@ -535,33 +535,10 @@ impl TextureCache {
 /// Because the UI is closed when the Alt key is released, all bindings
 /// have the ALT modifier.
 pub const MRU_UI_BINDINGS: &[Bind] = &[
-    Bind {
-        key: Key {
-            trigger: Trigger::Keysym(Keysym::Escape),
-            modifiers: Modifiers::ALT,
-        },
-        action: Action::CancelMru,
-        repeat: true,
-        cooldown: None,
-        allow_when_locked: false,
-        allow_inhibiting: true,
-        hotkey_overlay_title: None,
-    },
+    // The first two are the same as those declared in in input::PRESET_BINDINGS
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::Tab),
-            modifiers: Modifiers::ALT,
-        },
-        action: Action::MruForward,
-        repeat: true,
-        cooldown: None,
-        allow_when_locked: false,
-        allow_inhibiting: true,
-        hotkey_overlay_title: None,
-    },
-    Bind {
-        key: Key {
-            trigger: Trigger::Keysym(Keysym::Right),
             modifiers: Modifiers::ALT,
         },
         action: Action::MruForward,
@@ -583,6 +560,32 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
         allow_inhibiting: true,
         hotkey_overlay_title: None,
     },
+    // Escape just closes the MRU UI
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::Escape),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::CancelMru,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    // Left and Right can also be used when the UI is open
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::Right),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::MruForward,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::Left),
@@ -595,6 +598,7 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
         allow_inhibiting: true,
         hotkey_overlay_title: None,
     },
+    // And q can be used to close windows during navigation
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::q),
