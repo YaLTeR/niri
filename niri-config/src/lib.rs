@@ -1840,6 +1840,8 @@ pub enum Action {
     #[knuffel(skip)]
     ResetWindowHeightById(u64),
     SwitchPresetColumnWidth,
+    SwitchPresetColumnWidthNext,
+    SwitchPresetColumnWidthPrev,
     SwitchPresetWindowWidth,
     #[knuffel(skip)]
     SwitchPresetWindowWidthById(u64),
@@ -2080,6 +2082,8 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ResetWindowHeight { id: None } => Self::ResetWindowHeight,
             niri_ipc::Action::ResetWindowHeight { id: Some(id) } => Self::ResetWindowHeightById(id),
             niri_ipc::Action::SwitchPresetColumnWidth {} => Self::SwitchPresetColumnWidth,
+            niri_ipc::Action::SwitchPresetColumnWidthNext {} => Self::SwitchPresetColumnWidthNext,
+            niri_ipc::Action::SwitchPresetColumnWidthPrev {} => Self::SwitchPresetColumnWidthPrev,
             niri_ipc::Action::SwitchPresetWindowWidth { id: None } => Self::SwitchPresetWindowWidth,
             niri_ipc::Action::SwitchPresetWindowWidth { id: Some(id) } => {
                 Self::SwitchPresetWindowWidthById(id)

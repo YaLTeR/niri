@@ -2395,6 +2395,28 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
+    pub fn increment_width(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        col.cycle_width(1, None, false);
+
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+    }
+
+    pub fn decrement_width(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        col.cycle_width(-1, None, false);
+
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+    }
+
     pub fn toggle_full_width(&mut self) {
         if self.columns.is_empty() {
             return;
@@ -4378,7 +4400,14 @@ impl<W: LayoutElement> Column<W> {
         true
     }
 
-    fn toggle_width(&mut self, tile_idx: Option<usize>) {
+    fn select_width(&mut self, preset_idx: usize, tile_idx: Option<usize>) {
+        let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
+        let preset = self.options.preset_column_widths[preset_idx];
+        self.set_column_width(SizeChange::from(preset), Some(tile_idx), true);
+        self.preset_width_idx = Some(preset_idx);
+    }
+
+    fn cycle_width(&mut self, steps: i32, tile_idx: Option<usize>, wraparound: bool) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         let preset_idx = if self.is_full_width {
@@ -4388,7 +4417,19 @@ impl<W: LayoutElement> Column<W> {
         };
 
         let preset_idx = if let Some(idx) = preset_idx {
-            (idx + 1) % self.options.preset_column_widths.len()
+            let signed_idx = if !wraparound
+                && ((idx == 0 && steps < 0)
+                    || (idx == self.options.preset_column_widths.len() - 1 && steps > 0))
+            {
+                idx as i32
+            } else {
+                idx as i32 + steps % self.options.preset_column_widths.len() as i32
+            };
+            if signed_idx < 0 {
+                (signed_idx + self.options.preset_column_widths.len() as i32) as usize
+            } else {
+                signed_idx as usize % self.options.preset_column_widths.len()
+            }
         } else {
             let tile = &self.tiles[tile_idx];
             let current_window = tile.window_expected_or_current_size().w;
@@ -4407,10 +4448,11 @@ impl<W: LayoutElement> Column<W> {
                 .unwrap_or(0)
         };
 
-        let preset = self.options.preset_column_widths[preset_idx];
-        self.set_column_width(SizeChange::from(preset), Some(tile_idx), true);
+        self.select_width(preset_idx, Some(tile_idx));
+    }
 
-        self.preset_width_idx = Some(preset_idx);
+    fn toggle_width(&mut self, tile_idx: Option<usize>) {
+        self.cycle_width(1, tile_idx, true);
     }
 
     fn toggle_full_width(&mut self) {

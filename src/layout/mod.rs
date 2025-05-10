@@ -3164,6 +3164,20 @@ impl<W: LayoutElement> Layout<W> {
         self.options = options;
     }
 
+    pub fn increment_width(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.increment_width();
+    }
+
+    pub fn decrement_width(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.decrement_width();
+    }
+
     pub fn toggle_width(&mut self) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;

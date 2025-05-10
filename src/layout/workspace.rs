@@ -1100,6 +1100,22 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn increment_width(&mut self) {
+        if self.floating_is_active.get() {
+            self.floating.toggle_window_width(None);
+        } else {
+            self.scrolling.increment_width();
+        }
+    }
+
+    pub fn decrement_width(&mut self) {
+        if self.floating_is_active.get() {
+            self.floating.toggle_window_width(None);
+        } else {
+            self.scrolling.decrement_width();
+        }
+    }
+
     pub fn toggle_width(&mut self) {
         if self.floating_is_active.get() {
             self.floating.toggle_window_width(None);
