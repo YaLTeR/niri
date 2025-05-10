@@ -32,8 +32,10 @@ layout {
         width 4
         active-color "#7fc8ff"
         inactive-color "#505050"
+        urgent-color "#9b0000"
         // active-gradient from="#80c8ff" to="#bbddff" angle=45
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+        // urgent-gradient from="#800" to="#a33" angle=45
     }
 
     border {
@@ -41,8 +43,10 @@ layout {
         width 4
         active-color "#ffc87f"
         inactive-color "#505050"
+        urgent-color "#9b0000"
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" in="srgb-linear"
+        // urgent-gradient from="#800" to="#a33" angle=45
     }
 
     shadow {
@@ -269,6 +273,9 @@ layout {
 
         active-color "#ffc87f"
         inactive-color "#505050"
+
+        // Color of the border around windows that request your attention.
+        urgent-color "#9b0000"
 
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" in="srgb-linear"
