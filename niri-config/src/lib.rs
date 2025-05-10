@@ -1,8 +1,10 @@
 #[macro_use]
 extern crate tracing;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::error::Error as StdError;
 use std::ffi::OsStr;
+use std::fmt::{self, Display, Formatter};
 use std::ops::{Mul, MulAssign};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -12,7 +14,7 @@ use bitflags::bitflags;
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
 use layer_rule::LayerRule;
-use miette::{miette, Context, IntoDiagnostic};
+use miette::{miette, Context, Diagnostic, IntoDiagnostic};
 use niri_ipc::{
     ColumnDisplay, ConfiguredMode, LayoutSwitchTarget, PositionChange, SizeChange, Transform,
     WorkspaceReferenceArg,
@@ -33,6 +35,8 @@ pub use utils::RegexEq;
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {
+    #[doc(hidden)]
+    pub _dependencies: Vec<PathBuf>,
     #[knuffel(child, default)]
     pub input: Input,
     #[knuffel(children(name = "output"))]
@@ -2335,6 +2339,40 @@ pub enum PreviewRender {
     ScreenCapture,
 }
 
+#[derive(Debug, Diagnostic)]
+pub enum ConfigParseError {
+    KnuffleError(#[diagnostic_source] knuffel::Error),
+    IoError(std::io::Error),
+    CircularSourceError(PathBuf, PathBuf),
+}
+
+impl Display for ConfigParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::KnuffleError(e) => write!(f, "{}", e),
+            Self::IoError(e) => write!(f, "{}", e),
+            Self::CircularSourceError(file_path, source_path) => {
+                write!(
+                    f,
+                    "Circular source file: sourcing {} from {}",
+                    source_path.display(),
+                    file_path.display()
+                )
+            }
+        }
+    }
+}
+
+impl StdError for ConfigParseError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            Self::KnuffleError(e) => Some(e),
+            Self::IoError(e) => Some(e),
+            Self::CircularSourceError(_, _) => None,
+        }
+    }
+}
+
 impl Config {
     pub fn load(path: &Path) -> miette::Result<Self> {
         let _span = tracy_client::span!("Config::load");
@@ -2342,11 +2380,12 @@ impl Config {
     }
 
     fn load_internal(path: &Path) -> miette::Result<Self> {
-        let contents = std::fs::read_to_string(path)
-            .into_diagnostic()
-            .with_context(|| format!("error reading {path:?}"))?;
+        let mut sourced_paths = HashMap::new();
 
-        let config = Self::parse(
+        let contents = utils::expand_source_file(path, &mut sourced_paths)
+            .context("failed to expand config file")?;
+
+        let mut config = Self::parse(
             path.file_name()
                 .and_then(OsStr::to_str)
                 .unwrap_or("config.kdl"),
@@ -2354,12 +2393,15 @@ impl Config {
         )
         .context("error parsing")?;
         debug!("loaded config from {path:?}");
+
+        config._dependencies = sourced_paths.into_keys().collect();
+
         Ok(config)
     }
 
-    pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
+    pub fn parse(filename: &str, text: &str) -> Result<Self, ConfigParseError> {
         let _span = tracy_client::span!("Config::parse");
-        knuffel::parse(filename, text)
+        knuffel::parse(filename, text).map_err(ConfigParseError::KnuffleError)
     }
 }
 
