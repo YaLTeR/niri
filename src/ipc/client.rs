@@ -570,7 +570,8 @@ fn print_output(output: Output) -> anyhow::Result<()> {
 
 fn print_window(window: &Window) {
     let focused = if window.is_focused { " (focused)" } else { "" };
-    println!("Window ID {}:{focused}", window.id);
+    let urgent = if window.is_urgent { " (urgent)" } else { "" };
+    println!("Window ID {}:{focused}{urgent}", window.id);
 
     if let Some(title) = &window.title {
         println!("  Title: \"{title}\"");
