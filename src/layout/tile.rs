@@ -989,23 +989,27 @@ impl<W: LayoutElement> Tile<W> {
                                         // program shader. To work around this, we can use a
                                         // `BorderRenderElement` when we detect that we need to clip
                                         // a solid color texture.
-                                        return BorderRenderElement::new(
-                                            geo.size,
-                                            Rectangle::from_size(geo.size),
-                                            GradientInterpolation::default(),
-                                            // color32_f uses premultiplied alpha which matches
-                                            // what `BorderRenderElement` expects
-                                            Color::from_color32f(*color32_f),
-                                            Color::from_color32f(*color32_f),
-                                            0.,
-                                            Rectangle::from_size(geo.size),
-                                            0.,
-                                            radius,
-                                            scale.x as f32,
-                                            1.,
-                                        )
-                                        .with_location(geo.loc)
-                                        .into();
+                                        let elem_geo =
+                                            elem.geometry(scale).to_f64().to_logical(scale);
+                                        if let Some(shader_geo) = geo.intersection(elem_geo) {
+                                            return BorderRenderElement::new(
+                                                shader_geo.size,
+                                                Rectangle::from_size(shader_geo.size),
+                                                GradientInterpolation::default(),
+                                                // color32_f uses premultiplied alpha which matches
+                                                // what `BorderRenderElement` expects
+                                                Color::from_color32f(*color32_f),
+                                                Color::from_color32f(*color32_f),
+                                                0.,
+                                                Rectangle::new(geo.loc - shader_geo.loc, geo.size),
+                                                0.,
+                                                radius,
+                                                scale.x as f32,
+                                                1.,
+                                            )
+                                            .with_location(shader_geo.loc)
+                                            .into();
+                                        }
                                     }
                                 }
                             }
