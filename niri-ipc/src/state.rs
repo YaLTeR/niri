@@ -181,6 +181,14 @@ impl EventStreamStatePart for WindowsState {
                     win.is_focused = Some(win.id) == id;
                 }
             }
+            Event::WindowUrgencyChanged { id, urgent } => {
+                for win in self.windows.values_mut() {
+                    if win.id == id {
+                        win.is_urgent = urgent;
+                        break;
+                    }
+                }
+            }
             event => return Some(event),
         }
         None

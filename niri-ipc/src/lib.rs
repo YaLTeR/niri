@@ -1129,6 +1129,8 @@ pub struct Window {
     ///
     /// If the window isn't floating then it is in the tiling layout.
     pub is_floating: bool,
+    /// Whether this window requests your attention.
+    pub is_urgent: bool,
 }
 
 /// Output configuration change result.
@@ -1297,6 +1299,13 @@ pub enum Event {
     WindowFocusChanged {
         /// Id of the newly focused window, or `None` if no window is now focused.
         id: Option<u64>,
+    },
+    /// Window urgency changed.
+    WindowUrgencyChanged {
+        /// Id of the window.
+        id: u64,
+        /// The new urgency state of the window.
+        urgent: bool,
     },
     /// The configured keyboard layouts have changed.
     KeyboardLayoutsChanged {

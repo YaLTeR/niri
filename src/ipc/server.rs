@@ -476,6 +476,7 @@ fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_i
         workspace_id: workspace_id.map(|id| id.get()),
         is_focused: mapped.is_focused(),
         is_floating: mapped.is_floating(),
+        is_urgent: mapped.is_urgent(),
     })
 }
 
@@ -679,6 +680,11 @@ impl State {
 
             if mapped.is_focused() && !ipc_win.is_focused {
                 events.push(Event::WindowFocusChanged { id: Some(id) });
+            }
+
+            let urgent = mapped.is_urgent();
+            if urgent != ipc_win.is_urgent {
+                events.push(Event::WindowUrgencyChanged { id, urgent })
             }
         });
 
