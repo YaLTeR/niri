@@ -68,13 +68,15 @@ pub fn render_snapshot_from_surface_tree(
                         .buffer()
                         .and_then(|buffer| get_single_pixel_buffer(buffer).ok())
                     {
-                        let pixel: [u8; 4] = single_pixel_buffer_user_data.rgba8888();
-                        let argb_pixel = [pixel[3], pixel[1], pixel[2], pixel[0]];
+                        let mut pixel: [u8; 4] = single_pixel_buffer_user_data.rgba8888();
+                        // Needs to be reversed since `GlesRenderer` supports importing memory in
+                        // Abgr8888 but not Rgba8888
+                        pixel.reverse();
 
                         TextureBuffer::from_memory(
                             renderer,
-                            &argb_pixel,
-                            Fourcc::Argb8888,
+                            &pixel,
+                            Fourcc::Abgr8888,
                             Size::from((1, 1)),
                             false,
                             f64::from(data.buffer_scale()),
