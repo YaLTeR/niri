@@ -68,7 +68,10 @@ pub fn render_snapshot_from_surface_tree(
                         .buffer()
                         .and_then(|buffer| get_single_pixel_buffer(buffer).ok())
                     {
+                        // this pixel uses premultiplied alpha,
+                        // which is what `TextureBuffer` expects
                         let mut pixel: [u8; 4] = single_pixel_buffer_user_data.rgba8888();
+
                         // Needs to be reversed since `GlesRenderer` supports importing memory in
                         // Abgr8888 but not Rgba8888
                         pixel.reverse();
