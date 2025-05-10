@@ -993,6 +993,8 @@ impl<W: LayoutElement> Tile<W> {
                                             geo.size,
                                             Rectangle::from_size(geo.size),
                                             GradientInterpolation::default(),
+                                            // color32_f uses premultiplied alpha which matches
+                                            // what `BorderRenderElement` expects
                                             Color::from_color32f(*color32_f),
                                             Color::from_color32f(*color32_f),
                                             0.,
