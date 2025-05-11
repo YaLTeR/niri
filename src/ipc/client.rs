@@ -5,8 +5,8 @@ use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
-    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response,
-    Transform, Window,
+    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview, Request,
+    Response, Transform, Window,
 };
 use serde_json::json;
 
@@ -32,6 +32,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
+        Msg::OverviewState => Request::OverviewState,
     };
 
     let socket = Socket::connect().context("error connecting to the niri socket")?;
@@ -404,6 +405,9 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WorkspacesChanged { workspaces } => {
                         println!("Workspaces changed: {workspaces:?}");
                     }
+                    Event::WorkspaceUrgencyChanged { id, urgent } => {
+                        println!("Workspace {id}: urgency changed to {urgent}");
+                    }
                     Event::WorkspaceActivated { id, focused } => {
                         let word = if focused { "focused" } else { "activated" };
                         println!("Workspace {word}: {id}");
@@ -429,13 +433,38 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowFocusChanged { id } => {
                         println!("Window focus changed: {id:?}");
                     }
+                    Event::WindowUrgencyChanged { id, urgent } => {
+                        println!("Window {id}: urgency changed to {urgent}");
+                    }
                     Event::KeyboardLayoutsChanged { keyboard_layouts } => {
                         println!("Keyboard layouts changed: {keyboard_layouts:?}");
                     }
                     Event::KeyboardLayoutSwitched { idx } => {
                         println!("Keyboard layout switched: {idx}");
                     }
+                    Event::OverviewOpenedOrClosed { is_open: opened } => {
+                        println!("Overview toggled: {opened}");
+                    }
                 }
+            }
+        }
+        Msg::OverviewState => {
+            let Response::OverviewState(response) = response else {
+                bail!("unexpected response: expected Overview, got {response:?}");
+            };
+
+            if json {
+                let response =
+                    serde_json::to_string(&response).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+
+            let Overview { is_open } = response;
+            if is_open {
+                println!("Overview is open.");
+            } else {
+                println!("Overview is closed.");
             }
         }
     }
@@ -541,7 +570,8 @@ fn print_output(output: Output) -> anyhow::Result<()> {
 
 fn print_window(window: &Window) {
     let focused = if window.is_focused { " (focused)" } else { "" };
-    println!("Window ID {}:{focused}", window.id);
+    let urgent = if window.is_urgent { " (urgent)" } else { "" };
+    println!("Window ID {}:{focused}{urgent}", window.id);
 
     if let Some(title) = &window.title {
         println!("  Title: \"{title}\"");

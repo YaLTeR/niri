@@ -16,7 +16,7 @@
 * [FAQ](./FAQ.md)
 
 ## Configuration
-* [Overview](./Configuration:-Overview.md)
+* [Introduction](./Configuration:-Introduction.md)
 * [Input](./Configuration:-Input.md)
 * [Outputs](./Configuration:-Outputs.md)
 * [Key Bindings](./Configuration:-Key-Bindings.md)

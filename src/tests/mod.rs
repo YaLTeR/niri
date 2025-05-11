@@ -6,4 +6,5 @@ mod server;
 
 mod floating;
 mod fullscreen;
+mod transactions;
 mod window_opening;

@@ -211,7 +211,7 @@ impl PointerConstraintsHandler for State {
         pointer.set_location(target);
 
         // Redraw to update the cursor position if it's visible.
-        if !self.niri.pointer_hidden {
+        if self.niri.pointer_visibility.is_visible() {
             // FIXME: redraw only outputs overlapping the cursor.
             self.niri.queue_redraw_all();
         }
@@ -369,7 +369,7 @@ impl ClientDndGrabHandler for State {
             // parameters from Smithay I guess.
             //
             // Assume that hidden pointer means touch DnD.
-            if !self.niri.pointer_hidden {
+            if self.niri.pointer_visibility.is_visible() {
                 // We can't even get the current pointer location because it's locked (we're deep
                 // in the grab call stack here). So use the last known one.
                 if let Some(output) = &self.niri.pointer_contents.output {
@@ -707,6 +707,8 @@ impl GammaControlHandler for State {
 }
 delegate_gamma_control!(State);
 
+struct UrgentOnlyMarker;
+
 impl XdgActivationHandler for State {
     fn activation_state(&mut self) -> &mut XdgActivationState {
         &mut self.niri.activation_state
@@ -716,11 +718,10 @@ impl XdgActivationHandler for State {
         // Tokens without a serial are urgency-only. This is not specified, but it seems to be the
         // common client behavior.
         //
-        // We don't have urgency yet, so just ignore such tokens.
-        //
         // See also: https://gitlab.freedesktop.org/wayland/wayland-protocols/-/issues/150
         let Some((serial, seat)) = data.serial else {
-            return false;
+            data.user_data.insert_if_missing(|| UrgentOnlyMarker);
+            return true;
         };
         let Some(seat) = Seat::<State>::from_resource(&seat) else {
             return false;
@@ -760,11 +761,16 @@ impl XdgActivationHandler for State {
         surface: WlSurface,
     ) {
         if token_data.timestamp.elapsed() < XDG_ACTIVATION_TOKEN_TIMEOUT {
-            if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&surface) {
+            if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(&surface) {
                 let window = mapped.window.clone();
-                self.niri.layout.activate_window(&window);
-                self.niri.layer_shell_on_demand_focus = None;
-                self.niri.queue_redraw_all();
+                if token_data.user_data.get::<UrgentOnlyMarker>().is_some() {
+                    mapped.set_urgent(true);
+                    self.niri.queue_redraw_all();
+                } else {
+                    self.niri.layout.activate_window(&window);
+                    self.niri.layer_shell_on_demand_focus = None;
+                    self.niri.queue_redraw_all();
+                }
             } else if let Some(unmapped) = self.niri.unmapped_windows.get_mut(&surface) {
                 unmapped.activation_token_data = Some(token_data);
             }

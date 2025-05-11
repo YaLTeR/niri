@@ -3,8 +3,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{
-    CenterFocusedColumn, CornerRadius, FloatOrInt, OutputName, PresetSize,
-    Workspace as WorkspaceConfig,
+    CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -236,16 +235,8 @@ impl<W: LayoutElement> Workspace<W> {
             options.clone(),
         );
 
-        let shadow_config = niri_config::Shadow {
-            on: true,
-            offset: niri_config::ShadowOffset {
-                x: FloatOrInt(0.),
-                y: FloatOrInt(20.),
-            },
-            softness: FloatOrInt(120.),
-            spread: FloatOrInt(20.),
-            ..Default::default()
-        };
+        let shadow_config =
+            compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
 
         Self {
             scrolling,
@@ -301,16 +292,8 @@ impl<W: LayoutElement> Workspace<W> {
             options.clone(),
         );
 
-        let shadow_config = niri_config::Shadow {
-            on: true,
-            offset: niri_config::ShadowOffset {
-                x: FloatOrInt(0.),
-                y: FloatOrInt(20.),
-            },
-            softness: FloatOrInt(120.),
-            spread: FloatOrInt(20.),
-            ..Default::default()
-        };
+        let shadow_config =
+            compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
 
         Self {
             scrolling,
@@ -402,6 +385,10 @@ impl<W: LayoutElement> Workspace<W> {
             self.scale.fractional_scale(),
             options.clone(),
         );
+
+        let shadow_config =
+            compute_workspace_shadow_config(options.overview.workspace_shadow, self.view_size);
+        self.shadow.update_config(shadow_config);
 
         self.base_options = base_options;
         self.options = options;
@@ -542,6 +529,10 @@ impl<W: LayoutElement> Workspace<W> {
                 scale.fractional_scale(),
                 self.options.clone(),
             );
+
+            let shadow_config =
+                compute_workspace_shadow_config(self.options.overview.workspace_shadow, size);
+            self.shadow.update_config(shadow_config);
         }
 
         if scale_transform_changed {
@@ -1617,6 +1608,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.scroll_amount_to_activate(window)
     }
 
+    pub fn is_urgent(&self) -> bool {
+        self.windows().any(|win| win.is_urgent())
+    }
+
     pub fn activate_window(&mut self, window: &W::Id) -> bool {
         if self.floating.activate_window(window) {
             self.floating_is_active = FloatingActive::Yes;
@@ -1832,4 +1827,21 @@ impl<W: LayoutElement> Workspace<W> {
 
 pub(super) fn compute_working_area(output: &Output) -> Rectangle<f64, Logical> {
     layer_map_for_output(output).non_exclusive_zone().to_f64()
+}
+
+fn compute_workspace_shadow_config(
+    config: niri_config::WorkspaceShadow,
+    view_size: Size<f64, Logical>,
+) -> niri_config::Shadow {
+    // Gaps between workspaces are a multiple of the view height, so shadow settings should also be
+    // normalized to the view height to prevent them from overlapping on lower resolutions.
+    let norm = view_size.h / 1080.;
+
+    let mut config = niri_config::Shadow::from(config);
+    config.softness.0 *= norm;
+    config.spread.0 *= norm;
+    config.offset.x.0 *= norm;
+    config.offset.y.0 *= norm;
+
+    config
 }

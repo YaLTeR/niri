@@ -293,6 +293,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.working_area = working_area;
         self.scale = scale;
         self.options = options;
+
+        // Apply always-center and such right away.
+        if !self.columns.is_empty() && !self.view_offset.is_gesture() {
+            self.animate_view_offset_to_column(None, self.active_column_idx, None);
+        }
     }
 
     pub fn update_shaders(&mut self) {
@@ -3786,8 +3791,9 @@ impl<W: LayoutElement> Column<W> {
             .enumerate()
             .map(|(tile_idx, (tile, tile_off))| {
                 let is_active = tile_idx == active_idx;
+                let is_urgent = tile.window().is_urgent();
                 let tile_pos = tile_off + tile.render_offset();
-                TabInfo::from_tile(tile, tile_pos, is_active, &config)
+                TabInfo::from_tile(tile, tile_pos, is_active, is_urgent, &config)
             });
 
         // Hide the tab indicator in fullscreen. If you have it configured to overlap the window,

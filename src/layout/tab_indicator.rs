@@ -350,13 +350,16 @@ impl TabInfo {
         tile: &Tile<W>,
         position: Point<f64, Logical>,
         is_active: bool,
+        is_urgent: bool,
         config: &niri_config::TabIndicator,
     ) -> Self {
         let rules = tile.window().rules();
         let rule = rules.tab_indicator;
 
         let gradient_from_rule = || {
-            let (color, gradient) = if is_active {
+            let (color, gradient) = if is_urgent {
+                (rule.urgent_color, rule.urgent_gradient)
+            } else if is_active {
                 (rule.active_color, rule.active_gradient)
             } else {
                 (rule.inactive_color, rule.inactive_gradient)
@@ -366,7 +369,9 @@ impl TabInfo {
         };
 
         let gradient_from_config = || {
-            let (color, gradient) = if is_active {
+            let (color, gradient) = if is_urgent {
+                (config.urgent_color, config.urgent_gradient)
+            } else if is_active {
                 (config.active_color, config.active_gradient)
             } else {
                 (config.inactive_color, config.inactive_gradient)
@@ -386,7 +391,9 @@ impl TabInfo {
                 focus_ring_config
             };
 
-            let (color, gradient) = if is_active {
+            let (color, gradient) = if is_urgent {
+                (config.urgent_color, config.urgent_gradient)
+            } else if is_active {
                 (config.active_color, config.active_gradient)
             } else {
                 (config.inactive_color, config.inactive_gradient)

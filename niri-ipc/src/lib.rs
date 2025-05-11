@@ -97,6 +97,8 @@ pub enum Request {
     EventStream,
     /// Respond with an error (for testing error handling).
     ReturnError,
+    /// Request information about the overview.
+    OverviewState,
 }
 
 /// Reply from niri to client.
@@ -139,6 +141,16 @@ pub enum Response {
     PickedColor(Option<PickedColor>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
+    /// Information about the overview.
+    OverviewState(Overview),
+}
+
+/// Overview information.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Overview {
+    /// Whether the overview is currently open.
+    pub is_open: bool,
 }
 
 /// Color picked from the screen.
@@ -438,14 +450,35 @@ pub enum Action {
         focus: bool,
     },
     /// Move the focused column to the workspace below.
-    MoveColumnToWorkspaceDown {},
+    MoveColumnToWorkspaceDown {
+        /// Whether the focus should follow the target workspace.
+        ///
+        /// If `true` (the default), the focus will follow the column to the new workspace. If
+        /// `false`, the focus will remain on the original workspace.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to the workspace above.
-    MoveColumnToWorkspaceUp {},
+    MoveColumnToWorkspaceUp {
+        /// Whether the focus should follow the target workspace.
+        ///
+        /// If `true` (the default), the focus will follow the column to the new workspace. If
+        /// `false`, the focus will remain on the original workspace.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused column to a workspace by reference (index or name).
     MoveColumnToWorkspace {
         /// Reference (index or name) of the workspace to move the column to.
         #[cfg_attr(feature = "clap", arg())]
         reference: WorkspaceReferenceArg,
+
+        /// Whether the focus should follow the target workspace.
+        ///
+        /// If `true` (the default), the focus will follow the column to the new workspace. If
+        /// `false`, the focus will remain on the original workspace.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
     },
     /// Move the focused workspace down.
     MoveWorkspaceDown {},
@@ -770,6 +803,24 @@ pub enum Action {
     OpenOverview {},
     /// Close the Overview.
     CloseOverview {},
+    /// Toggle urgent status of a window.
+    ToggleUrgent {
+        /// Id of the window to toggle urgent.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+    },
+    /// Set urgent status of a window.
+    SetUrgent {
+        /// Id of the window to set urgent.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+    },
+    /// Unset urgent status of a window.
+    UnsetUrgent {
+        /// Id of the window to unset urgent.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: u64,
+    },
 }
 
 /// Change in window or column size.
@@ -1078,6 +1129,8 @@ pub struct Window {
     ///
     /// If the window isn't floating then it is in the tiling layout.
     pub is_floating: bool,
+    /// Whether this window requests your attention.
+    pub is_urgent: bool,
 }
 
 /// Output configuration change result.
@@ -1117,6 +1170,8 @@ pub struct Workspace {
     ///
     /// Can be `None` if no outputs are currently connected.
     pub output: Option<String>,
+    /// Whether the workspace currently has an urgent window in its output.
+    pub is_urgent: bool,
     /// Whether the workspace is currently active on its output.
     ///
     /// Every output has one active workspace, the one that is currently visible on that output.
@@ -1191,6 +1246,13 @@ pub enum Event {
         /// workspaces are missing from here, then they were deleted.
         workspaces: Vec<Workspace>,
     },
+    /// The workspace urgency changed.
+    WorkspaceUrgencyChanged {
+        /// Id of the workspace.
+        id: u64,
+        /// Whether this workspace has an urgent window.
+        urgent: bool,
+    },
     /// A workspace was activated on an output.
     ///
     /// This doesn't always mean the workspace became focused, just that it's now the active
@@ -1238,6 +1300,13 @@ pub enum Event {
         /// Id of the newly focused window, or `None` if no window is now focused.
         id: Option<u64>,
     },
+    /// Window urgency changed.
+    WindowUrgencyChanged {
+        /// Id of the window.
+        id: u64,
+        /// The new urgency state of the window.
+        urgent: bool,
+    },
     /// The configured keyboard layouts have changed.
     KeyboardLayoutsChanged {
         /// The new keyboard layout configuration.
@@ -1247,6 +1316,11 @@ pub enum Event {
     KeyboardLayoutSwitched {
         /// Index of the newly active layout.
         idx: u8,
+    },
+    /// The overview was opened or closed.
+    OverviewOpenedOrClosed {
+        /// The new state of the overview.
+        is_open: bool,
     },
 }
 

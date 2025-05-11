@@ -6,6 +6,7 @@ use smithay::backend::renderer::element::surface::{
 use smithay::backend::renderer::element::Kind;
 use smithay::desktop::{LayerSurface, PopupManager};
 use smithay::utils::{Logical, Point, Scale, Size};
+use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 use super::ResolvedLayerRules;
 use crate::layout::shadow::Shadow;
@@ -93,6 +94,23 @@ impl MappedLayer {
         }
 
         self.rules = new_rules;
+        true
+    }
+
+    pub fn place_within_backdrop(&self) -> bool {
+        if !self.rules.place_within_backdrop {
+            return false;
+        }
+
+        if self.surface.layer() != Layer::Background {
+            return false;
+        }
+
+        let state = self.surface.cached_state();
+        if state.exclusive_zone != ExclusiveZone::DontCare {
+            return false;
+        }
+
         true
     }
 

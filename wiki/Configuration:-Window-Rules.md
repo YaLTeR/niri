@@ -35,6 +35,7 @@ window-rule {
     match is-active-in-column=true
     match is-floating=true
     match is-window-cast-target=true
+    match is-urgent=true
     match at-startup=true
 
     // Properties that apply once upon window opening.
@@ -63,8 +64,10 @@ window-rule {
         width 4
         active-color "#7fc8ff"
         inactive-color "#505050"
+        urgent-color "#9b0000"
         // active-gradient from="#80c8ff" to="#bbddff" angle=45
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+        // urgent-gradient from="#800" to="#a33" angle=45
     }
 
     border {
@@ -85,8 +88,10 @@ window-rule {
     tab-indicator {
         active-color "red"
         inactive-color "gray"
+        urgent-color "blue"
         // active-gradient from="#80c8ff" to="#bbddff" angle=45
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+        // urgent-gradient from="#800" to="#a33" angle=45
     }
 
     geometry-corner-radius 12
@@ -281,6 +286,19 @@ window-rule {
 Example:
 
 ![](https://github.com/user-attachments/assets/375b381e-3a87-4e94-8676-44404971d893)
+
+#### `is-urgent`
+
+<sup>Since: next release</sup>
+
+Can be `true` or `false`.
+Matches windows that request the user's attention.
+
+```kdl
+window-rule {
+    match is-urgent=true
+}
+```
 
 #### `at-startup`
 

@@ -15,13 +15,12 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
-    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKDROP_COLOR, DEFAULT_BACKGROUND_COLOR,
+    WarpMouseToFocusMode, WorkspaceReference,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
-use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
@@ -149,6 +148,7 @@ use crate::pw_utils::{CastSizeChange, PwToNiri};
 use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
     encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
@@ -331,11 +331,7 @@ pub struct Niri {
     /// taking grabs into account is expected, because we pass the information to pointer.motion()
     /// which passes it down through grabs, which decide what to do with it as they see fit.
     pub pointer_contents: PointContents,
-    /// Whether the pointer is hidden, for example due to a previous touch input.
-    ///
-    /// When this happens, the pointer also loses any focus. This is so that touch can prevent
-    /// various tooltips from sticking around.
-    pub pointer_hidden: bool,
+    pub pointer_visibility: PointerVisibility,
     pub pointer_inactivity_timer: Option<RegistrationToken>,
     /// Whether the pointer inactivity timer got reset this event loop iteration.
     ///
@@ -393,6 +389,28 @@ pub struct Niri {
     /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
     #[cfg(feature = "xdp-gnome-screencast")]
     pub dynamic_cast_id_for_portal: MappedId,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PointerVisibility {
+    /// The pointer is visible.
+    Visible,
+    /// The pointer is invisible, but retains its focus.
+    ///
+    /// This state is set temporarily after auto-hiding the pointer to keep tooltips open and grabs
+    /// ongoing.
+    Hidden,
+    /// The pointer is invisible and cannot focus.
+    ///
+    /// Corresponds to a fully disabled pointer, for example after a touchscreen input, or after
+    /// the pointer contents changed in a Hidden state.
+    Disabled,
+}
+
+impl PointerVisibility {
+    pub fn is_visible(&self) -> bool {
+        matches!(self, Self::Visible)
+    }
 }
 
 #[derive(Debug)]
@@ -911,16 +929,20 @@ impl State {
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
-        let under = if self.niri.pointer_hidden {
-            PointContents::default()
-        } else {
-            self.niri.contents_under(location)
+        let under = match self.niri.pointer_visibility {
+            PointerVisibility::Disabled => PointContents::default(),
+            _ => self.niri.contents_under(location),
         };
 
         // We're not changing the global cursor location here, so if the contents did not change,
         // then nothing changed.
         if self.niri.pointer_contents == under {
             return false;
+        }
+
+        // Disable the hidden pointer if the contents underneath have changed.
+        if !self.niri.pointer_visibility.is_visible() {
+            self.niri.pointer_visibility = PointerVisibility::Disabled;
         }
 
         self.niri.pointer_contents.clone_from(&under);
@@ -970,9 +992,19 @@ impl State {
         // Clean up on-demand layer surface focus if necessary.
         if let Some(surface) = &self.niri.layer_shell_on_demand_focus {
             // Still alive and has on-demand interactivity.
-            let good = surface.alive()
+            let mut good = surface.alive()
                 && surface.cached_state().keyboard_interactivity
                     == wlr_layer::KeyboardInteractivity::OnDemand;
+
+            // Check if it moved to the overview backdrop.
+            if let Some(mapped) = self.niri.mapped_layer_surfaces.get(surface) {
+                if mapped.place_within_backdrop() {
+                    good = false;
+                }
+            } else {
+                good = false;
+            }
+
             if !good {
                 self.niri.layer_shell_on_demand_focus = None;
             }
@@ -1014,11 +1046,19 @@ impl State {
 
             let excl_focus_on_layer = |layer| {
                 layers.layers_on(layer).find_map(|surface| {
-                    let can_receive_exclusive_focus = surface.cached_state().keyboard_interactivity
-                        == wlr_layer::KeyboardInteractivity::Exclusive;
-                    can_receive_exclusive_focus
-                        .then(|| surface.wl_surface().clone())
-                        .map(|surface| KeyboardFocus::LayerShell { surface })
+                    if surface.cached_state().keyboard_interactivity
+                        != wlr_layer::KeyboardInteractivity::Exclusive
+                    {
+                        return None;
+                    }
+
+                    let mapped = self.niri.mapped_layer_surfaces.get(surface)?;
+                    if mapped.place_within_backdrop() {
+                        return None;
+                    }
+
+                    let surface = surface.wl_surface().clone();
+                    Some(KeyboardFocus::LayerShell { surface })
                 })
             };
 
@@ -1372,6 +1412,14 @@ impl State {
             output_config_changed = true;
         }
 
+        // FIXME: move backdrop rendering into layout::Monitor, then this will become unnecessary.
+        if config.overview.backdrop_color != old_config.overview.backdrop_color {
+            output_config_changed = true;
+        }
+        if config.layout.background_color != old_config.layout.background_color {
+            output_config_changed = true;
+        }
+
         *old_config = config;
 
         if let Some(outputs) = preserved_output_config {
@@ -1449,8 +1497,8 @@ impl State {
 
         for output in self.niri.global_space.outputs() {
             let name = output.user_data().get::<OutputName>().unwrap();
-            let config = self.niri.config.borrow_mut();
-            let config = config.outputs.find(name);
+            let full_config = self.niri.config.borrow_mut();
+            let config = full_config.outputs.find(name);
 
             let scale = config
                 .and_then(|c| c.scale)
@@ -1483,16 +1531,15 @@ impl State {
                 resized_outputs.push(output.clone());
             }
 
-            let mut background_color = config
-                .map(|c| c.background_color)
-                .unwrap_or(DEFAULT_BACKGROUND_COLOR)
+            let background_color = config
+                .and_then(|c| c.background_color)
+                .unwrap_or(full_config.layout.background_color)
                 .to_array_unpremul();
-            background_color[3] = 1.;
             let background_color = Color32F::from(background_color);
 
             let mut backdrop_color = config
-                .map(|c| c.backdrop_color)
-                .unwrap_or(DEFAULT_BACKDROP_COLOR)
+                .and_then(|c| c.backdrop_color)
+                .unwrap_or(full_config.overview.backdrop_color)
                 .to_array_unpremul();
             backdrop_color[3] = 1.;
             let backdrop_color = Color32F::from(backdrop_color);
@@ -1665,6 +1712,9 @@ impl State {
             SERIAL_COUNTER.next_serial(),
             get_monotonic_time().as_millis() as u32,
         );
+        if let Some(touch) = self.niri.seat.get_touch() {
+            touch.unset_grab(self);
+        }
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri
@@ -1691,6 +1741,31 @@ impl State {
         self.niri
             .cursor_manager
             .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
+        self.niri.queue_redraw_all();
+    }
+
+    pub fn confirm_screenshot(&mut self, write_to_disk: bool) {
+        if !self.niri.screenshot_ui.is_open() {
+            return;
+        }
+
+        self.backend.with_primary_renderer(|renderer| {
+            match self.niri.screenshot_ui.capture(renderer) {
+                Ok((size, pixels)) => {
+                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk) {
+                        warn!("error saving screenshot: {err:?}");
+                    }
+                }
+                Err(err) => {
+                    warn!("error capturing screenshot: {err:?}");
+                }
+            }
+        });
+
+        self.niri.screenshot_ui.close();
+        self.niri
+            .cursor_manager
+            .set_cursor_image(CursorImageStatus::default_named());
         self.niri.queue_redraw_all();
     }
 
@@ -2221,22 +2296,30 @@ impl Niri {
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
-        if let Err(err) = seat.add_keyboard(
+        let keyboard = match seat.add_keyboard(
             config_.input.keyboard.xkb.to_xkb_config(),
             config_.input.keyboard.repeat_delay.into(),
             config_.input.keyboard.repeat_rate.into(),
         ) {
-            if let smithay::input::keyboard::Error::BadKeymap = err {
-                warn!("error loading the configured xkb keymap, trying default");
-            } else {
-                warn!("error adding keyboard: {err:?}");
+            Err(err) => {
+                if let smithay::input::keyboard::Error::BadKeymap = err {
+                    warn!("error loading the configured xkb keymap, trying default");
+                } else {
+                    warn!("error adding keyboard: {err:?}");
+                }
+                seat.add_keyboard(
+                    Default::default(),
+                    config_.input.keyboard.repeat_delay.into(),
+                    config_.input.keyboard.repeat_rate.into(),
+                )
+                .unwrap()
             }
-            seat.add_keyboard(
-                Default::default(),
-                config_.input.keyboard.repeat_delay.into(),
-                config_.input.keyboard.repeat_rate.into(),
-            )
-            .unwrap();
+            Ok(keyboard) => keyboard,
+        };
+        if config_.input.keyboard.numlock {
+            let mut modifier_state = keyboard.modifier_state();
+            modifier_state.num_lock = true;
+            keyboard.set_modifier_state(modifier_state);
         }
         seat.add_pointer();
 
@@ -2424,7 +2507,7 @@ impl Niri {
             cursor_shape_manager_state,
             dnd_icon: None,
             pointer_contents: PointContents::default(),
-            pointer_hidden: false,
+            pointer_visibility: PointerVisibility::Visible,
             pointer_inactivity_timer: None,
             pointer_inactivity_timer_got_reset: false,
             notified_activity_this_iteration: false,
@@ -2672,15 +2755,14 @@ impl Niri {
             .map(|c| ipc_transform_to_smithay(c.transform))
             .unwrap_or(Transform::Normal);
 
-        let mut background_color = c
-            .map(|c| c.background_color)
-            .unwrap_or(DEFAULT_BACKGROUND_COLOR)
+        let background_color = c
+            .and_then(|c| c.background_color)
+            .unwrap_or(config.layout.background_color)
             .to_array_unpremul();
-        background_color[3] = 1.;
 
         let mut backdrop_color = c
-            .map(|c| c.backdrop_color)
-            .unwrap_or(DEFAULT_BACKDROP_COLOR)
+            .and_then(|c| c.backdrop_color)
+            .unwrap_or(config.overview.backdrop_color)
             .to_array_unpremul();
         backdrop_color[3] = 1.;
 
@@ -2707,7 +2789,7 @@ impl Niri {
             LockRenderState::Unlocked
         };
 
-        let size = output_size(&output).to_i32_round();
+        let size = output_size(&output);
         let state = OutputState {
             global,
             redraw_state: RedrawState::Idle,
@@ -2804,7 +2886,7 @@ impl Niri {
     }
 
     pub fn output_resized(&mut self, output: &Output) {
-        let output_size = output_size(output).to_i32_round();
+        let output_size = output_size(output);
         let scale = output.current_scale();
         let transform = output.current_transform();
 
@@ -2922,9 +3004,12 @@ impl Niri {
             return false;
         }
 
-        let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-        if hot_corner.contains(pos_within_output) {
-            return true;
+        let hot_corners = self.config.borrow().gestures.hot_corners;
+        if !hot_corners.off {
+            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
+            if hot_corner.contains(pos_within_output) {
+                return true;
+            }
         }
 
         if layer_popup_under(Layer::Top) || layer_toplevel_under(Layer::Top) {
@@ -2950,6 +3035,11 @@ impl Niri {
                 .layers_on(layer)
                 .rev()
                 .find_map(|layer_surface| {
+                    let mapped = self.mapped_layer_surfaces.get(layer_surface)?;
+                    if mapped.place_within_backdrop() {
+                        return None;
+                    }
+
                     let mut layer_pos_within_output =
                         layers.layer_geometry(layer_surface).unwrap().loc.to_f64();
 
@@ -3100,6 +3190,11 @@ impl Niri {
                 .layers_on(layer)
                 .rev()
                 .find_map(|layer_surface| {
+                    let mapped = self.mapped_layer_surfaces.get(layer_surface)?;
+                    if mapped.place_within_backdrop() {
+                        return None;
+                    }
+
                     let mut layer_pos_within_output =
                         layers.layer_geometry(layer_surface).unwrap().loc.to_f64();
 
@@ -3182,9 +3277,12 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
-            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-            if hot_corner.contains(pos_within_output) {
-                return rv;
+            let hot_corners = self.config.borrow().gestures.hot_corners;
+            if !hot_corners.off {
+                let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
+                if hot_corner.contains(pos_within_output) {
+                    return rv;
+                }
             }
 
             under = under
@@ -3420,7 +3518,7 @@ impl Niri {
         renderer: &mut R,
         output: &Output,
     ) -> Vec<OutputRenderElements<R>> {
-        if self.pointer_hidden {
+        if !self.pointer_visibility.is_visible() {
             return vec![];
         }
 
@@ -3507,7 +3605,7 @@ impl Niri {
     }
 
     pub fn refresh_pointer_outputs(&mut self) {
-        if self.pointer_hidden {
+        if !self.pointer_visibility.is_visible() {
             return;
         }
 
@@ -3904,8 +4002,7 @@ impl Niri {
             elements.push(
                 SolidColorRenderElement::from_buffer(
                     &state.lock_color_buffer,
-                    (0, 0),
-                    output_scale,
+                    (0., 0.),
                     1.,
                     Kind::Unspecified,
                 )
@@ -3923,15 +4020,13 @@ impl Niri {
         let background_buffer = state.background_buffer.clone();
         let background = SolidColorRenderElement::from_buffer(
             &background_buffer,
-            (0, 0),
-            output_scale,
+            (0., 0.),
             1.,
             Kind::Unspecified,
         );
         let backdrop = SolidColorRenderElement::from_buffer(
             &state.backdrop_buffer,
-            (0, 0),
-            output_scale,
+            (0., 0.),
             1.,
             Kind::Unspecified,
         )
@@ -3971,6 +4066,7 @@ impl Niri {
             mon.render_elements(renderer, target, focus_ring)
                 .map(|(geo, iter)| (geo, Vec::from_iter(iter))),
         );
+        let workspace_shadow_elements = Vec::from_iter(mon.render_workspace_shadows(renderer));
         let insert_hint_elements = mon.render_insert_hint_between_workspaces(renderer);
         let int_move_elements: Vec<_> = self
             .layout
@@ -3979,19 +4075,27 @@ impl Niri {
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
-        let mut extend_from_layer = |elements: &mut SplitElements<LayerSurfaceRenderElement<R>>,
-                                     layer| {
-            self.render_layer(renderer, target, output_scale, &layer_map, layer, elements);
-        };
+        let mut extend_from_layer =
+            |elements: &mut SplitElements<LayerSurfaceRenderElement<R>>, layer, for_backdrop| {
+                self.render_layer(
+                    renderer,
+                    target,
+                    output_scale,
+                    &layer_map,
+                    layer,
+                    elements,
+                    for_backdrop,
+                );
+            };
 
         // The overlay layer elements go next.
         let mut layer_elems = SplitElements::default();
-        extend_from_layer(&mut layer_elems, Layer::Overlay);
+        extend_from_layer(&mut layer_elems, Layer::Overlay, false);
         elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
 
         // Collect the top layer elements.
         let mut layer_elems = SplitElements::default();
-        extend_from_layer(&mut layer_elems, Layer::Top);
+        extend_from_layer(&mut layer_elems, Layer::Top, false);
         let top_layer = layer_elems;
 
         // When rendering above the top layer, we put the regular monitor elements first.
@@ -3999,8 +4103,8 @@ impl Niri {
         if mon.render_above_top_layer() {
             // Collect all other layer-shell elements.
             let mut layer_elems = SplitElements::default();
-            extend_from_layer(&mut layer_elems, Layer::Bottom);
-            extend_from_layer(&mut layer_elems, Layer::Background);
+            extend_from_layer(&mut layer_elems, Layer::Bottom, false);
+            extend_from_layer(&mut layer_elems, Layer::Background, false);
 
             elements.extend(
                 int_move_elements
@@ -4020,10 +4124,15 @@ impl Niri {
             );
 
             elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
-            elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
-            elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
+            elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
 
             elements.push(OutputRenderElements::from(background));
+
+            elements.extend(
+                workspace_shadow_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
         } else {
             elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
 
@@ -4042,8 +4151,8 @@ impl Niri {
             for (ws_geo, ws_elements) in monitor_elements {
                 // Collect all other layer-shell elements.
                 let mut layer_elems = SplitElements::default();
-                extend_from_layer(&mut layer_elems, Layer::Bottom);
-                extend_from_layer(&mut layer_elems, Layer::Background);
+                extend_from_layer(&mut layer_elems, Layer::Bottom, false);
+                extend_from_layer(&mut layer_elems, Layer::Background, false);
 
                 elements.extend(
                     layer_elems
@@ -4069,9 +4178,19 @@ impl Niri {
                     elements.push(OutputRenderElements::from(elem));
                 }
             }
+
+            elements.extend(
+                workspace_shadow_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
         }
 
         // Then the backdrop.
+        let mut layer_elems = SplitElements::default();
+        extend_from_layer(&mut layer_elems, Layer::Background, true);
+        elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
+
         elements.push(backdrop);
 
         if self.debug_draw_opaque_regions {
@@ -4081,6 +4200,7 @@ impl Niri {
         elements
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_layer<R: NiriRenderer>(
         &self,
         renderer: &mut R,
@@ -4089,10 +4209,16 @@ impl Niri {
         layer_map: &LayerMap,
         layer: Layer,
         elements: &mut SplitElements<LayerSurfaceRenderElement<R>>,
+        for_backdrop: bool,
     ) {
         // LayerMap returns layers in reverse stacking order.
         let iter = layer_map.layers_on(layer).rev().filter_map(|surface| {
             let mapped = self.mapped_layer_surfaces.get(surface)?;
+
+            if for_backdrop != mapped.place_within_backdrop() {
+                return None;
+            }
+
             let geo = layer_map.layer_geometry(surface)?;
             Some((mapped, geo))
         });
@@ -5850,7 +5976,7 @@ impl Niri {
             .event_loop
             .insert_source(timer, move |_, _, state| {
                 state.niri.pointer_inactivity_timer = None;
-                state.niri.pointer_hidden = true;
+                state.niri.pointer_visibility = PointerVisibility::Hidden;
                 state.niri.queue_redraw_all();
 
                 TimeoutAction::Drop

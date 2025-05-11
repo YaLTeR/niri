@@ -23,6 +23,7 @@ input {
         // repeat-delay 600
         // repeat-rate 25
         // track-layout "global"
+        numlock
     }
 
     touchpad {
@@ -162,6 +163,22 @@ input {
     keyboard {
         repeat-delay 600
         repeat-rate 25
+    }
+}
+```
+
+#### Num Lock
+
+<sup>Since: next release</sup>
+
+Set the `numlock` flag to turn on Num Lock automatically at startup.
+
+You might want to disable (comment out) `numlock` if you're using a laptop with a keyboard that overlays Num Lock keys on top of regular keys.
+
+```kdl
+input {
+    keyboard {
+        numlock
     }
 }
 ```

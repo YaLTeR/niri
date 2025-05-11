@@ -1,7 +1,7 @@
 // This config is in the KDL format: https://kdl.dev
 // "/-" comments out the following node.
 // Check the wiki for a full description of the configuration:
-// https://github.com/YaLTeR/niri/wiki/Configuration:-Overview
+// https://github.com/YaLTeR/niri/wiki/Configuration:-Introduction
 
 // Input device configuration.
 // Find the full list of options on the wiki:
@@ -16,6 +16,9 @@ input {
             // layout "us,ru"
             // options "grp:win_space_toggle,compose:ralt,ctrl:nocaps"
         }
+
+        // Enable numlock on startup, omitting this setting disables it.
+        numlock
     }
 
     // Next sections include libinput settings.
@@ -189,6 +192,9 @@ layout {
         active-color "#ffc87f"
         inactive-color "#505050"
 
+        // Color of the border around windows that request your attention.
+        urgent-color "#9b0000"
+
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
     }
@@ -353,7 +359,7 @@ binds {
     // Open/close the Overview: a zoomed-out view of workspaces and windows.
     // You can also move the mouse into the top-left hot corner,
     // or do a four-finger swipe up on a touchpad.
-    Mod+O { toggle-overview; }
+    Mod+O repeat=false { toggle-overview; }
 
     Mod+Q { close-window; }
 

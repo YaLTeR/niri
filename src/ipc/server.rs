@@ -16,7 +16,9 @@ use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
-use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, Workspace};
+use niri_ipc::{
+    Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response, Workspace,
+};
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, Focus, GrabStartData as PointerGrabStartData,
@@ -428,6 +430,11 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::FocusedOutput(output)
         }
         Request::EventStream => Response::Handled,
+        Request::OverviewState => {
+            let state = ctx.event_stream_state.borrow();
+            let is_open = state.overview.is_open;
+            Response::OverviewState(Overview { is_open })
+        }
     };
 
     Ok(response)
@@ -469,6 +476,7 @@ fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_i
         workspace_id: workspace_id.map(|id| id.get()),
         is_focused: mapped.is_focused(),
         is_floating: mapped.is_floating(),
+        is_urgent: mapped.is_urgent(),
     })
 }
 
@@ -524,6 +532,7 @@ impl State {
     pub fn ipc_refresh_layout(&mut self) {
         self.ipc_refresh_workspaces();
         self.ipc_refresh_windows();
+        self.ipc_refresh_overview();
     }
 
     fn ipc_refresh_workspaces(&mut self) {
@@ -571,6 +580,12 @@ impl State {
                 });
             }
 
+            // Check if this workspace urgent state changed.
+            let urgent = ws.is_urgent();
+            if urgent != ipc_ws.is_urgent {
+                events.push(Event::WorkspaceUrgencyChanged { id, urgent });
+            }
+
             // Check if this workspace became focused.
             let is_focused = Some(id) == focused_ws_id;
             if is_focused && !ipc_ws.is_focused {
@@ -602,6 +617,7 @@ impl State {
                         idx: u8::try_from(ws_idx + 1).unwrap_or(u8::MAX),
                         name: ws.name().cloned(),
                         output: mon.map(|mon| mon.output_name().clone()),
+                        is_urgent: ws.is_urgent(),
                         is_active: mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx),
                         is_focused: Some(id) == focused_ws_id,
                         active_window_id: ws.active_window().map(|win| win.id().get()),
@@ -665,6 +681,11 @@ impl State {
             if mapped.is_focused() && !ipc_win.is_focused {
                 events.push(Event::WindowFocusChanged { id: Some(id) });
             }
+
+            let urgent = mapped.is_urgent();
+            if urgent != ipc_win.is_urgent {
+                events.push(Event::WindowUrgencyChanged { id, urgent })
+            }
         });
 
         // Check for closed windows.
@@ -689,5 +710,23 @@ impl State {
             state.apply(event.clone());
             server.send_event(event);
         }
+    }
+
+    pub fn ipc_refresh_overview(&mut self) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.overview;
+        let is_open = self.niri.layout.is_overview_open();
+
+        if state.is_open == is_open {
+            return;
+        }
+
+        let event = Event::OverviewOpenedOrClosed { is_open };
+        state.apply(event.clone());
+        server.send_event(event);
     }
 }
