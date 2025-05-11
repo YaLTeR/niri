@@ -35,9 +35,9 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::OverviewState => Request::OverviewState,
     };
 
-    let socket = Socket::connect().context("error connecting to the niri socket")?;
+    let mut socket = Socket::connect().context("error connecting to the niri socket")?;
 
-    let (reply, mut read_event) = socket
+    let reply = socket
         .send(request)
         .context("error communicating with niri")?;
 
@@ -45,10 +45,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Err(_) if !matches!(msg, Msg::Version) => {
             // If we got an error, it might be that the CLI is a different version from the running
             // niri instance. Request the running instance version to compare and print a message.
-            Socket::connect()
-                .and_then(|socket| socket.send(Request::Version))
-                .ok()
-                .map(|(reply, _read_event)| reply)
+            socket.send(Request::Version).ok()
         }
         _ => None,
     };
@@ -392,6 +389,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!("Started reading events.");
             }
 
+            let mut read_event = socket.read_events();
             loop {
                 let event = read_event().context("error reading event from niri")?;
 
