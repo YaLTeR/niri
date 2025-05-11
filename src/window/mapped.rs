@@ -77,6 +77,9 @@ pub struct Mapped {
     /// If `None`, then the window is not offscreened.
     offscreen_data: RefCell<Option<OffscreenData>>,
 
+    /// Whether this has an urgent indicator.
+    is_urgent: bool,
+
     /// Whether this window has the keyboard focus.
     is_focused: bool,
 
@@ -234,6 +237,7 @@ impl Mapped {
             needs_configure: false,
             needs_frame_callback: false,
             offscreen_data: RefCell::new(None),
+            is_urgent: false,
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
@@ -332,6 +336,7 @@ impl Mapped {
         }
 
         self.is_focused = is_focused;
+        self.is_urgent = false;
         self.need_to_recompute_rules = true;
     }
 
@@ -521,6 +526,20 @@ impl Mapped {
 
     pub fn is_windowed_fullscreen(&self) -> bool {
         self.is_windowed_fullscreen
+    }
+
+    pub fn set_urgent(&mut self, urgent: bool) {
+        if self.is_focused && urgent {
+            return;
+        }
+
+        let changed = self.is_urgent != urgent;
+        self.is_urgent = urgent;
+        self.need_to_recompute_rules |= changed;
+    }
+
+    pub fn is_urgent(&self) -> bool {
+        self.is_urgent
     }
 }
 
@@ -840,6 +859,10 @@ impl LayoutElement for Mapped {
                 existing.states.states.extend(data.states.states);
             }
         }
+    }
+
+    fn is_urgent(&self) -> bool {
+        self.is_urgent
     }
 
     fn set_activated(&mut self, active: bool) {

@@ -94,6 +94,12 @@ impl Spring {
 
             x1 = (self.to - y0 + m * x0) / m;
             y1 = self.oscillate(x1);
+
+            // Overdamped springs have some numerical stability issues...
+            if !y1.is_finite() {
+                return Duration::from_secs_f64(x0);
+            }
+
             i += 1;
         }
 
@@ -182,6 +188,19 @@ mod tests {
             to: 0.,
             initial_velocity: 0.,
             params: SpringParams::new(1.15, 850., 0.0001),
+        };
+        let _ = spring.duration();
+        let _ = spring.clamped_duration();
+        let _ = spring.value_at(Duration::ZERO);
+    }
+
+    #[test]
+    fn overdamped_spring_duration_panic() {
+        let spring = Spring {
+            from: 0.,
+            to: 1.,
+            initial_velocity: 0.,
+            params: SpringParams::new(6., 1200., 0.0001),
         };
         let _ = spring.duration();
         let _ = spring.clamped_duration();

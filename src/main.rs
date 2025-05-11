@@ -161,12 +161,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut config_errored = false;
-    let mut config = Config::load(&path)
-        .map_err(|err| {
-            warn!("{err:?}");
-            config_errored = true;
-        })
+    let config_load_result = Config::load(&path);
+    let config_errored = config_load_result.is_err();
+    let mut config = config_load_result
+        .map_err(|err| warn!("{err:?}"))
         .unwrap_or_default();
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
@@ -355,7 +353,7 @@ fn config_path(cli_path: Option<PathBuf>) -> (PathBuf, PathBuf, bool) {
     let system_path = system_config_path();
     if let Some(path) = default_config_path() {
         if path.exists() {
-            return (path.clone(), path, true);
+            return (path.clone(), path, false);
         }
 
         if system_path.exists() {

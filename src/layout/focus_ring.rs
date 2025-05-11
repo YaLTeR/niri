@@ -59,6 +59,7 @@ impl FocusRing {
         win_size: Size<f64, Logical>,
         is_active: bool,
         is_border: bool,
+        is_urgent: bool,
         view_rect: Rectangle<f64, Logical>,
         radius: CornerRadius,
         scale: f64,
@@ -67,7 +68,9 @@ impl FocusRing {
         let width = self.config.width.0;
         self.full_size = win_size + Size::from((width, width)).upscale(2.);
 
-        let color = if is_active {
+        let color = if is_urgent {
+            self.config.urgent_color
+        } else if is_active {
             self.config.active_color
         } else {
             self.config.inactive_color
@@ -79,7 +82,9 @@ impl FocusRing {
 
         let radius = radius.fit_to(self.full_size.w as f32, self.full_size.h as f32);
 
-        let gradient = if is_active {
+        let gradient = if is_urgent {
+            self.config.urgent_gradient
+        } else if is_active {
             self.config.active_gradient
         } else {
             self.config.inactive_gradient

@@ -2,17 +2,17 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::GlesTexture;
 use smithay::backend::renderer::utils::{CommitCounter, OpaqueRegions};
-use smithay::backend::renderer::{Frame as _, ImportMem, Renderer, Texture};
+use smithay::backend::renderer::{ContextId, Frame as _, ImportMem, Renderer, Texture};
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::memory::MemoryBuffer;
 
 /// Smithay's texture buffer, but with fractional scale.
 #[derive(Debug, Clone)]
-pub struct TextureBuffer<T> {
+pub struct TextureBuffer<T: Texture> {
     id: Id,
     commit_counter: CommitCounter,
-    renderer_id: usize,
+    renderer_context_id: ContextId<T>,
     texture: T,
     scale: Scale<f64>,
     transform: Transform,
@@ -21,7 +21,7 @@ pub struct TextureBuffer<T> {
 
 /// Render element for a [`TextureBuffer`].
 #[derive(Debug, Clone)]
-pub struct TextureRenderElement<T> {
+pub struct TextureRenderElement<T: Texture> {
     buffer: TextureBuffer<T>,
     location: Point<f64, Logical>,
     alpha: f32,
@@ -30,7 +30,7 @@ pub struct TextureRenderElement<T> {
     kind: Kind,
 }
 
-impl<T> TextureBuffer<T> {
+impl<T: Texture> TextureBuffer<T> {
     pub fn from_texture<R: Renderer<TextureId = T>>(
         renderer: &R,
         texture: T,
@@ -41,7 +41,7 @@ impl<T> TextureBuffer<T> {
         TextureBuffer {
             id: Id::new(),
             commit_counter: CommitCounter::default(),
-            renderer_id: renderer.id(),
+            renderer_context_id: renderer.context_id(),
             texture,
             scale: scale.into(),
             transform,
@@ -122,7 +122,7 @@ impl TextureBuffer<GlesTexture> {
     }
 }
 
-impl<T> TextureRenderElement<T> {
+impl<T: Texture> TextureRenderElement<T> {
     pub fn from_texture_buffer(
         buffer: TextureBuffer<T>,
         location: impl Into<Point<f64, Logical>>,
@@ -226,7 +226,7 @@ where
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), R::Error> {
-        if frame.id() != self.buffer.renderer_id {
+        if frame.context_id() != self.buffer.renderer_context_id {
             warn!("trying to render texture from different renderer");
             return Ok(());
         }

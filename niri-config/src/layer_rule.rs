@@ -15,6 +15,8 @@ pub struct LayerRule {
     pub shadow: ShadowRule,
     #[knuffel(child)]
     pub geometry_corner_radius: Option<CornerRadius>,
+    #[knuffel(child, unwrap(argument))]
+    pub place_within_backdrop: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

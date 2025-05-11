@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::collections::HashMap;
+use std::f64::consts::TAU;
 use std::iter::zip;
 use std::rc::Rc;
 
@@ -11,14 +12,14 @@ use niri_ipc::SizeChange;
 use pango::{Alignment, FontDescription};
 use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::input::{ButtonState, MouseButton};
+use smithay::backend::input::TouchSlot;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ExportMem, Texture as _};
 use smithay::input::keyboard::{Keysym, ModifiersState};
 use smithay::output::{Output, WeakOutput};
-use smithay::utils::{Physical, Point, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::animation::{Animation, Clock};
 use crate::layout::floating::DIRECTIONAL_MOVE_PX;
@@ -32,6 +33,7 @@ use crate::utils::to_physical_precise_round;
 const SELECTION_BORDER: i32 = 2;
 
 const PADDING: i32 = 8;
+const RADIUS: i32 = 16;
 const FONT: &str = "sans 14px";
 const BORDER: i32 = 4;
 const TEXT_HIDE_P: &str =
@@ -56,11 +58,20 @@ pub enum ScreenshotUi {
     Open {
         selection: (Output, Point<i32, Physical>, Point<i32, Physical>),
         output_data: HashMap<Output, OutputData>,
-        mouse_down: bool,
+        button: Button,
         show_pointer: bool,
         open_anim: Animation,
         clock: Clock,
         config: Rc<RefCell<Config>>,
+    },
+}
+
+pub enum Button {
+    Up,
+    Down {
+        touch_slot: Option<TouchSlot>,
+        on_capture_button: bool,
+        last_pos: (Output, Point<i32, Physical>),
     },
 }
 
@@ -85,6 +96,22 @@ niri_render_elements! {
     ScreenshotUiRenderElement => {
         Screenshot = PrimaryGpuTextureRenderElement,
         SolidColor = SolidColorRenderElement,
+    }
+}
+
+impl Button {
+    fn is_down(&self) -> bool {
+        matches!(self, Self::Down { .. })
+    }
+
+    fn is_dragging_selection(&self) -> bool {
+        matches!(
+            self,
+            Self::Down {
+                on_capture_button: false,
+                ..
+            }
+        )
     }
 }
 
@@ -193,7 +220,7 @@ impl ScreenshotUi {
         *self = Self::Open {
             selection,
             output_data,
-            mouse_down: false,
+            button: Button::Up,
             show_pointer,
             open_anim,
             clock: clock.clone(),
@@ -489,7 +516,7 @@ impl ScreenshotUi {
         let Self::Open {
             output_data,
             show_pointer,
-            mouse_down,
+            button,
             open_anim,
             ..
         } = self
@@ -509,16 +536,14 @@ impl ScreenshotUi {
         // The help panel goes on top.
         if let Some((show, hide)) = &output_data.panel {
             let buffer = if *show_pointer { hide } else { show };
-
-            let size = buffer.texture().size();
-            let padding: i32 = to_physical_precise_round(scale, PADDING);
-            let x = max(0, (output_data.size.w - size.w) / 2);
-            let y = max(0, output_data.size.h - size.h - padding * 2);
-            let location = Point::<_, Physical>::from((x, y))
+            let alpha = if button.is_dragging_selection() {
+                0.3
+            } else {
+                0.9
+            };
+            let location = panel_location(output_data, buffer.texture().size())
                 .to_f64()
                 .to_logical(scale);
-
-            let alpha = if *mouse_down { 0.3 } else { 0.9 };
 
             let elem = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
                 buffer.clone(),
@@ -660,75 +685,154 @@ impl ScreenshotUi {
     }
 
     /// The pointer has moved to `point` relative to the current selection output.
-    pub fn pointer_motion(&mut self, point: Point<i32, Physical>) {
+    pub fn pointer_motion(&mut self, point: Point<i32, Physical>, slot: Option<TouchSlot>) {
         let Self::Open {
             selection,
-            mouse_down: true,
+            button:
+                Button::Down {
+                    touch_slot,
+                    on_capture_button,
+                    last_pos,
+                },
             ..
         } = self
         else {
             return;
         };
 
+        if *touch_slot != slot {
+            return;
+        }
+
+        last_pos.1 = point;
+
+        if *on_capture_button {
+            return;
+        }
+
         selection.2 = point;
         self.update_buffers();
     }
 
-    pub fn pointer_button(
+    pub fn pointer_down(
         &mut self,
         output: Output,
         point: Point<i32, Physical>,
-        button: MouseButton,
-        state: ButtonState,
+        slot: Option<TouchSlot>,
     ) -> bool {
         let Self::Open {
             selection,
             output_data,
-            mouse_down,
+            show_pointer,
+            button,
             ..
         } = self
         else {
             return false;
         };
 
-        if button != MouseButton::Left {
+        if button.is_down() {
             return false;
         }
 
-        let down = state == ButtonState::Pressed;
-        if *mouse_down == down {
+        let Some(output_data) = output_data.get(&output) else {
             return false;
-        }
+        };
 
-        if down && !output_data.contains_key(&output) {
-            return false;
-        }
+        if let Some((show, hide)) = &output_data.panel {
+            let buffer = if *show_pointer { hide } else { show };
+            let panel_size = buffer.texture().size();
+            let location = panel_location(output_data, panel_size);
 
-        *mouse_down = down;
-
-        if down {
-            *selection = (output, point, point);
-        } else {
-            // Check if the resulting selection is zero-sized, and try to come up with a small
-            // default rectangle.
-            let (output, a, b) = selection;
-            let mut rect = rect_from_corner_points(*a, *b);
-            if rect.size.is_empty() || rect.size == Size::from((1, 1)) {
-                let data = &output_data[output];
-                rect = Rectangle::new(
-                    Point::from((rect.loc.x - 16, rect.loc.y - 16)),
-                    Size::from((32, 32)),
-                )
-                .intersection(Rectangle::from_size(data.size))
-                .unwrap_or_default();
-                *a = rect.loc;
-                *b = rect.loc + rect.size - Size::from((1, 1));
+            if is_within_capture_button(output_data.scale, panel_size, point - location) {
+                *button = Button::Down {
+                    touch_slot: slot,
+                    on_capture_button: true,
+                    last_pos: (output, point),
+                };
+                return false;
             }
         }
+
+        *button = Button::Down {
+            touch_slot: slot,
+            on_capture_button: false,
+            last_pos: (output.clone(), point),
+        };
+        *selection = (output, point, point);
 
         self.update_buffers();
 
         true
+    }
+
+    pub fn pointer_up(&mut self, slot: Option<TouchSlot>) -> Option<bool> {
+        let Self::Open {
+            selection,
+            output_data,
+            button,
+            show_pointer,
+            ..
+        } = self
+        else {
+            return None;
+        };
+
+        let Button::Down {
+            touch_slot,
+            on_capture_button,
+            ref last_pos,
+        } = *button
+        else {
+            return None;
+        };
+
+        if touch_slot != slot {
+            return None;
+        }
+
+        let last_pos = last_pos.clone();
+        *button = Button::Up;
+
+        // Check if we released still on the capture button.
+        if on_capture_button {
+            let (output, point) = last_pos;
+
+            #[allow(clippy::question_mark)]
+            let Some(output_data) = output_data.get(&output) else {
+                return None;
+            };
+
+            if let Some((show, hide)) = &output_data.panel {
+                let buffer = if *show_pointer { hide } else { show };
+                let panel_size = buffer.texture().size();
+                let location = panel_location(output_data, panel_size);
+
+                if is_within_capture_button(output_data.scale, panel_size, point - location) {
+                    return Some(true);
+                }
+            }
+        }
+
+        // Check if the resulting selection is zero-sized, and try to come up with a small
+        // default rectangle.
+        let (output, a, b) = selection;
+        let mut rect = rect_from_corner_points(*a, *b);
+        if rect.size.is_empty() || rect.size == Size::from((1, 1)) {
+            let data = &output_data[output];
+            rect = Rectangle::new(
+                Point::from((rect.loc.x - 16, rect.loc.y - 16)),
+                Size::from((32, 32)),
+            )
+            .intersection(Rectangle::from_size(data.size))
+            .unwrap_or_default();
+            *a = rect.loc;
+            *b = rect.loc + rect.size - Size::from((1, 1));
+        }
+
+        self.update_buffers();
+
+        Some(false)
     }
 }
 
@@ -819,6 +923,29 @@ pub fn rect_from_corner_points(
     Rectangle::from_extremities((x1, y1), (x2 + 1, y2 + 1))
 }
 
+fn panel_location(output_data: &OutputData, panel_size: Size<i32, Buffer>) -> Point<i32, Physical> {
+    let scale = output_data.scale;
+    let padding: i32 = to_physical_precise_round(scale, PADDING);
+    let x = max(0, (output_data.size.w - panel_size.w) / 2);
+    let y = max(0, output_data.size.h - panel_size.h - padding * 2);
+    Point::from((x, y))
+}
+
+fn is_within_capture_button(
+    scale: f64,
+    panel_size: Size<i32, Buffer>,
+    pos_within_panel: Point<i32, Physical>,
+) -> bool {
+    let padding: i32 = to_physical_precise_round(scale, PADDING);
+    let radius = to_physical_precise_round::<i32>(scale, RADIUS) - 2;
+
+    let xc = padding + radius;
+    let yc = panel_size.h / 2;
+    let pos = pos_within_panel;
+
+    (pos.x - xc) * (pos.x - xc) + (pos.y - yc) * (pos.y - yc) <= radius * radius
+}
+
 fn render_panel(
     renderer: &mut GlesRenderer,
     scale: f64,
@@ -827,6 +954,11 @@ fn render_panel(
     let _span = tracy_client::span!("screenshot_ui::render_panel");
 
     let padding: i32 = to_physical_precise_round(scale, PADDING);
+    // Keep the border width even to avoid blurry edges.
+    let border_width = (f64::from(BORDER) / 2. * scale).round() * 2.;
+    let half_border_width = (border_width / 2.) as i32;
+    let radius: i32 = to_physical_precise_round(scale, RADIUS);
+    let circle_stroke: f64 = to_physical_precise_round(scale, 2.);
 
     // Add 2 px of spacing to separate the backgrounds of the "Space" and "P" keys.
     let spacing = to_physical_precise_round::<i32>(scale, 2) * 1024;
@@ -839,12 +971,14 @@ fn render_panel(
     let layout = pangocairo::functions::create_layout(&cr);
     layout.context().set_round_glyph_positions(false);
     layout.set_font_description(Some(&font));
-    layout.set_alignment(Alignment::Center);
+    layout.set_alignment(Alignment::Left);
     layout.set_markup(text);
     layout.set_spacing(spacing);
 
     let (mut width, mut height) = layout.pixel_size();
-    width += padding * 2;
+
+    width += padding + radius * 2 + padding - half_border_width + padding;
+    height = max(height, radius * 2);
     height += padding * 2;
 
     let surface = ImageSurface::create(cairo::Format::ARgb32, width, height)?;
@@ -852,11 +986,33 @@ fn render_panel(
     cr.set_source_rgb(0.1, 0.1, 0.1);
     cr.paint()?;
 
-    cr.move_to(padding.into(), padding.into());
+    let padding = f64::from(padding);
+    let half_border_width = f64::from(half_border_width);
+    let r = f64::from(radius);
+
+    let yc = f64::from(height / 2);
+
+    cr.new_sub_path();
+    cr.arc(padding + r, yc, r, 0., TAU);
+    cr.set_source_rgb(1., 1., 1.);
+    cr.fill()?;
+
+    cr.new_sub_path();
+    cr.arc(padding + r, yc, r - circle_stroke, 0., TAU);
+    cr.set_source_rgb(0.1, 0.1, 0.1);
+    cr.fill()?;
+
+    cr.new_sub_path();
+    cr.arc(padding + r, yc, r - circle_stroke * 2., 0., TAU);
+    cr.set_source_rgb(1., 1., 1.);
+    cr.fill()?;
+
+    cr.move_to(padding + r * 2. + padding - half_border_width, padding);
+
     let layout = pangocairo::functions::create_layout(&cr);
     layout.context().set_round_glyph_positions(false);
     layout.set_font_description(Some(&font));
-    layout.set_alignment(Alignment::Center);
+    layout.set_alignment(Alignment::Left);
     layout.set_markup(text);
     layout.set_spacing(spacing);
 
@@ -869,8 +1025,7 @@ fn render_panel(
     cr.line_to(0., height.into());
     cr.line_to(0., 0.);
     cr.set_source_rgb(0.3, 0.3, 0.3);
-    // Keep the border width even to avoid blurry edges.
-    cr.set_line_width((f64::from(BORDER) / 2. * scale).round() * 2.);
+    cr.set_line_width(border_width);
     cr.stroke()?;
     drop(cr);
 

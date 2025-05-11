@@ -271,7 +271,8 @@ impl WindowMruUi {
             };
             let mut total_width = current_texture_width;
 
-            // define iterators over the mru list that move away from the "current" element in the MRU list
+            // define iterators over the mru list that move away from the "current" element in the
+            // MRU list
             let after_it = (current + 1..wmru.ids.len())
                 .map(Some)
                 .chain(iter::repeat(None));
@@ -452,6 +453,7 @@ fn render_elements_for_thumbnail(
             bb_size,
             true,
             true,
+            false,
             Rectangle::default(), // no effect
             niri_config::CornerRadius {
                 top_left: RADIUS,

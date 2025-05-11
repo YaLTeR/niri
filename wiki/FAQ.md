@@ -6,7 +6,7 @@ Then niri will ask windows to omit client-side decorations, and also inform them
 Note that currently this will prevent edge window resize handles from showing up.
 You can still resize windows by holding <kbd>Mod</kbd> and the right mouse button.
 
-### Why is the border/focus ring showing up through semitransparent windows?
+### Why are transparent windows tinted? / Why is the border/focus ring showing up through semitransparent windows?
 
 Uncomment the [`prefer-no-csd` setting](./Configuration:-Miscellaneous.md#prefer-no-csd) at the top level of the config, and then restart your apps.
 Niri will draw focus rings and borders *around* windows that agree to omit their client-side decorations.

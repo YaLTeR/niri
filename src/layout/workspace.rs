@@ -2,7 +2,9 @@ use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CenterFocusedColumn, OutputName, PresetSize, Workspace as WorkspaceConfig};
+use niri_config::{
+    CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
+};
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
@@ -15,16 +17,18 @@ use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use super::floating::{FloatingSpace, FloatingSpaceRenderElement};
 use super::scrolling::{
-    Column, ColumnWidth, InsertHint, InsertPosition, ScrollDirection, ScrollingSpace,
-    ScrollingSpaceRenderElement,
+    Column, ColumnWidth, ScrollDirection, ScrollingSpace, ScrollingSpaceRenderElement,
 };
+use super::shadow::Shadow;
 use super::tile::{Tile, TileRenderSnapshot};
 use super::{
-    ActivateWindow, HitType, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac,
+    ActivateWindow, HitType, InsertPosition, InteractiveResizeData, LayoutElement, Options,
+    RemovedTile, SizeFrac,
 };
 use crate::animation::Clock;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::RenderTarget;
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
@@ -79,6 +83,9 @@ pub struct Workspace<W: LayoutElement> {
     /// This is similar to view size, but takes into account things like layer shell exclusive
     /// zones.
     working_area: Rectangle<f64, Logical>,
+
+    /// This workspace's shadow in the overview.
+    shadow: Shadow,
 
     /// Clock for driving animations.
     pub(super) clock: Clock,
@@ -228,6 +235,9 @@ impl<W: LayoutElement> Workspace<W> {
             options.clone(),
         );
 
+        let shadow_config =
+            compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
+
         Self {
             scrolling,
             floating,
@@ -237,6 +247,7 @@ impl<W: LayoutElement> Workspace<W> {
             transform: output.current_transform(),
             view_size,
             working_area,
+            shadow: Shadow::new(shadow_config),
             output: Some(output),
             clock,
             base_options,
@@ -281,6 +292,9 @@ impl<W: LayoutElement> Workspace<W> {
             options.clone(),
         );
 
+        let shadow_config =
+            compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
+
         Self {
             scrolling,
             floating,
@@ -291,6 +305,7 @@ impl<W: LayoutElement> Workspace<W> {
             original_output,
             view_size,
             working_area,
+            shadow: Shadow::new(shadow_config),
             clock,
             base_options,
             options,
@@ -343,6 +358,14 @@ impl<W: LayoutElement> Workspace<W> {
         let view_rect = Rectangle::from_size(self.view_size);
         self.floating
             .update_render_elements(is_active && self.floating_is_active.get(), view_rect);
+
+        self.shadow.update_render_elements(
+            self.view_size,
+            true,
+            CornerRadius::default(),
+            self.scale.fractional_scale(),
+            1.,
+        );
     }
 
     pub fn update_config(&mut self, base_options: Rc<Options>) {
@@ -363,6 +386,10 @@ impl<W: LayoutElement> Workspace<W> {
             options.clone(),
         );
 
+        let shadow_config =
+            compute_workspace_shadow_config(options.overview.workspace_shadow, self.view_size);
+        self.shadow.update_config(shadow_config);
+
         self.base_options = base_options;
         self.options = options;
     }
@@ -370,6 +397,7 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn update_shaders(&mut self) {
         self.scrolling.update_shaders();
         self.floating.update_shaders();
+        self.shadow.update_shaders();
     }
 
     pub fn windows(&self) -> impl Iterator<Item = &W> + '_ {
@@ -501,6 +529,10 @@ impl<W: LayoutElement> Workspace<W> {
                 scale.fractional_scale(),
                 self.options.clone(),
             );
+
+            let shadow_config =
+                compute_workspace_shadow_config(self.options.overview.workspace_shadow, size);
+            self.shadow.update_config(shadow_config);
         }
 
         if scale_transform_changed {
@@ -1409,7 +1441,10 @@ impl<W: LayoutElement> Workspace<W> {
         renderer: &mut R,
         target: RenderTarget,
         focus_ring: bool,
-    ) -> impl Iterator<Item = WorkspaceRenderElement<R>> {
+    ) -> (
+        impl Iterator<Item = WorkspaceRenderElement<R>>,
+        impl Iterator<Item = WorkspaceRenderElement<R>>,
+    ) {
         let scrolling_focus_ring = focus_ring && !self.floating_is_active();
         let scrolling = self
             .scrolling
@@ -1424,8 +1459,16 @@ impl<W: LayoutElement> Workspace<W> {
                     .render_elements(renderer, view_rect, target, floating_focus_ring);
             floating.into_iter().map(WorkspaceRenderElement::from)
         });
+        let floating = floating.into_iter().flatten();
 
-        floating.into_iter().flatten().chain(scrolling)
+        (floating, scrolling)
+    }
+
+    pub fn render_shadow<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+    ) -> impl Iterator<Item = ShadowRenderElement> + '_ {
+        self.shadow.render(renderer, Point::from((0., 0.)))
     }
 
     pub fn render_above_top_layer(&self) -> bool {
@@ -1565,6 +1608,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.scroll_amount_to_activate(window)
     }
 
+    pub fn is_urgent(&self) -> bool {
+        self.windows().any(|win| win.is_urgent())
+    }
+
     pub fn activate_window(&mut self, window: &W::Id) -> bool {
         if self.floating.activate_window(window) {
             self.floating_is_active = FloatingActive::Yes;
@@ -1593,16 +1640,15 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn set_insert_hint(&mut self, insert_hint: InsertHint) {
-        self.scrolling.set_insert_hint(insert_hint);
+    pub(super) fn scrolling_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
+        self.scrolling.insert_position(pos)
     }
 
-    pub fn clear_insert_hint(&mut self) {
-        self.scrolling.clear_insert_hint();
-    }
-
-    pub fn get_insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
-        self.scrolling.get_insert_position(pos)
+    pub(super) fn insert_hint_area(
+        &self,
+        position: InsertPosition,
+    ) -> Option<Rectangle<f64, Logical>> {
+        self.scrolling.insert_hint_area(position)
     }
 
     pub fn view_offset_gesture_begin(&mut self, is_touchpad: bool) {
@@ -1619,16 +1665,15 @@ impl<W: LayoutElement> Workspace<W> {
             .view_offset_gesture_update(delta_x, timestamp, is_touchpad)
     }
 
-    pub fn view_offset_gesture_end(&mut self, cancelled: bool, is_touchpad: Option<bool>) -> bool {
-        self.scrolling
-            .view_offset_gesture_end(cancelled, is_touchpad)
+    pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
+        self.scrolling.view_offset_gesture_end(is_touchpad)
     }
 
     pub fn dnd_scroll_gesture_begin(&mut self) {
         self.scrolling.dnd_scroll_gesture_begin();
     }
 
-    pub fn dnd_scroll_gesture_scroll(&mut self, pos: Point<f64, Logical>) {
+    pub fn dnd_scroll_gesture_scroll(&mut self, pos: Point<f64, Logical>, speed: f64) -> bool {
         let config = &self.options.gestures.dnd_edge_view_scroll;
         let trigger_width = config.trigger_width.0;
 
@@ -1654,8 +1699,9 @@ impl<W: LayoutElement> Workspace<W> {
             // Normalize to [0, 1].
             delta / trigger_width
         };
+        let delta = delta * speed;
 
-        self.scrolling.dnd_scroll_gesture_scroll(delta);
+        self.scrolling.dnd_scroll_gesture_scroll(delta)
     }
 
     pub fn dnd_scroll_gesture_end(&mut self) {
@@ -1704,6 +1750,10 @@ impl<W: LayoutElement> Workspace<W> {
         logical_pos: Point<f64, Logical>,
     ) -> Point<f64, SizeFrac> {
         self.floating.logical_to_size_frac(logical_pos)
+    }
+
+    pub fn working_area(&self) -> Rectangle<f64, Logical> {
+        self.working_area
     }
 
     #[cfg(test)]
@@ -1775,6 +1825,23 @@ impl<W: LayoutElement> Workspace<W> {
     }
 }
 
-fn compute_working_area(output: &Output) -> Rectangle<f64, Logical> {
+pub(super) fn compute_working_area(output: &Output) -> Rectangle<f64, Logical> {
     layer_map_for_output(output).non_exclusive_zone().to_f64()
+}
+
+fn compute_workspace_shadow_config(
+    config: niri_config::WorkspaceShadow,
+    view_size: Size<f64, Logical>,
+) -> niri_config::Shadow {
+    // Gaps between workspaces are a multiple of the view height, so shadow settings should also be
+    // normalized to the view height to prevent them from overlapping on lower resolutions.
+    let norm = view_size.h / 1080.;
+
+    let mut config = niri_config::Shadow::from(config);
+    config.softness.0 *= norm;
+    config.spread.0 *= norm;
+    config.offset.x.0 *= norm;
+    config.offset.y.0 *= norm;
+
+    config
 }

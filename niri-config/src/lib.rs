@@ -23,7 +23,8 @@ use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
 use smithay::reexports::input;
 
-pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.2, 0.2, 0.2, 1.]);
+pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.25, 0.25, 0.25, 1.]);
+pub const DEFAULT_BACKDROP_COLOR: Color = Color::from_array_unpremul([0.15, 0.15, 0.15, 1.]);
 
 /// Delay before the window focus is considered to be locked-in for Window
 /// MRU ordering. For now the delay is not configurable.
@@ -64,6 +65,8 @@ pub struct Config {
     pub animations: Animations,
     #[knuffel(child, default)]
     pub gestures: Gestures,
+    #[knuffel(child, default)]
+    pub overview: Overview,
     #[knuffel(child, default)]
     pub environment: Environment,
     #[knuffel(children(name = "window-rule"))]
@@ -121,6 +124,8 @@ pub struct Keyboard {
     pub repeat_rate: u8,
     #[knuffel(child, unwrap(argument), default)]
     pub track_layout: TrackLayout,
+    #[knuffel(child)]
+    pub numlock: bool,
 }
 
 impl Default for Keyboard {
@@ -130,6 +135,7 @@ impl Default for Keyboard {
             repeat_delay: 600,
             repeat_rate: 25,
             track_layout: Default::default(),
+            numlock: Default::default(),
         }
     }
 }
@@ -446,8 +452,10 @@ pub struct Output {
     pub variable_refresh_rate: Option<Vrr>,
     #[knuffel(child)]
     pub focus_at_startup: bool,
-    #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
-    pub background_color: Color,
+    #[knuffel(child)]
+    pub background_color: Option<Color>,
+    #[knuffel(child)]
+    pub backdrop_color: Option<Color>,
 }
 
 impl Output {
@@ -475,7 +483,8 @@ impl Default for Output {
             position: None,
             mode: None,
             variable_refresh_rate: None,
-            background_color: DEFAULT_BACKGROUND_COLOR,
+            background_color: None,
+            backdrop_color: None,
         }
     }
 }
@@ -536,6 +545,8 @@ pub struct Layout {
     pub gaps: FloatOrInt<0, 65535>,
     #[knuffel(child, default)]
     pub struts: Struts,
+    #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
+    pub background_color: Color,
 }
 
 impl Default for Layout {
@@ -555,6 +566,7 @@ impl Default for Layout {
             gaps: FloatOrInt(16.),
             struts: Default::default(),
             preset_window_heights: Default::default(),
+            background_color: DEFAULT_BACKGROUND_COLOR,
         }
     }
 }
@@ -575,10 +587,14 @@ pub struct FocusRing {
     pub active_color: Color,
     #[knuffel(child, default = Self::default().inactive_color)]
     pub inactive_color: Color,
+    #[knuffel(child, default = Self::default().urgent_color)]
+    pub urgent_color: Color,
     #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub urgent_gradient: Option<Gradient>,
 }
 
 impl Default for FocusRing {
@@ -588,8 +604,10 @@ impl Default for FocusRing {
             width: FloatOrInt(4.),
             active_color: Color::from_rgba8_unpremul(127, 200, 255, 255),
             inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
+            urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
             active_gradient: None,
             inactive_gradient: None,
+            urgent_gradient: None,
         }
     }
 }
@@ -661,10 +679,14 @@ pub struct Border {
     pub active_color: Color,
     #[knuffel(child, default = Self::default().inactive_color)]
     pub inactive_color: Color,
+    #[knuffel(child, default = Self::default().urgent_color)]
+    pub urgent_color: Color,
     #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub urgent_gradient: Option<Gradient>,
 }
 
 impl Default for Border {
@@ -674,8 +696,10 @@ impl Default for Border {
             width: FloatOrInt(4.),
             active_color: Color::from_rgba8_unpremul(255, 200, 127, 255),
             inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
+            urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
             active_gradient: None,
             inactive_gradient: None,
+            urgent_gradient: None,
         }
     }
 }
@@ -687,8 +711,10 @@ impl From<Border> for FocusRing {
             width: value.width,
             active_color: value.active_color,
             inactive_color: value.inactive_color,
+            urgent_color: value.urgent_color,
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
+            urgent_gradient: value.urgent_gradient,
         }
     }
 }
@@ -700,8 +726,10 @@ impl From<FocusRing> for Border {
             width: value.width,
             active_color: value.active_color,
             inactive_color: value.inactive_color,
+            urgent_color: value.urgent_color,
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
+            urgent_gradient: value.urgent_gradient,
         }
     }
 }
@@ -750,6 +778,49 @@ pub struct ShadowOffset {
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct WorkspaceShadow {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, default = Self::default().offset)]
+    pub offset: ShadowOffset,
+    #[knuffel(child, unwrap(argument), default = Self::default().softness)]
+    pub softness: FloatOrInt<0, 1024>,
+    #[knuffel(child, unwrap(argument), default = Self::default().spread)]
+    pub spread: FloatOrInt<-1024, 1024>,
+    #[knuffel(child, default = Self::default().color)]
+    pub color: Color,
+}
+
+impl Default for WorkspaceShadow {
+    fn default() -> Self {
+        Self {
+            off: false,
+            offset: ShadowOffset {
+                x: FloatOrInt(0.),
+                y: FloatOrInt(10.),
+            },
+            softness: FloatOrInt(40.),
+            spread: FloatOrInt(10.),
+            color: Color::from_rgba8_unpremul(0, 0, 0, 0x50),
+        }
+    }
+}
+
+impl From<WorkspaceShadow> for Shadow {
+    fn from(value: WorkspaceShadow) -> Self {
+        Self {
+            on: !value.off,
+            offset: value.offset,
+            softness: value.softness,
+            spread: value.spread,
+            draw_behind_window: false,
+            color: value.color,
+            inactive_color: None,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct TabIndicator {
     #[knuffel(child)]
     pub off: bool,
@@ -774,9 +845,13 @@ pub struct TabIndicator {
     #[knuffel(child)]
     pub inactive_color: Option<Color>,
     #[knuffel(child)]
+    pub urgent_color: Option<Color>,
+    #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub urgent_gradient: Option<Gradient>,
 }
 
 impl Default for TabIndicator {
@@ -795,8 +870,10 @@ impl Default for TabIndicator {
             corner_radius: FloatOrInt(0.),
             active_color: None,
             inactive_color: None,
+            urgent_color: None,
             active_gradient: None,
             inactive_gradient: None,
+            urgent_gradient: None,
         }
     }
 }
@@ -988,6 +1065,8 @@ pub struct Animations {
     pub config_notification_open_close: ConfigNotificationOpenCloseAnim,
     #[knuffel(child, default)]
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
+    #[knuffel(child, default)]
+    pub overview_open_close: OverviewOpenCloseAnim,
 }
 
 impl Default for Animations {
@@ -1003,6 +1082,7 @@ impl Default for Animations {
             window_resize: Default::default(),
             config_notification_open_close: Default::default(),
             screenshot_ui_open: Default::default(),
+            overview_open_close: Default::default(),
         }
     }
 }
@@ -1151,6 +1231,22 @@ impl Default for ScreenshotUiOpenAnim {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OverviewOpenCloseAnim(pub Animation);
+
+impl Default for OverviewOpenCloseAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Animation {
     pub off: bool,
     pub kind: AnimationKind,
@@ -1187,6 +1283,10 @@ pub struct SpringParams {
 pub struct Gestures {
     #[knuffel(child, default)]
     pub dnd_edge_view_scroll: DndEdgeViewScroll,
+    #[knuffel(child, default)]
+    pub dnd_edge_workspace_switch: DndEdgeWorkspaceSwitch,
+    #[knuffel(child, default)]
+    pub hot_corners: HotCorners,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -1205,6 +1305,52 @@ impl Default for DndEdgeViewScroll {
             trigger_width: FloatOrInt(30.), // Taken from GTK 4.
             delay_ms: 100,
             max_speed: FloatOrInt(1500.),
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct DndEdgeWorkspaceSwitch {
+    #[knuffel(child, unwrap(argument), default = Self::default().trigger_height)]
+    pub trigger_height: FloatOrInt<0, 65535>,
+    #[knuffel(child, unwrap(argument), default = Self::default().delay_ms)]
+    pub delay_ms: u16,
+    #[knuffel(child, unwrap(argument), default = Self::default().max_speed)]
+    pub max_speed: FloatOrInt<0, 1_000_000>,
+}
+
+impl Default for DndEdgeWorkspaceSwitch {
+    fn default() -> Self {
+        Self {
+            trigger_height: FloatOrInt(50.),
+            delay_ms: 100,
+            max_speed: FloatOrInt(1500.),
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct HotCorners {
+    #[knuffel(child)]
+    pub off: bool,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Overview {
+    #[knuffel(child, unwrap(argument), default = Self::default().zoom)]
+    pub zoom: FloatOrInt<0, 1>,
+    #[knuffel(child, default = Self::default().backdrop_color)]
+    pub backdrop_color: Color,
+    #[knuffel(child, default)]
+    pub workspace_shadow: WorkspaceShadow,
+}
+
+impl Default for Overview {
+    fn default() -> Self {
+        Self {
+            zoom: FloatOrInt(0.5),
+            backdrop_color: DEFAULT_BACKDROP_COLOR,
+            workspace_shadow: WorkspaceShadow::default(),
         }
     }
 }
@@ -1315,6 +1461,8 @@ pub struct Match {
     #[knuffel(property)]
     pub is_window_cast_target: Option<bool>,
     #[knuffel(property)]
+    pub is_urgent: Option<bool>,
+    #[knuffel(property)]
     pub at_startup: Option<bool>,
 }
 
@@ -1367,9 +1515,13 @@ pub struct BorderRule {
     #[knuffel(child)]
     pub inactive_color: Option<Color>,
     #[knuffel(child)]
+    pub urgent_color: Option<Color>,
+    #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub urgent_gradient: Option<Gradient>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
@@ -1399,9 +1551,13 @@ pub struct TabIndicatorRule {
     #[knuffel(child)]
     pub inactive_color: Option<Color>,
     #[knuffel(child)]
+    pub urgent_color: Option<Color>,
+    #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub urgent_gradient: Option<Gradient>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -1544,7 +1700,11 @@ pub enum Action {
     FocusWindowInColumn(#[knuffel(argument)] u8),
     FocusWindowPrevious,
     FocusColumnLeft,
+    #[knuffel(skip)]
+    FocusColumnLeftUnderMouse,
     FocusColumnRight,
+    #[knuffel(skip)]
+    FocusColumnRightUnderMouse,
     FocusColumnFirst,
     FocusColumnLast,
     FocusColumnRightOrFirst,
@@ -1594,7 +1754,11 @@ pub enum Action {
     #[knuffel(skip)]
     CenterWindowById(u64),
     FocusWorkspaceDown,
+    #[knuffel(skip)]
+    FocusWorkspaceDownUnderMouse,
     FocusWorkspaceUp,
+    #[knuffel(skip)]
+    FocusWorkspaceUpUnderMouse,
     FocusWorkspace(#[knuffel(argument)] WorkspaceReference),
     FocusWorkspacePrevious,
     MoveWindowToWorkspaceDown,
@@ -1609,9 +1773,12 @@ pub enum Action {
         reference: WorkspaceReference,
         focus: bool,
     },
-    MoveColumnToWorkspaceDown,
-    MoveColumnToWorkspaceUp,
-    MoveColumnToWorkspace(#[knuffel(argument)] WorkspaceReference),
+    MoveColumnToWorkspaceDown(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnToWorkspaceUp(#[knuffel(property(name = "focus"), default = true)] bool),
+    MoveColumnToWorkspace(
+        #[knuffel(argument)] WorkspaceReference,
+        #[knuffel(property(name = "focus"), default = true)] bool,
+    ),
     MoveWorkspaceDown,
     MoveWorkspaceUp,
     MoveWorkspaceToIndex(#[knuffel(argument)] usize),
@@ -1720,6 +1887,15 @@ pub enum Action {
     SetDynamicCastWindowById(u64),
     SetDynamicCastMonitor(#[knuffel(argument)] Option<String>),
     ClearDynamicCastTarget,
+    ToggleOverview,
+    OpenOverview,
+    CloseOverview,
+    #[knuffel(skip)]
+    ToggleUrgent(u64),
+    #[knuffel(skip)]
+    SetUrgent(u64),
+    #[knuffel(skip)]
+    UnsetUrgent(u64),
 
     MruForward,
     MruBackward,
@@ -1855,10 +2031,14 @@ impl From<niri_ipc::Action> for Action {
                 reference: WorkspaceReference::from(reference),
                 focus,
             },
-            niri_ipc::Action::MoveColumnToWorkspaceDown {} => Self::MoveColumnToWorkspaceDown,
-            niri_ipc::Action::MoveColumnToWorkspaceUp {} => Self::MoveColumnToWorkspaceUp,
-            niri_ipc::Action::MoveColumnToWorkspace { reference } => {
-                Self::MoveColumnToWorkspace(WorkspaceReference::from(reference))
+            niri_ipc::Action::MoveColumnToWorkspaceDown { focus } => {
+                Self::MoveColumnToWorkspaceDown(focus)
+            }
+            niri_ipc::Action::MoveColumnToWorkspaceUp { focus } => {
+                Self::MoveColumnToWorkspaceUp(focus)
+            }
+            niri_ipc::Action::MoveColumnToWorkspace { reference, focus } => {
+                Self::MoveColumnToWorkspace(WorkspaceReference::from(reference), focus)
             }
             niri_ipc::Action::MoveWorkspaceDown {} => Self::MoveWorkspaceDown,
             niri_ipc::Action::MoveWorkspaceUp {} => Self::MoveWorkspaceUp,
@@ -1997,6 +2177,12 @@ impl From<niri_ipc::Action> for Action {
                 Self::SetDynamicCastMonitor(output)
             }
             niri_ipc::Action::ClearDynamicCastTarget {} => Self::ClearDynamicCastTarget,
+            niri_ipc::Action::ToggleOverview {} => Self::ToggleOverview,
+            niri_ipc::Action::OpenOverview {} => Self::OpenOverview,
+            niri_ipc::Action::CloseOverview {} => Self::CloseOverview,
+            niri_ipc::Action::ToggleUrgent { id } => Self::ToggleUrgent(id),
+            niri_ipc::Action::SetUrgent { id } => Self::SetUrgent(id),
+            niri_ipc::Action::UnsetUrgent { id } => Self::UnsetUrgent(id),
         }
     }
 }
@@ -2225,11 +2411,17 @@ impl BorderRule {
         if let Some(x) = other.inactive_color {
             self.inactive_color = Some(x);
         }
+        if let Some(x) = other.urgent_color {
+            self.urgent_color = Some(x);
+        }
         if let Some(x) = other.active_gradient {
             self.active_gradient = Some(x);
         }
         if let Some(x) = other.inactive_gradient {
             self.inactive_gradient = Some(x);
+        }
+        if let Some(x) = other.urgent_gradient {
+            self.urgent_gradient = Some(x);
         }
     }
 
@@ -2250,11 +2442,18 @@ impl BorderRule {
             config.inactive_color = x;
             config.inactive_gradient = None;
         }
+        if let Some(x) = self.urgent_color {
+            config.urgent_color = x;
+            config.urgent_gradient = None;
+        }
         if let Some(x) = self.active_gradient {
             config.active_gradient = Some(x);
         }
         if let Some(x) = self.inactive_gradient {
             config.inactive_gradient = Some(x);
+        }
+        if let Some(x) = self.urgent_gradient {
+            config.urgent_gradient = Some(x);
         }
 
         config
@@ -2330,11 +2529,17 @@ impl TabIndicatorRule {
         if let Some(x) = other.inactive_color {
             self.inactive_color = Some(x);
         }
+        if let Some(x) = other.urgent_color {
+            self.urgent_color = Some(x);
+        }
         if let Some(x) = other.active_gradient {
             self.active_gradient = Some(x);
         }
         if let Some(x) = other.inactive_gradient {
             self.inactive_gradient = Some(x);
+        }
+        if let Some(x) = other.urgent_gradient {
+            self.urgent_gradient = Some(x);
         }
     }
 }
@@ -2967,6 +3172,21 @@ where
 }
 
 impl<S> knuffel::Decode<S> for ScreenshotUiOpenAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for OverviewOpenCloseAnim
 where
     S: knuffel::traits::ErrorSpan,
 {
@@ -3975,6 +4195,7 @@ mod tests {
                     repeat_delay: 600,
                     repeat_rate: 25,
                     track_layout: Window,
+                    numlock: false,
                 },
                 touchpad: Touchpad {
                     off: false,
@@ -4138,12 +4359,15 @@ mod tests {
                             },
                         ),
                         focus_at_startup: true,
-                        background_color: Color {
-                            r: 0.09803922,
-                            g: 0.09803922,
-                            b: 0.4,
-                            a: 1.0,
-                        },
+                        background_color: Some(
+                            Color {
+                                r: 0.09803922,
+                                g: 0.09803922,
+                                b: 0.4,
+                                a: 1.0,
+                            },
+                        ),
+                        backdrop_color: None,
                     },
                 ],
             ),
@@ -4174,6 +4398,12 @@ mod tests {
                         b: 0.39215687,
                         a: 0.0,
                     },
+                    urgent_color: Color {
+                        r: 0.60784316,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
                     active_gradient: Some(
                         Gradient {
                             from: Color {
@@ -4197,6 +4427,7 @@ mod tests {
                         },
                     ),
                     inactive_gradient: None,
+                    urgent_gradient: None,
                 },
                 border: Border {
                     off: false,
@@ -4215,8 +4446,15 @@ mod tests {
                         b: 0.39215687,
                         a: 0.0,
                     },
+                    urgent_color: Color {
+                        r: 0.60784316,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
                     active_gradient: None,
                     inactive_gradient: None,
+                    urgent_gradient: None,
                 },
                 shadow: Shadow {
                     on: false,
@@ -4267,8 +4505,10 @@ mod tests {
                     ),
                     active_color: None,
                     inactive_color: None,
+                    urgent_color: None,
                     active_gradient: None,
                     inactive_gradient: None,
+                    urgent_gradient: None,
                 },
                 insert_hint: InsertHint {
                     off: false,
@@ -4358,6 +4598,12 @@ mod tests {
                     bottom: FloatOrInt(
                         0.0,
                     ),
+                },
+                background_color: Color {
+                    r: 0.25,
+                    g: 0.25,
+                    b: 0.25,
+                    a: 1.0,
                 },
             },
             prefer_no_csd: true,
@@ -4476,6 +4722,18 @@ mod tests {
                         ),
                     },
                 ),
+                overview_open_close: OverviewOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
             },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
@@ -4486,6 +4744,52 @@ mod tests {
                     max_speed: FloatOrInt(
                         50.0,
                     ),
+                },
+                dnd_edge_workspace_switch: DndEdgeWorkspaceSwitch {
+                    trigger_height: FloatOrInt(
+                        50.0,
+                    ),
+                    delay_ms: 100,
+                    max_speed: FloatOrInt(
+                        1500.0,
+                    ),
+                },
+                hot_corners: HotCorners {
+                    off: false,
+                },
+            },
+            overview: Overview {
+                zoom: FloatOrInt(
+                    0.5,
+                ),
+                backdrop_color: Color {
+                    r: 0.15,
+                    g: 0.15,
+                    b: 0.15,
+                    a: 1.0,
+                },
+                workspace_shadow: WorkspaceShadow {
+                    off: false,
+                    offset: ShadowOffset {
+                        x: FloatOrInt(
+                            0.0,
+                        ),
+                        y: FloatOrInt(
+                            10.0,
+                        ),
+                    },
+                    softness: FloatOrInt(
+                        40.0,
+                    ),
+                    spread: FloatOrInt(
+                        10.0,
+                    ),
+                    color: Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 0.3137255,
+                    },
                 },
             },
             environment: Environment(
@@ -4519,6 +4823,7 @@ mod tests {
                             is_active_in_column: None,
                             is_floating: None,
                             is_window_cast_target: None,
+                            is_urgent: None,
                             at_startup: None,
                         },
                     ],
@@ -4537,6 +4842,7 @@ mod tests {
                             is_active_in_column: None,
                             is_floating: None,
                             is_window_cast_target: None,
+                            is_urgent: None,
                             at_startup: None,
                         },
                         Match {
@@ -4551,6 +4857,7 @@ mod tests {
                             is_active_in_column: None,
                             is_floating: None,
                             is_window_cast_target: None,
+                            is_urgent: None,
                             at_startup: None,
                         },
                     ],
@@ -4594,8 +4901,10 @@ mod tests {
                         ),
                         active_color: None,
                         inactive_color: None,
+                        urgent_color: None,
                         active_gradient: None,
                         inactive_gradient: None,
+                        urgent_gradient: None,
                     },
                     border: BorderRule {
                         off: false,
@@ -4607,8 +4916,10 @@ mod tests {
                         ),
                         active_color: None,
                         inactive_color: None,
+                        urgent_color: None,
                         active_gradient: None,
                         inactive_gradient: None,
+                        urgent_gradient: None,
                     },
                     shadow: ShadowRule {
                         off: false,
@@ -4630,8 +4941,10 @@ mod tests {
                             },
                         ),
                         inactive_color: None,
+                        urgent_color: None,
                         active_gradient: None,
                         inactive_gradient: None,
+                        urgent_gradient: None,
                     },
                     draw_border_with_background: None,
                     opacity: None,
@@ -4688,6 +5001,7 @@ mod tests {
                         inactive_color: None,
                     },
                     geometry_corner_radius: None,
+                    place_within_backdrop: None,
                 },
             ],
             binds: Binds(
@@ -5340,8 +5654,10 @@ mod tests {
                 width: None,
                 active_color: None,
                 inactive_color: None,
+                urgent_color: None,
                 active_gradient: None,
                 inactive_gradient: None,
+                urgent_gradient: None,
             };
 
             for rule in rules.iter().copied() {
