@@ -379,12 +379,12 @@ impl State {
                     }
                 }
 
-                // check if alt key was released while there was an active
-                // window-mru list. If so,  drop the list and update the current window's timestamp.
-                // window-mru is cancelled *even* when state is locked, however the
-                // focus timestamp on the active window will not be updated
+                // Check if alt key was released while the MRU UI was open.
+                // If so,  close the UI and transfer focus to the current
+                // selection in the MRU UI.
                 if !mods.alt && this.niri.window_mru_ui.is_open() {
-                    this.niri.window_mru_ui.close();
+                    this.do_action(Action::MruClose, false);
+                    return FilterResult::Intercept(None);
                 }
 
                 if pressed && raw == Some(Keysym::Escape) {
@@ -1943,7 +1943,7 @@ impl State {
             Action::ClearDynamicCastTarget => {
                 self.set_dynamic_cast_target(CastTarget::Nothing);
             }
-            Action::ToggleWindowMruUi => {
+            Action::MruClose => {
                 if self.niri.window_mru_ui.is_open() {
                     if let Some(id) = self.niri.window_mru_ui.current_window_id() {
                         if let Some(window) = self.niri.find_window_by_id(id) {
@@ -1955,22 +1955,11 @@ impl State {
                             .do_screen_transition(renderer, Some(MRU_UI_TRANSITION_DELAY));
                     });
                     self.niri.window_mru_ui.close();
-                } else {
-                    // update the focus timestamp on the currently active window and
-                    // prepare a new WindowMRU
-                    self.niri.mru_commit();
-                    let config = self.niri.config.borrow().layout.focus_ring;
-                    let wmru = WindowMru::new(&self.niri, MruDirection::Forward);
-                    self.backend.with_primary_renderer(|renderer| {
-                        self.niri
-                            .do_screen_transition(renderer, Some(MRU_UI_TRANSITION_DELAY));
-                    });
-                    self.niri.window_mru_ui.open(config, wmru);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
                 }
-                // FIXME: granular
-                self.niri.queue_redraw_all();
             }
-            Action::CancelMru => {
+            Action::MruCancel => {
                 if self.niri.window_mru_ui.is_open() {
                     self.backend.with_primary_renderer(|renderer| {
                         self.niri
@@ -2005,7 +1994,7 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::CloseCurrentMruWindow => {
+            Action::MruCloseCurrent => {
                 if self.niri.window_mru_ui.is_open() {
                     if let Some(id) = self.niri.window_mru_ui.current_window_id() {
                         if let Some(w) = self.niri.find_window_by_id(id) {
@@ -2014,6 +2003,20 @@ impl State {
                             }
                         }
                     }
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::MruFirst => {
+                if self.niri.window_mru_ui.is_open() {
+                    self.niri.window_mru_ui.first();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::MruLast => {
+                if self.niri.window_mru_ui.is_open() {
+                    self.niri.window_mru_ui.last();
                     // FIXME: granular
                     self.niri.queue_redraw_all();
                 }

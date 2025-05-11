@@ -1721,15 +1721,18 @@ pub enum Action {
     SetDynamicCastMonitor(#[knuffel(argument)] Option<String>),
     ClearDynamicCastTarget,
 
-    ToggleWindowMruUi,
-    #[knuffel(skip)]
-    CancelMru,
-    #[knuffel(skip)]
-    CloseCurrentMruWindow,
-    #[knuffel(skip)]
+    MruForward,
     MruBackward,
     #[knuffel(skip)]
-    MruForward,
+    MruClose,
+    #[knuffel(skip)]
+    MruCancel,
+    #[knuffel(skip)]
+    MruCloseCurrent,
+    #[knuffel(skip)]
+    MruFirst,
+    #[knuffel(skip)]
+    MruLast,
 }
 
 impl From<niri_ipc::Action> for Action {

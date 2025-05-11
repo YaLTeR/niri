@@ -1,6 +1,7 @@
 /*
 Todo:
 
+- Add test cases
 - Animation. Likely to need a position cache as for Tiles
 - Transition when wrapping around during Mru navigation
 - support clicking on the target thumbnail
@@ -40,6 +41,9 @@ use crate::render_helpers::{render_to_texture, BakedBuffer, RenderTarget, ToRend
 use crate::utils::output_size;
 use crate::window::mapped::MappedId;
 use crate::window::Mapped;
+
+// Factor by which to scale original window for its thumbnail
+const THUMBNAIL_SCALE: f64 = 2.;
 
 // Space to keep between sides of the output and first thumbnail, or between thumbnails
 const SPACING: f64 = 50.;
@@ -196,6 +200,20 @@ impl WindowMruUi {
             return;
         };
         wmru.backward();
+    }
+
+    pub fn first(&mut self) {
+        let Self::Open { wmru, .. } = self else {
+            return;
+        };
+        wmru.current = 0;
+    }
+
+    pub fn last(&mut self) {
+        let Self::Open { wmru, .. } = self else {
+            return;
+        };
+        wmru.current = wmru.ids.len().saturating_sub(1);
     }
 
     pub fn current_window_id(&self) -> Option<MappedId> {
@@ -512,7 +530,7 @@ impl TextureCache {
                     let tb = TextureBuffer::from_texture(
                         renderer,
                         texture,
-                        2.0,
+                        THUMBNAIL_SCALE,
                         Transform::Normal,
                         vec![],
                     );
@@ -566,7 +584,7 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Escape),
             modifiers: Modifiers::ALT,
         },
-        action: Action::CancelMru,
+        action: Action::MruCancel,
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -604,7 +622,7 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::q),
             modifiers: Modifiers::ALT,
         },
-        action: Action::CloseCurrentMruWindow,
+        action: Action::MruCloseCurrent,
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -616,7 +634,31 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Return),
             modifiers: Modifiers::ALT,
         },
-        action: Action::ToggleWindowMruUi,
+        action: Action::MruClose,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::Home),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::MruFirst,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::End),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::MruLast,
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
