@@ -655,6 +655,10 @@ pub enum Action {
     },
     /// Switch between preset column widths.
     SwitchPresetColumnWidth {},
+    /// Switch between preset column widths.
+    SwitchPresetColumnWidthNext {},
+    /// Switch between preset column widths.
+    SwitchPresetColumnWidthPrev {},
     /// Switch between preset window widths.
     SwitchPresetWindowWidth {
         /// Id of the window whose width to switch.
