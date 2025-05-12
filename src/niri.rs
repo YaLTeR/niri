@@ -2896,6 +2896,10 @@ impl Niri {
                 layer.with_surfaces(|surface, data| {
                     send_scale_transform(surface, data, scale, transform);
                 });
+
+                if let Some(mapped) = self.mapped_layer_surfaces.get_mut(layer) {
+                    mapped.update_sizes(output_size, scale.fractional_scale());
+                }
             }
             layer_map.arrange();
         }
@@ -2980,8 +2984,12 @@ impl Niri {
                 .layers_on(layer)
                 .rev()
                 .find_map(|layer| {
-                    let layer_pos_within_output =
+                    let mapped = self.mapped_layer_surfaces.get(layer)?;
+
+                    let mut layer_pos_within_output =
                         layers.layer_geometry(layer).unwrap().loc.to_f64();
+                    layer_pos_within_output += mapped.bob_offset();
+
                     let surface_type = if popup {
                         WindowSurfaceType::POPUP
                     } else {
@@ -3042,6 +3050,7 @@ impl Niri {
 
                     let mut layer_pos_within_output =
                         layers.layer_geometry(layer_surface).unwrap().loc.to_f64();
+                    layer_pos_within_output += mapped.bob_offset();
 
                     // Background and bottom layers move together with the workspaces.
                     let mon = self.layout.monitor_for_output(output)?;
@@ -3197,6 +3206,7 @@ impl Niri {
 
                     let mut layer_pos_within_output =
                         layers.layer_geometry(layer_surface).unwrap().loc.to_f64();
+                    layer_pos_within_output += mapped.bob_offset();
 
                     // Background and bottom layers move together with the workspaces.
                     if matches!(layer, Layer::Background | Layer::Bottom) {
@@ -3924,7 +3934,7 @@ impl Niri {
                         continue;
                     };
 
-                    mapped.update_render_elements(geo.size.to_f64(), scale);
+                    mapped.update_render_elements(geo.size.to_f64());
                 }
             }
         }
@@ -4077,15 +4087,7 @@ impl Niri {
         let layer_map = layer_map_for_output(output);
         let mut extend_from_layer =
             |elements: &mut SplitElements<LayerSurfaceRenderElement<R>>, layer, for_backdrop| {
-                self.render_layer(
-                    renderer,
-                    target,
-                    output_scale,
-                    &layer_map,
-                    layer,
-                    elements,
-                    for_backdrop,
-                );
+                self.render_layer(renderer, target, &layer_map, layer, elements, for_backdrop);
             };
 
         // The overlay layer elements go next.
@@ -4205,7 +4207,6 @@ impl Niri {
         &self,
         renderer: &mut R,
         target: RenderTarget,
-        scale: Scale<f64>,
         layer_map: &LayerMap,
         layer: Layer,
         elements: &mut SplitElements<LayerSurfaceRenderElement<R>>,
@@ -4223,7 +4224,7 @@ impl Niri {
             Some((mapped, geo))
         });
         for (mapped, geo) in iter {
-            elements.extend(mapped.render(renderer, geo.loc.to_f64(), scale, target));
+            elements.extend(mapped.render(renderer, geo.loc.to_f64(), target));
         }
     }
 
@@ -4257,6 +4258,14 @@ impl Niri {
             state.unfinished_animations_remain |= self
                 .cursor_manager
                 .is_current_cursor_animated(output.current_scale().integer_scale());
+
+            // Also check layer surfaces.
+            if !state.unfinished_animations_remain {
+                state.unfinished_animations_remain |= layer_map_for_output(output)
+                    .layers()
+                    .filter_map(|surface| self.mapped_layer_surfaces.get(surface))
+                    .any(|mapped| mapped.are_animations_ongoing());
+            }
 
             // Render.
             res = backend.render(self, output, target_presentation_time);

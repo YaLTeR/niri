@@ -4985,6 +4985,7 @@ mod tests {
                     },
                     geometry_corner_radius: None,
                     place_within_backdrop: None,
+                    baba_is_float: None,
                 },
             ],
             binds: Binds(

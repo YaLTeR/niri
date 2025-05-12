@@ -12,7 +12,7 @@ use smithay::wayland::shell::xdg::PopupSurface;
 
 use crate::layer::{MappedLayer, ResolvedLayerRules};
 use crate::niri::State;
-use crate::utils::{is_mapped, send_scale_transform};
+use crate::utils::{is_mapped, output_size, send_scale_transform};
 
 impl WlrLayerShellHandler for State {
     fn shell_state(&mut self) -> &mut WlrLayerShellState {
@@ -125,10 +125,23 @@ impl State {
                     // Resolve rules for newly mapped layer surfaces.
                     if was_unmapped {
                         let config = self.niri.config.borrow();
+
                         let rules = &config.layer_rules;
                         let rules =
                             ResolvedLayerRules::compute(rules, layer, self.niri.is_at_startup);
-                        let mapped = MappedLayer::new(layer.clone(), rules, &config);
+
+                        let output_size = output_size(&output);
+                        let scale = output.current_scale().fractional_scale();
+
+                        let mapped = MappedLayer::new(
+                            layer.clone(),
+                            rules,
+                            output_size,
+                            scale,
+                            self.niri.clock.clone(),
+                            &config,
+                        );
+
                         let prev = self
                             .niri
                             .mapped_layer_surfaces
