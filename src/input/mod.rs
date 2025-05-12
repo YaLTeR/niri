@@ -1445,6 +1445,11 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::CenterVisibleColumns => {
+                self.niri.layout.center_visible_columns();
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
             Action::MaximizeColumn => {
                 self.niri.layout.toggle_full_width();
             }

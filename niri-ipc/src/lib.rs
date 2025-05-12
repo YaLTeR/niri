@@ -426,6 +426,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Center all fully visible columns on the screen.
+    CenterVisibleColumns {},
     /// Focus the workspace below.
     FocusWorkspaceDown {},
     /// Focus the workspace above.

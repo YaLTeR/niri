@@ -2332,6 +2332,13 @@ impl<W: LayoutElement> Layout<W> {
         workspace.center_window(id);
     }
 
+    pub fn center_visible_columns(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.center_visible_columns();
+    }
+
     pub fn focus(&self) -> Option<&W> {
         self.focus_with_output().map(|(win, _out)| win)
     }
