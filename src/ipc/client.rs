@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use std::iter::Peekable;
 use std::slice;
 
@@ -37,17 +38,30 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
 
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
 
-    let reply = socket
-        .send(request)
-        .context("error communicating with niri")?;
+    let result = socket.send(request);
 
-    let compositor_version = match reply {
-        Err(_) if !matches!(msg, Msg::Version) => {
-            // If we got an error, it might be that the CLI is a different version from the running
-            // niri instance. Request the running instance version to compare and print a message.
-            socket.send(Request::Version).ok()
+    // For errors that can be caused by a version mismatch between the running niri instance and
+    // the niri msg CLI, we will try to fetch and compare the versions.
+    let check_compositor_version = match &result {
+        Err(err) => {
+            // Response JSON parsing errors.
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidData | ErrorKind::UnexpectedEof
+            )
         }
-        _ => None,
+        // Error returned from niri.
+        Ok(Err(_)) => true,
+        _ => false,
+    };
+
+    let compositor_version = if check_compositor_version && !matches!(msg, Msg::Version) {
+        // Reconnect to support older niri versions with one request per connection.
+        Socket::connect()
+            .and_then(|mut socket| socket.send(Request::Version))
+            .ok()
+    } else {
+        None
     };
 
     // Default SIGPIPE so that our prints don't panic on stdout closing.
@@ -55,32 +69,31 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
 
-    let response = reply.map_err(|err_msg| {
-        // Check for CLI-server version mismatch to add helpful context.
-        match compositor_version {
-            Some(Ok(Response::Version(compositor_version))) => {
-                let cli_version = version();
-                if cli_version != compositor_version {
-                    eprintln!("Running niri compositor has a different version from the niri CLI:");
-                    eprintln!("Compositor version: {compositor_version}");
-                    eprintln!("CLI version:        {cli_version}");
-                    eprintln!("Did you forget to restart niri after an update?");
-                    eprintln!();
-                }
-            }
-            Some(_) => {
-                eprintln!("Unable to get the running niri compositor version.");
+    // Check for CLI-server version mismatch to add helpful context.
+    match compositor_version {
+        Some(Ok(Response::Version(compositor_version))) => {
+            let cli_version = version();
+            if cli_version != compositor_version {
+                eprintln!("Running niri compositor has a different version from the niri CLI:");
+                eprintln!("Compositor version: {compositor_version}");
+                eprintln!("CLI version:        {cli_version}");
                 eprintln!("Did you forget to restart niri after an update?");
                 eprintln!();
             }
-            None => {
-                // Communication error, or the original request was already a version request.
-                // Don't add irrelevant context.
-            }
         }
+        Some(_) => {
+            eprintln!("Unable to get the running niri compositor version.");
+            eprintln!("Did you forget to restart niri after an update?");
+            eprintln!();
+        }
+        None => {
+            // Communication error, or the original request was already a version request, or the
+            // original request had succeeded. Don't add irrelevant context.
+        }
+    }
 
-        anyhow!(err_msg).context("niri returned an error")
-    })?;
+    let reply = result.context("error communicating with niri")?;
+    let response = reply.map_err(|err_msg| anyhow!(err_msg).context("niri returned an error"))?;
 
     match msg {
         Msg::RequestError => {
