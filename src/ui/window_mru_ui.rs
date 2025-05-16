@@ -5,6 +5,9 @@ Todo:
 - Animation. Likely to need a position cache as for Tiles
 - Transition when wrapping around during Mru navigation
 - support clicking on the target thumbnail
+x support only considering windows from current output/workspace
+x support only considering windows from the currently selected application
+- support switching navigation modes while the Mru UI is open
 x Unfocus the current Tile while the MruUi is up and refocus as necessary when
   the UI is closed.
 x Keybindings in the MruUi, e.g. Close window, Quit, Focus selected, prev, next
@@ -17,9 +20,12 @@ use std::cell::RefCell;
 use std::cmp::{self};
 use std::iter;
 use std::ops::ControlFlow;
+use std::str::FromStr;
 use std::time::Instant;
 
-use niri_config::{Action, Bind, Key, Modifiers, Trigger};
+use niri_config::{
+    Action, Bind, Key, Match, Modifiers, MruDirection, MruFilter, MruScope, RegexEq, Trigger,
+};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
@@ -29,7 +35,6 @@ use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::layout::focus_ring::{FocusRing, FocusRingRenderElement};
-use crate::layout::monitor::Monitor;
 use crate::layout::LayoutElement;
 use crate::niri::Niri;
 use crate::niri_render_elements;
@@ -38,9 +43,9 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{render_to_texture, BakedBuffer, RenderTarget, ToRenderElement};
-use crate::utils::output_size;
+use crate::utils::{output_size, with_toplevel_role};
 use crate::window::mapped::MappedId;
-use crate::window::Mapped;
+use crate::window::{window_matches, Mapped, WindowRef};
 
 // Factor by which to scale original window for its thumbnail
 const THUMBNAIL_SCALE: f64 = 2.;
@@ -50,7 +55,6 @@ const SPACING: f64 = 50.;
 
 // Corner radius on focus ring
 const RADIUS: f32 = 6.;
-
 // Alpha value for the focus ring
 const FOCUS_RING_ALPHA: f32 = 0.9;
 
@@ -71,19 +75,27 @@ pub struct WindowMru {
 }
 
 impl WindowMru {
-    pub fn new(niri: &Niri, dir: MruDirection) -> Self {
-        Self::new_with(niri, |_, _| true, dir)
-    }
+    pub fn new(
+        niri: &Niri,
+        dir: MruDirection,
+        scope: impl ToWindowIterator,
+        filter: impl ToMatch,
+    ) -> Self {
+        // todo: maybe using a `Match` is overkill here and a plain app_id
+        // compare would suffice
+        let window_match = filter.to_match(niri);
 
-    pub fn new_with<F>(niri: &Niri, pred: F, dir: MruDirection) -> Self
-    where
-        F: Fn(Option<&Monitor<Mapped>>, &Mapped) -> bool,
-    {
-        // and build a list of MappedId sorted by timestamp
-        let mut ts_ids: Vec<(Option<Instant>, MappedId)> = niri
-            .layout
-            .windows()
-            .filter_map(|(m, w)| pred(m, w).then_some((w.get_focus_timestamp(), w.id())))
+        // Build a list of MappedId from the requested scope sorted by timestamp
+        let mut ts_ids: Vec<(Option<Instant>, MappedId)> = scope
+            .windows(niri)
+            .filter(|w| {
+                window_match.as_ref().is_none_or(|m| {
+                    with_toplevel_role(w.toplevel(), |r| {
+                        window_matches(WindowRef::Mapped(w), r, &m)
+                    })
+                })
+            })
+            .map(|w| (w.get_focus_timestamp(), w.id()))
             .collect();
         ts_ids.sort_by(|(t1, _), (t2, _)| match (t1, t2) {
             (None, None) => cmp::Ordering::Equal,
@@ -143,10 +155,55 @@ pub enum WindowMruUi {
     },
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum MruDirection {
-    Forward,  // From most recently used to least
-    Backward, // From least recently used to most
+pub trait ToMatch {
+    fn to_match(&self, niri: &Niri) -> Option<Match>;
+}
+
+impl ToMatch for MruFilter {
+    fn to_match(&self, niri: &Niri) -> Option<Match> {
+        let current_app_id = {
+            let toplevel = niri.layout.active_workspace()?.active_window()?.toplevel();
+
+            with_toplevel_role(toplevel, |r| r.app_id.clone())
+        }?;
+
+        Some(Match {
+            app_id: Some(RegexEq::from_str(&format!("^{}$", current_app_id)).ok()?),
+            ..Default::default()
+        })
+    }
+}
+
+pub trait ToWindowIterator {
+    fn windows<'a>(&self, niri: &'a Niri) -> impl Iterator<Item = &'a Mapped>;
+}
+
+impl ToWindowIterator for MruScope {
+    fn windows<'a>(&self, niri: &'a Niri) -> impl Iterator<Item = &'a Mapped> {
+        // gather windows based on the requested scope
+        match self {
+            MruScope::All => Box::new(niri.layout.windows().map(|(_, w)| w)),
+            MruScope::Output => {
+                if let Some(active_output) = niri.layout.active_output() {
+                    Box::new(niri.layout.windows().filter_map(move |(m, w)| {
+                        if let Some(monitor) = m {
+                            if monitor.output() == active_output {
+                                return Some(w);
+                            }
+                        }
+                        None
+                    }))
+                } else {
+                    Box::new(iter::empty()) as Box<dyn Iterator<Item = &Mapped>>
+                }
+            }
+            MruScope::Workspace => niri
+                .layout
+                .active_workspace()
+                .map(|wkspc| Box::new(wkspc.windows()) as Box<dyn Iterator<Item = &Mapped>>)
+                .unwrap_or(Box::new(iter::empty())),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -188,18 +245,14 @@ impl WindowMruUi {
         *self = Self::Closed {};
     }
 
-    pub fn forward(&mut self) {
+    pub fn advance(&mut self, dir: MruDirection, _scope: MruScope, _filter: MruFilter) {
         let Self::Open { wmru, .. } = self else {
             return;
         };
-        wmru.forward();
-    }
-
-    pub fn backward(&mut self) {
-        let Self::Open { wmru, .. } = self else {
-            return;
-        };
-        wmru.backward();
+        match dir {
+            MruDirection::Forward => wmru.forward(),
+            MruDirection::Backward => wmru.backward(),
+        }
     }
 
     pub fn first(&mut self) {
@@ -218,9 +271,13 @@ impl WindowMruUi {
 
     pub fn current_window_id(&self) -> Option<MappedId> {
         let Self::Open { wmru, .. } = self else {
-            panic!("Call to current_window_id while WindowMruUi was closed");
+            return None;
         };
-        wmru.ids.get(wmru.current).copied()
+        if wmru.ids.is_empty() {
+            None
+        } else {
+            wmru.ids.get(wmru.current).copied()
+        }
     }
 
     pub fn remove_window(&mut self, id: MappedId) {
@@ -561,7 +618,7 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Tab),
             modifiers: Modifiers::ALT,
         },
-        action: Action::MruForward,
+        action: Action::MruAdvance(MruDirection::Forward, MruScope::All, MruFilter::None),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -573,7 +630,7 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Tab),
             modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
         },
-        action: Action::MruBackward,
+        action: Action::MruAdvance(MruDirection::Backward, MruScope::All, MruFilter::None),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -599,7 +656,7 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Right),
             modifiers: Modifiers::ALT,
         },
-        action: Action::MruForward,
+        action: Action::MruAdvance(MruDirection::Forward, MruScope::All, MruFilter::None),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -611,7 +668,7 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Left),
             modifiers: Modifiers::ALT,
         },
-        action: Action::MruBackward,
+        action: Action::MruAdvance(MruDirection::Backward, MruScope::All, MruFilter::None),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -661,6 +718,31 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
             modifiers: Modifiers::ALT,
         },
         action: Action::MruLast,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    // forward/backward bind actions for AppId navigation
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::grave),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::MruAdvance(MruDirection::Forward, MruScope::All, MruFilter::AppId),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::grave),
+            modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
+        },
+        action: Action::MruAdvance(MruDirection::Backward, MruScope::All, MruFilter::AppId),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,

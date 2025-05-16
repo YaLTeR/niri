@@ -1652,6 +1652,33 @@ pub struct SwitchAction {
     pub spawn: Vec<String>,
 }
 
+#[derive(knuffel::Decode, Clone, Copy, Debug, Default, PartialEq)]
+pub enum MruDirection {
+    #[default]
+    Forward, // From most recently used to least
+    Backward, // From least recently used to most
+}
+
+#[derive(knuffel::Decode, Clone, Copy, Debug, Default, PartialEq)]
+pub enum MruScope {
+    /// Consider all windows
+    #[default]
+    All,
+    /// Consider windows on the active output
+    Output,
+    /// Consider windows on the active workspace
+    Workspace,
+}
+
+#[derive(knuffel::Decode, Clone, Copy, Debug, Default, PartialEq)]
+pub enum MruFilter {
+    /// No filter
+    #[default]
+    None,
+    /// Windows with the same AppId as the active window
+    AppId,
+}
+
 // Remember to add new actions to the CLI enum too.
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub enum Action {
@@ -1897,8 +1924,7 @@ pub enum Action {
     #[knuffel(skip)]
     UnsetUrgent(u64),
 
-    MruForward,
-    MruBackward,
+    MruAdvance(MruDirection, MruScope, MruFilter),
     #[knuffel(skip)]
     MruClose,
     #[knuffel(skip)]

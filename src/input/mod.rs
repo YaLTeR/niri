@@ -6,7 +6,10 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger};
+use niri_config::{
+    Action, Bind, Binds, Key, ModKey, Modifiers, MruDirection, MruFilter, MruScope, SwitchBinds,
+    Trigger,
+};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -44,7 +47,7 @@ use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
-use crate::ui::window_mru_ui::{MruDirection, WindowMru, MRU_UI_BINDINGS, MRU_UI_TRANSITION_DELAY};
+use crate::ui::window_mru_ui::{WindowMru, MRU_UI_BINDINGS, MRU_UI_TRANSITION_DELAY};
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
@@ -405,7 +408,7 @@ impl State {
                     return FilterResult::Intercept(None);
                 }
 
-                let mut res = {
+                let res = {
                     let mru_bindings;
                     let bindings = if this.niri.window_mru_ui.is_open() {
                         mru_bindings = Binds(MRU_UI_BINDINGS.to_vec());
@@ -427,24 +430,23 @@ impl State {
                         is_inhibiting_shortcuts,
                     )
                 };
-                if this.niri.window_mru_ui.is_open() {
+                if matches!(res, FilterResult::Forward) {
                     // MRU UI prevents interaction with regular windows
-                    if matches!(res, FilterResult::Forward) {
-                        res = FilterResult::Intercept(None);
-                    }
-                } else if matches!(res, FilterResult::Forward) {
-                    // If we didn't find any bind, try other hardcoded keys.
-                    if this.niri.keyboard_focus.is_overview() && pressed {
+                    if this.niri.window_mru_ui.is_open() {
+                        return FilterResult::Intercept(None);
+                    } else if this.niri.keyboard_focus.is_overview() && pressed {
+                        // If we didn't find any bind, try other hardcoded keys.
                         if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
                         {
                             this.niri.suppressed_keys.insert(key_code);
                             return FilterResult::Intercept(Some(bind));
                         }
+                    } else {
+                        // Interaction with the active window, immediately update
+                        // the active window's focus timestamp without waiting for a
+                        // possible pending MRU lock-in delay.
+                        this.niri.mru_commit();
                     }
-                    // Interaction with the active window, immediately update
-                    // the active window's focus timestamp without waiting for a
-                    // possible pending MRU lock-in delay.
-                    this.niri.mru_commit();
                 }
                 res
             },
@@ -2053,25 +2055,13 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
-            Action::MruForward => {
+            Action::MruAdvance(dir, scope, filter) => {
                 if self.niri.window_mru_ui.is_open() {
-                    self.niri.window_mru_ui.forward();
+                    self.niri.window_mru_ui.advance(dir, scope, filter);
                 } else {
                     self.niri.mru_commit();
                     let config = self.niri.config.borrow().layout.focus_ring;
-                    let wmru = WindowMru::new(&self.niri, MruDirection::Forward);
-                    self.niri.window_mru_ui.open(config, wmru);
-                }
-                // FIXME: granular
-                self.niri.queue_redraw_all();
-            }
-            Action::MruBackward => {
-                if self.niri.window_mru_ui.is_open() {
-                    self.niri.window_mru_ui.backward();
-                } else {
-                    self.niri.mru_commit();
-                    let config = self.niri.config.borrow().layout.focus_ring;
-                    let wmru = WindowMru::new(&self.niri, MruDirection::Backward);
+                    let wmru = WindowMru::new(&self.niri, dir, scope, filter);
                     self.niri.window_mru_ui.open(config, wmru);
                 }
                 // FIXME: granular
@@ -4024,7 +4014,7 @@ const PRESET_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Tab),
             modifiers: Modifiers::ALT,
         },
-        action: Action::MruForward,
+        action: Action::MruAdvance(MruDirection::Forward, MruScope::All, MruFilter::None),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -4036,7 +4026,32 @@ const PRESET_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Tab),
             modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
         },
-        action: Action::MruBackward,
+        action: Action::MruAdvance(MruDirection::Backward, MruScope::All, MruFilter::None),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    // forward/backward bind actions for AppId navigation
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::grave),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::MruAdvance(MruDirection::Forward, MruScope::All, MruFilter::AppId),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::grave),
+            modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
+        },
+        action: Action::MruAdvance(MruDirection::Backward, MruScope::All, MruFilter::AppId),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
