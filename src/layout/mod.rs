@@ -397,6 +397,7 @@ impl Default for Options {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum InteractiveMoveState<W: LayoutElement> {
     /// Initial rubberbanding; the window remains in the layout.

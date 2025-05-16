@@ -4367,7 +4367,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
 pub fn mods_with_binds(mod_key: ModKey, binds: &Binds, triggers: &[Trigger]) -> HashSet<Modifiers> {
     let mut rv = HashSet::new();
     for bind in &binds.0 {
-        if !triggers.iter().any(|trigger| bind.key.trigger == *trigger) {
+        if !triggers.contains(&bind.key.trigger) {
             continue;
         }
 

@@ -29,6 +29,7 @@ macro_rules! niri_render_elements {
     // in this line, we cannot condition based on $R like elsewhere, so we condition on duplicate
     // names instead. Like this: $($name_R<SomeRenderer>)? $($name_no_R)? so only one is chosen.
     (@impl $name:ident ($($name_no_R:ident)?) ($($name_R:ident<$R:ident>)?) => { $($variant:ident = $type:ty),+ }) => {
+        #[allow(clippy::large_enum_variant)]
         #[derive(Debug)]
         pub enum $name$(<$R: $crate::render_helpers::renderer::NiriRenderer>)? {
             $($variant($type)),+

@@ -83,6 +83,7 @@ pub struct Cast {
     scheduled_redraw: Option<RegistrationToken>,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum CastState {
     ResizePending {
