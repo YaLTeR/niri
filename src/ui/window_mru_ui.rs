@@ -5,6 +5,7 @@ Todo:
 - Animation. Likely to need a position cache as for Tiles
 - Transition when wrapping around during Mru navigation
 - support clicking on the target thumbnail
+- add title of the current Mru selection under the thumbnail
 x support only considering windows from current output/workspace
 x support only considering windows from the currently selected application
 - support switching navigation modes while the Mru UI is open
