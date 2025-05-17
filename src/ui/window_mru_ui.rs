@@ -91,9 +91,7 @@ impl WindowMru {
             .windows(niri)
             .filter(|w| {
                 window_match.as_ref().is_none_or(|m| {
-                    with_toplevel_role(w.toplevel(), |r| {
-                        window_matches(WindowRef::Mapped(w), r, &m)
-                    })
+                    with_toplevel_role(w.toplevel(), |r| window_matches(WindowRef::Mapped(w), r, m))
                 })
             })
             .map(|w| (w.get_focus_timestamp(), w.id()))
@@ -152,7 +150,7 @@ pub enum WindowMruUi {
     Open {
         wmru: WindowMru,
         textures: RefCell<TextureCache>,
-        focus_ring: RefCell<FocusRing>,
+        focus_ring: Box<RefCell<FocusRing>>,
     },
 }
 
@@ -237,7 +235,7 @@ impl WindowMruUi {
         *self = Self::Open {
             wmru,
             textures: RefCell::new(TextureCache::with_capacity(nids)),
-            focus_ring: RefCell::new(FocusRing::new(config)),
+            focus_ring: Box::new(RefCell::new(FocusRing::new(config))),
         };
     }
 
