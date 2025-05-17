@@ -5,6 +5,8 @@
 The Overview is a zoomed-out view of your workspaces and windows.
 It lets you see what's going on at a glance, navigate, and drag windows around.
 
+https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995
+
 Open it with the `toggle-overview` bind, via the top-left hot corner, or using a touchpad four-finger swipe up.
 While in the overview, all keyboard shortcuts keep working, while pointing devices get easier:
 
