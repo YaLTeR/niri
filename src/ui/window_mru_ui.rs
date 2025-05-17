@@ -160,16 +160,21 @@ pub trait ToMatch {
 
 impl ToMatch for MruFilter {
     fn to_match(&self, niri: &Niri) -> Option<Match> {
-        let current_app_id = {
-            let toplevel = niri.layout.active_workspace()?.active_window()?.toplevel();
+        match self {
+            MruFilter::None => None,
+            MruFilter::AppId => {
+                let current_app_id = {
+                    let toplevel = niri.layout.active_workspace()?.active_window()?.toplevel();
 
-            with_toplevel_role(toplevel, |r| r.app_id.clone())
-        }?;
+                    with_toplevel_role(toplevel, |r| r.app_id.clone())
+                }?;
 
-        Some(Match {
-            app_id: Some(RegexEq::from_str(&format!("^{}$", current_app_id)).ok()?),
-            ..Default::default()
-        })
+                Some(Match {
+                    app_id: Some(RegexEq::from_str(&format!("^{}$", current_app_id)).ok()?),
+                    ..Default::default()
+                })
+            }
+        }
     }
 }
 
