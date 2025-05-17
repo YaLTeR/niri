@@ -10,7 +10,7 @@
     <a href="https://github.com/YaLTeR/niri/wiki/Getting-Started">Getting Started</a> | <a href="https://github.com/YaLTeR/niri/wiki/Configuration:-Overview">Configuration</a> | <a href="https://github.com/YaLTeR/niri/discussions/325">Setup&nbsp;Showcase</a>
 </p>
 
-![niri with a few windows open](https://github.com/user-attachments/assets/d142e57d-a25d-4ddb-ab46-311417458211)
+![niri with a few windows open](https://github.com/user-attachments/assets/535e6530-2f44-4b84-a883-1240a3eee6e9)
 
 ## About
 
@@ -30,9 +30,11 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 
 - Built from the ground up for scrollable tiling
 - [Dynamic workspaces](https://github.com/YaLTeR/niri/wiki/Workspaces) like in GNOME
+- An [Overview](https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995) that zooms out workspaces and windows
 - Built-in screenshot UI
 - Monitor and window screencasting through xdg-desktop-portal-gnome
     - You can [block out](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules#block-out-from) sensitive windows from screencasts
+    - [Dynamic cast target](https://github.com/YaLTeR/niri/wiki/Screencasting#dynamic-screencast-target) that can change what it shows on the go
 - [Touchpad](https://github.com/YaLTeR/niri/assets/1794388/946a910e-9bec-4cd1-a923-4a9421707515) and [mouse](https://github.com/YaLTeR/niri/assets/1794388/8464e65d-4bf2-44fa-8c8e-5883355bd000) gestures
 - Group windows into [tabs](https://github.com/YaLTeR/niri/wiki/Tabs)
 - Configurable layout: gaps, borders, struts, window sizes
@@ -72,7 +74,7 @@ I've seen someone use it fine on an Eee PC 900 from 2008, of all things.
     - Discord and other Electron apps: work well through xwayland-satellite.
     - Chromium and VSCode: work perfectly natively on Wayland with the right flags.
     - X11 apps that want to position windows or bars at specific screen coordinates: won't work well; you can run them in a nested compositor like [labwc](https://github.com/YaLTeR/niri/wiki/Xwayland#using-the-labwc-wayland-compositor) or [rootful Xwayland](https://github.com/YaLTeR/niri/wiki/Xwayland#directly-running-xwayland-in-rootful-mode).
-    - Display scaling (integer or fractional) will make X11 apps look blurry; this needs to be supported in xwayland-satellite.
+    - Display scaling (integer or fractional) keeps X11 apps crisp, but you need the latest xwayland-satellite.
     For games, you can run them in [gamescope] at native resolution, even with display scaling.
 
 ## Inspiration
@@ -88,8 +90,8 @@ Here are some other projects which implement a similar workflow:
 
 - [PaperWM]: scrollable tiling on top of GNOME Shell.
 - [karousel]: scrollable tiling on top of KDE.
-- [papersway]: scrollable tiling on top of sway/i3.
-- [hyprscroller] and [hyprslidr]: scrollable tiling on top of Hyprland.
+- [scroll](https://github.com/dawsers/scroll) and [papersway]: scrollable tiling on top of sway/i3.
+- [hyprscrolling] and [hyprslidr]: scrollable tiling on top of Hyprland.
 - [PaperWM.spoon]: scrollable tiling on top of macOS.
 
 ## Media
@@ -108,7 +110,7 @@ We have a Matrix chat, feel free to join and ask a question: https://matrix.to/#
 [fuzzel]: https://codeberg.org/dnkl/fuzzel
 [karousel]: https://github.com/peterfajdiga/karousel
 [papersway]: https://spwhitton.name/tech/code/papersway/
-[hyprscroller]: https://github.com/dawsers/hyprscroller
+[hyprscrolling]: https://github.com/hyprwm/hyprland-plugins/tree/main/hyprscrolling
 [hyprslidr]: https://gitlab.com/magus/hyprslidr
 [PaperWM.spoon]: https://github.com/mogenson/PaperWM.spoon
 [Matrix channel]: https://matrix.to/#/#niri:matrix.org
