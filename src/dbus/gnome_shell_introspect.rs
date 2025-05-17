@@ -1,5 +1,3 @@
-#![allow(deprecated)] // Maybe De/SerializeDict will be undeprecated in the future.
-
 use std::collections::HashMap;
 
 use zbus::fdo::{self, RequestNameFlags};

@@ -1,5 +1,3 @@
-#![allow(deprecated)] // Maybe De/SerializeDict will be undeprecated in the future.
-
 use std::collections::HashMap;
 use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

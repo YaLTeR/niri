@@ -9,12 +9,14 @@ use smithay::utils::{Logical, Point, Scale, Size};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 use super::ResolvedLayerRules;
+use crate::animation::Clock;
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::{RenderTarget, SplitElements};
+use crate::utils::{baba_is_float_offset, round_logical_in_physical};
 
 #[derive(Debug)]
 pub struct MappedLayer {
@@ -29,6 +31,15 @@ pub struct MappedLayer {
 
     /// The shadow around the surface.
     shadow: Shadow,
+
+    /// The view size for the layer surface's output.
+    view_size: Size<f64, Logical>,
+
+    /// Scale of the output the layer surface is on (and rounds its sizes to).
+    scale: f64,
+
+    /// Clock for driving animations.
+    clock: Clock,
 }
 
 niri_render_elements! {
@@ -40,7 +51,14 @@ niri_render_elements! {
 }
 
 impl MappedLayer {
-    pub fn new(surface: LayerSurface, rules: ResolvedLayerRules, config: &Config) -> Self {
+    pub fn new(
+        surface: LayerSurface,
+        rules: ResolvedLayerRules,
+        view_size: Size<f64, Logical>,
+        scale: f64,
+        clock: Clock,
+        config: &Config,
+    ) -> Self {
         let mut shadow_config = config.layout.shadow;
         // Shadows for layer surfaces need to be explicitly enabled.
         shadow_config.on = false;
@@ -50,7 +68,10 @@ impl MappedLayer {
             surface,
             rules,
             block_out_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
+            view_size,
+            scale,
             shadow: Shadow::new(shadow_config),
+            clock,
         }
     }
 
@@ -66,16 +87,27 @@ impl MappedLayer {
         self.shadow.update_shaders();
     }
 
-    pub fn update_render_elements(&mut self, size: Size<f64, Logical>, scale: Scale<f64>) {
+    pub fn update_sizes(&mut self, view_size: Size<f64, Logical>, scale: f64) {
+        self.view_size = view_size;
+        self.scale = scale;
+    }
+
+    pub fn update_render_elements(&mut self, size: Size<f64, Logical>) {
         // Round to physical pixels.
-        let size = size.to_physical_precise_round(scale).to_logical(scale);
+        let size = size
+            .to_physical_precise_round(self.scale)
+            .to_logical(self.scale);
 
         self.block_out_buffer.resize(size);
 
         let radius = self.rules.geometry_corner_radius.unwrap_or_default();
         // FIXME: is_active based on keyboard focus?
         self.shadow
-            .update_render_elements(size, true, radius, scale.x, 1.);
+            .update_render_elements(size, true, radius, self.scale, 1.);
+    }
+
+    pub fn are_animations_ongoing(&self) -> bool {
+        self.rules.baba_is_float
     }
 
     pub fn surface(&self) -> &LayerSurface {
@@ -114,16 +146,27 @@ impl MappedLayer {
         true
     }
 
+    pub fn bob_offset(&self) -> Point<f64, Logical> {
+        if !self.rules.baba_is_float {
+            return Point::from((0., 0.));
+        }
+
+        let y = baba_is_float_offset(self.clock.now(), self.view_size.h);
+        let y = round_logical_in_physical(self.scale, y);
+        Point::from((0., y))
+    }
+
     pub fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         location: Point<f64, Logical>,
-        scale: Scale<f64>,
         target: RenderTarget,
     ) -> SplitElements<LayerSurfaceRenderElement<R>> {
         let mut rv = SplitElements::default();
 
+        let scale = Scale::from(self.scale);
         let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
+        let location = location + self.bob_offset();
 
         if target.should_block_out(self.rules.block_out_from) {
             // Round to physical pixels.

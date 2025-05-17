@@ -397,6 +397,7 @@ impl Default for Options {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum InteractiveMoveState<W: LayoutElement> {
     /// Initial rubberbanding; the window remains in the layout.
@@ -2330,6 +2331,13 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         workspace.center_window(id);
+    }
+
+    pub fn center_visible_columns(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.center_visible_columns();
     }
 
     pub fn focus(&self) -> Option<&W> {

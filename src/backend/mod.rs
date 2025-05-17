@@ -20,6 +20,7 @@ pub use winit::Winit;
 pub mod headless;
 pub use headless::Headless;
 
+#[allow(clippy::large_enum_variant)]
 pub enum Backend {
     Tty(Tty),
     Winit(Winit),

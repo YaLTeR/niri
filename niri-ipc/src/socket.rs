@@ -16,7 +16,7 @@ pub const SOCKET_PATH_ENV: &str = "NIRI_SOCKET";
 /// This struct is used to communicate with the niri IPC server. It handles the socket connection
 /// and serialization/deserialization of messages.
 pub struct Socket {
-    stream: UnixStream,
+    stream: BufReader<UnixStream>,
 }
 
 impl Socket {
@@ -37,6 +37,7 @@ impl Socket {
     /// Connects to the niri IPC socket at the given path.
     pub fn connect_to(path: impl AsRef<Path>) -> io::Result<Self> {
         let stream = UnixStream::connect(path.as_ref())?;
+        let stream = BufReader::new(stream);
         Ok(Self { stream })
     }
 
@@ -47,31 +48,54 @@ impl Socket {
     /// * `Ok(Ok(response))`: successful [`Response`](crate::Response) from niri
     /// * `Ok(Err(message))`: error message from niri
     /// * `Err(error)`: error communicating with niri
-    ///
-    /// This method also returns a blocking function that you can call to keep reading [`Event`]s
-    /// after requesting an [`EventStream`][Request::EventStream]. This function is not useful
-    /// otherwise.
-    pub fn send(self, request: Request) -> io::Result<(Reply, impl FnMut() -> io::Result<Event>)> {
-        let Self { mut stream } = self;
-
+    pub fn send(&mut self, request: Request) -> io::Result<Reply> {
         let mut buf = serde_json::to_string(&request).unwrap();
-        stream.write_all(buf.as_bytes())?;
-        stream.shutdown(Shutdown::Write)?;
-
-        let mut reader = BufReader::new(stream);
+        buf.push('\n');
+        self.stream.get_mut().write_all(buf.as_bytes())?;
 
         buf.clear();
-        reader.read_line(&mut buf)?;
+        self.stream.read_line(&mut buf)?;
 
         let reply = serde_json::from_str(&buf)?;
+        Ok(reply)
+    }
 
-        let events = move || {
+    /// Starts reading event stream [`Event`]s from the socket.
+    ///
+    /// The returned function will block until the next [`Event`] arrives, then return it.
+    ///
+    /// Use this only after requesting an [`EventStream`][Request::EventStream].
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use niri_ipc::{Request, Response};
+    /// use niri_ipc::socket::Socket;
+    ///
+    /// fn main() -> std::io::Result<()> {
+    ///     let mut socket = Socket::connect()?;
+    ///
+    ///     let reply = socket.send(Request::EventStream)?;
+    ///     if matches!(reply, Ok(Response::Handled)) {
+    ///         let mut read_event = socket.read_events();
+    ///         while let Ok(event) = read_event() {
+    ///             println!("Received event: {event:?}");
+    ///         }
+    ///     }
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn read_events(self) -> impl FnMut() -> io::Result<Event> {
+        let Self { mut stream } = self;
+        let _ = stream.get_mut().shutdown(Shutdown::Write);
+
+        let mut buf = String::new();
+        move || {
             buf.clear();
-            reader.read_line(&mut buf)?;
+            stream.read_line(&mut buf)?;
             let event = serde_json::from_str(&buf)?;
             Ok(event)
-        };
-
-        Ok((reply, events))
+        }
     }
 }
