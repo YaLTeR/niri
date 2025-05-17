@@ -169,7 +169,7 @@ input {
 
 #### Num Lock
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Set the `numlock` flag to turn on Num Lock automatically at startup.
 
@@ -211,7 +211,7 @@ Settings specific to `touchpad`s:
 - `tap`: tap-to-click.
 - `dwt`: disable-when-typing.
 - `dwtp`: disable-when-trackpointing.
-- `drag`: <sup>Since: next release</sup> can be `true` or `false`, controls if tap-and-drag is enabled.
+- `drag`: <sup>Since: 25.05</sup> can be `true` or `false`, controls if tap-and-drag is enabled.
 - `drag-lock`: <sup>Since: 25.02</sup> if set, lifting the finger off for a short time while dragging will not drop the dragged item. See the [libinput documentation](https://wayland.freedesktop.org/libinput/doc/latest/tapping.html#tap-and-drag).
 - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
@@ -273,7 +273,7 @@ input {
 By default, the cursor warps *separately* horizontally and vertically.
 I.e. if moving the mouse only horizontally is enough to put it inside the newly focused window, then the mouse will move only horizontally, and not vertically.
 
-<sup>Since: next release</sup> You can customize this with the `mode` property.
+<sup>Since: 25.05</sup> You can customize this with the `mode` property.
 
 - `mode="center-xy"`: warps by both X and Y coordinates together.
 So if the mouse was anywhere outside the newly focused window, it will warp to the center of the window.
@@ -328,7 +328,7 @@ input {
 
 #### `mod-key`, `mod-key-nested`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Customize the `Mod` key for [key bindings](./Configuration:-Key-Bindings.md).
 Only valid modifiers are allowed, e.g. `Super`, `Alt`, `Mod3`, `Mod5`, `Ctrl`, `Shift`.

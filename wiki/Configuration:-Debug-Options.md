@@ -155,7 +155,7 @@ debug {
 
 ### `wait-for-frame-completion-in-pipewire`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Wait until every screencast frame is done rendering before handing it over to PipeWire.
 
@@ -258,7 +258,7 @@ debug {
 
 ### `honor-xdg-activation-with-invalid-serial`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Widely-used clients such as Discord and Telegram make fresh xdg-activation tokens upon clicking on their tray icon or on their notification.
 Most of the time, these fresh tokens will have invalid serials, because the app needs to be focused to get a valid serial, and if the user clicks on a tray icon or a notification, it is usually because the app *isn't* focused, and the user wants to focus it.

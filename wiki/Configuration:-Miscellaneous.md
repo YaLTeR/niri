@@ -156,7 +156,7 @@ cursor {
 
 ### `overview`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Settings for the [Overview](./Overview.md).
 

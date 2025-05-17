@@ -1,6 +1,6 @@
 ### Overview
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 The Overview is a zoomed-out view of your workspaces and windows.
 It lets you see what's going on at a glance, navigate, and drag windows around.
