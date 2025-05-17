@@ -398,9 +398,7 @@ impl XdgShellHandler for State {
 
         let keyboard_grab_mismatches = keyboard.is_grabbed()
             && !(keyboard.has_grab(serial)
-                || grab
-                    .previous_serial()
-                    .is_none_or(|s| keyboard.has_grab(s)));
+                || grab.previous_serial().is_none_or(|s| keyboard.has_grab(s)));
         let pointer_grab_mismatches = pointer.is_grabbed()
             && !(pointer.has_grab(serial)
                 || grab.previous_serial().is_none_or(|s| pointer.has_grab(s)));
