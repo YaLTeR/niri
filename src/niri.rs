@@ -996,12 +996,13 @@ impl State {
                 && surface.cached_state().keyboard_interactivity
                     == wlr_layer::KeyboardInteractivity::OnDemand;
 
-            // Check if it moved to the overview backdrop.
             if let Some(mapped) = self.niri.mapped_layer_surfaces.get(surface) {
+                // Check if it moved to the overview backdrop.
                 if mapped.place_within_backdrop() {
                     good = false;
                 }
             } else {
+                // The layer surface is alive but it got unmapped.
                 good = false;
             }
 
