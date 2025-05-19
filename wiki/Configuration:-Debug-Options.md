@@ -29,7 +29,7 @@ debug {
     disable-monitor-names
     strict-new-window-focus-policy
     honor-xdg-activation-with-invalid-serial 
-    skip-cursor-only-updates-while-vrr
+    skip-cursor-only-updates-during-vrr
 }
 
 binds {
