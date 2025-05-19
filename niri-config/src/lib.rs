@@ -2330,7 +2330,7 @@ pub struct DebugConfig {
     #[knuffel(child)]
     pub honor_xdg_activation_with_invalid_serial: bool,
     #[knuffel(child)]
-    pub skip_cursor_only_updates_while_vrr: bool,
+    pub skip_cursor_only_updates_during_vrr: bool,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
