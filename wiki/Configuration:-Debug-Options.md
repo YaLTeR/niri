@@ -280,9 +280,11 @@ debug {
 
 <sup>Since: next release</sup>
 
-Forces the screen not to redraw at all from cursor input while vrr is active.
+Skips redrawing the screen from cursor input while variable refresh rate is active.
 
-Useful for games where the cursor isn't drawn internally to prevent erratic vrr shifts in response to cursor movement.
+Useful for games where the cursor isn't drawn internally to prevent erratic VRR shifts in response to cursor movement.
+
+Note that the current implementation has some issues, for example when there's nothing redrawing the screen (like a game), the rendering will appear to completely freeze (since cursor movements won't cause redraws).
 
 ```kdl
 debug {
