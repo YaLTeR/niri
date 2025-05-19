@@ -276,7 +276,7 @@ debug {
 }
 ```
 
-### `skip-cursor-only-updates-while-vrr`
+### `skip-cursor-only-updates-during-vrr`
 
 <sup>Since: next release</sup>
 
@@ -288,7 +288,7 @@ Note that the current implementation has some issues, for example when there's n
 
 ```kdl
 debug {
-    skip-cursor-only-updates-while-vrr
+    skip-cursor-only-updates-during-vrr
 }
 ```
 
