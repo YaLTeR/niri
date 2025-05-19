@@ -1422,7 +1422,7 @@ impl Tty {
             if debug.disable_cursor_plane {
                 flags.remove(FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT);
             }
-            if debug.skip_cursor_only_updates_while_vrr {
+            if debug.skip_cursor_only_updates_during_vrr {
                 let output_state = niri.output_state.get(output).unwrap();
                 if output_state.frame_clock.vrr() {
                     flags.insert(FrameFlags::SKIP_CURSOR_ONLY_UPDATES);
