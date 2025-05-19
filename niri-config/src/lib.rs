@@ -2329,6 +2329,8 @@ pub struct DebugConfig {
     pub strict_new_window_focus_policy: bool,
     #[knuffel(child)]
     pub honor_xdg_activation_with_invalid_serial: bool,
+    #[knuffel(child)]
+    pub skip_cursor_only_updates_while_vrr: bool,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
@@ -5286,6 +5288,7 @@ mod tests {
                 disable_monitor_names: false,
                 strict_new_window_focus_policy: false,
                 honor_xdg_activation_with_invalid_serial: false,
+                skip_cursor_only_updates_while_vrr: false,
             },
             workspaces: [
                 Workspace {
