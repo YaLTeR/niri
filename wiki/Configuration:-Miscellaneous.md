@@ -238,7 +238,8 @@ hotkey-overlay {
 #### `hide-unbound`
 
 Set the `hide-unbound` flag if you don't want to see actions that haven't been bound.
-```
+
+```kdl
 hotkey-overlay {
     hide-unbound
 }
