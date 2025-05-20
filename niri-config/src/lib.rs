@@ -1032,7 +1032,7 @@ pub struct HotkeyOverlay {
     #[knuffel(child)]
     pub skip_at_startup: bool,
     #[knuffel(child)]
-    pub hide_unbound: bool,
+    pub hide_not_bound: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -4610,7 +4610,7 @@ mod tests {
             },
             hotkey_overlay: HotkeyOverlay {
                 skip_at_startup: true,
-                hide_unbound: false,
+                hide_not_bound: false,
             },
             animations: Animations {
                 off: false,

@@ -129,7 +129,7 @@ fn format_bind(
     binds: &[Bind],
     mod_key: ModKey,
     action: &Action,
-    hide_unbound: bool,
+    hide_not_bound: bool,
 ) -> Option<(String, String)> {
     let mut bind_with_non_null = None;
     let mut bind_with_custom_title = None;
@@ -159,7 +159,7 @@ fn format_bind(
 
     let possible_bind = bind_with_custom_title.or(bind_with_non_null);
 
-    if possible_bind.is_none() && hide_unbound {
+    if possible_bind.is_none() && hide_not_bound {
         return None;
     }
 
@@ -299,7 +299,7 @@ fn render(
     let strings = actions
         .into_iter()
         .filter_map(|action| {
-            format_bind(binds, mod_key, action, config.hotkey_overlay.hide_unbound)
+            format_bind(binds, mod_key, action, config.hotkey_overlay.hide_not_bound)
         })
         .collect::<Vec<_>>();
 
@@ -564,10 +564,10 @@ mod tests {
     use super::*;
 
     #[track_caller]
-    fn check(config: &str, action: Action, hide_unbound: bool) -> String {
+    fn check(config: &str, action: Action, hide_not_bound: bool) -> String {
         let config = Config::parse("test.kdl", config).unwrap();
         if let Some((key, title)) =
-            format_bind(&config.binds.0, ModKey::Super, &action, hide_unbound)
+            format_bind(&config.binds.0, ModKey::Super, &action, hide_not_bound)
         {
             format!("{key}: {title}")
         } else {
