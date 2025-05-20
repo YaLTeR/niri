@@ -225,11 +225,22 @@ clipboard {
 
 Settings for the "Important Hotkeys" overlay.
 
+#### `skip-at-startup`
+
 Set the `skip-at-startup` flag if you don't want to see the hotkey help at niri startup.
 
 ```kdl
 hotkey-overlay {
     skip-at-startup
+}
+```
+
+#### `hide-unbound`
+
+Set the `hide-unbound` flag if you don't want to see actions that haven't been bound.
+```
+hotkey-overlay {
+    hide-unbound
 }
 ```
 

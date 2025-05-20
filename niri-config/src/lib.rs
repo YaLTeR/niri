@@ -4610,6 +4610,7 @@ mod tests {
             },
             hotkey_overlay: HotkeyOverlay {
                 skip_at_startup: true,
+                hide_unbound: false,
             },
             animations: Animations {
                 off: false,
