@@ -1031,6 +1031,8 @@ pub struct Struts {
 pub struct HotkeyOverlay {
     #[knuffel(child)]
     pub skip_at_startup: bool,
+    #[knuffel(child)]
+    pub hide_unbound: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
