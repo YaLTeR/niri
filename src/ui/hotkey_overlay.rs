@@ -125,12 +125,7 @@ impl HotkeyOverlay {
     }
 }
 
-fn format_bind(
-    binds: &[Bind],
-    mod_key: ModKey,
-    action: &Action,
-    hide_not_bound: bool,
-) -> Option<(String, String)> {
+fn format_bind(binds: &[Bind], mod_key: ModKey, action: &Action) -> Option<(String, String)> {
     let mut bind_with_non_null = None;
     let mut bind_with_custom_title = None;
     let mut found_null_title = false;
@@ -157,14 +152,8 @@ fn format_bind(
         return None;
     }
 
-    let possible_bind = bind_with_custom_title.or(bind_with_non_null);
-
-    if possible_bind.is_none() && hide_not_bound {
-        return None;
-    }
-
     let mut title = None;
-    let key = if let Some(bind) = possible_bind {
+    let key = if let Some(bind) = bind_with_custom_title.or(bind_with_non_null) {
         if let Some(Some(custom)) = &bind.hotkey_overlay_title {
             title = Some(custom.clone());
         }
@@ -296,11 +285,24 @@ fn render(
         }
     }
 
+    if config.hotkey_overlay.hide_not_bound {
+        // If hiding unbound hotkeys is desired
+        // filter out actions that aren't present in the binds
+        actions = actions
+            .into_iter()
+            .filter(|action| {
+                binds
+                    .iter()
+                    .map(|bind| bind.action.clone())
+                    .collect::<Vec<Action>>()
+                    .contains(action)
+            })
+            .collect();
+    }
+
     let strings = actions
         .into_iter()
-        .filter_map(|action| {
-            format_bind(binds, mod_key, action, config.hotkey_overlay.hide_not_bound)
-        })
+        .filter_map(|action| format_bind(binds, mod_key, action))
         .collect::<Vec<_>>();
 
     let mut font = FontDescription::from_string(FONT);
@@ -564,11 +566,9 @@ mod tests {
     use super::*;
 
     #[track_caller]
-    fn check(config: &str, action: Action, hide_not_bound: bool) -> String {
+    fn check(config: &str, action: Action) -> String {
         let config = Config::parse("test.kdl", config).unwrap();
-        if let Some((key, title)) =
-            format_bind(&config.binds.0, ModKey::Super, &action, hide_not_bound)
-        {
+        if let Some((key, title)) = format_bind(&config.binds.0, ModKey::Super, &action) {
             format!("{key}: {title}")
         } else {
             String::from("None")
@@ -578,10 +578,7 @@ mod tests {
     #[test]
     fn test_format_bind() {
         // Not bound.
-        assert_snapshot!(check("", Action::Screenshot(true), false), @" (not bound) : Take a Screenshot");
-
-        // Not bound, hidden by config.
-        assert_snapshot!(check("", Action::Screenshot(true), true), @"None");
+        assert_snapshot!(check("", Action::Screenshot(true)), @" (not bound) : Take a Screenshot");
 
         // Bound with a default title.
         assert_snapshot!(
@@ -590,7 +587,6 @@ mod tests {
                     Mod+P { screenshot; }
                 }"#,
                 Action::Screenshot(true),
-                false,
             ),
             @" Super + P : Take a Screenshot"
         );
@@ -602,7 +598,6 @@ mod tests {
                     Mod+P hotkey-overlay-title="Hello" { screenshot; }
                 }"#,
                 Action::Screenshot(true),
-                false,
             ),
             @" Super + P : Hello"
         );
@@ -615,7 +610,6 @@ mod tests {
                     Print { screenshot; }
                 }"#,
                 Action::Screenshot(true),
-                false,
             ),
             @" Super + P : Take a Screenshot"
         );
@@ -628,7 +622,6 @@ mod tests {
                     Print hotkey-overlay-title="My Cool Bind" { screenshot; }
                 }"#,
                 Action::Screenshot(true),
-                false,
             ),
             @" PrtSc : My Cool Bind"
         );
@@ -641,7 +634,6 @@ mod tests {
                     Print hotkey-overlay-title="My Cool Bind" { screenshot; }
                 }"#,
                 Action::Screenshot(true),
-                false,
             ),
             @" Super + P : First"
         );
@@ -654,7 +646,6 @@ mod tests {
                     Print hotkey-overlay-title=null { screenshot; }
                 }"#,
                 Action::Screenshot(true),
-                false,
             ),
             @"None"
         );
@@ -667,7 +658,6 @@ mod tests {
                     Print hotkey-overlay-title=null { screenshot; }
                 }"#,
                 Action::Screenshot(true),
-                false,
             ),
             @" Super + P : Hello"
         );
