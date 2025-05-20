@@ -235,14 +235,14 @@ hotkey-overlay {
 }
 ```
 
-#### `hide-unbound`
+#### `hide-not-bound`
 
 By default, niri will show the most important actions even if they aren't bound to any key, to prevent confusion.
-Set the `hide-unbound` flag if you want to hide all actions not bound to any key.
+Set the `hide-not-bound` flag if you want to hide all actions not bound to any key.
 
 ```kdl
 hotkey-overlay {
-    hide-unbound
+    hide-not-bound
 }
 ```
 
