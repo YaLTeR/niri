@@ -176,6 +176,20 @@ impl State {
                 } else {
                     self.niri.mapped_layer_surfaces.remove(layer);
                     self.niri.unmapped_layer_surfaces.insert(surface.clone());
+
+                    // After layer surface unmaps it has to perform the initial commit-configure
+                    // sequence again. This is a workaround until Smithay properly resets
+                    // initial_configure_sent upon the surface unmapping itself as it does for
+                    // toplevels.
+                    with_states(surface, |states| {
+                        let mut data = states
+                            .data_map
+                            .get::<LayerSurfaceData>()
+                            .unwrap()
+                            .lock()
+                            .unwrap();
+                        data.initial_configure_sent = false;
+                    });
                 }
             } else {
                 let scale = output.current_scale();
