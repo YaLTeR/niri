@@ -12,6 +12,7 @@ use super::ResolvedLayerRules;
 use crate::animation::Clock;
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
+use crate::render_helpers::blur::element::BlurRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -47,6 +48,7 @@ niri_render_elements! {
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         Shadow = ShadowRenderElement,
+        Blur = BlurRenderElement,
     }
 }
 
@@ -60,6 +62,7 @@ impl MappedLayer {
         config: &Config,
     ) -> Self {
         let mut shadow_config = config.layout.shadow;
+
         // Shadows for layer surfaces need to be explicitly enabled.
         shadow_config.on = false;
         let shadow_config = rules.shadow.resolve_against(shadow_config);
