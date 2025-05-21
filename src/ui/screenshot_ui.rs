@@ -655,14 +655,6 @@ impl ScreenshotUi {
         Ok((rect.size, copy.to_vec()))
     }
 
-    pub fn action(&self, raw: Keysym, mods: Modifiers) -> Option<Action> {
-        if !matches!(self, Self::Open { .. }) {
-            return None;
-        }
-
-        action(raw, mods)
-    }
-
     pub fn selection_output(&self) -> Option<&Output> {
         if let Self::Open {
             selection: (output, _, _),
@@ -883,7 +875,7 @@ impl OutputScreenshot {
     }
 }
 
-fn action(raw: Keysym, mods: Modifiers) -> Option<Action> {
+pub fn hardcoded_screenshot_bind(raw: Keysym, mods: Modifiers) -> Option<Action> {
     if raw == Keysym::Escape {
         return Some(Action::CancelScreenshot);
     }

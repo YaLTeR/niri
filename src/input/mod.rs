@@ -42,8 +42,8 @@ use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
-use crate::niri::{CastTarget, PointerVisibility, State};
-use crate::ui::screenshot_ui::ScreenshotUi;
+use crate::niri::{CastTarget, KeyboardFocus, PointerVisibility, State};
+use crate::ui::screenshot_ui;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
@@ -407,7 +407,7 @@ impl State {
                     raw,
                     pressed,
                     modifiers,
-                    &this.niri.screenshot_ui,
+                    &this.niri.keyboard_focus,
                     this.niri.config.borrow().input.disable_power_key_handling,
                     is_inhibiting_shortcuts,
                 );
@@ -3812,7 +3812,7 @@ fn should_intercept_key(
     raw: Option<Keysym>,
     pressed: bool,
     modifiers: Modifiers,
-    screenshot_ui: &ScreenshotUi,
+    keyboard_focus: &KeyboardFocus,
     disable_power_key_handling: bool,
     is_inhibiting_shortcuts: bool,
 ) -> FilterResult<Option<Bind>> {
@@ -3834,7 +3834,7 @@ fn should_intercept_key(
 
     // Allow only a subset of compositor actions while the screenshot UI is open, since the user
     // cannot see the screen.
-    if screenshot_ui.is_open() {
+    if keyboard_focus.is_screenshotui() {
         let mut use_screenshot_ui_action = true;
 
         if let Some(bind) = &final_bind {
@@ -3845,7 +3845,7 @@ fn should_intercept_key(
 
         if use_screenshot_ui_action {
             if let Some(raw) = raw {
-                final_bind = screenshot_ui.action(raw, modifiers).map(|action| Bind {
+                final_bind = screenshot_ui::hardcoded_screenshot_bind(raw, modifiers).map(|action| Bind {
                     key: Key {
                         trigger: Trigger::Keysym(raw),
                         // Not entirely correct but it doesn't matter in how we currently use it.
@@ -4440,7 +4440,6 @@ mod tests {
     use std::cell::Cell;
 
     use super::*;
-    use crate::animation::Clock;
 
     #[test]
     fn bindings_suppress_keys() {
@@ -4461,7 +4460,7 @@ mod tests {
         let comp_mod = ModKey::Super;
         let mut suppressed_keys = HashSet::new();
 
-        let screenshot_ui = ScreenshotUi::new(Clock::default(), Default::default());
+        let keyboard_focus = KeyboardFocus::Layout { surface: None };
         let disable_power_key_handling = false;
         let is_inhibiting_shortcuts = Cell::new(false);
 
@@ -4479,7 +4478,7 @@ mod tests {
                 Some(close_keysym),
                 pressed,
                 mods,
-                &screenshot_ui,
+                &keyboard_focus,
                 disable_power_key_handling,
                 is_inhibiting_shortcuts.get(),
             )
@@ -4496,7 +4495,7 @@ mod tests {
                 Some(Keysym::l),
                 pressed,
                 mods,
-                &screenshot_ui,
+                &keyboard_focus,
                 disable_power_key_handling,
                 is_inhibiting_shortcuts.get(),
             )
