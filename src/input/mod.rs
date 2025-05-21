@@ -1986,6 +1986,7 @@ impl State {
                     let urgent = window.is_urgent();
                     window.set_urgent(!urgent);
                 }
+                self.niri.queue_redraw_all();
             }
             Action::SetUrgent(id) => {
                 let window = self
@@ -1996,6 +1997,7 @@ impl State {
                 if let Some(window) = window {
                     window.set_urgent(true);
                 }
+                self.niri.queue_redraw_all();
             }
             Action::UnsetUrgent(id) => {
                 let window = self
@@ -2006,6 +2008,7 @@ impl State {
                 if let Some(window) = window {
                     window.set_urgent(false);
                 }
+                self.niri.queue_redraw_all();
             }
         }
     }
