@@ -286,12 +286,8 @@ fn render(
     }
 
     if config.hotkey_overlay.hide_not_bound {
-        // If hiding unbound hotkeys is desired
-        // filter out actions that aren't present in the binds
-        actions = actions
-            .into_iter()
-            .filter(|action| binds.iter().any(|bind| bind.action == **action))
-            .collect();
+        // Only keep actions that have been bound
+        actions.retain(|&action| binds.iter().any(|bind| bind.action == *action))
     }
 
     let strings = actions
