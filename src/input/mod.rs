@@ -412,17 +412,6 @@ impl State {
                     is_inhibiting_shortcuts,
                 );
 
-                if matches!(res, FilterResult::Forward) {
-                    // If we didn't find any bind, try other hardcoded keys.
-                    if this.niri.keyboard_focus.is_overview() && pressed {
-                        if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, modifiers))
-                        {
-                            this.niri.suppressed_keys.insert(key_code);
-                            return FilterResult::Intercept(Some(bind));
-                        }
-                    }
-                }
-
                 res
             },
         ) else {
@@ -3832,6 +3821,23 @@ fn should_intercept_key(
         disable_power_key_handling,
     );
 
+    // If we are in the overview mode and no keybinding matched, check for
+    // hardcoded binds.  If still no match, repeat with a mod_key in modifiers.
+    if keyboard_focus.is_overview() {
+        final_bind = final_bind
+            .or_else(|| raw.and_then(|raw| hardcoded_overview_bind(raw, modifiers)))
+            .or_else(|| {
+                find_bind(
+                    bindings,
+                    mod_key,
+                    modified,
+                    raw,
+                    modifiers | mod_key.to_modifiers(),
+                    disable_power_key_handling,
+                )
+            });
+    }
+
     // Allow only a subset of compositor actions while the screenshot UI is open, since the user
     // cannot see the screen.
     if keyboard_focus.is_screenshotui() {
@@ -4115,16 +4121,9 @@ fn hardcoded_overview_bind(raw: Keysym, mods: Modifiers) -> Option<Bind> {
         return None;
     }
 
-    let mut repeat = true;
+    let repeat = false;
     let action = match raw {
-        Keysym::Escape | Keysym::Return => {
-            repeat = false;
-            Action::ToggleOverview
-        }
-        Keysym::Left => Action::FocusColumnLeft,
-        Keysym::Right => Action::FocusColumnRight,
-        Keysym::Up => Action::FocusWindowOrWorkspaceUp,
-        Keysym::Down => Action::FocusWindowOrWorkspaceDown,
+        Keysym::Escape | Keysym::Return => Action::ToggleOverview,
         _ => {
             return None;
         }
