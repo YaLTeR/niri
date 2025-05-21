@@ -369,6 +369,7 @@ impl State {
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
+                let modifiers = modifiers_from_state(*mods);
 
                 if let Some(dialog) = &this.niri.exit_confirm_dialog {
                     if dialog.is_open() && pressed && raw == Some(Keysym::Return) {
@@ -405,7 +406,7 @@ impl State {
                     modified,
                     raw,
                     pressed,
-                    *mods,
+                    modifiers,
                     &this.niri.screenshot_ui,
                     this.niri.config.borrow().input.disable_power_key_handling,
                     is_inhibiting_shortcuts,
@@ -414,7 +415,7 @@ impl State {
                 if matches!(res, FilterResult::Forward) {
                     // If we didn't find any bind, try other hardcoded keys.
                     if this.niri.keyboard_focus.is_overview() && pressed {
-                        if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
+                        if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, modifiers))
                         {
                             this.niri.suppressed_keys.insert(key_code);
                             return FilterResult::Intercept(Some(bind));
@@ -2364,7 +2365,7 @@ impl State {
                 .and_then(|trigger| {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
-                    find_configured_bind(bindings, mod_key, trigger, mods)
+                    find_configured_bind(bindings, mod_key, trigger, modifiers)
                 }) {
                     self.niri.suppressed_buttons.insert(button_code);
                     self.handle_bind(bind.clone());
@@ -2407,7 +2408,7 @@ impl State {
             }
 
             if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
-                let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
+                let mod_down = modifiers.contains(mod_key.to_modifiers());
                 if mod_down {
                     let output_ws = if is_overview_open {
                         self.niri.workspace_under_cursor(true)
@@ -2452,7 +2453,7 @@ impl State {
 
                 // Check if we need to start an interactive move.
                 if button == Some(MouseButton::Left) && !pointer.is_grabbed() {
-                    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
+                    let mod_down = modifiers.contains(mod_key.to_modifiers());
                     if is_overview_open || mod_down {
                         let location = pointer.current_location();
                         let (output, pos_within_output) = self.niri.output_under(location).unwrap();
@@ -2485,7 +2486,7 @@ impl State {
                 }
                 // Check if we need to start an interactive resize.
                 else if button == Some(MouseButton::Right) && !pointer.is_grabbed() {
-                    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
+                    let mod_down = modifiers.contains(mod_key.to_modifiers());
                     if mod_down {
                         let location = pointer.current_location();
                         let (output, pos_within_output) = self.niri.output_under(location).unwrap();
@@ -2711,12 +2712,12 @@ impl State {
                         let config = self.niri.config.borrow();
                         let bindings = &config.binds;
                         let bind_left =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, mods);
+                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, modifiers);
                         let bind_right = find_configured_bind(
                             bindings,
                             mod_key,
                             Trigger::WheelScrollRight,
-                            mods,
+                            modifiers,
                         );
                         (bind_left, bind_right)
                     };
@@ -2793,9 +2794,9 @@ impl State {
                         let config = self.niri.config.borrow();
                         let bindings = &config.binds;
                         let bind_up =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, mods);
+                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, modifiers);
                         let bind_down =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods);
+                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, modifiers);
                         (bind_up, bind_down)
                     };
 
@@ -2933,9 +2934,9 @@ impl State {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
                     let bind_left =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollLeft, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollLeft, modifiers);
                     let bind_right =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollRight, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollRight, modifiers);
                     drop(config);
 
                     if let Some(right) = bind_right {
@@ -2958,9 +2959,9 @@ impl State {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
                     let bind_up =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollUp, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollUp, modifiers);
                     let bind_down =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollDown, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollDown, modifiers);
                     drop(config);
 
                     if let Some(down) = bind_down {
@@ -3810,7 +3811,7 @@ fn should_intercept_key(
     modified: Keysym,
     raw: Option<Keysym>,
     pressed: bool,
-    mods: ModifiersState,
+    modifiers: Modifiers,
     screenshot_ui: &ScreenshotUi,
     disable_power_key_handling: bool,
     is_inhibiting_shortcuts: bool,
@@ -3827,7 +3828,7 @@ fn should_intercept_key(
         mod_key,
         modified,
         raw,
-        mods,
+        modifiers,
         disable_power_key_handling,
     );
 
@@ -3844,7 +3845,7 @@ fn should_intercept_key(
 
         if use_screenshot_ui_action {
             if let Some(raw) = raw {
-                final_bind = screenshot_ui.action(raw, mods).map(|action| Bind {
+                final_bind = screenshot_ui.action(raw, modifiers).map(|action| Bind {
                     key: Key {
                         trigger: Trigger::Keysym(raw),
                         // Not entirely correct but it doesn't matter in how we currently use it.
@@ -3891,7 +3892,7 @@ fn find_bind(
     mod_key: ModKey,
     modified: Keysym,
     raw: Option<Keysym>,
-    mods: ModifiersState,
+    modifiers: Modifiers,
     disable_power_key_handling: bool,
 ) -> Option<Bind> {
     use keysyms::*;
@@ -3929,19 +3930,18 @@ fn find_bind(
     }
 
     let trigger = Trigger::Keysym(raw?);
-    find_configured_bind(bindings, mod_key, trigger, mods)
+    find_configured_bind(bindings, mod_key, trigger, modifiers)
 }
 
 fn find_configured_bind(
     bindings: &Binds,
     mod_key: ModKey,
     trigger: Trigger,
-    mods: ModifiersState,
+    mut modifiers: Modifiers,
 ) -> Option<Bind> {
     // Handle configured binds.
-    let mut modifiers = modifiers_from_state(mods);
 
-    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
+    let mod_down = modifiers.contains(mod_key.to_modifiers());
     if mod_down {
         modifiers |= Modifiers::COMPOSITOR;
     }
@@ -4110,8 +4110,7 @@ fn allowed_during_screenshot(action: &Action) -> bool {
     )
 }
 
-fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
-    let mods = modifiers_from_state(mods);
+fn hardcoded_overview_bind(raw: Keysym, mods: Modifiers) -> Option<Bind> {
     if !mods.is_empty() {
         return None;
     }
@@ -4470,7 +4469,7 @@ mod tests {
         // that matters is that they are different between cases.
 
         let close_key_code = Keycode::from(close_keysym.raw() + 8u32);
-        let close_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
+        let close_key_event = |suppr: &mut HashSet<Keycode>, mods: Modifiers, pressed| {
             should_intercept_key(
                 suppr,
                 &bindings,
@@ -4487,7 +4486,7 @@ mod tests {
         };
 
         // Key event with the code which can't trigger any action.
-        let none_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
+        let none_key_event = |suppr: &mut HashSet<Keycode>, mods: Modifiers, pressed| {
             should_intercept_key(
                 suppr,
                 &bindings,
@@ -4503,11 +4502,7 @@ mod tests {
             )
         };
 
-        let mut mods = ModifiersState {
-            logo: true,
-            ctrl: true,
-            ..Default::default()
-        };
+        let mut mods = Modifiers::SUPER | Modifiers::CTRL;
 
         // Action press/release.
 
@@ -4527,11 +4522,11 @@ mod tests {
 
         // Remove mod to make it for a binding.
 
-        mods.shift = true;
+        mods.insert(Modifiers::SHIFT);
         let filter = close_key_event(&mut suppressed_keys, mods, true);
         assert!(matches!(filter, FilterResult::Forward));
 
-        mods.shift = false;
+        mods.remove(Modifiers::SHIFT);
         let filter = close_key_event(&mut suppressed_keys, mods, false);
         assert!(matches!(filter, FilterResult::Forward));
 
@@ -4574,7 +4569,7 @@ mod tests {
             }))
         ));
 
-        mods = Default::default();
+        mods = Modifiers::empty();
         let filter = close_key_event(&mut suppressed_keys, mods, false);
         assert!(matches!(filter, FilterResult::Intercept(None)));
 
@@ -4586,11 +4581,7 @@ mod tests {
         // With inhibited shortcuts, we don't intercept our shortcut.
         is_inhibiting_shortcuts.set(true);
 
-        mods = ModifiersState {
-            logo: true,
-            ctrl: true,
-            ..Default::default()
-        };
+        mods = Modifiers::SUPER | Modifiers::CTRL;
 
         let filter = close_key_event(&mut suppressed_keys, mods, true);
         assert!(matches!(filter, FilterResult::Forward));
@@ -4699,10 +4690,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::q),
-                ModifiersState {
-                    logo: true,
-                    ..Default::default()
-                }
+                Modifiers::SUPER,
             )
             .as_ref(),
             Some(&bindings.0[0])
@@ -4712,7 +4700,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::q),
-                ModifiersState::default(),
+                Modifiers::empty(),
             ),
             None,
         );
@@ -4722,10 +4710,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::h),
-                ModifiersState {
-                    logo: true,
-                    ..Default::default()
-                }
+                Modifiers::SUPER,
             )
             .as_ref(),
             Some(&bindings.0[1])
@@ -4735,7 +4720,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::h),
-                ModifiersState::default(),
+                Modifiers::empty(),
             ),
             None,
         );
@@ -4745,10 +4730,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::j),
-                ModifiersState {
-                    logo: true,
-                    ..Default::default()
-                }
+                Modifiers::SUPER,
             ),
             None,
         );
@@ -4757,7 +4739,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::j),
-                ModifiersState::default(),
+                Modifiers::empty(),
             )
             .as_ref(),
             Some(&bindings.0[2])
@@ -4768,10 +4750,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::k),
-                ModifiersState {
-                    logo: true,
-                    ..Default::default()
-                }
+                Modifiers::SUPER,
             )
             .as_ref(),
             Some(&bindings.0[3])
@@ -4781,7 +4760,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::k),
-                ModifiersState::default(),
+                Modifiers::empty(),
             ),
             None,
         );
@@ -4791,11 +4770,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::l),
-                ModifiersState {
-                    logo: true,
-                    alt: true,
-                    ..Default::default()
-                }
+                Modifiers::SUPER | Modifiers::ALT,
             )
             .as_ref(),
             Some(&bindings.0[4])
@@ -4805,10 +4780,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::l),
-                ModifiersState {
-                    logo: true,
-                    ..Default::default()
-                },
+                Modifiers::SUPER,
             ),
             None,
         );
