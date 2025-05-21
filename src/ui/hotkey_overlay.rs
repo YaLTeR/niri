@@ -290,13 +290,7 @@ fn render(
         // filter out actions that aren't present in the binds
         actions = actions
             .into_iter()
-            .filter(|action| {
-                binds
-                    .iter()
-                    .map(|bind| bind.action.clone())
-                    .collect::<Vec<Action>>()
-                    .contains(action)
-            })
+            .filter(|action| binds.iter().any(|bind| bind.action == **action))
             .collect();
     }
 
