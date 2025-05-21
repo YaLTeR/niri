@@ -3,7 +3,8 @@ use std::rc::Rc;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation};
 use smithay::backend::renderer::element::{Element, Kind};
-use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::gles::{ffi, GlesRenderer, GlesTexture};
+
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
@@ -15,6 +16,8 @@ use super::{
 };
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
+use crate::render_helpers::blur::element::BlurRenderElement;
+use crate::render_helpers::blur::EffectsFramebuffers;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
@@ -122,6 +125,7 @@ niri_render_elements! {
         Resize = ResizeRenderElement,
         Border = BorderRenderElement,
         Shadow = ShadowRenderElement,
+        Blur = BlurRenderElement,
         ClippedSurface = ClippedSurfaceRenderElement<R>,
         Offscreen = OffscreenRenderElement,
         ExtraDamage = ExtraDamage,
@@ -383,6 +387,7 @@ impl<W: LayoutElement> Tile<W> {
         } else {
             rules.geometry_corner_radius.unwrap_or_default()
         };
+
         self.shadow.update_render_elements(
             self.animated_tile_size(),
             is_active,
@@ -833,6 +838,8 @@ impl<W: LayoutElement> Tile<W> {
             self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.)
         };
 
+        let blur_config = self.window.rules().blur.resolve_against(self.options.blur);
+
         // This is here rather than in render_offset() because render_offset() is currently assumed
         // by the code to be temporary. So, for example, interactive move will try to "grab" the
         // tile at its current render offset and reset the render offset to zero by cancelling the
@@ -1033,6 +1040,7 @@ impl<W: LayoutElement> Tile<W> {
             )
             .into()
         });
+
         let rv = rv.chain(elem);
 
         let elem = self.effective_border_width().map(|width| {
@@ -1044,6 +1052,32 @@ impl<W: LayoutElement> Tile<W> {
 
         let elem = focus_ring.then(|| self.focus_ring.render(renderer, location).map(Into::into));
         let rv = rv.chain(elem.into_iter().flatten());
+
+        let blur_element = (blur_config.on)
+            .then(|| {
+                if let Some(output) = EffectsFramebuffers::get_last_output() {
+                    Some(
+                        BlurRenderElement::new(
+                            renderer,
+                            &output,
+                            area.to_i32_round(),
+                            window_render_loc.to_physical(self.scale).to_i32_round(),
+                            radius.top_left,
+                            false,
+                            self.scale as i32,
+                            win_alpha,
+                        )
+                        .into(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .into_iter();
+
+        // Render the blur element
+        let rv = rv.chain(blur_element);
 
         rv.chain(self.shadow.render(renderer, location).map(Into::into))
     }

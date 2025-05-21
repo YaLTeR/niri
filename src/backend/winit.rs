@@ -20,6 +20,8 @@ use smithay::wayland::presentation::Refresh;
 use super::{IpcOutputMap, OutputId, RenderResult};
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
+use crate::render_helpers::render_data::RendererData;
+use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, logical_output};
 
@@ -117,6 +119,16 @@ impl Winit {
                         state.niri.ipc_outputs_changed = true;
                     }
 
+                    let result =
+                        crate::render_helpers::blur::EffectsFramebuffers::update_for_output(
+                            winit.output.clone(),
+                            winit.backend.renderer(),
+                        );
+
+                    if let Err(ref err) = result {
+                        warn!("Failed to update EffectsFramebuffers for output resize: {err}");
+                    }
+
                     state.niri.output_resized(&winit.output);
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
@@ -143,6 +155,12 @@ impl Winit {
 
         resources::init(renderer);
         shaders::init(renderer);
+        RendererData::init(renderer.as_gles_renderer());
+
+        crate::render_helpers::blur::EffectsFramebuffers::init_for_output(
+            self.output.clone(),
+            renderer,
+        );
 
         let config = self.config.borrow();
         if let Some(src) = config.animations.window_resize.custom_shader.as_deref() {
