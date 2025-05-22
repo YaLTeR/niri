@@ -3601,7 +3601,11 @@ impl State {
             let mods = modifiers_from_state(mods);
             let mod_down = mods.contains(mod_key.to_modifiers());
 
-            if self.niri.layout.is_overview_open() && !mod_down && under.layer.is_none() {
+            if self.niri.layout.is_overview_open()
+                && !mod_down
+                && under.layer.is_none()
+                && under.output.is_some()
+            {
                 let (output, pos_within_output) = self.niri.output_under(pos).unwrap();
                 let output = output.clone();
 
