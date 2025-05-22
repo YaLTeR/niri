@@ -472,6 +472,10 @@ impl State {
     }
 
     fn hide_cursor_if_needed(&mut self) {
+        if !self.niri.pointer_visibility.is_visible() {
+            return;
+        }
+
         if !self.niri.config.borrow().cursor.hide_when_typing {
             return;
         }
