@@ -28,6 +28,20 @@ To do that, put files into the correct directories according to this table.
 
 Doing this will make niri appear in GDM and other display managers.
 
+### Running tests
+
+A bulk of our tests spawn niri compositor instances and test Wayland clients.
+This does not require a graphical session, however due to test parallelism, it can run into file descriptor limits on high core count systems.
+
+If you run into this problem, you may need to limit not just the Rust test harness thread count, but also the Rayon thread count, since some niri tests use internal Rayon threading:
+
+```
+$ export RAYON_NUM_THREADS=2
+...proceed to run cargo test, perhaps with --test-threads=2
+```
+
+Don't forget to exclude the development-only `niri-visual-tests` crate when running tests.
+
 ### Version string
 
 The niri version string includes its version and commit hash:
