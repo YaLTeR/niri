@@ -42,6 +42,8 @@ $ export RAYON_NUM_THREADS=2
 
 Don't forget to exclude the development-only `niri-visual-tests` crate when running tests.
 
+You may also want to set the `RUN_SLOW_TESTS=1` environment variable to run the slower tests.
+
 ### Version string
 
 The niri version string includes its version and commit hash:
