@@ -472,6 +472,12 @@ impl State {
     }
 
     fn hide_cursor_if_needed(&mut self) {
+        // If the pointer is already invisible, don't reset it back to Hidden causing one frame
+        // of hover.
+        if !self.niri.pointer_visibility.is_visible() {
+            return;
+        }
+
         if !self.niri.config.borrow().cursor.hide_when_typing {
             return;
         }
