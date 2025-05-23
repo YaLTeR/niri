@@ -1696,11 +1696,7 @@ pub enum Action {
     FocusWindowInColumn(#[knuffel(argument)] u8),
     FocusWindowPrevious,
     FocusColumnLeft,
-    #[knuffel(skip)]
-    FocusColumnLeftUnderMouse,
     FocusColumnRight,
-    #[knuffel(skip)]
-    FocusColumnRightUnderMouse,
     FocusColumnFirst,
     FocusColumnLast,
     FocusColumnRightOrFirst,
@@ -1751,11 +1747,7 @@ pub enum Action {
     CenterWindowById(u64),
     CenterVisibleColumns,
     FocusWorkspaceDown,
-    #[knuffel(skip)]
-    FocusWorkspaceDownUnderMouse,
     FocusWorkspaceUp,
-    #[knuffel(skip)]
-    FocusWorkspaceUpUnderMouse,
     FocusWorkspace(#[knuffel(argument)] WorkspaceReference),
     FocusWorkspacePrevious,
     MoveWindowToWorkspaceDown,
