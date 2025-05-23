@@ -5986,8 +5986,13 @@ impl Niri {
             .event_loop
             .insert_source(timer, move |_, _, state| {
                 state.niri.pointer_inactivity_timer = None;
-                state.niri.pointer_visibility = PointerVisibility::Hidden;
-                state.niri.queue_redraw_all();
+
+                // If the pointer is already invisible, don't reset it back to Hidden causing one
+                // frame of hover.
+                if state.niri.pointer_visibility.is_visible() {
+                    state.niri.pointer_visibility = PointerVisibility::Hidden;
+                    state.niri.queue_redraw_all();
+                }
 
                 TimeoutAction::Drop
             })
