@@ -929,7 +929,7 @@ impl State {
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
-        let under = match self.niri.pointer_visibility {
+        let mut under = match self.niri.pointer_visibility {
             PointerVisibility::Disabled => PointContents::default(),
             _ => self.niri.contents_under(location),
         };
@@ -943,6 +943,14 @@ impl State {
         // Disable the hidden pointer if the contents underneath have changed.
         if !self.niri.pointer_visibility.is_visible() {
             self.niri.pointer_visibility = PointerVisibility::Disabled;
+
+            // When setting PointerVisibility::Hidden together with pointer contents changing,
+            // we can change straight to nothing to avoid one frame of hover. Notably, this can
+            // be triggered through warp-mouse-to-focus combined with hide-when-typing.
+            under = PointContents::default();
+            if self.niri.pointer_contents == under {
+                return false;
+            }
         }
 
         self.niri.pointer_contents.clone_from(&under);
