@@ -1059,13 +1059,13 @@ impl<W: LayoutElement> Tile<W> {
                 Some(
                     BlurRenderElement::new(
                         renderer,
-                        output.unwrap(), // Safe because we checked output.is_some() above
+                        output.unwrap(),
                         area.to_i32_round(),
                         window_render_loc.to_physical(self.scale).to_i32_round(),
                         radius.top_left,
                         false,
                         self.scale as i32,
-                        win_alpha,
+                        1.,
                     )
                     .into(),
                 )
