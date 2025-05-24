@@ -105,6 +105,7 @@ impl Shaders {
                 include_str!("blur_finish.frag"),
                 &[
                     UniformName::new("corner_radius", UniformType::_1f),
+                    UniformName::new("alpha", UniformType::_1f),
                     UniformName::new("noise", UniformType::_1f),
                     UniformName::new("geo", UniformType::_4f),
                 ],

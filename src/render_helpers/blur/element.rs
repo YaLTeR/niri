@@ -228,9 +228,9 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                                     dst.size.h as f32,
                                 ],
                             ),
-                            Uniform::new("corner_radius", *corner_radius),
                             Uniform::new("alpha", *alpha),
                             Uniform::new("noise", config.noise),
+                            Uniform::new("corner_radius", *corner_radius),
                         ],
                     )
                 };
