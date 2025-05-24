@@ -222,6 +222,9 @@ impl ResolvedWindowRules {
             blur: BlurRule {
                 off: false,
                 on: false,
+                passes: None,
+                radius: None,
+                noise: None,
             },
             tab_indicator: TabIndicatorRule {
                 active_color: None,

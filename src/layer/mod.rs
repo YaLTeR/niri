@@ -48,6 +48,9 @@ impl ResolvedLayerRules {
             blur: BlurRule {
                 off: false,
                 on: false,
+                passes: None,
+                radius: None,
+                noise: None,
             },
             geometry_corner_radius: None,
             place_within_backdrop: false,

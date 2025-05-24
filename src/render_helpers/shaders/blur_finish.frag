@@ -4,13 +4,13 @@ precision highp float;
 
 #if defined(EXTERNAL)
 #extension GL_OES_EGL_image_external : require
-uniform samplerExternalOES niri_tex;
+uniform samplerExternalOES text;
 #else
-uniform sampler2D niri_tex;
+uniform sampler2D text;
 #endif
 
-uniform float niri_alpha;
-varying vec2 niri_v_coords;
+uniform float alpha;
+varying vec2 v_coords;
 
 uniform vec4 geo;           // x, y, width, height
 uniform float corner_radius;
@@ -43,7 +43,7 @@ float hash(vec2 p) {
 }
 
 void main() {
-    vec4 color = texture2D(niri_tex, niri_v_coords);
+    vec4 color = texture2D(text, v_coords);
 
 #if defined(NO_ALPHA)
     color.a = 1.0;
@@ -58,7 +58,7 @@ void main() {
 
     color *= rounding_alpha(loc, size, corner_radius);
 
-    color *= niri_alpha;
+    color *= alpha;
 
 #if defined(DEBUG_FLAGS)
     // Optional debug tint omitted to match example

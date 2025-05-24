@@ -14,7 +14,7 @@ uniform sampler2D tex;
 #endif
 
 uniform float alpha;
-varying vec2 niri_v_coords;
+varying vec2 v_coords;
 
 #if defined(DEBUG_FLAGS)
 uniform float tint;
@@ -52,10 +52,10 @@ float rounding_alpha(vec2 coords, vec2 size) {
 }
 
 void main() {
-    vec3 coords_geo = input_to_geo * vec3(niri_v_coords, 1.0);
+    vec3 coords_geo = input_to_geo * vec3(v_coords, 1.0);
 
     // Sample the texture.
-    vec4 color = texture2D(tex, niri_v_coords);
+    vec4 color = texture2D(tex, v_coords);
 #if defined(NO_ALPHA)
     color = vec4(color.rgb, 1.0);
 #endif
