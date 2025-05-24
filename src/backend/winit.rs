@@ -120,16 +120,17 @@ impl Winit {
                         state.niri.ipc_outputs_changed = true;
                     }
 
-                    let result = EffectsFramebuffers::update_for_output(
+                    state.niri.output_resized(&winit.output);
+
+                    if let Err(err) = EffectsFramebuffers::update_for_output(
                         winit.output.clone(),
                         winit.backend.renderer(),
-                    );
-
-                    if let Err(ref err) = result {
+                    ) {
                         warn!("Failed to update EffectsFramebuffers for output resize: {err}");
+                    } else {
+                        // the optimized blur buffer has been dirtied, re-render on next State::dispatch
+                        EffectsFramebuffers::set_dirty(&winit.output);
                     }
-
-                    state.niri.output_resized(&winit.output);
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
                 WinitEvent::Focus(_) => (),

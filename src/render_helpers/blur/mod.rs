@@ -1,22 +1,35 @@
 // Ported from https://github.com/nferhat/fht-compositor/blob/main/src/renderer/blur/mod.rs
 
 pub mod element;
+pub mod optimized_blur_texture_element;
 pub(super) mod shader;
 
+use anyhow::Context;
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
-use element::BlurConfig;
 use glam::{Mat3, Vec2};
+use niri_config::Blur;
+use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::gles::format::fourcc_to_gl_formats;
-use smithay::backend::renderer::gles::{ffi, GlesError, GlesRenderer, GlesTexture};
-use smithay::backend::renderer::{Offscreen, Texture};
+use smithay::backend::renderer::gles::{ffi, Capability, GlesError, GlesRenderer, GlesTexture};
+use smithay::backend::renderer::{Bind, Blit, Frame, Offscreen, Renderer, Texture, TextureFilter};
+use smithay::desktop::LayerMap;
 use smithay::output::Output;
 use smithay::reexports::gbm::Format;
-use smithay::utils::{Buffer, Physical, Point, Rectangle, Size, Transform};
+use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
+use smithay::wayland::shell::wlr_layer::Layer;
 
 use crate::render_helpers::renderer::NiriRenderer;
 use shader::BlurShaders;
+
+use super::render_data::RendererData;
+use super::render_elements;
+use super::shaders::Shaders;
+
+use std::sync::MutexGuard;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 enum CurrentBuffer {
@@ -40,6 +53,10 @@ impl CurrentBuffer {
 
 /// Effect framebuffers associated with each output.
 pub struct EffectsFramebuffers {
+    /// Contains the main buffer blurred contents
+    pub optimized_blur: GlesTexture,
+    /// Whether the optimizer blur buffer is dirty
+    pub optimized_blur_rerender_at: Option<Instant>,
     // /// Contains the original pixels before blurring to draw with in case of artifacts.
     // blur_saved_pixels: GlesTexture,
     // The blur algorithms (dual-kawase) swaps between these two whenever scaling the image
@@ -57,6 +74,10 @@ pub struct EffectsFramebuffers {
 
 type EffectsFramebufffersUserData = Rc<RefCell<EffectsFramebuffers>>;
 
+fn get_rerender_at() -> Option<Instant> {
+    Some(Instant::now() + Duration::from_secs(1))
+}
+
 impl EffectsFramebuffers {
     /// Get the assiciated [`EffectsFramebuffers`] with this output.
     pub fn get<'a>(output: &'a Output) -> RefMut<'a, Self> {
@@ -65,6 +86,13 @@ impl EffectsFramebuffers {
             .get::<EffectsFramebufffersUserData>()
             .unwrap();
         RefCell::borrow_mut(user_data)
+    }
+    pub fn set_dirty(output: &Output) {
+        let mut fx_buffers = Self::get(output);
+
+        if fx_buffers.optimized_blur_rerender_at.is_none() {
+            fx_buffers.optimized_blur_rerender_at = get_rerender_at();
+        }
     }
 
     /// Initialize the [`EffectsFramebuffers`] for an [`Output`].
@@ -86,6 +114,8 @@ impl EffectsFramebuffers {
         }
 
         let this = EffectsFramebuffers {
+            optimized_blur: create_buffer(renderer, output_size).unwrap(),
+            optimized_blur_rerender_at: get_rerender_at(),
             effects: create_buffer(renderer, output_size).unwrap(),
             effects_swapped: create_buffer(renderer, output_size).unwrap(),
             current_buffer: CurrentBuffer::Normal,
@@ -120,10 +150,124 @@ impl EffectsFramebuffers {
         }
 
         *fx_buffers = EffectsFramebuffers {
+            optimized_blur: create_buffer(renderer, output_size)?,
+            optimized_blur_rerender_at: get_rerender_at(),
             effects: create_buffer(renderer, output_size)?,
             effects_swapped: create_buffer(renderer, output_size)?,
             current_buffer: CurrentBuffer::Normal,
         };
+
+        Ok(())
+    }
+
+    /// Render the optimized blur buffer again
+    pub fn update_optimized_blur_buffer(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        layer_map: MutexGuard<'_, LayerMap>,
+        output: &Output,
+        scale: Scale<f64>,
+        config: Blur,
+    ) -> anyhow::Result<()> {
+        if self.optimized_blur_rerender_at.is_none() {
+            return Ok(());
+        }
+
+        if self.optimized_blur_rerender_at.unwrap() > Instant::now() {
+            debug!("optimized blur buffer is not dirty, skipping update");
+            return Ok(());
+        }
+
+        debug!("[updating blur] rendering optimized blur buffer");
+        self.optimized_blur_rerender_at = None;
+
+        // first render layer shell elements
+        // NOTE: We use Blur::DISABLED since we should not include blur with Background/Bottom
+        // layer shells
+
+        let mut elements = vec![];
+        for layer in layer_map
+            .layers_on(Layer::Background)
+            .chain(layer_map.layers_on(Layer::Bottom))
+            .rev()
+        {
+            let layer_geo = layer_map.layer_geometry(layer).unwrap();
+            let location = layer_geo.loc.to_physical_precise_round(scale);
+            elements.extend(
+                layer.render_elements::<WaylandSurfaceRenderElement<_>>(
+                    renderer, location, scale, 1.0,
+                ),
+            );
+        }
+
+        let mut fb = renderer.bind(&mut self.effects).unwrap();
+        let output_size = output.current_mode().unwrap().size;
+
+        let _ = render_elements(
+            renderer,
+            &mut fb,
+            output_size,
+            scale,
+            Transform::Normal,
+            elements.iter(),
+        )
+        .expect("failed to render for optimized blur buffer");
+        drop(fb);
+
+        self.current_buffer = CurrentBuffer::Normal;
+
+        let shaders = Shaders::get(renderer).blur.clone();
+
+        // NOTE: If we only do one pass its kinda ugly, there must be at least
+        // n=2 passes in order to have good sampling
+        let half_pixel = [
+            0.5 / (output_size.w as f32 / 2.0),
+            0.5 / (output_size.h as f32 / 2.0),
+        ];
+
+        for _ in 0..config.passes {
+            let (sample_buffer, render_buffer) = self.buffers();
+            render_blur_pass_with_frame(
+                renderer,
+                sample_buffer,
+                render_buffer,
+                &shaders.down,
+                half_pixel,
+                config,
+            )?;
+            self.current_buffer.swap();
+        }
+
+        let half_pixel = [
+            0.5 / (output_size.w as f32 * 2.0),
+            0.5 / (output_size.h as f32 * 2.0),
+        ];
+        // FIXME: Why we need inclusive here but down is exclusive?
+        for _ in 0..config.passes {
+            let (sample_buffer, render_buffer) = self.buffers();
+            render_blur_pass_with_frame(
+                renderer,
+                sample_buffer,
+                render_buffer,
+                &shaders.up,
+                half_pixel,
+                config,
+            )?;
+            self.current_buffer.swap();
+        }
+
+        // Now blit from the last render buffer into optimized_blur
+        // We are already bound so its just a blit
+        let tex_fb = renderer.bind(&mut self.effects).unwrap();
+        let mut optimized_blur_fb = renderer.bind(&mut self.optimized_blur).unwrap();
+
+        renderer.blit(
+            &tex_fb,
+            &mut optimized_blur_fb,
+            Rectangle::from_size(output_size),
+            Rectangle::from_size(output_size),
+            TextureFilter::Linear,
+        )?;
 
         Ok(())
     }
@@ -141,7 +285,7 @@ pub(super) unsafe fn get_main_buffer_blur(
     gl: &ffi::Gles2,
     fx_buffers: &mut EffectsFramebuffers,
     shaders: &BlurShaders,
-    blur_config: BlurConfig,
+    blur_config: Blur,
     projection_matrix: Mat3,
     scale: i32,
     vbos: &[u32; 2],
@@ -158,7 +302,9 @@ pub(super) unsafe fn get_main_buffer_blur(
 
     let dst_expanded = {
         let mut dst = dst;
-        let size = (2f32.powi(blur_config.passes as i32 + 1) * blur_config.radius).ceil() as i32;
+        let size =
+            (2f32.powi(blur_config.passes as i32 + 1) * blur_config.radius.0 as f32).ceil() as i32;
+
         dst.loc -= Point::from((size, size));
         dst.size += Size::from((size, size)).upscale(2);
         dst
@@ -275,6 +421,169 @@ pub(super) unsafe fn get_main_buffer_blur(
     Ok(fx_buffers.effects.clone())
 }
 
+// Renders a blur pass using a GlesFrame with syncing and fencing provided by smithay. Used for
+// updating optimized blur buffer since we are not yet rendering.
+fn render_blur_pass_with_frame(
+    renderer: &mut GlesRenderer,
+    sample_buffer: &GlesTexture,
+    render_buffer: &mut GlesTexture,
+    blur_program: &shader::BlurShader,
+    half_pixel: [f32; 2],
+    config: Blur,
+) -> anyhow::Result<()> {
+    // We use a texture render element with a custom GlesTexProgram in order todo the blurring
+    // At least this is what swayfx/scenefx do, but they just use gl calls directly.
+    let size = sample_buffer.size().to_logical(1, Transform::Normal);
+
+    let vbos = RendererData::get(renderer).vbos;
+    let is_shared = renderer.egl_context().is_shared();
+
+    let mut fb = renderer.bind(render_buffer)?;
+    // Using GlesFrame since I want to use a custom program
+    let mut frame = renderer
+        .render(&mut fb, size.to_physical(1), Transform::Normal)
+        .context("failed to create frame")?;
+
+    let supports_instaning = frame.capabilities().contains(&Capability::Instancing);
+    let debug = !frame.debug_flags().is_empty();
+    let projection = Mat3::from_cols_array(frame.projection());
+
+    let tex_size = sample_buffer.size();
+    let src = Rectangle::from_size(sample_buffer.size()).to_f64();
+    let dst = Rectangle::from_size(size).to_physical(1);
+
+    frame.with_context(|gl| unsafe {
+        // We are doing basically what Frame::render_texture_from_to does, but our own shader struct
+        // instead. This allows me to get into the gl plumbing.
+
+        // NOTE: We are rendering at the origin of the texture, no need to translate
+        let mut mat = Mat3::IDENTITY;
+        let src_size = sample_buffer.size().to_f64();
+
+        if tex_size.is_empty() || src_size.is_empty() {
+            return Ok(());
+        }
+
+        let mut tex_mat = build_texture_mat(src, dst, tex_size, Transform::Normal);
+        if sample_buffer.is_y_inverted() {
+            tex_mat *= Mat3::from_cols_array(&[1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0]);
+        }
+
+        // NOTE: We know that this texture is always opaque so skip on some logic checks and
+        // directly render. The following code is from GlesRenderer::render_texture
+        gl.Disable(ffi::BLEND);
+
+        // Since we are just rendering onto the offsreen buffer, the vertices to draw are only 4
+        let damage = [
+            dst.loc.x as f32,
+            dst.loc.y as f32,
+            dst.size.w as f32,
+            dst.size.h as f32,
+        ];
+
+        let mut vertices = Vec::with_capacity(4);
+        let damage_len = if supports_instaning {
+            vertices.extend(damage);
+            vertices.len() / 4
+        } else {
+            for _ in 0..6 {
+                // Add the 4 f32s per damage rectangle for each of the 6 vertices.
+                vertices.extend_from_slice(&damage);
+            }
+
+            1
+        };
+
+        mat *= projection;
+
+        // SAFETY: internal texture should always have a format
+        // We also use Abgr8888 which is known and confirmed
+        let (internal_format, _, _) =
+            fourcc_to_gl_formats(sample_buffer.format().unwrap()).unwrap();
+        let variant = blur_program.variant_for_format(Some(internal_format), false);
+
+        let program = if debug {
+            &variant.debug
+        } else {
+            &variant.normal
+        };
+
+        gl.ActiveTexture(ffi::TEXTURE0);
+        gl.BindTexture(ffi::TEXTURE_2D, sample_buffer.tex_id());
+        gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MIN_FILTER, ffi::LINEAR as i32);
+        gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MAG_FILTER, ffi::LINEAR as i32);
+        gl.UseProgram(program.program);
+
+        gl.Uniform1i(program.uniform_tex, 0);
+        gl.UniformMatrix3fv(
+            program.uniform_matrix,
+            1,
+            ffi::FALSE,
+            mat.as_ref() as *const f32,
+        );
+        gl.UniformMatrix3fv(
+            program.uniform_tex_matrix,
+            1,
+            ffi::FALSE,
+            tex_mat.as_ref() as *const f32,
+        );
+        gl.Uniform1f(program.uniform_alpha, 1.0);
+        gl.Uniform1f(program.uniform_radius, config.radius.0 as f32);
+        gl.Uniform2f(program.uniform_half_pixel, half_pixel[0], half_pixel[1]);
+
+        gl.EnableVertexAttribArray(program.attrib_vert as u32);
+        gl.BindBuffer(ffi::ARRAY_BUFFER, vbos[0]);
+        gl.VertexAttribPointer(
+            program.attrib_vert as u32,
+            2,
+            ffi::FLOAT,
+            ffi::FALSE,
+            0,
+            std::ptr::null(),
+        );
+
+        // vert_position
+        gl.EnableVertexAttribArray(program.attrib_vert_position as u32);
+        gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
+
+        gl.VertexAttribPointer(
+            program.attrib_vert_position as u32,
+            4,
+            ffi::FLOAT,
+            ffi::FALSE,
+            0,
+            vertices.as_ptr() as *const _,
+        );
+
+        if supports_instaning {
+            gl.VertexAttribDivisor(program.attrib_vert as u32, 0);
+            gl.VertexAttribDivisor(program.attrib_vert_position as u32, 1);
+            gl.DrawArraysInstanced(ffi::TRIANGLE_STRIP, 0, 4, damage_len as i32);
+        } else {
+            let count = damage_len * 6;
+            gl.DrawArrays(ffi::TRIANGLES, 0, count as i32);
+        }
+
+        gl.BindTexture(ffi::TEXTURE_2D, 0);
+        gl.DisableVertexAttribArray(program.attrib_vert as u32);
+        gl.DisableVertexAttribArray(program.attrib_vert_position as u32);
+
+        gl.Enable(ffi::BLEND);
+        gl.BlendFunc(ffi::ONE, ffi::ONE_MINUS_SRC_ALPHA);
+
+        // FIXME: Check for Fencing support
+        if is_shared {
+            gl.Finish();
+        }
+
+        Result::<_, GlesError>::Ok(())
+    })??;
+
+    let _sync_point = frame.finish()?;
+
+    Ok(())
+}
+
 // Renders a blur pass using gl code bypassing smithay's Frame mechanisms
 //
 // When rendering blur in real-time (for windows, for example) there should not be a wait for
@@ -293,7 +602,7 @@ unsafe fn render_blur_pass_with_gl(
     // The current blur program + config
     blur_program: &shader::BlurShader,
     half_pixel: [f32; 2],
-    config: BlurConfig,
+    config: Blur,
     // dst is the region that should have blur
     // it gets up/downscaled with passes
     damage: Rectangle<i32, Physical>,
@@ -394,7 +703,7 @@ unsafe fn render_blur_pass_with_gl(
             tex_mat.as_ref() as *const f32,
         );
         gl.Uniform1f(program.uniform_alpha, 1.0);
-        gl.Uniform1f(program.uniform_radius, config.radius);
+        gl.Uniform1f(program.uniform_radius, config.radius.0 as f32);
         gl.Uniform2f(program.uniform_half_pixel, half_pixel[0], half_pixel[1]);
 
         gl.EnableVertexAttribArray(program.attrib_vert as u32);

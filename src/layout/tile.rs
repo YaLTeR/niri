@@ -17,7 +17,7 @@ use super::{
 };
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
-use crate::render_helpers::blur::element::{BlurConfig, BlurRenderElement};
+use crate::render_helpers::blur::element::BlurRenderElement;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
@@ -1056,11 +1056,7 @@ impl<W: LayoutElement> Tile<W> {
 
         let blur_element = (blur_config.on && output.is_some())
             .then(|| {
-                let config = BlurConfig {
-                    passes: blur_config.passes,
-                    noise: blur_config.noise.0 as f32,
-                    radius: blur_config.radius.0 as f32,
-                };
+                let optimized = true;
 
                 Some(
                     BlurRenderElement::new(
@@ -1069,10 +1065,10 @@ impl<W: LayoutElement> Tile<W> {
                         area.to_i32_round(),
                         window_render_loc.to_physical(self.scale).to_i32_round(),
                         radius.top_left,
-                        false,
+                        optimized,
                         self.scale as i32,
                         1.,
-                        config,
+                        blur_config,
                     )
                     .into(),
                 )
@@ -1080,10 +1076,10 @@ impl<W: LayoutElement> Tile<W> {
             .flatten()
             .into_iter();
 
-        // Render the blur element
-        let rv = rv.chain(blur_element);
+        let rv = rv.chain(self.shadow.render(renderer, location).map(Into::into));
 
-        rv.chain(self.shadow.render(renderer, location).map(Into::into))
+        // Render the blur element
+        rv.chain(blur_element)
     }
 
     pub fn render<'a, R: NiriRenderer + 'a>(
