@@ -1031,6 +1031,8 @@ pub struct Struts {
 pub struct HotkeyOverlay {
     #[knuffel(child)]
     pub skip_at_startup: bool,
+    #[knuffel(child)]
+    pub hide_not_bound: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -4608,6 +4610,7 @@ mod tests {
             },
             hotkey_overlay: HotkeyOverlay {
                 skip_at_startup: true,
+                hide_not_bound: false,
             },
             animations: Animations {
                 off: false,
