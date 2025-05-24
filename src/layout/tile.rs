@@ -1066,7 +1066,15 @@ impl<W: LayoutElement> Tile<W> {
                     BlurRenderElement::new(
                         renderer,
                         output.unwrap(),
-                        area.to_i32_round(),
+                        Rectangle::new(
+                            area.loc
+                                + Point::from((
+                                    blur_config.offset.x.0 as f64,
+                                    blur_config.offset.y.0 as f64,
+                                )),
+                            area.size,
+                        )
+                        .to_i32_round(),
                         window_render_loc.to_physical(self.scale).to_i32_round(),
                         radius.top_left,
                         false,

@@ -743,6 +743,8 @@ pub struct Blur {
     pub radius: FloatOrInt<0, 1024>,
     #[knuffel(child, unwrap(argument), default = Self::default().noise)]
     pub noise: FloatOrInt<0, 1024>,
+    #[knuffel(child, default = Self::default().offset)]
+    pub offset: ShadowOffset,
 }
 
 impl Default for Blur {
@@ -752,6 +754,10 @@ impl Default for Blur {
             passes: 2,
             radius: FloatOrInt(4.),
             noise: FloatOrInt(0.),
+            offset: ShadowOffset {
+                x: FloatOrInt(0.),
+                y: FloatOrInt(0.),
+            },
         }
     }
 }
@@ -1560,6 +1566,9 @@ pub struct BlurRule {
     pub radius: Option<FloatOrInt<0, 1024>>,
     #[knuffel(child, unwrap(argument))]
     pub noise: Option<FloatOrInt<0, 1024>>,
+    // Workaound to compensate for waybar since I don't know how to fix it
+    #[knuffel(child)]
+    pub offset: Option<ShadowOffset>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
@@ -2510,6 +2519,10 @@ impl BlurRule {
         if let Some(x) = other.noise {
             self.noise = Some(x);
         }
+
+        if let Some(x) = other.offset {
+            self.offset = Some(x);
+        }
     }
 
     pub fn resolve_against(&self, mut config: Blur) -> Blur {
@@ -2529,6 +2542,10 @@ impl BlurRule {
 
         if let Some(x) = self.noise {
             config.noise = x;
+        }
+
+        if let Some(x) = self.offset {
+            config.offset = x;
         }
 
         config

@@ -51,6 +51,7 @@ impl ResolvedLayerRules {
                 passes: None,
                 radius: None,
                 noise: None,
+                offset: None,
             },
             geometry_corner_radius: None,
             place_within_backdrop: false,

@@ -225,6 +225,7 @@ impl ResolvedWindowRules {
                 passes: None,
                 radius: None,
                 noise: None,
+                offset: None,
             },
             tab_indicator: TabIndicatorRule {
                 active_color: None,
