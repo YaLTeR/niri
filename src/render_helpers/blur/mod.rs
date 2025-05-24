@@ -38,8 +38,6 @@ impl CurrentBuffer {
     }
 }
 
-static mut LAST_OUTPUT: Option<Output> = None;
-
 /// Effect framebuffers associated with each output.
 pub struct EffectsFramebuffers {
     // /// Contains the original pixels before blurring to draw with in case of artifacts.
@@ -69,12 +67,6 @@ impl EffectsFramebuffers {
         RefCell::borrow_mut(user_data)
     }
 
-    pub fn get_last_output() -> Option<Output> {
-        //@todo this is just a hack to test the blur, we need a way to get
-        // the output from the window itself
-        unsafe { LAST_OUTPUT.clone() }
-    }
-
     /// Initialize the [`EffectsFramebuffers`] for an [`Output`].
     ///
     /// The framebuffers handles live inside the Output's user data, use [`Self::get`] to access
@@ -82,10 +74,6 @@ impl EffectsFramebuffers {
     pub fn init_for_output(output: Output, renderer: &mut impl NiriRenderer) {
         let renderer = renderer.as_gles_renderer();
         let output_size = output.current_mode().unwrap().size;
-
-        unsafe {
-            LAST_OUTPUT = Some(output.clone());
-        }
 
         fn create_buffer(
             renderer: &mut GlesRenderer,

@@ -3,8 +3,9 @@ use std::rc::Rc;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation};
 use smithay::backend::renderer::element::{Element, Kind};
-use smithay::backend::renderer::gles::{ffi, GlesRenderer, GlesTexture};
+use smithay::backend::renderer::gles::GlesRenderer;
 
+use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
@@ -17,7 +18,6 @@ use super::{
 use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::blur::element::BlurRenderElement;
-use crate::render_helpers::blur::EffectsFramebuffers;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
@@ -827,6 +827,7 @@ impl<W: LayoutElement> Tile<W> {
         location: Point<f64, Logical>,
         focus_ring: bool,
         target: RenderTarget,
+        output: Option<&Output>,
     ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Tile::render_inner");
 
@@ -1053,25 +1054,21 @@ impl<W: LayoutElement> Tile<W> {
         let elem = focus_ring.then(|| self.focus_ring.render(renderer, location).map(Into::into));
         let rv = rv.chain(elem.into_iter().flatten());
 
-        let blur_element = (blur_config.on)
+        let blur_element = (blur_config.on && output.is_some())
             .then(|| {
-                if let Some(output) = EffectsFramebuffers::get_last_output() {
-                    Some(
-                        BlurRenderElement::new(
-                            renderer,
-                            &output,
-                            area.to_i32_round(),
-                            window_render_loc.to_physical(self.scale).to_i32_round(),
-                            radius.top_left,
-                            false,
-                            self.scale as i32,
-                            win_alpha,
-                        )
-                        .into(),
+                Some(
+                    BlurRenderElement::new(
+                        renderer,
+                        output.unwrap(), // Safe because we checked output.is_some() above
+                        area.to_i32_round(),
+                        window_render_loc.to_physical(self.scale).to_i32_round(),
+                        radius.top_left,
+                        false,
+                        self.scale as i32,
+                        win_alpha,
                     )
-                } else {
-                    None
-                }
+                    .into(),
+                )
             })
             .flatten()
             .into_iter();
@@ -1088,6 +1085,7 @@ impl<W: LayoutElement> Tile<W> {
         location: Point<f64, Logical>,
         focus_ring: bool,
         target: RenderTarget,
+        output: Option<&Output>,
     ) -> impl Iterator<Item = TileRenderElement<R>> + 'a {
         let _span = tracy_client::span!("Tile::render");
 
@@ -1106,7 +1104,8 @@ impl<W: LayoutElement> Tile<W> {
 
         if let Some(open) = &self.open_animation {
             let renderer = renderer.as_gles_renderer();
-            let elements = self.render_inner(renderer, Point::from((0., 0.)), focus_ring, target);
+            let elements =
+                self.render_inner(renderer, Point::from((0., 0.)), focus_ring, target, output);
             let elements = elements.collect::<Vec<TileRenderElement<_>>>();
             match open.render(
                 renderer,
@@ -1126,7 +1125,8 @@ impl<W: LayoutElement> Tile<W> {
             }
         } else if let Some(alpha) = &self.alpha_animation {
             let renderer = renderer.as_gles_renderer();
-            let elements = self.render_inner(renderer, Point::from((0., 0.)), focus_ring, target);
+            let elements =
+                self.render_inner(renderer, Point::from((0., 0.)), focus_ring, target, output);
             let elements = elements.collect::<Vec<TileRenderElement<_>>>();
             match alpha.offscreen.render(renderer, scale, &elements) {
                 Ok((elem, _sync, data)) => {
@@ -1143,7 +1143,7 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if open_anim_elem.is_none() && alpha_anim_elem.is_none() {
-            window_elems = Some(self.render_inner(renderer, location, focus_ring, target));
+            window_elems = Some(self.render_inner(renderer, location, focus_ring, target, output));
         }
 
         open_anim_elem
@@ -1163,7 +1163,13 @@ impl<W: LayoutElement> Tile<W> {
     fn render_snapshot(&self, renderer: &mut GlesRenderer) -> TileRenderSnapshot {
         let _span = tracy_client::span!("Tile::render_snapshot");
 
-        let contents = self.render(renderer, Point::from((0., 0.)), false, RenderTarget::Output);
+        let contents = self.render(
+            renderer,
+            Point::from((0., 0.)),
+            false,
+            RenderTarget::Output,
+            None,
+        );
 
         // A bit of a hack to render blocked out as for screencast, but I think it's fine here.
         let blocked_out_contents = self.render(
@@ -1171,6 +1177,7 @@ impl<W: LayoutElement> Tile<W> {
             Point::from((0., 0.)),
             false,
             RenderTarget::Screencast,
+            None,
         );
 
         RenderSnapshot {

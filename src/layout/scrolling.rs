@@ -7,6 +7,7 @@ use niri_config::{CenterFocusedColumn, PresetSize, Struts};
 use niri_ipc::{ColumnDisplay, SizeChange};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
@@ -2792,6 +2793,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         renderer: &mut R,
         target: RenderTarget,
         focus_ring: bool,
+        output: &Output,
     ) -> Vec<ScrollingSpaceRenderElement<R>> {
         let mut rv = vec![];
 
@@ -2846,7 +2848,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 }
 
                 rv.extend(
-                    tile.render(renderer, tile_pos, focus_ring, target)
+                    tile.render(renderer, tile_pos, focus_ring, target, Some(output))
                         .map(Into::into),
                 );
             }

@@ -5062,7 +5062,7 @@ impl<W: LayoutElement> Layout<W> {
                 let location = move_.tile_render_location(zoom);
                 let iter = move_
                     .tile
-                    .render(renderer, location, true, target)
+                    .render(renderer, location, true, target, Some(output))
                     .map(move |elem| {
                         RescaleRenderElement::from_element(
                             elem,
