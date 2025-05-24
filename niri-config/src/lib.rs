@@ -749,11 +749,22 @@ impl From<FocusRing> for Border {
 pub struct Blur {
     #[knuffel(child)]
     pub on: bool,
+    #[knuffel(child, unwrap(argument), default = Self::default().passes)]
+    pub passes: u32,
+    #[knuffel(child, unwrap(argument), default = Self::default().radius)]
+    pub radius: FloatOrInt<0, 1024>,
+    #[knuffel(child, unwrap(argument), default = Self::default().noise)]
+    pub noise: FloatOrInt<0, 1024>,
 }
 
 impl Default for Blur {
     fn default() -> Self {
-        Self { on: false }
+        Self {
+            on: false,
+            passes: 2,
+            radius: FloatOrInt(4.),
+            noise: FloatOrInt(0.),
+        }
     }
 }
 
@@ -1574,6 +1585,12 @@ pub struct BlurRule {
     pub off: bool,
     #[knuffel(child)]
     pub on: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub passes: Option<u32>,
+    #[knuffel(child, unwrap(argument))]
+    pub radius: Option<FloatOrInt<0, 1024>>,
+    #[knuffel(child, unwrap(argument))]
+    pub noise: Option<FloatOrInt<0, 1024>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
@@ -2618,6 +2635,18 @@ impl BlurRule {
             self.off = false;
             self.on = true;
         }
+
+        if let Some(x) = other.passes {
+            self.passes = Some(x);
+        }
+
+        if let Some(x) = other.radius {
+            self.radius = Some(x);
+        }
+
+        if let Some(x) = other.noise {
+            self.noise = Some(x);
+        }
     }
 
     pub fn resolve_against(&self, mut config: Blur) -> Blur {
@@ -2625,6 +2654,18 @@ impl BlurRule {
 
         if self.off {
             config.on = false;
+        }
+
+        if let Some(x) = self.passes {
+            config.passes = x;
+        }
+
+        if let Some(x) = self.radius {
+            config.radius = x;
+        }
+
+        if let Some(x) = self.noise {
+            config.noise = x;
         }
 
         config

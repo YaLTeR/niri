@@ -20,12 +20,6 @@ pub struct BlurConfig {
     pub noise: f32,
 }
 
-const BLUR_CONFIG: BlurConfig = BlurConfig {
-    passes: 3,
-    radius: 5.,
-    noise: 0.,
-};
-
 #[derive(Debug)]
 pub enum BlurRenderElement {
     /// Use true blur.
@@ -43,6 +37,7 @@ pub enum BlurRenderElement {
         corner_radius: f32,
         loc: Point<i32, Physical>,
         output: Output,
+        config: BlurConfig,
         alpha: f32,
         // FIXME: Use DamageBag and expand it as needed?
         commit_counter: CommitCounter,
@@ -67,6 +62,7 @@ impl BlurRenderElement {
         _optimized: bool,
         scale: i32,
         alpha: f32,
+        config: BlurConfig,
     ) -> Self {
         Self::TrueBlur {
             id: Id::new(),
@@ -77,6 +73,7 @@ impl BlurRenderElement {
             corner_radius,
             loc,
             alpha,
+            config,
             output: output.clone(), // fixme i hate this
             commit_counter: CommitCounter::default(),
         }
@@ -126,12 +123,14 @@ impl Element for BlurRenderElement {
         _commit: Option<CommitCounter>,
     ) -> DamageSet<i32, Physical> {
         match self {
-            BlurRenderElement::TrueBlur { .. } => {
+            BlurRenderElement::TrueBlur { config, .. } => {
+                let passes = config.passes;
+                let radius = config.radius;
+
                 // Since the blur element samples from around itself, we must expand the damage it
                 // induces to include any potential changes.
                 let mut geometry = Rectangle::from_size(self.geometry(scale).size);
-                let size =
-                    (2f32.powi(BLUR_CONFIG.passes as i32 + 1) * BLUR_CONFIG.radius).ceil() as i32;
+                let size = (2f32.powi(passes as i32 + 1) * radius).ceil() as i32;
                 geometry.loc -= Point::from((size, size));
                 geometry.size += Size::from((size, size)).upscale(2);
 
@@ -182,6 +181,7 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                 scale,
                 corner_radius,
                 alpha,
+                config,
                 ..
             } => {
                 let mut fx_buffers = EffectsFramebuffers::get(output);
@@ -202,7 +202,7 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                         gl,
                         &mut *fx_buffers,
                         &shaders,
-                        BLUR_CONFIG,
+                        config.clone(),
                         projection_matrix,
                         *scale,
                         &vbos,
@@ -229,7 +229,8 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                                 ],
                             ),
                             Uniform::new("corner_radius", *corner_radius),
-                            Uniform::new("noise", BLUR_CONFIG.noise),
+                            Uniform::new("alpha", *alpha),
+                            Uniform::new("noise", config.noise),
                         ],
                     )
                 };
