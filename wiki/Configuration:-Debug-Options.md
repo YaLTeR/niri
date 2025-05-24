@@ -29,6 +29,7 @@ debug {
     disable-monitor-names
     strict-new-window-focus-policy
     honor-xdg-activation-with-invalid-serial 
+    skip-cursor-only-updates-during-vrr
 }
 
 binds {
@@ -272,6 +273,22 @@ Maybe in the future these apps/toolkits (Electron, Qt) are fixed, making this de
 ```kdl
 debug {
     honor-xdg-activation-with-invalid-serial
+}
+```
+
+### `skip-cursor-only-updates-during-vrr`
+
+<sup>Since: next release</sup>
+
+Skips redrawing the screen from cursor input while variable refresh rate is active.
+
+Useful for games where the cursor isn't drawn internally to prevent erratic VRR shifts in response to cursor movement.
+
+Note that the current implementation has some issues, for example when there's nothing redrawing the screen (like a game), the rendering will appear to completely freeze (since cursor movements won't cause redraws).
+
+```kdl
+debug {
+    skip-cursor-only-updates-during-vrr
 }
 ```
 
