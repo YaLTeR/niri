@@ -518,6 +518,8 @@ pub struct Layout {
     #[knuffel(child, default)]
     pub border: Border,
     #[knuffel(child, default)]
+    pub blur: Blur,
+    #[knuffel(child, default)]
     pub shadow: Shadow,
     #[knuffel(child, default)]
     pub tab_indicator: TabIndicator,
@@ -551,6 +553,7 @@ impl Default for Layout {
             focus_ring: Default::default(),
             border: Default::default(),
             shadow: Default::default(),
+            blur: Default::default(),
             tab_indicator: Default::default(),
             insert_hint: Default::default(),
             preset_column_widths: Default::default(),
@@ -726,6 +729,35 @@ impl From<FocusRing> for Border {
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
             urgent_gradient: value.urgent_gradient,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Blur {
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child, unwrap(argument), default = Self::default().passes)]
+    pub passes: u32,
+    #[knuffel(child, unwrap(argument), default = Self::default().radius)]
+    pub radius: FloatOrInt<0, 1024>,
+    #[knuffel(child, unwrap(argument), default = Self::default().noise)]
+    pub noise: FloatOrInt<0, 1024>,
+    #[knuffel(child, default = Self::default().offset)]
+    pub offset: ShadowOffset,
+}
+
+impl Default for Blur {
+    fn default() -> Self {
+        Self {
+            on: false,
+            passes: 2,
+            radius: FloatOrInt(4.),
+            noise: FloatOrInt(0.),
+            offset: ShadowOffset {
+                x: FloatOrInt(0.),
+                y: FloatOrInt(0.),
+            },
         }
     }
 }
@@ -1413,6 +1445,8 @@ pub struct WindowRule {
     #[knuffel(child, default)]
     pub border: BorderRule,
     #[knuffel(child, default)]
+    pub blur: BlurRule,
+    #[knuffel(child, default)]
     pub shadow: ShadowRule,
     #[knuffel(child, default)]
     pub tab_indicator: TabIndicatorRule,
@@ -1518,6 +1552,23 @@ pub struct BorderRule {
     pub inactive_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub urgent_gradient: Option<Gradient>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct BlurRule {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub passes: Option<u32>,
+    #[knuffel(child, unwrap(argument))]
+    pub radius: Option<FloatOrInt<0, 1024>>,
+    #[knuffel(child, unwrap(argument))]
+    pub noise: Option<FloatOrInt<0, 1024>>,
+    // Workaound to compensate for waybar since I don't know how to fix it
+    #[knuffel(child)]
+    pub offset: Option<ShadowOffset>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
@@ -2439,6 +2490,62 @@ impl BorderRule {
         }
         if let Some(x) = self.urgent_gradient {
             config.urgent_gradient = Some(x);
+        }
+
+        config
+    }
+}
+
+impl BlurRule {
+    pub fn merge_with(&mut self, other: &Self) {
+        if other.off {
+            self.off = true;
+            self.on = false;
+        }
+
+        if other.on {
+            self.off = false;
+            self.on = true;
+        }
+
+        if let Some(x) = other.passes {
+            self.passes = Some(x);
+        }
+
+        if let Some(x) = other.radius {
+            self.radius = Some(x);
+        }
+
+        if let Some(x) = other.noise {
+            self.noise = Some(x);
+        }
+
+        if let Some(x) = other.offset {
+            self.offset = Some(x);
+        }
+    }
+
+    pub fn resolve_against(&self, mut config: Blur) -> Blur {
+        config.on |= self.on;
+
+        if self.off {
+            config.on = false;
+        }
+
+        if let Some(x) = self.passes {
+            config.passes = x;
+        }
+
+        if let Some(x) = self.radius {
+            config.radius = x;
+        }
+
+        if let Some(x) = self.noise {
+            config.noise = x;
+        }
+
+        if let Some(x) = self.offset {
+            config.offset = x;
         }
 
         config
