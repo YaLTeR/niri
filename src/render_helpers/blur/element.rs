@@ -1,7 +1,7 @@
 // Ported from https://github.com/nferhat/fht-compositor/blob/main/src/renderer/blur/element.rs
 
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
-use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer};
+use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
 use smithay::output::Output;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
@@ -59,17 +59,15 @@ impl BlurRenderElement {
     /// - Display outdated/wrong contents
     /// - Not display anything since the buffer will be empty.
     pub fn new(
-        renderer: &mut impl NiriRenderer,
+        _renderer: &mut impl NiriRenderer,
         output: &Output,
         sample_area: Rectangle<i32, Logical>,
         loc: Point<i32, Physical>,
         corner_radius: f32,
-        optimized: bool,
+        _optimized: bool,
         scale: i32,
         alpha: f32,
     ) -> Self {
-        debug!("BlurRenderElement::new({:?}, {:?})", loc, sample_area);
-
         Self::TrueBlur {
             id: Id::new(),
             scale,
@@ -98,7 +96,7 @@ impl Element for BlurRenderElement {
         }
     }
 
-    fn location(&self, scale: Scale<f64>) -> Point<i32, Physical> {
+    fn location(&self, _scale: Scale<f64>) -> Point<i32, Physical> {
         match self {
             BlurRenderElement::TrueBlur { loc, .. } => *loc,
         }
@@ -125,7 +123,7 @@ impl Element for BlurRenderElement {
     fn damage_since(
         &self,
         scale: Scale<f64>,
-        commit: Option<CommitCounter>,
+        _commit: Option<CommitCounter>,
     ) -> DamageSet<i32, Physical> {
         match self {
             BlurRenderElement::TrueBlur { .. } => {
@@ -143,7 +141,7 @@ impl Element for BlurRenderElement {
         }
     }
 
-    fn opaque_regions(&self, scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
+    fn opaque_regions(&self, _scale: Scale<f64>) -> OpaqueRegions<i32, Physical> {
         match self {
             BlurRenderElement::TrueBlur { .. } => {
                 // Since we are rendering as true blur, we will draw whatever is behind the window
@@ -214,28 +212,27 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                     )
                 })??;
 
-                //@todo Handle noise and corner radiusS
-                // let (program, additional_uniforms) = if *corner_radius == 0.0 {
-                //     (None, vec![])
-                // } else {
-                //     let program = Shaders::get_from_frame(gles_frame).blur_finish.clone();
-                //     (
-                //         program,
-                //         vec![
-                //             Uniform::new(
-                //                 "geo",
-                //                 [
-                //                     dst.loc.x as f32,
-                //                     dst.loc.y as f32,
-                //                     dst.size.w as f32,
-                //                     dst.size.h as f32,
-                //                 ],
-                //             ),
-                //             Uniform::new("corner_radius", *corner_radius),
-                //             Uniform::new("noise", BLUR_CONFIG.noise),
-                //         ],
-                //     )
-                // };
+                let (program, additional_uniforms) = if *corner_radius == 0.0 {
+                    (None, vec![])
+                } else {
+                    let program = Shaders::get_from_frame(gles_frame).blur_finish.clone();
+                    (
+                        program,
+                        vec![
+                            Uniform::new(
+                                "geo",
+                                [
+                                    dst.loc.x as f32,
+                                    dst.loc.y as f32,
+                                    dst.size.w as f32,
+                                    dst.size.h as f32,
+                                ],
+                            ),
+                            Uniform::new("corner_radius", *corner_radius),
+                            Uniform::new("noise", BLUR_CONFIG.noise),
+                        ],
+                    )
+                };
 
                 gles_frame.render_texture_from_to(
                     &blurred_texture,
@@ -244,10 +241,9 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                     damage,
                     opaque_regions,
                     Transform::Normal,
-                    1.,
-                    None,
-                    &[], // program.as_ref(),
-                         // &additional_uniforms,
+                    *alpha,
+                    program.as_ref(),
+                    &additional_uniforms,
                 )
             }
         }
@@ -270,7 +266,10 @@ impl<'render> RenderElement<TtyRenderer<'render>> for BlurRenderElement {
         Ok(())
     }
 
-    fn underlying_storage(&self, renderer: &mut TtyRenderer<'render>) -> Option<UnderlyingStorage> {
+    fn underlying_storage(
+        &self,
+        _renderer: &mut TtyRenderer<'render>,
+    ) -> Option<UnderlyingStorage> {
         None
     }
 }
