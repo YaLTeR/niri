@@ -41,7 +41,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! niri-ipc = "=25.5.0"
+//! niri-ipc = "=25.5.1"
 //! ```
 //!
 //! ## Features
@@ -823,19 +823,19 @@ pub enum Action {
     /// Close the Overview.
     CloseOverview {},
     /// Toggle urgent status of a window.
-    ToggleUrgent {
+    ToggleWindowUrgent {
         /// Id of the window to toggle urgent.
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
     /// Set urgent status of a window.
-    SetUrgent {
+    SetWindowUrgent {
         /// Id of the window to set urgent.
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
     /// Unset urgent status of a window.
-    UnsetUrgent {
+    UnsetWindowUrgent {
         /// Id of the window to unset urgent.
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
