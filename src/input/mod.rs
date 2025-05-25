@@ -472,6 +472,12 @@ impl State {
     }
 
     fn hide_cursor_if_needed(&mut self) {
+        // If the pointer is already invisible, don't reset it back to Hidden causing one frame
+        // of hover.
+        if !self.niri.pointer_visibility.is_visible() {
+            return;
+        }
+
         if !self.niri.config.borrow().cursor.hide_when_typing {
             return;
         }
@@ -1976,7 +1982,7 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
-            Action::ToggleUrgent(id) => {
+            Action::ToggleWindowUrgent(id) => {
                 let window = self
                     .niri
                     .layout
@@ -1986,8 +1992,9 @@ impl State {
                     let urgent = window.is_urgent();
                     window.set_urgent(!urgent);
                 }
+                self.niri.queue_redraw_all();
             }
-            Action::SetUrgent(id) => {
+            Action::SetWindowUrgent(id) => {
                 let window = self
                     .niri
                     .layout
@@ -1996,8 +2003,9 @@ impl State {
                 if let Some(window) = window {
                     window.set_urgent(true);
                 }
+                self.niri.queue_redraw_all();
             }
-            Action::UnsetUrgent(id) => {
+            Action::UnsetWindowUrgent(id) => {
                 let window = self
                     .niri
                     .layout
@@ -2006,6 +2014,7 @@ impl State {
                 if let Some(window) = window {
                     window.set_urgent(false);
                 }
+                self.niri.queue_redraw_all();
             }
         }
     }
@@ -3598,7 +3607,11 @@ impl State {
             let mods = modifiers_from_state(mods);
             let mod_down = mods.contains(mod_key.to_modifiers());
 
-            if self.niri.layout.is_overview_open() && !mod_down && under.layer.is_none() {
+            if self.niri.layout.is_overview_open()
+                && !mod_down
+                && under.layer.is_none()
+                && under.output.is_some()
+            {
                 let (output, pos_within_output) = self.niri.output_under(pos).unwrap();
                 let output = output.clone();
 

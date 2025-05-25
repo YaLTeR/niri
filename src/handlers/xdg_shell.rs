@@ -334,9 +334,10 @@ impl XdgShellHandler for State {
                 // higher input priority.
 
                 if layers.layers_on(Layer::Overlay).any(|l| {
-                    l.cached_state().keyboard_interactivity
+                    (l.cached_state().keyboard_interactivity
                         == wlr_layer::KeyboardInteractivity::Exclusive
-                        || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref()
+                        || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref())
+                        && self.niri.mapped_layer_surfaces.contains_key(l)
                 }) {
                     trace!("ignoring toplevel popup grab because the overlay layer has focus");
                     let _ = PopupManager::dismiss_popup(&root, &popup);
@@ -346,9 +347,10 @@ impl XdgShellHandler for State {
                 let mon = self.niri.layout.monitor_for_output(output).unwrap();
                 if !mon.render_above_top_layer()
                     && layers.layers_on(Layer::Top).any(|l| {
-                        l.cached_state().keyboard_interactivity
+                        (l.cached_state().keyboard_interactivity
                             == wlr_layer::KeyboardInteractivity::Exclusive
-                            || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref()
+                            || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref())
+                            && self.niri.mapped_layer_surfaces.contains_key(l)
                     })
                 {
                     trace!("ignoring toplevel popup grab because the top layer has focus");

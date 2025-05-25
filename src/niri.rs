@@ -740,7 +740,21 @@ impl State {
     }
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
-        let under = self.niri.contents_under(location);
+        let mut under = match self.niri.pointer_visibility {
+            PointerVisibility::Disabled => PointContents::default(),
+            _ => self.niri.contents_under(location),
+        };
+
+        // Disable the hidden pointer if the contents underneath have changed.
+        if !self.niri.pointer_visibility.is_visible() && self.niri.pointer_contents != under {
+            self.niri.pointer_visibility = PointerVisibility::Disabled;
+
+            // When setting PointerVisibility::Hidden together with pointer contents changing,
+            // we can change straight to nothing to avoid one frame of hover. Notably, this can
+            // be triggered through warp-mouse-to-focus combined with hide-when-typing.
+            under = PointContents::default();
+        }
+
         self.niri.pointer_contents.clone_from(&under);
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
@@ -929,7 +943,7 @@ impl State {
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
-        let under = match self.niri.pointer_visibility {
+        let mut under = match self.niri.pointer_visibility {
             PointerVisibility::Disabled => PointContents::default(),
             _ => self.niri.contents_under(location),
         };
@@ -943,6 +957,14 @@ impl State {
         // Disable the hidden pointer if the contents underneath have changed.
         if !self.niri.pointer_visibility.is_visible() {
             self.niri.pointer_visibility = PointerVisibility::Disabled;
+
+            // When setting PointerVisibility::Hidden together with pointer contents changing,
+            // we can change straight to nothing to avoid one frame of hover. Notably, this can
+            // be triggered through warp-mouse-to-focus combined with hide-when-typing.
+            under = PointContents::default();
+            if self.niri.pointer_contents == under {
+                return false;
+            }
         }
 
         self.niri.pointer_contents.clone_from(&under);
@@ -5986,8 +6008,13 @@ impl Niri {
             .event_loop
             .insert_source(timer, move |_, _, state| {
                 state.niri.pointer_inactivity_timer = None;
-                state.niri.pointer_visibility = PointerVisibility::Hidden;
-                state.niri.queue_redraw_all();
+
+                // If the pointer is already invisible, don't reset it back to Hidden causing one
+                // frame of hover.
+                if state.niri.pointer_visibility.is_visible() {
+                    state.niri.pointer_visibility = PointerVisibility::Hidden;
+                    state.niri.queue_redraw_all();
+                }
 
                 TimeoutAction::Drop
             })
