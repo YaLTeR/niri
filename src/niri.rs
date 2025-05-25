@@ -740,7 +740,21 @@ impl State {
     }
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
-        let under = self.niri.contents_under(location);
+        let mut under = match self.niri.pointer_visibility {
+            PointerVisibility::Disabled => PointContents::default(),
+            _ => self.niri.contents_under(location),
+        };
+
+        // Disable the hidden pointer if the contents underneath have changed.
+        if !self.niri.pointer_visibility.is_visible() && self.niri.pointer_contents != under {
+            self.niri.pointer_visibility = PointerVisibility::Disabled;
+
+            // When setting PointerVisibility::Hidden together with pointer contents changing,
+            // we can change straight to nothing to avoid one frame of hover. Notably, this can
+            // be triggered through warp-mouse-to-focus combined with hide-when-typing.
+            under = PointContents::default();
+        }
+
         self.niri.pointer_contents.clone_from(&under);
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
@@ -929,7 +943,7 @@ impl State {
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
-        let under = match self.niri.pointer_visibility {
+        let mut under = match self.niri.pointer_visibility {
             PointerVisibility::Disabled => PointContents::default(),
             _ => self.niri.contents_under(location),
         };
@@ -943,6 +957,14 @@ impl State {
         // Disable the hidden pointer if the contents underneath have changed.
         if !self.niri.pointer_visibility.is_visible() {
             self.niri.pointer_visibility = PointerVisibility::Disabled;
+
+            // When setting PointerVisibility::Hidden together with pointer contents changing,
+            // we can change straight to nothing to avoid one frame of hover. Notably, this can
+            // be triggered through warp-mouse-to-focus combined with hide-when-typing.
+            under = PointContents::default();
+            if self.niri.pointer_contents == under {
+                return false;
+            }
         }
 
         self.niri.pointer_contents.clone_from(&under);
@@ -996,12 +1018,13 @@ impl State {
                 && surface.cached_state().keyboard_interactivity
                     == wlr_layer::KeyboardInteractivity::OnDemand;
 
-            // Check if it moved to the overview backdrop.
             if let Some(mapped) = self.niri.mapped_layer_surfaces.get(surface) {
+                // Check if it moved to the overview backdrop.
                 if mapped.place_within_backdrop() {
                     good = false;
                 }
             } else {
+                // The layer surface is alive but it got unmapped.
                 good = false;
             }
 
@@ -2896,6 +2919,10 @@ impl Niri {
                 layer.with_surfaces(|surface, data| {
                     send_scale_transform(surface, data, scale, transform);
                 });
+
+                if let Some(mapped) = self.mapped_layer_surfaces.get_mut(layer) {
+                    mapped.update_sizes(output_size, scale.fractional_scale());
+                }
             }
             layer_map.arrange();
         }
@@ -2980,8 +3007,12 @@ impl Niri {
                 .layers_on(layer)
                 .rev()
                 .find_map(|layer| {
-                    let layer_pos_within_output =
+                    let mapped = self.mapped_layer_surfaces.get(layer)?;
+
+                    let mut layer_pos_within_output =
                         layers.layer_geometry(layer).unwrap().loc.to_f64();
+                    layer_pos_within_output += mapped.bob_offset();
+
                     let surface_type = if popup {
                         WindowSurfaceType::POPUP
                     } else {
@@ -3042,6 +3073,7 @@ impl Niri {
 
                     let mut layer_pos_within_output =
                         layers.layer_geometry(layer_surface).unwrap().loc.to_f64();
+                    layer_pos_within_output += mapped.bob_offset();
 
                     // Background and bottom layers move together with the workspaces.
                     let mon = self.layout.monitor_for_output(output)?;
@@ -3197,6 +3229,7 @@ impl Niri {
 
                     let mut layer_pos_within_output =
                         layers.layer_geometry(layer_surface).unwrap().loc.to_f64();
+                    layer_pos_within_output += mapped.bob_offset();
 
                     // Background and bottom layers move together with the workspaces.
                     if matches!(layer, Layer::Background | Layer::Bottom) {
@@ -3924,7 +3957,7 @@ impl Niri {
                         continue;
                     };
 
-                    mapped.update_render_elements(geo.size.to_f64(), scale);
+                    mapped.update_render_elements(geo.size.to_f64());
                 }
             }
         }
@@ -4077,15 +4110,7 @@ impl Niri {
         let layer_map = layer_map_for_output(output);
         let mut extend_from_layer =
             |elements: &mut SplitElements<LayerSurfaceRenderElement<R>>, layer, for_backdrop| {
-                self.render_layer(
-                    renderer,
-                    target,
-                    output_scale,
-                    &layer_map,
-                    layer,
-                    elements,
-                    for_backdrop,
-                );
+                self.render_layer(renderer, target, &layer_map, layer, elements, for_backdrop);
             };
 
         // The overlay layer elements go next.
@@ -4205,7 +4230,6 @@ impl Niri {
         &self,
         renderer: &mut R,
         target: RenderTarget,
-        scale: Scale<f64>,
         layer_map: &LayerMap,
         layer: Layer,
         elements: &mut SplitElements<LayerSurfaceRenderElement<R>>,
@@ -4223,7 +4247,7 @@ impl Niri {
             Some((mapped, geo))
         });
         for (mapped, geo) in iter {
-            elements.extend(mapped.render(renderer, geo.loc.to_f64(), scale, target));
+            elements.extend(mapped.render(renderer, geo.loc.to_f64(), target));
         }
     }
 
@@ -4257,6 +4281,14 @@ impl Niri {
             state.unfinished_animations_remain |= self
                 .cursor_manager
                 .is_current_cursor_animated(output.current_scale().integer_scale());
+
+            // Also check layer surfaces.
+            if !state.unfinished_animations_remain {
+                state.unfinished_animations_remain |= layer_map_for_output(output)
+                    .layers()
+                    .filter_map(|surface| self.mapped_layer_surfaces.get(surface))
+                    .any(|mapped| mapped.are_animations_ongoing());
+            }
 
             // Render.
             res = backend.render(self, output, target_presentation_time);
@@ -5976,8 +6008,13 @@ impl Niri {
             .event_loop
             .insert_source(timer, move |_, _, state| {
                 state.niri.pointer_inactivity_timer = None;
-                state.niri.pointer_visibility = PointerVisibility::Hidden;
-                state.niri.queue_redraw_all();
+
+                // If the pointer is already invisible, don't reset it back to Hidden causing one
+                // frame of hover.
+                if state.niri.pointer_visibility.is_visible() {
+                    state.niri.pointer_visibility = PointerVisibility::Hidden;
+                    state.niri.queue_redraw_all();
+                }
 
                 TimeoutAction::Drop
             })

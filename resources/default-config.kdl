@@ -525,6 +525,9 @@ binds {
 
     Mod+C { center-column; }
 
+    // Center all fully visible columns on screen.
+    Mod+Ctrl+C { center-visible-columns; }
+
     // Finer width adjustments.
     // This command can also:
     // * set width in pixels: "1000"

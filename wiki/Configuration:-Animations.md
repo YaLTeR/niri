@@ -380,7 +380,7 @@ animations {
 
 #### `overview-open-close`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 The open/close zoom animation of the [Overview](./Overview.md).
 

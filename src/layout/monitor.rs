@@ -1820,7 +1820,9 @@ impl<W: LayoutElement> Monitor<W> {
 
         velocity *= rubber_band.clamp_derivative(min, max, gesture.start_idx + current_pos);
 
-        self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
+        if self.active_workspace_idx != new_idx {
+            self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
+        }
 
         self.active_workspace_idx = new_idx;
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(

@@ -1,8 +1,23 @@
 //! Types for communicating with niri via IPC.
 //!
-//! After connecting to the niri socket, you can send a single [`Request`] and receive a single
-//! [`Reply`], which is a `Result` wrapping a [`Response`]. If you requested an event stream, you
-//! can keep reading [`Event`]s from the socket after the response.
+//! After connecting to the niri socket, you can send [`Request`]s. Niri will process them one by
+//! one, in order, and to each request it will respond with a single [`Reply`], which is a `Result`
+//! wrapping a [`Response`].
+//!
+//! If you send a [`Request::EventStream`], niri will *stop* reading subsequent [`Request`]s, and
+//! will start continuously writing compositor [`Event`]s to the socket. If you'd like to read an
+//! event stream and write more requests at the same time, you need to use two IPC sockets.
+//!
+//! <div class="warning">
+//!
+//! Requests are *always* processed separately. Time passes between requests, even when sending
+//! multiple requests to the socket at once. For example, sending [`Request::Workspaces`] and
+//! [`Request::Windows`] together may not return consistent results (e.g. a window may open on a
+//! new workspace in-between the two responses). This goes for actions too: sending
+//! [`Action::FocusWindow`] and <code>[Action::CloseWindow] { id: None }</code> together may close
+//! the wrong window because a different window got focused in-between these requests.
+//!
+//! </div>
 //!
 //! You can use the [`socket::Socket`] helper if you're fine with blocking communication. However,
 //! it is a fairly simple helper, so if you need async, or if you're using a different language,
@@ -12,7 +27,9 @@
 //! 2. Connect to the socket and write a JSON-formatted [`Request`] on a single line. You can follow
 //!    up with a line break and a flush, or just flush and shutdown the write end of the socket.
 //! 3. Niri will respond with a single line JSON-formatted [`Reply`].
-//! 4. If you requested an event stream, niri will keep responding with JSON-formatted [`Event`]s,
+//! 4. You can keep writing [`Request`]s, each on a single line, and read [`Reply`]s, also each on a
+//!    separate line.
+//! 5. After you request an event stream, niri will keep responding with JSON-formatted [`Event`]s,
 //!    on a single line each.
 //!
 //! ## Backwards compatibility
@@ -24,7 +41,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! niri-ipc = "=25.2.0"
+//! niri-ipc = "=25.5.1"
 //! ```
 //!
 //! ## Features
@@ -409,6 +426,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Center all fully visible columns on the screen.
+    CenterVisibleColumns {},
     /// Focus the workspace below.
     FocusWorkspaceDown {},
     /// Focus the workspace above.
@@ -804,19 +823,19 @@ pub enum Action {
     /// Close the Overview.
     CloseOverview {},
     /// Toggle urgent status of a window.
-    ToggleUrgent {
+    ToggleWindowUrgent {
         /// Id of the window to toggle urgent.
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
     /// Set urgent status of a window.
-    SetUrgent {
+    SetWindowUrgent {
         /// Id of the window to set urgent.
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
     /// Unset urgent status of a window.
-    UnsetUrgent {
+    UnsetWindowUrgent {
         /// Id of the window to unset urgent.
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,

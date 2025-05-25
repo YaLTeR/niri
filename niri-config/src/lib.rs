@@ -1749,6 +1749,7 @@ pub enum Action {
     CenterWindow,
     #[knuffel(skip)]
     CenterWindowById(u64),
+    CenterVisibleColumns,
     FocusWorkspaceDown,
     #[knuffel(skip)]
     FocusWorkspaceDownUnderMouse,
@@ -1887,11 +1888,11 @@ pub enum Action {
     OpenOverview,
     CloseOverview,
     #[knuffel(skip)]
-    ToggleUrgent(u64),
+    ToggleWindowUrgent(u64),
     #[knuffel(skip)]
-    SetUrgent(u64),
+    SetWindowUrgent(u64),
     #[knuffel(skip)]
-    UnsetUrgent(u64),
+    UnsetWindowUrgent(u64),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -1992,6 +1993,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
+            niri_ipc::Action::CenterVisibleColumns {} => Self::CenterVisibleColumns,
             niri_ipc::Action::FocusWorkspaceDown {} => Self::FocusWorkspaceDown,
             niri_ipc::Action::FocusWorkspaceUp {} => Self::FocusWorkspaceUp,
             niri_ipc::Action::FocusWorkspace { reference } => {
@@ -2163,9 +2165,9 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleOverview {} => Self::ToggleOverview,
             niri_ipc::Action::OpenOverview {} => Self::OpenOverview,
             niri_ipc::Action::CloseOverview {} => Self::CloseOverview,
-            niri_ipc::Action::ToggleUrgent { id } => Self::ToggleUrgent(id),
-            niri_ipc::Action::SetUrgent { id } => Self::SetUrgent(id),
-            niri_ipc::Action::UnsetUrgent { id } => Self::UnsetUrgent(id),
+            niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
+            niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
+            niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
         }
     }
 }
@@ -4985,6 +4987,7 @@ mod tests {
                     },
                     geometry_corner_radius: None,
                     place_within_backdrop: None,
+                    baba_is_float: None,
                 },
             ],
             binds: Binds(

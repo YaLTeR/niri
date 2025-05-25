@@ -464,6 +464,7 @@ enum Op {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         id: Option<usize>,
     },
+    CenterVisibleColumns,
     FocusWorkspaceDown,
     FocusWorkspaceUp,
     FocusWorkspace(#[proptest(strategy = "0..=4usize")] usize),
@@ -1068,6 +1069,7 @@ impl Op {
                 let id = id.filter(|id| layout.has_window(id));
                 layout.center_window(id.as_ref());
             }
+            Op::CenterVisibleColumns => layout.center_visible_columns(),
             Op::FocusWorkspaceDown => layout.switch_workspace_down(),
             Op::FocusWorkspaceUp => layout.switch_workspace_up(),
             Op::FocusWorkspace(idx) => layout.switch_workspace(idx),

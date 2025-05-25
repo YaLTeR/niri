@@ -32,8 +32,8 @@ layer-rule {
     }
 
     geometry-corner-radius 12
-
     place-within-backdrop true
+    baba-is-float true
 }
 ```
 
@@ -159,7 +159,7 @@ layer-rule {
 
 #### `place-within-backdrop`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Set to `true` to place the surface into the backdrop visible in the [Overview](./Overview.md) and between workspaces.
 
@@ -172,5 +172,22 @@ layer-rule {
     match namespace="^wallpaper$"
 
     place-within-backdrop true
+}
+```
+
+#### `baba-is-float`
+
+<sup>Since: 25.05</sup>
+
+Make your layer surfaces FLOAT up and down.
+
+This is a natural extension of the [April Fools' 2025 feature](./Configuration:-Window-Rules.md#baba-is-float).
+
+```kdl
+// Make fuzzel FLOAT.
+layer-rule {
+    match namespace="^launcher$"
+
+    baba-is-float true
 }
 ```

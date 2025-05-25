@@ -17,6 +17,8 @@ pub struct LayerRule {
     pub geometry_corner_radius: Option<CornerRadius>,
     #[knuffel(child, unwrap(argument))]
     pub place_within_backdrop: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub baba_is_float: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

@@ -100,7 +100,7 @@ pub struct ResolvedWindowRules {
     /// Whether to clip this window to its geometry, including the corner radius.
     pub clip_to_geometry: Option<bool>,
 
-    /// Whether bob this window up and down.
+    /// Whether to bob this window up and down.
     pub baba_is_float: Option<bool>,
 
     /// Whether to block out this window from certain render targets.
