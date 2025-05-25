@@ -1,29 +1,31 @@
 ### Overview
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 The Overview is a zoomed-out view of your workspaces and windows.
 It lets you see what's going on at a glance, navigate, and drag windows around.
 
-Open it with the `toggle-overview` bind, via the top-left hot corner, or via a touchpad four-finger swipe up.
-While in the overview, all keyboard binds keep working, while pointing devices get easier:
+https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995
 
-- Mouse: left click for interactive-move, right click to scroll a workspace left/right (no holding Mod required).
+Open it with the `toggle-overview` bind, via the top-left hot corner, or using a touchpad four-finger swipe up.
+While in the overview, all keyboard shortcuts keep working, while pointing devices get easier:
+
+- Mouse: left click and drag windows to move them, right click and drag to scroll workspaces left/right, scroll to switch workspaces (no holding Mod required).
 - Touchpad: two-finger scrolling that matches the normal three-finger gestures.
-- Touchscreen: one-finger scrolling, or one-finger long press for interactive move.
+- Touchscreen: one-finger scrolling, or one-finger long press to move a window.
 
 > [!TIP]
 > The overview needs to draw a background under every workspace.
-> So, layer-shell surfaces work this way: the *background* and *bottom* layers zoom out and remain on the workspaces, while the *top* and *overlay* layers remain on top of the overview.
+> So, layer-shell surfaces work this way: the *background* and *bottom* layers zoom out together with the workspaces, while the *top* and *overlay* layers remain on top of the overview.
 >
 > Put your bar on the *top* layer.
 
-Drag-and-drop will scroll the workspaces up/down in the overview, and will activate a workspace if you hold it above for a moment.
+Drag-and-drop will scroll the workspaces up/down in the overview, and will activate a workspace when holding it for a moment.
 Combined with the hot corner, this lets you do a mouse-only DnD across workspaces.
 
 https://github.com/user-attachments/assets/5f09c5b7-ff40-462b-8b9c-f1b8073a2cbb
 
-You can also drag-and-drop a window to a new workspace above, below, or in-between existing workspaces.
+You can also drag-and-drop a window to a new workspace above, below, or between existing workspaces.
 
 https://github.com/user-attachments/assets/b76d5349-aa20-4889-ab90-0a51554c789d
 

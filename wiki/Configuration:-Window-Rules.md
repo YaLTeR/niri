@@ -289,7 +289,7 @@ Example:
 
 #### `is-urgent`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Can be `true` or `false`.
 Matches windows that request the user's attention.
@@ -847,7 +847,7 @@ window-rule {
 
 #### `tiled-state`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Informs the window that it is tiled.
 Usually, windows will react by becoming rectangular and hiding their client-side shadows.

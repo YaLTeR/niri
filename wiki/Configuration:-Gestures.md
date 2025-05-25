@@ -54,7 +54,7 @@ gestures {
 
 ### `dnd-edge-workspace-switch`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Scroll the workspaces up/down when moving the mouse cursor against a monitor edge during drag-and-drop (DnD) while in the overview.
 Also works on a touchscreen.
@@ -79,7 +79,7 @@ gestures {
 
 ### `hot-corners`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Put your mouse at the very top-left corner of a monitor to toggle the overview.
 Also works during drag-and-dropping something.

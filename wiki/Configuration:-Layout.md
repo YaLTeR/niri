@@ -382,7 +382,7 @@ Set `on` to enable the shadow.
 Setting `softness 0` will give you hard shadows.
 
 `spread` is the distance to expand the window rectangle in logical pixels, same as CSS box-shadow spread.
-<sup>Since: next release</sup> Spread can be negative.
+<sup>Since: 25.05</sup> Spread can be negative.
 
 `offset` moves the shadow relative to the window in logical pixels, same as CSS box-shadow offset.
 For example, `offset x=2 y=2` will move the shadow 2 logical pixels downwards and to the right.
@@ -539,7 +539,7 @@ layout {
 
 ### `background-color`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Set the default background color that niri draws for workspaces.
 This is visible when you're not using any background tools like swaybg.

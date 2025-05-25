@@ -159,7 +159,7 @@ layer-rule {
 
 #### `place-within-backdrop`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Set to `true` to place the surface into the backdrop visible in the [Overview](./Overview.md) and between workspaces.
 
@@ -177,7 +177,7 @@ layer-rule {
 
 #### `baba-is-float`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Make your layer surfaces FLOAT up and down.
 
