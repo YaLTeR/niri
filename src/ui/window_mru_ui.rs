@@ -37,6 +37,7 @@ use smithay::input::keyboard::Keysym;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 
+use crate::input::PRESET_BINDINGS;
 use crate::layout::focus_ring::{FocusRing, FocusRingRenderElement};
 use crate::layout::LayoutElement;
 use crate::niri::Niri;
@@ -50,10 +51,10 @@ use crate::utils::{output_size, with_toplevel_role};
 use crate::window::mapped::MappedId;
 use crate::window::{window_matches, Mapped, WindowRef};
 
-// Factor by which to scale original window for its thumbnail
+// Factor by which to scale window thumbnails
 const THUMBNAIL_SCALE: f64 = 2.;
 
-// Space to keep between sides of the output and first thumbnail, or between thumbnails
+// Space to keep between sides of the output and first/last thumbnail, or between thumbnails
 const SPACING: f64 = 50.;
 
 // Corner radius on focus ring
@@ -82,7 +83,7 @@ pub struct WindowMru {
     /// Filter used to generte the window list.
     filter: MruFilter,
 
-    /// Traversal direction when the UI was originally opened
+    /// Traversal direction when the WindowMru was created.
     direction: MruDirection,
 }
 
@@ -267,6 +268,7 @@ impl WindowMruUi {
                     .binds
                     .0
                     .iter()
+                    .chain(PRESET_BINDINGS.iter())
                     .filter(|b| matches!(&b.action, Action::MruAdvance(..)))
                     .chain(MRU_UI_BINDINGS.iter())
                     .cloned()
@@ -321,8 +323,8 @@ impl WindowMruUi {
         else {
             return;
         };
-        // try to set the `current` field in the new wmru to match the one
-        // from the previous mru if at all possible
+        // Try to set the `current` field in the new wmru to match the one
+        // from the previous mru.
         if let Some(current_selection) = wmru.ids.get(wmru.current) {
             if let Some(current_in_new) = wmru
                 .ids
@@ -334,10 +336,11 @@ impl WindowMruUi {
         }
 
         // If the current Mru selection is present in both the previous Mru list
-        // and the replacement, then we should advance in the requested direction.
+        // and in the replacement list, then we should advance in the requested
+        // direction to avoid current staying unchanged after a user action.
         let should_advance = wmru.ids.get(wmru.current) == prev_wmru.ids.get(prev_wmru.current);
 
-        // Keep textures from the TextureCache that match window Ids from
+        // Retain textures from the TextureCache that match window Ids from
         // the updated MruList.
         let mut start_pos = 0;
         textures.replace_with(|v| TextureCache {
@@ -360,10 +363,10 @@ impl WindowMruUi {
                 .collect(),
         });
 
-        // replace the UI's WindowMru
+        // Replace the UI's WindowMru.
         std::mem::swap(&mut wmru, prev_wmru);
 
-        // and advance in the requested direction
+        // And (possibly) advance in the requested direction.
         if should_advance {
             self.advance(dir);
         }

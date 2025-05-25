@@ -4033,7 +4033,7 @@ fn find_bind(
 /// Preset bindings can be overridden in the user configuration.
 /// The reason for treating them differently is that their key + modifier
 /// combination needs to be frozen for some reason.
-const PRESET_BINDINGS: &[Bind] = &[
+pub const PRESET_BINDINGS: &[Bind] = &[
     // The following two bindings cover MRU window navigation. They are
     // preset because the `Alt` key is treated specially in `on_keyboard`.
     // When it is released the active MRU traversal is considered to have
