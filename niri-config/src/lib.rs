@@ -1652,14 +1652,14 @@ pub struct SwitchAction {
     pub spawn: Vec<String>,
 }
 
-#[derive(knuffel::Decode, Clone, Copy, Debug, Default, PartialEq)]
+#[derive(knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
 pub enum MruDirection {
     #[default]
     Forward, // From most recently used to least
     Backward, // From least recently used to most
 }
 
-#[derive(knuffel::Decode, Clone, Copy, Debug, Default, PartialEq)]
+#[derive(knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
 pub enum MruScope {
     /// Consider all windows
     #[default]
@@ -1670,7 +1670,7 @@ pub enum MruScope {
     Workspace,
 }
 
-#[derive(knuffel::Decode, Clone, Copy, Debug, Default, PartialEq)]
+#[derive(knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
 pub enum MruFilter {
     /// No filter
     #[default]
@@ -1925,7 +1925,11 @@ pub enum Action {
     #[knuffel(skip)]
     UnsetUrgent(u64),
 
-    MruAdvance(MruDirection, MruScope, MruFilter),
+    MruAdvance(
+        #[knuffel(argument)] MruDirection,
+        #[knuffel(argument)] MruScope,
+        #[knuffel(argument)] MruFilter,
+    ),
     #[knuffel(skip)]
     MruClose,
     #[knuffel(skip)]

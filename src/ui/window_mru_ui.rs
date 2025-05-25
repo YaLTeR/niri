@@ -3,9 +3,11 @@ Todo:
 
 - Add test cases
 - Animation. Likely to need a position cache as for Tiles
-- Transition when wrapping around during Mru navigation
+- Transition when wrapping around during Mru navigation(?)
 - support clicking on the target thumbnail
 - add title of the current Mru selection under the thumbnail
+x "advance" bindings for the MruUI should be copied over from the general
+  bindings for the same action.
 x support only considering windows from current output/workspace
 x support only considering windows from the currently selected application
 x support switching navigation modes while the Mru UI is open
@@ -20,12 +22,12 @@ x Transition when opening/closing MruUI
 use std::cell::RefCell;
 use std::cmp::{self};
 use std::iter;
-use std::ops::ControlFlow;
+use std::ops::{ControlFlow, Deref};
 use std::str::FromStr;
 use std::time::Instant;
 
 use niri_config::{
-    Action, Bind, Key, Match, Modifiers, MruDirection, MruFilter, MruScope, RegexEq, Trigger,
+    Action, Bind, Binds, Key, Match, Modifiers, MruDirection, MruFilter, MruScope, RegexEq, Trigger,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::Kind;
@@ -162,6 +164,7 @@ pub enum WindowMruUi {
         wmru: WindowMru,
         textures: RefCell<TextureCache>,
         focus_ring: Box<RefCell<FocusRing>>,
+        binds: Binds,
     },
 }
 
@@ -252,19 +255,36 @@ impl WindowMruUi {
         matches!(self, WindowMruUi::Open { .. })
     }
 
-    pub fn open(&mut self, config: niri_config::FocusRing, wmru: WindowMru) {
+    pub fn open(&mut self, config: impl Deref<Target = niri_config::Config>, wmru: WindowMru) {
         let Self::Closed {} = self else { return };
         let nids = wmru.ids.len();
         *self = Self::Open {
             wmru,
             textures: RefCell::new(TextureCache::with_capacity(nids)),
-            focus_ring: Box::new(RefCell::new(FocusRing::new(config))),
+            focus_ring: Box::new(RefCell::new(FocusRing::new(config.layout.focus_ring))),
+            binds: Binds(
+                config
+                    .binds
+                    .0
+                    .iter()
+                    .filter(|b| matches!(&b.action, Action::MruAdvance(..)))
+                    .chain(MRU_UI_BINDINGS.iter())
+                    .cloned()
+                    .collect(),
+            ),
         };
     }
 
     pub fn close(&mut self) {
         let Self::Open { .. } = self else { return };
         *self = Self::Closed {};
+    }
+
+    pub fn binds(&self) -> &Binds {
+        let Self::Open { ref binds, .. } = self else {
+            panic!("Requested binds on a closed WindowMruUI")
+        };
+        binds
     }
 
     pub fn advance(&mut self, dir: MruDirection) {
@@ -400,6 +420,7 @@ impl WindowMruUi {
             ref wmru,
             ref textures,
             ref focus_ring,
+            ..
         } = self
         else {
             panic!("render_output on a non-open WindowMruUi");
@@ -706,31 +727,6 @@ impl TextureCache {
 /// Because the UI is closed when the Alt key is released, all bindings
 /// have the ALT modifier.
 pub const MRU_UI_BINDINGS: &[Bind] = &[
-    // The first two are the same as those declared in in input::PRESET_BINDINGS
-    Bind {
-        key: Key {
-            trigger: Trigger::Keysym(Keysym::Tab),
-            modifiers: Modifiers::ALT,
-        },
-        action: Action::MruAdvance(MruDirection::Forward, MruScope::All, MruFilter::None),
-        repeat: true,
-        cooldown: None,
-        allow_when_locked: false,
-        allow_inhibiting: true,
-        hotkey_overlay_title: None,
-    },
-    Bind {
-        key: Key {
-            trigger: Trigger::Keysym(Keysym::Tab),
-            modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
-        },
-        action: Action::MruAdvance(MruDirection::Backward, MruScope::All, MruFilter::None),
-        repeat: true,
-        cooldown: None,
-        allow_when_locked: false,
-        allow_inhibiting: true,
-        hotkey_overlay_title: None,
-    },
     // Escape just closes the MRU UI
     Bind {
         key: Key {
@@ -812,31 +808,6 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
             modifiers: Modifiers::ALT,
         },
         action: Action::MruLast,
-        repeat: true,
-        cooldown: None,
-        allow_when_locked: false,
-        allow_inhibiting: true,
-        hotkey_overlay_title: None,
-    },
-    // forward/backward bind actions for AppId navigation
-    Bind {
-        key: Key {
-            trigger: Trigger::Keysym(Keysym::grave),
-            modifiers: Modifiers::ALT,
-        },
-        action: Action::MruAdvance(MruDirection::Forward, MruScope::All, MruFilter::AppId),
-        repeat: true,
-        cooldown: None,
-        allow_when_locked: false,
-        allow_inhibiting: true,
-        hotkey_overlay_title: None,
-    },
-    Bind {
-        key: Key {
-            trigger: Trigger::Keysym(Keysym::grave),
-            modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
-        },
-        action: Action::MruAdvance(MruDirection::Backward, MruScope::All, MruFilter::AppId),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,

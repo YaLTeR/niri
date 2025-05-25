@@ -47,7 +47,7 @@ use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
-use crate::ui::window_mru_ui::{WindowMru, MRU_UI_BINDINGS, MRU_UI_TRANSITION_DELAY};
+use crate::ui::window_mru_ui::{WindowMru, MRU_UI_TRANSITION_DELAY};
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
@@ -409,10 +409,9 @@ impl State {
                 }
 
                 let res = {
-                    let mru_bindings;
+                    // let mru_bindings;
                     let bindings = if this.niri.window_mru_ui.is_open() {
-                        mru_bindings = Binds(MRU_UI_BINDINGS.to_vec());
-                        &mru_bindings
+                        this.niri.window_mru_ui.binds()
                     } else {
                         &this.niri.config.borrow().binds
                     };
@@ -2078,9 +2077,9 @@ impl State {
                     }
                 } else {
                     self.niri.mru_commit();
-                    let config = self.niri.config.borrow().layout.focus_ring;
+                    let config = self.niri.config.borrow();
                     let wmru = WindowMru::new(&self.niri, dir, scope, filter);
-                    self.niri.window_mru_ui.open(config, wmru);
+                    self.niri.window_mru_ui.open(&*config, wmru);
                 }
                 // FIXME: granular
                 self.niri.queue_redraw_all();
