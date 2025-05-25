@@ -608,7 +608,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
     }
 
-    pub fn toggle_window_width(&mut self, id: Option<&W::Id>) {
+    pub fn toggle_window_width<const FORWARDS: bool>(&mut self, id: Option<&W::Id>) {
         let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
             return;
         };
@@ -618,7 +618,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_width_idx {
-            (idx + 1) % self.options.preset_column_widths.len()
+            let len = self.options.preset_column_widths.len();
+            (idx + if FORWARDS { 1 } else { len - 1 }) % len
         } else {
             let current_window = tile.window_expected_or_current_size().w;
             let current_tile = tile.tile_expected_or_current_size().w;
@@ -654,7 +655,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         true
     }
 
-    pub fn toggle_window_height(&mut self, id: Option<&W::Id>) {
+    pub fn toggle_window_height<const FORWARDS: bool>(&mut self, id: Option<&W::Id>) {
         let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
             return;
         };
@@ -664,7 +665,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_height_idx {
-            (idx + 1) % self.options.preset_window_heights.len()
+            let len = self.options.preset_column_widths.len();
+            (idx + if FORWARDS { 1 } else { len - 1 }) % len
         } else {
             let current_window = tile.window_expected_or_current_size().h;
             let current_tile = tile.tile_expected_or_current_size().h;

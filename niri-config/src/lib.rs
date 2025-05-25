@@ -1841,12 +1841,19 @@ pub enum Action {
     #[knuffel(skip)]
     ResetWindowHeightById(u64),
     SwitchPresetColumnWidth,
+    SwitchPresetColumnWidthBack,
     SwitchPresetWindowWidth,
+    SwitchPresetWindowWidthBack,
     #[knuffel(skip)]
     SwitchPresetWindowWidthById(u64),
+    #[knuffel(skip)]
+    SwitchPresetWindowWidthByIdBack(u64),
     SwitchPresetWindowHeight,
+    SwitchPresetWindowHeightBack,
     #[knuffel(skip)]
     SwitchPresetWindowHeightById(u64),
+    #[knuffel(skip)]
+    SwitchPresetWindowHeightByIdBack(u64),
     MaximizeColumn,
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
     ExpandColumnToAvailableWidth,

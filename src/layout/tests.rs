@@ -521,11 +521,20 @@ enum Op {
         activate: bool,
     },
     SwitchPresetColumnWidth,
+    SwitchPresetColumnWidthBack,
     SwitchPresetWindowWidth {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         id: Option<usize>,
     },
+    SwitchPresetWindowWidthBack {
+        #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+        id: Option<usize>,
+    },
     SwitchPresetWindowHeight {
+        #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+        id: Option<usize>,
+    },
+    SwitchPresetWindowHeightBack {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         id: Option<usize>,
     },
@@ -1195,14 +1204,23 @@ impl Op {
 
                 layout.move_workspace_to_output_by_id(old_idx, Some(old_output), output);
             }
-            Op::SwitchPresetColumnWidth => layout.toggle_width(),
+            Op::SwitchPresetColumnWidth => layout.toggle_width::<true>(),
+            Op::SwitchPresetColumnWidthBack => layout.toggle_width::<false>(),
             Op::SwitchPresetWindowWidth { id } => {
                 let id = id.filter(|id| layout.has_window(id));
-                layout.toggle_window_width(id.as_ref());
+                layout.toggle_window_width::<true>(id.as_ref());
+            }
+            Op::SwitchPresetWindowWidthBack { id } => {
+                let id = id.filter(|id| layout.has_window(id));
+                layout.toggle_window_width::<false>(id.as_ref());
             }
             Op::SwitchPresetWindowHeight { id } => {
                 let id = id.filter(|id| layout.has_window(id));
-                layout.toggle_window_height(id.as_ref());
+                layout.toggle_window_height::<true>(id.as_ref());
+            }
+            Op::SwitchPresetWindowHeightBack { id } => {
+                let id = id.filter(|id| layout.has_window(id));
+                layout.toggle_window_height::<false>(id.as_ref());
             }
             Op::MaximizeColumn => layout.toggle_full_width(),
             Op::SetColumnWidth(change) => layout.set_column_width(change),
@@ -3201,7 +3219,7 @@ fn preset_column_width_fixed_correct_with_border() {
     assert_eq!(win.requested_size().unwrap().w, 490);
 
     // However, preset fixed width will still work correctly.
-    layout.toggle_width();
+    layout.toggle_width::<true>();
     let win = layout.windows().next().unwrap().1;
     assert_eq!(win.requested_size().unwrap().w, 500);
 }
