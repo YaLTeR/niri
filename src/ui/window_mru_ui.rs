@@ -8,7 +8,7 @@ Todo:
 - add title of the current Mru selection under the thumbnail
 x support only considering windows from current output/workspace
 x support only considering windows from the currently selected application
-- support switching navigation modes while the Mru UI is open
+x support switching navigation modes while the Mru UI is open
 x Unfocus the current Tile while the MruUi is up and refocus as necessary when
   the UI is closed.
 x Keybindings in the MruUi, e.g. Close window, Quit, Focus selected, prev, next
@@ -69,61 +69,72 @@ pub const MRU_UI_TRANSITION_DELAY: u16 = 20;
 #[derive(Debug)]
 pub struct WindowMru {
     /// List of window ids to be traversed in MRU order.
-    ids: Vec<MappedId>,
+    ids: Vec<(MappedId, Option<Instant>)>,
 
     /// Current index in the MRU traversal.
     current: usize,
+
+    /// Scope used to generate the window list.
+    scope: MruScope,
+
+    /// Filter used to generte the window list.
+    filter: MruFilter,
+
+    /// Traversal direction when the UI was originally opened
+    direction: MruDirection,
 }
 
 impl WindowMru {
-    pub fn new(
-        niri: &Niri,
-        dir: MruDirection,
-        scope: impl ToWindowIterator,
-        filter: impl ToMatch,
-    ) -> Self {
+    pub fn new(niri: &Niri, direction: MruDirection, scope: MruScope, filter: MruFilter) -> Self {
         // todo: maybe using a `Match` is overkill here and a plain app_id
         // compare would suffice
         let window_match = filter.to_match(niri);
 
         // Build a list of MappedId from the requested scope sorted by timestamp
-        let mut ts_ids: Vec<(Option<Instant>, MappedId)> = scope
+        let mut ids: Vec<(MappedId, Option<Instant>)> = scope
             .windows(niri)
             .filter(|w| {
                 window_match.as_ref().is_none_or(|m| {
                     with_toplevel_role(w.toplevel(), |r| window_matches(WindowRef::Mapped(w), r, m))
                 })
             })
-            .map(|w| (w.get_focus_timestamp(), w.id()))
+            .map(|w| (w.id(), w.get_focus_timestamp()))
             .collect();
-        ts_ids.sort_by(|(t1, _), (t2, _)| match (t1, t2) {
+        ids.sort_by(|(_, t1), (_, t2)| match (t1, t2) {
             (None, None) => cmp::Ordering::Equal,
             (Some(_), None) => cmp::Ordering::Less,
             (None, Some(_)) => cmp::Ordering::Greater,
             (Some(t1), Some(t2)) => t1.cmp(t2).reverse(),
         });
 
-        let mut ts_ids_it = ts_ids.into_iter().map(|(_, id)| id);
-
-        // If moving backwards through the list, the first element is moved to the end of the list
-        let first = match dir {
-            MruDirection::Forward => None,
-            MruDirection::Backward => ts_ids_it.next(),
-        };
-        let mut ids: Vec<MappedId> = ts_ids_it.collect();
-        if let Some(f) = first {
-            ids.push(f)
+        if direction == MruDirection::Backward && !ids.is_empty() {
+            // If moving backwards through the list, the first element is moved to the end of the
+            // list
+            let first = ids.remove(0);
+            ids.push(first);
         }
 
-        match dir {
+        match direction {
             MruDirection::Forward => {
-                let mut res = Self { ids, current: 0 };
+                let mut res = Self {
+                    ids,
+                    current: 0,
+                    scope,
+                    filter,
+                    direction,
+                };
                 res.forward();
                 res
             }
             MruDirection::Backward => {
                 let current = ids.len().saturating_sub(1);
-                let mut res = Self { ids, current };
+                let mut res = Self {
+                    ids,
+                    current,
+                    scope,
+                    filter,
+                    direction,
+                };
                 res.backward();
                 res
             }
@@ -163,14 +174,21 @@ impl ToMatch for MruFilter {
         match self {
             MruFilter::None => None,
             MruFilter::AppId => {
-                let current_app_id = {
-                    let toplevel = niri.layout.active_workspace()?.active_window()?.toplevel();
-
-                    with_toplevel_role(toplevel, |r| r.app_id.clone())
-                }?;
+                let app_id = {
+                    if niri.window_mru_ui.is_open() {
+                        // When the MRU UI is already open, use the currently
+                        // selected MRU thumbnail's app_id for the match
+                        let id = niri.window_mru_ui.current_window_id()?;
+                        let w = niri.find_window_by_id(id)?;
+                        with_toplevel_role(w.toplevel()?, |r| r.app_id.clone())
+                    } else {
+                        let toplevel = niri.layout.active_workspace()?.active_window()?.toplevel();
+                        with_toplevel_role(toplevel, |r| r.app_id.clone())
+                    }?
+                };
 
                 Some(Match {
-                    app_id: Some(RegexEq::from_str(&format!("^{}$", current_app_id)).ok()?),
+                    app_id: Some(RegexEq::from_str(&format!("^{}$", app_id)).ok()?),
                     ..Default::default()
                 })
             }
@@ -249,13 +267,81 @@ impl WindowMruUi {
         *self = Self::Closed {};
     }
 
-    pub fn advance(&mut self, dir: MruDirection, _scope: MruScope, _filter: MruFilter) {
+    pub fn advance(&mut self, dir: MruDirection) {
         let Self::Open { wmru, .. } = self else {
             return;
         };
         match dir {
             MruDirection::Forward => wmru.forward(),
             MruDirection::Backward => wmru.backward(),
+        }
+    }
+
+    pub fn derive_new_mru_list(
+        &self,
+        niri: &Niri,
+        scope: MruScope,
+        filter: MruFilter,
+    ) -> Option<WindowMru> {
+        let Self::Open { wmru, .. } = self else {
+            return None;
+        };
+        if wmru.scope == scope && wmru.filter == filter {
+            return None;
+        }
+        Some(WindowMru::new(niri, wmru.direction, scope, filter))
+    }
+
+    pub fn update_mru_list(&mut self, dir: MruDirection, mut wmru: WindowMru) {
+        let Self::Open {
+            wmru: ref mut prev_wmru,
+            textures,
+            ..
+        } = self
+        else {
+            return;
+        };
+        // try to set the `current` field in the new wmru to match the one
+        // from the previous mru if at all possible
+        if let Some(current_selection) = wmru.ids.get(wmru.current) {
+            if let Some(current_in_new) = wmru
+                .ids
+                .iter()
+                .position(|(i, t)| *i == current_selection.0 || *t <= current_selection.1)
+            {
+                wmru.current = current_in_new
+            }
+        }
+
+        let should_advance = wmru.ids.get(wmru.current) == prev_wmru.ids.get(prev_wmru.current);
+
+        // Keep textures from the TextureCache that match window Ids from
+        // the updated MruList.
+        let mut start_pos = 0;
+        textures.replace_with(|v| TextureCache {
+            textures: wmru
+                .ids
+                .iter()
+                .map(|(id, _)| {
+                    prev_wmru
+                        .ids
+                        .iter()
+                        .skip(start_pos)
+                        .position(|(pid, _)| *id == *pid)
+                        .map(|index| {
+                            start_pos = index;
+                            v.textures[index].take()
+                        })?
+                })
+                .collect(),
+        });
+
+        // replace the UI's WindowMru
+        std::mem::swap(&mut wmru, prev_wmru);
+
+        // and advance in the requested direction
+        if should_advance {
+            self.advance(dir);
         }
     }
 
@@ -280,7 +366,7 @@ impl WindowMruUi {
         if wmru.ids.is_empty() {
             None
         } else {
-            wmru.ids.get(wmru.current).copied()
+            wmru.ids.get(wmru.current).map(|(m, _)| m).copied()
         }
     }
 
@@ -288,7 +374,7 @@ impl WindowMruUi {
         let Self::Open { wmru, textures, .. } = self else {
             return;
         };
-        if let Some(idx) = wmru.ids.iter().position(|v| *v == id) {
+        if let Some(idx) = wmru.ids.iter().position(|v| v.0 == id) {
             wmru.ids.remove(idx);
             if wmru.current >= wmru.ids.len() {
                 wmru.current = wmru.current.saturating_sub(1);
@@ -553,7 +639,7 @@ impl TextureCache {
         index: usize,
     ) -> Option<&Thumbnail> {
         if self.textures[index].is_none() {
-            let id = wmru.ids[index];
+            let id = wmru.ids[index].0;
             self.textures[index] = niri.layout.windows().find_map(|(_, mapped)| {
                 if mapped.id() != id {
                     return None;

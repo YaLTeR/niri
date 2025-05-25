@@ -2062,7 +2062,20 @@ impl State {
             }
             Action::MruAdvance(dir, scope, filter) => {
                 if self.niri.window_mru_ui.is_open() {
-                    self.niri.window_mru_ui.advance(dir, scope, filter);
+                    if let Some(wmru) = self
+                        .niri
+                        .window_mru_ui
+                        .derive_new_mru_list(&self.niri, scope, filter)
+                    {
+                        // Traversal configuration changed while the UI was open.
+                        // The wmru list needs to be refreshed (this can't be done directly
+                        // using a mut call to window_mru_ui because we would need to also pass
+                        // in a ref to niri, so the process is broken down into two steps:
+                        // 1. generate a new WindowMru 2. pass that into the WindowMruUi).
+                        self.niri.window_mru_ui.update_mru_list(dir, wmru);
+                    } else {
+                        self.niri.window_mru_ui.advance(dir);
+                    }
                 } else {
                     self.niri.mru_commit();
                     let config = self.niri.config.borrow().layout.focus_ring;
