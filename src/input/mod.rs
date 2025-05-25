@@ -774,7 +774,9 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveColumnLeftOrToMonitorLeft => {
-                if let Some(output) = self.niri.output_left() {
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_left();
+                } if let Some(output) = self.niri.output_left() {
                     if self.niri.layout.move_column_left_or_to_output(&output)
                         && !self.maybe_warp_cursor_to_focus_centered()
                     {
@@ -791,7 +793,9 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveColumnRightOrToMonitorRight => {
-                if let Some(output) = self.niri.output_right() {
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_right();
+                } else if let Some(output) = self.niri.output_right() {
                     if self.niri.layout.move_column_right_or_to_output(&output)
                         && !self.maybe_warp_cursor_to_focus_centered()
                     {
@@ -830,14 +834,22 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowDownOrToWorkspaceDown => {
-                self.niri.layout.move_down_or_to_workspace_down();
-                self.maybe_warp_cursor_to_focus();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_down();
+                } else {
+                    self.niri.layout.move_down_or_to_workspace_down();
+                    self.maybe_warp_cursor_to_focus();
+                }
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowUpOrToWorkspaceUp => {
-                self.niri.layout.move_up_or_to_workspace_up();
-                self.maybe_warp_cursor_to_focus();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_up();
+                } else {
+                    self.niri.layout.move_up_or_to_workspace_up();
+                    self.maybe_warp_cursor_to_focus();
+                }
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
@@ -4101,9 +4113,13 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::PowerOnMonitors
             // The screenshot UI can handle these.
             | Action::MoveColumnLeft
+            | Action::MoveColumnLeftOrToMonitorLeft
             | Action::MoveColumnRight
+            | Action::MoveColumnRightOrToMonitorRight
             | Action::MoveWindowUp
+            | Action::MoveWindowUpOrToWorkspaceUp
             | Action::MoveWindowDown
+            | Action::MoveWindowDownOrToWorkspaceDown
             | Action::SetWindowWidth(_)
             | Action::SetWindowHeight(_)
             | Action::SetColumnWidth(_)
