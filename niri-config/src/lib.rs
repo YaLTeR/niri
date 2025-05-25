@@ -1888,11 +1888,11 @@ pub enum Action {
     OpenOverview,
     CloseOverview,
     #[knuffel(skip)]
-    ToggleUrgent(u64),
+    ToggleWindowUrgent(u64),
     #[knuffel(skip)]
-    SetUrgent(u64),
+    SetWindowUrgent(u64),
     #[knuffel(skip)]
-    UnsetUrgent(u64),
+    UnsetWindowUrgent(u64),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -2165,9 +2165,9 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleOverview {} => Self::ToggleOverview,
             niri_ipc::Action::OpenOverview {} => Self::OpenOverview,
             niri_ipc::Action::CloseOverview {} => Self::CloseOverview,
-            niri_ipc::Action::ToggleUrgent { id } => Self::ToggleUrgent(id),
-            niri_ipc::Action::SetUrgent { id } => Self::SetUrgent(id),
-            niri_ipc::Action::UnsetUrgent { id } => Self::UnsetUrgent(id),
+            niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
+            niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
+            niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
         }
     }
 }
