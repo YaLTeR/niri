@@ -307,12 +307,14 @@ impl WindowMruUi {
             if let Some(current_in_new) = wmru
                 .ids
                 .iter()
-                .position(|(i, t)| *i == current_selection.0 || *t <= current_selection.1)
+                .position(|(i, t)| *i == current_selection.0 || *t < current_selection.1)
             {
                 wmru.current = current_in_new
             }
         }
 
+        // If the current Mru selection is present in both the previous Mru list
+        // and the replacement, then we should advance in the requested direction.
         let should_advance = wmru.ids.get(wmru.current) == prev_wmru.ids.get(prev_wmru.current);
 
         // Keep textures from the TextureCache that match window Ids from
@@ -322,15 +324,17 @@ impl WindowMruUi {
             textures: wmru
                 .ids
                 .iter()
-                .map(|(id, _)| {
+                .map(|(id, t)| {
                     prev_wmru
                         .ids
                         .iter()
                         .skip(start_pos)
-                        .position(|(pid, _)| *id == *pid)
+                        .take_while(|(_, pt)| t >= pt)
+                        .position(|(pid, _)| id == pid)
                         .map(|index| {
-                            start_pos = index;
-                            v.textures[index].take()
+                            let adjusted_idx = index + start_pos;
+                            start_pos = adjusted_idx;
+                            v.textures[adjusted_idx].take()
                         })?
                 })
                 .collect(),
