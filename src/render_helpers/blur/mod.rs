@@ -291,6 +291,7 @@ pub(super) unsafe fn get_main_buffer_blur(
     supports_instancing: bool,
     // dst is the region that we want blur on
     dst: Rectangle<i32, Physical>,
+    is_tty: bool,
 ) -> Result<GlesTexture, GlesError> {
     let tex_size = fx_buffers
         .effects
@@ -337,25 +338,52 @@ pub(super) unsafe fn get_main_buffer_blur(
         // as the bound fbo size, so blitting uses dst immediatly
         gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, sample_fbo);
 
-        // OpenGL is bottom-left based
-        let fb_height = tex_size.h;
-        let src_x0 = dst_expanded.loc.x;
-        let src_x1 = dst_expanded.loc.x + dst_expanded.size.w;
-        let src_y0 = fb_height - (dst_expanded.loc.y + dst_expanded.size.h);
-        let src_y1 = fb_height - dst_expanded.loc.y;
+        if is_tty {
+            let src_x0 = dst_expanded.loc.x;
+            let src_y0 = dst_expanded.loc.y;
+            let src_x1 = dst_expanded.loc.x + dst_expanded.size.w;
+            let src_y1 = dst_expanded.loc.y + dst_expanded.size.h;
+            let dst_x0 = src_x0;
+            let dst_y0 = src_y0;
+            let dst_x1 = src_x1;
+            let dst_y1 = src_y1;
 
-        gl.BlitFramebuffer(
-            src_x0,
-            src_y0,
-            src_x1,
-            src_y1,
-            src_x0,
-            dst_expanded.loc.y + dst_expanded.size.h,
-            src_x1,
-            dst_expanded.loc.y,
-            ffi::COLOR_BUFFER_BIT,
-            ffi::LINEAR,
-        );
+            gl.BlitFramebuffer(
+                src_x0,
+                src_y0,
+                src_x1,
+                src_y1,
+                dst_x0,
+                dst_y0,
+                dst_x1,
+                dst_y1,
+                ffi::COLOR_BUFFER_BIT,
+                ffi::LINEAR,
+            );
+        } else {
+            let fb_height = tex_size.h;
+
+            let dst_y0 = dst_expanded.loc.y + dst_expanded.size.h;
+            let dst_y1 = dst_expanded.loc.y;
+
+            let src_x0 = dst_expanded.loc.x;
+            let src_x1 = dst_expanded.loc.x + dst_expanded.size.w;
+            let src_y0 = fb_height - dst_y0;
+            let src_y1 = fb_height - dst_y1;
+
+            gl.BlitFramebuffer(
+                src_x0,
+                src_y0,
+                src_x1,
+                src_y1,
+                src_x0,
+                dst_y0,
+                src_x1,
+                dst_y1,
+                ffi::COLOR_BUFFER_BIT,
+                ffi::LINEAR,
+            );
+        }
 
         if gl.GetError() == ffi::INVALID_OPERATION {
             error!("TrueBlur needs GLES3.0 for blitting");
@@ -647,9 +675,7 @@ unsafe fn render_blur_pass_with_gl(
     {
         let mat = projection_matrix;
         // NOTE: We are assured that tex_size != 0, and src.size != too (by damage tracker)
-        let mut tex_mat = build_texture_mat(src, dest, tex_size, Transform::Normal);
-
-        tex_mat *= Mat3::from_cols_array(&[1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0]);
+        let tex_mat = build_texture_mat(src, dest, tex_size, Transform::Normal);
 
         gl.Disable(ffi::BLEND);
 

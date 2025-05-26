@@ -213,6 +213,84 @@ impl Element for BlurRenderElement {
     }
 }
 
+fn draw_true_blur(
+    output: &Output,
+    gles_frame: &mut GlesFrame,
+    config: &Blur,
+    scale: f64,
+    dst: Rectangle<i32, Physical>,
+    corner_radius: f32,
+    src: Rectangle<f64, Buffer>,
+    damage: &[Rectangle<i32, Physical>],
+    opaque_regions: &[Rectangle<i32, Physical>],
+    alpha: f32,
+    is_tty: bool,
+) -> Result<(), GlesError> {
+    let mut fx_buffers = EffectsFramebuffers::get(output);
+    fx_buffers.current_buffer = CurrentBuffer::Normal;
+
+    let shaders = Shaders::get_from_frame(gles_frame).blur.clone();
+    let vbos = RendererData::get_from_frame(gles_frame).vbos;
+    let supports_instancing = gles_frame
+        .capabilities()
+        .contains(&smithay::backend::renderer::gles::Capability::Instancing);
+    let debug = !gles_frame.debug_flags().is_empty();
+    let projection_matrix = glam::Mat3::from_cols_array(gles_frame.projection());
+
+    // Update the blur buffers.
+    // We use gl ffi directly to circumvent some stuff done by smithay
+    let blurred_texture = gles_frame.with_context(|gl| unsafe {
+        super::get_main_buffer_blur(
+            gl,
+            &mut *fx_buffers,
+            &shaders,
+            config.clone(),
+            projection_matrix,
+            scale as i32,
+            &vbos,
+            debug,
+            supports_instancing,
+            dst,
+            is_tty,
+        )
+    })??;
+
+    let (program, additional_uniforms) = if corner_radius == 0.0 {
+        (None, vec![])
+    } else {
+        let program = Shaders::get_from_frame(gles_frame).blur_finish.clone();
+        (
+            program,
+            vec![
+                Uniform::new(
+                    "geo",
+                    [
+                        dst.loc.x as f32,
+                        dst.loc.y as f32,
+                        dst.size.w as f32,
+                        dst.size.h as f32,
+                    ],
+                ),
+                Uniform::new("alpha", alpha),
+                Uniform::new("noise", config.noise.0 as f32),
+                Uniform::new("corner_radius", corner_radius),
+            ],
+        )
+    };
+
+    gles_frame.render_texture_from_to(
+        &blurred_texture,
+        src,
+        dst,
+        damage,
+        opaque_regions,
+        Transform::Normal,
+        alpha,
+        program.as_ref(),
+        &additional_uniforms,
+    )
+}
+
 impl RenderElement<GlesRenderer> for BlurRenderElement {
     fn draw(
         &self,
@@ -288,70 +366,19 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                 corner_radius,
                 config,
                 ..
-            } => {
-                let mut fx_buffers = EffectsFramebuffers::get(output);
-                fx_buffers.current_buffer = CurrentBuffer::Normal;
-
-                let shaders = Shaders::get_from_frame(gles_frame).blur.clone();
-                let vbos = RendererData::get_from_frame(gles_frame).vbos;
-                let supports_instancing = gles_frame
-                    .capabilities()
-                    .contains(&smithay::backend::renderer::gles::Capability::Instancing);
-                let debug = !gles_frame.debug_flags().is_empty();
-                let projection_matrix = glam::Mat3::from_cols_array(gles_frame.projection());
-
-                // Update the blur buffers.
-                // We use gl ffi directly to circumvent some stuff done by smithay
-                let blurred_texture = gles_frame.with_context(|gl| unsafe {
-                    super::get_main_buffer_blur(
-                        gl,
-                        &mut *fx_buffers,
-                        &shaders,
-                        config.clone(),
-                        projection_matrix,
-                        *scale as i32,
-                        &vbos,
-                        debug,
-                        supports_instancing,
-                        dst,
-                    )
-                })??;
-
-                let (program, additional_uniforms) = if *corner_radius == 0.0 {
-                    (None, vec![])
-                } else {
-                    let program = Shaders::get_from_frame(gles_frame).blur_finish.clone();
-                    (
-                        program,
-                        vec![
-                            Uniform::new(
-                                "geo",
-                                [
-                                    dst.loc.x as f32,
-                                    dst.loc.y as f32,
-                                    dst.size.w as f32,
-                                    dst.size.h as f32,
-                                ],
-                            ),
-                            Uniform::new("alpha", self.alpha()),
-                            Uniform::new("noise", config.noise.0 as f32),
-                            Uniform::new("corner_radius", *corner_radius),
-                        ],
-                    )
-                };
-
-                gles_frame.render_texture_from_to(
-                    &blurred_texture,
-                    src,
-                    dst,
-                    damage,
-                    opaque_regions,
-                    Transform::Normal,
-                    self.alpha(),
-                    program.as_ref(),
-                    &additional_uniforms,
-                )
-            }
+            } => draw_true_blur(
+                output,
+                gles_frame,
+                config,
+                *scale,
+                dst,
+                *corner_radius,
+                src,
+                damage,
+                opaque_regions,
+                self.alpha(),
+                false,
+            ),
         }
     }
 
@@ -369,14 +396,40 @@ impl<'render> RenderElement<TtyRenderer<'render>> for BlurRenderElement {
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
-        <BlurRenderElement as RenderElement<GlesRenderer>>::draw(
-            self,
-            frame.as_gles_frame(),
-            src,
-            dst,
-            damage,
-            opaque_regions,
-        )?;
+        match self {
+            Self::Optimized { .. } => {
+                <BlurRenderElement as RenderElement<GlesRenderer>>::draw(
+                    self,
+                    frame.as_gles_frame(),
+                    src,
+                    dst,
+                    damage,
+                    opaque_regions,
+                )?;
+            }
+
+            Self::TrueBlur {
+                output,
+                scale,
+                corner_radius,
+                config,
+                ..
+            } => {
+                draw_true_blur(
+                    output,
+                    frame.as_gles_frame(),
+                    config,
+                    *scale,
+                    dst,
+                    *corner_radius,
+                    src,
+                    damage,
+                    opaque_regions,
+                    self.alpha(),
+                    true,
+                )?;
+            }
+        }
 
         Ok(())
     }
