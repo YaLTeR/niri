@@ -2258,7 +2258,7 @@ dependencies = [
 
 [[package]]
 name = "niri"
-version = "25.5.0"
+version = "25.5.1"
 dependencies = [
  "anyhow",
  "approx 0.5.1",
@@ -2315,7 +2315,7 @@ dependencies = [
 
 [[package]]
 name = "niri-config"
-version = "25.5.0"
+version = "25.5.1"
 dependencies = [
  "bitflags 2.9.1",
  "csscolorparser",
@@ -2332,7 +2332,7 @@ dependencies = [
 
 [[package]]
 name = "niri-ipc"
-version = "25.5.0"
+version = "25.5.1"
 dependencies = [
  "clap",
  "schemars",
@@ -2342,7 +2342,7 @@ dependencies = [
 
 [[package]]
 name = "niri-visual-tests"
-version = "25.5.0"
+version = "25.5.1"
 dependencies = [
  "anyhow",
  "gtk4",

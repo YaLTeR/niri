@@ -175,8 +175,6 @@ Set the `numlock` flag to turn on Num Lock automatically at startup.
 
 You might want to disable (comment out) `numlock` if you're using a laptop with a keyboard that overlays Num Lock keys on top of regular keys.
 
-Note that there's a [known issue](https://github.com/YaLTeR/niri/issues/1501) with this setting: Num Lock only turns on after you press some modifier key (Super, Alt, etc.).
-
 ```kdl
 input {
     keyboard {

@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "25.5.0"
+version = "25.5.1"
 description = "A scrollable-tiling Wayland compositor"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -71,8 +71,8 @@ keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.172"
 libdisplay-info = "0.2.2"
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_debug"] }
-niri-config = { version = "25.5.0", path = "niri-config" }
-niri-ipc = { version = "25.5.0", path = "niri-ipc", features = ["clap"] }
+niri-config = { version = "25.5.1", path = "niri-config" }
+niri-ipc = { version = "25.5.1", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.0.0"
 pango = { version = "0.20.10", features = ["v1_44"] }
 pangocairo = "0.20.10"

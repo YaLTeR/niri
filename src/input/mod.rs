@@ -1982,7 +1982,7 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
-            Action::ToggleUrgent(id) => {
+            Action::ToggleWindowUrgent(id) => {
                 let window = self
                     .niri
                     .layout
@@ -1994,7 +1994,7 @@ impl State {
                 }
                 self.niri.queue_redraw_all();
             }
-            Action::SetUrgent(id) => {
+            Action::SetWindowUrgent(id) => {
                 let window = self
                     .niri
                     .layout
@@ -2005,7 +2005,7 @@ impl State {
                 }
                 self.niri.queue_redraw_all();
             }
-            Action::UnsetUrgent(id) => {
+            Action::UnsetWindowUrgent(id) => {
                 let window = self
                     .niri
                     .layout
