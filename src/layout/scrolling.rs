@@ -3,6 +3,7 @@ use std::iter::{self, zip};
 use std::rc::Rc;
 use std::time::Duration;
 
+use log::Log;
 use niri_config::{CenterFocusedColumn, PresetSize, Struts};
 use niri_ipc::{ColumnDisplay, SizeChange};
 use ordered_float::NotNan;
@@ -531,8 +532,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let target_u = target_u.unwrap_or_else(|| self.target_view_pos());
-        let working_area_loc = self.orientation.point_to_uv(self.working_area.loc);
-        let working_area_size = self.orientation.size_to_uv(self.working_area.size);
+        let working_area_loc = self.working_area_loc_uv();
+        let working_area_size = self.working_area_size_uv();
 
         let new_offset = compute_new_view_offset(
             target_u + working_area_loc.u,
@@ -558,8 +559,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         // Columns wider than the view are left-aligned (the fit code can deal with that).
-        let working_area_loc = self.orientation.point_to_uv(self.working_area.loc);
-        let working_area_size = self.orientation.size_to_uv(self.working_area.size);
+        let working_area_loc = self.working_area_loc_uv();
+        let working_area_size = self.working_area_size_uv();
 
         if working_area_size.u <= width {
             return self.compute_new_view_offset_fit(target_u, col_u, width, is_fullscreen);
@@ -642,7 +643,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 } + UCoord::new(self.options.gaps * 2.);
 
                 // If it fits together, do a normal animation, otherwise center the new column.
-                if total_width <= self.orientation.size_to_uv(self.working_area.size).u {
+                if total_width <= self.working_area_size_uv().u {
                     self.compute_new_view_offset_for_column_fit(target_u, idx)
                 } else {
                     self.compute_new_view_offset_for_column_centered(target_u, idx)
@@ -1307,8 +1308,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let offset = if centered {
                     // FIXME: when view_offset becomes fractional, this can be made additive too.
 
-                    let working_area_size = self.orientation.size_to_uv(self.working_area.size);
-                    let working_area_loc = self.orientation.point_to_uv(self.working_area.loc);
+                    let working_area_size = self.working_area_size_uv();
+                    let working_area_loc = self.working_area_loc_uv();
 
                     let new_offset = -(working_area_size.u - width) / 2. - working_area_loc.u;
                     new_offset - self.view_offset.target()
@@ -1374,8 +1375,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let new_col_u = self.column_u(column_idx);
         let from_view_offset = target_u - new_col_u;
 
-        (from_view_offset - new_view_offset).abs()
-            / self.orientation.size_to_uv(self.working_area.size).u
+        (from_view_offset - new_view_offset).abs() / self.working_area_size_uv().u
     }
 
     pub fn activate_window(&mut self, window: &W::Id) -> bool {
@@ -2203,8 +2203,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Consider the end of an ongoing animation because that's what compute to fit does too.
         let view_u = self.target_view_pos();
-        let working_u = self.orientation.point_to_uv(self.working_area.loc).u;
-        let working_width = self.orientation.size_to_uv(self.working_area.size).u;
+        let working_u = self.working_area_loc_uv().u;
+        let working_width = self.working_area_size_uv().u;
 
         // Count all columns that are fully visible inside the working area.
         let mut width_taken = UCoord::zero();
@@ -2389,13 +2389,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 if column_index == 0 || column_index == self.columns.len() {
                     let size = UVPair::from((
                         UCoord::new(300.),
-                        self.orientation.size_to_uv(self.working_area.size).v
-                            - VCoord::new(self.options.gaps * 2.),
+                        self.working_area_size_uv().v - VCoord::new(self.options.gaps * 2.),
                     ));
                     let mut loc = UVPair::from((
                         self.column_u(column_index),
-                        self.orientation.point_to_uv(self.working_area.loc).v
-                            + VCoord::new(self.options.gaps),
+                        self.working_area_loc_uv().v + VCoord::new(self.options.gaps),
                     ));
                     if column_index == 0 && !self.columns.is_empty() {
                         loc.u -= size.u + UCoord::new(self.options.gaps);
@@ -2407,15 +2405,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 } else {
                     let size = UVPair::from((
                         UCoord::new(300.),
-                        self.orientation.size_to_uv(self.working_area.size).v
-                            - VCoord::new(self.options.gaps * 2.),
+                        self.working_area_size_uv().v - VCoord::new(self.options.gaps * 2.),
                     ));
                     let loc = UVPair::from((
                         self.column_u(column_index)
                             - size.u / 2.
                             - UCoord::new(self.options.gaps / 2.),
-                        self.orientation.point_to_uv(self.working_area.loc).v
-                            + VCoord::new(self.options.gaps),
+                        self.working_area_loc_uv().v + VCoord::new(self.options.gaps),
                     ));
                     (loc, size)
                 }
@@ -2710,8 +2706,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Consider the end of an ongoing animation because that's what compute to fit does too.
         let view_u = self.target_view_pos();
-        let working_u = self.orientation.point_to_uv(self.working_area.loc).u;
-        let working_width = self.orientation.size_to_uv(self.working_area.size).u;
+        let working_u = self.working_area_loc_uv().u;
+        let working_width = self.working_area_size_uv().u;
 
         // Count all columns that are fully visible inside the working area.
         let mut width_taken = UCoord::zero();
@@ -3180,9 +3176,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let mut snapping_points = Vec::new();
 
-        let working_area_loc = self.orientation.point_to_uv(self.working_area.loc);
-        let working_area_size = self.orientation.size_to_uv(self.working_area.size);
-        let view_size = self.orientation.size_to_uv(self.view_size);
+        let working_area_loc = self.working_area_loc_uv();
+        let working_area_size = self.working_area_size_uv();
+        let view_size = self.view_size_uv();
         let left_strut = working_area_loc.u;
         let right_strut = view_size.u - working_area_size.u - working_area_loc.u;
 
@@ -3348,19 +3344,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     let col_width = col.width();
 
                     if col.is_fullscreen {
-                        if target_snap.view_pos + self.orientation.size_to_uv(self.view_size).u
-                            < col_u + col_width
-                        {
+                        if target_snap.view_pos + self.view_size_uv().u < col_u + col_width {
                             break;
                         }
                     } else {
-                        let padding = ((self.orientation.size_to_uv(self.working_area.size).u
-                            - col_width)
-                            / 2.)
+                        let padding = ((self.working_area_size_uv().u - col_width) / 2.)
                             .clamp(UCoord::zero(), UCoord::new(self.options.gaps));
-                        if target_snap.view_pos
-                            + left_strut
-                            + self.orientation.size_to_uv(self.working_area.size).u
+                        if target_snap.view_pos + left_strut + self.working_area_size_uv().u
                             < col_u + col_width + padding
                         {
                             break;
@@ -3380,9 +3370,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                             break;
                         }
                     } else {
-                        let padding =
-                            ((self.orientation.size_to_uv(self.working_area.size).u - col_w) / 2.)
-                                .clamp(UCoord::zero(), UCoord::new(self.options.gaps));
+                        let padding = ((self.working_area_size_uv().u - col_w) / 2.)
+                            .clamp(UCoord::zero(), UCoord::new(self.options.gaps));
                         if col_x - padding < target_snap.view_pos + left_strut {
                             break;
                         }
@@ -3717,6 +3706,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 "interactive resize window must be present in the layout"
             );
         }
+    }
+
+    pub fn view_size_uv(&self) -> UVPair<f64, Logical> {
+        self.orientation.size_to_uv(self.view_size)
+    }
+
+    pub fn working_area_loc_uv(&self) -> UVPair<f64, Logical> {
+        self.orientation.point_to_uv(self.working_area.loc)
+    }
+
+    pub fn working_area_size_uv(&self) -> UVPair<f64, Logical> {
+        self.orientation.size_to_uv(self.working_area.size)
     }
 }
 
@@ -4174,7 +4175,7 @@ impl<W: LayoutElement> Column<W> {
         resolve_preset_size(
             preset,
             &self.options,
-            self.orientation.size_to_uv(self.working_area.size).u.get(),
+            self.working_area_size_uv().u.get(),
             self.orientation.size_to_uv(extra).u.get(),
         )
     }
@@ -4184,13 +4185,13 @@ impl<W: LayoutElement> Column<W> {
         resolve_preset_size(
             preset,
             &self.options,
-            self.orientation.size_to_uv(self.working_area.size).v.get(),
+            self.working_area_size_uv().v.get(),
             self.orientation.size_to_uv(extra).v.get(),
         )
     }
 
     fn resolve_column_width(&self, width: ColumnWidth) -> UCoord {
-        let working_size = self.orientation.size_to_uv(self.working_area.size);
+        let working_size = self.working_area_size_uv();
         let gaps = UCoord::new(self.options.gaps);
         let extra = self.orientation.size_to_uv(self.extra_size());
 
@@ -4270,7 +4271,7 @@ impl<W: LayoutElement> Column<W> {
             self.width
         };
 
-        let working_size = self.orientation.size_to_uv(self.working_area.size);
+        let working_size = self.working_area_size_uv();
         let extra_size = self.orientation.size_to_uv(self.extra_size());
 
         let width = self.resolve_column_width(width);
@@ -4686,8 +4687,7 @@ impl<W: LayoutElement> Column<W> {
                 ColumnWidth::Proportion(proportion)
             }
             (ColumnWidth::Fixed(_), SizeChange::AdjustProportion(delta)) => {
-                let full = self.orientation.size_to_uv(self.working_area.size).u
-                    - UCoord::new(self.options.gaps);
+                let full = self.working_area_size_uv().u - UCoord::new(self.options.gaps);
                 let current = if full == UCoord::zero() {
                     1.
                 } else {
@@ -4730,7 +4730,7 @@ impl<W: LayoutElement> Column<W> {
         let current_tile_px =
             VCoord::new(tile.tile_height_for_window_height(current_window_px.get()));
 
-        let working_size = self.orientation.size_to_uv(self.working_area.size).v;
+        let working_size = self.working_area_size_uv().v;
         let gaps = VCoord::new(self.options.gaps);
         let extra_size = self.orientation.size_to_uv(self.extra_size()).v;
         let full = working_size - gaps;
@@ -5247,6 +5247,18 @@ impl<W: LayoutElement> Column<W> {
                  (total height {total_height} > max height {max_height})"
             );
         }
+    }
+
+    pub fn view_size_uv(&self) -> UVPair<f64, Logical> {
+        self.orientation.size_to_uv(self.view_size)
+    }
+
+    pub fn working_area_loc_uv(&self) -> UVPair<f64, Logical> {
+        self.orientation.point_to_uv(self.working_area.loc)
+    }
+
+    pub fn working_area_size_uv(&self) -> UVPair<f64, Logical> {
+        self.orientation.size_to_uv(self.working_area.size)
     }
 }
 
