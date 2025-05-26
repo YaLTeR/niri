@@ -628,18 +628,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     idx.saturating_sub(1)
                 };
 
-                let source_col_x = self.column_u(source_idx);
+                let source_col_u = self.column_u(source_idx);
                 let source_col_width = self.columns[source_idx].width();
 
-                let target_col_x = self.column_u(idx);
+                let target_col_u = self.column_u(idx);
                 let target_col_width = self.columns[idx].width();
 
-                let total_width = if source_col_x < target_col_x {
+                let total_width = if source_col_u < target_col_u {
                     // Source is left from target.
-                    target_col_x - source_col_x + target_col_width
+                    target_col_u - source_col_u + target_col_width
                 } else {
                     // Source is right from target.
-                    source_col_x - target_col_x + source_col_width
+                    source_col_u - target_col_u + source_col_width
                 } + UCoord::new(self.options.gaps * 2.);
 
                 // If it fits together, do a normal animation, otherwise center the new column.
@@ -794,7 +794,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         // Find the closest gap between columns.
-        let (closest_col_idx, col_x) = self
+        let (closest_col_idx, col_u) = self
             .column_us(self.data.iter().copied())
             .enumerate()
             .min_by_key(|(_, col_u)| NotNan::new((*col_u - u).get().abs()).unwrap())
@@ -804,7 +804,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let (col_idx, _) = self
             .column_us(self.data.iter().copied())
             .enumerate()
-            .take_while(|(_, col_x)| *col_x <= u)
+            .take_while(|(_, col_u)| *col_u <= u)
             .last()
             .unwrap_or((0, UCoord::zero()));
 
@@ -842,7 +842,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         };
 
         // Return the closest among the vertical and the horizontal gap.
-        let vert_dist = (col_x - u).get().abs();
+        let vert_dist = (col_u - u).get().abs();
         let hor_dist = (tile_y - v).get().abs();
         if vert_dist <= hor_dist {
             InsertPosition::NewColumn(closest_col_idx)
@@ -1634,8 +1634,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        let current_col_x = self.column_u(self.active_column_idx);
-        let next_col_x = self.column_u(self.active_column_idx + 1);
+        let current_col_u = self.column_u(self.active_column_idx);
+        let next_col_u = self.column_u(self.active_column_idx + 1);
 
         let mut column = self.columns.remove(self.active_column_idx);
         let data = self.data.remove(self.active_column_idx);
@@ -1644,15 +1644,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.data.insert(new_idx, data);
 
         // Preserve the camera position when moving to the left.
-        let view_offset_delta = -self.column_u(self.active_column_idx) + current_col_x;
+        let view_offset_delta = -self.column_u(self.active_column_idx) + current_col_u;
         self.view_offset.offset(view_offset_delta);
 
         // The column we just moved is offset by the difference between its new and old position.
-        let new_col_x = self.column_u(new_idx);
-        self.columns[new_idx].animate_move_from((current_col_x - new_col_x).get());
+        let new_col_u = self.column_u(new_idx);
+        self.columns[new_idx].animate_move_from((current_col_u - new_col_u).get());
 
         // All columns in between moved by the width of the column that we just moved.
-        let others_x_offset = next_col_x - current_col_x;
+        let others_x_offset = next_col_u - current_col_u;
         if self.active_column_idx < new_idx {
             for col in &mut self.columns[self.active_column_idx..new_idx] {
                 col.animate_move_from(others_x_offset.get());
@@ -2212,8 +2212,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let mut active_col_u = None;
 
         let gap = UCoord::new(self.options.gaps);
-        let col_xs = self.column_us(self.data.iter().copied());
-        for (idx, col_u) in col_xs.take(self.columns.len()).enumerate() {
+        let col_us = self.column_us(self.data.iter().copied());
+        for (idx, col_u) in col_us.take(self.columns.len()).enumerate() {
             if col_u < view_u + working_u + gap {
                 // Column goes off-screen to the left.
                 continue;
@@ -3101,22 +3101,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let mut leftmost = -self.orientation.size_to_uv(self.working_area.size).u;
 
             let last_col_idx = self.columns.len() - 1;
-            let last_col_x = self
+            let last_col_u = self
                 .columns
                 .iter()
                 .take(last_col_idx)
                 .fold(UCoord::zero(), |col_u, col| col_u + col.width() + gaps);
             let last_col_width = self.data[last_col_idx].width;
             let mut rightmost =
-                last_col_x + last_col_width - self.orientation.point_to_uv(self.working_area.loc).u;
+                last_col_u + last_col_width - self.orientation.point_to_uv(self.working_area.loc).u;
 
-            let active_col_x = self
+            let active_col_u = self
                 .columns
                 .iter()
                 .take(self.active_column_idx)
                 .fold(UCoord::zero(), |col_u, col| col_u + col.width() + gaps);
-            leftmost -= active_col_x;
-            rightmost -= active_col_x;
+            leftmost -= active_col_u;
+            rightmost -= active_col_u;
 
             (leftmost, rightmost)
         };
@@ -3270,7 +3270,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 .columns
                 .iter()
                 .take(last_col_idx)
-                .fold(UCoord::zero(), |col_x, col| col_x + col.width() + gaps);
+                .fold(UCoord::zero(), |col_u, col| col_u + col.width() + gaps);
             let rightmost_snap = snap_points(
                 last_col_u,
                 &self.columns[last_col_idx],
@@ -3362,17 +3362,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             } else {
                 for col_idx in (0..new_col_idx).rev() {
                     let col = &self.columns[col_idx];
-                    let col_x = self.column_u(col_idx);
-                    let col_w = col.width();
+                    let col_u = self.column_u(col_idx);
+                    let col_width = col.width();
 
                     if col.is_fullscreen {
-                        if col_x < target_snap.view_pos {
+                        if col_u < target_snap.view_pos {
                             break;
                         }
                     } else {
-                        let padding = ((self.working_area_size_uv().u - col_w) / 2.)
+                        let padding = ((self.working_area_size_uv().u - col_width) / 2.)
                             .clamp(UCoord::zero(), UCoord::new(self.options.gaps));
-                        if col_x - padding < target_snap.view_pos + left_strut {
+                        if col_u - padding < target_snap.view_pos + left_strut {
                             break;
                         }
                     }
@@ -3382,8 +3382,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         }
 
-        let new_col_x = self.column_u(new_col_idx);
-        let delta = active_col_u - new_col_x;
+        let new_col_u = self.column_u(new_col_idx);
+        let delta = active_col_u - new_col_u;
 
         if self.active_column_idx != new_col_idx {
             self.view_offset_before_fullscreen = None;
@@ -3391,7 +3391,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         self.active_column_idx = new_col_idx;
 
-        let target_view_offset = target_snap.view_pos - new_col_x;
+        let target_view_offset = target_snap.view_pos - new_col_u;
 
         self.view_offset = ViewOffset::Animation(Animation::new(
             self.clock.clone(),

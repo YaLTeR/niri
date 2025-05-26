@@ -178,7 +178,7 @@ pub enum CenterFocusedColumn {
 
 #[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
 pub enum ScrollingOrientation {
-    /// Use Horizontal on portrait monitors, else Vertical
+    /// Use Horizontal, except on portrait monitors
     #[default]
     Auto,
     /// Screen scrolls horizontally
