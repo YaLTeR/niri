@@ -1066,8 +1066,7 @@ impl<W: LayoutElement> Tile<W> {
                         window_render_loc.to_physical(self.scale).to_i32_round(),
                         radius.top_left,
                         optimized,
-                        self.scale as i32,
-                        1.,
+                        self.scale,
                         blur_config,
                     )
                     .into(),

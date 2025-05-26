@@ -28,7 +28,7 @@ pub enum BlurRenderElement {
         tex: OptimizedBlurTextureElement,
         corner_radius: f32,
         noise: f32,
-        alpha: f32,
+        scale: f64,
     },
     /// Use true blur.
     ///
@@ -38,7 +38,7 @@ pub enum BlurRenderElement {
     TrueBlur {
         // we are just a funny texture element that generates the texture on RenderElement::draw
         id: Id,
-        scale: i32,
+        scale: f64,
         transform: Transform,
         src: Rectangle<f64, Logical>,
         size: Size<i32, Logical>,
@@ -46,7 +46,6 @@ pub enum BlurRenderElement {
         loc: Point<i32, Physical>,
         output: Output,
         config: Blur,
-        alpha: f32,
         // FIXME: Use DamageBag and expand it as needed?
         commit_counter: CommitCounter,
     },
@@ -68,31 +67,32 @@ impl BlurRenderElement {
         loc: Point<i32, Physical>,
         corner_radius: f32,
         optimized: bool,
-        scale: i32,
-        alpha: f32,
+        scale: f64,
         config: Blur,
     ) -> Self {
         let fbs = &mut *EffectsFramebuffers::get(output);
         let texture = fbs.optimized_blur.clone();
 
         if optimized {
+            let scaled = sample_area.to_f64().upscale(scale);
+
             let texture = TextureRenderElement::from_static_texture(
                 Id::new(),
                 renderer.as_gles_renderer().context_id(),
                 loc.to_f64(),
                 texture,
-                scale,
+                1,
                 Transform::Normal,
-                Some(alpha),
-                Some(sample_area.to_f64()),
-                Some(sample_area.size),
+                Some(1.0),
+                Some(scaled),
+                Some(scaled.size.to_i32_ceil()),
                 // NOTE: Since this is "optimized" blur, anything below the window will not be
                 // rendered
-                Some(vec![sample_area.to_buffer(
-                    scale,
-                    Transform::Normal,
-                    &sample_area.size,
-                )]),
+                Some(vec![Rectangle::new(
+                    scaled.loc.to_i32_ceil(),
+                    scaled.size.to_i32_ceil(),
+                )
+                .to_buffer(1, Transform::Normal, &sample_area.size)]),
                 Kind::Unspecified,
             );
 
@@ -100,7 +100,7 @@ impl BlurRenderElement {
                 tex: texture.into(),
                 corner_radius,
                 noise: config.noise.0 as f32,
-                alpha,
+                scale,
             }
         } else {
             Self::TrueBlur {
@@ -111,7 +111,6 @@ impl BlurRenderElement {
                 size: sample_area.size,
                 corner_radius,
                 loc,
-                alpha,
                 config,
                 output: output.clone(), // fixme i hate this
                 commit_counter: CommitCounter::default(),
@@ -228,14 +227,22 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                 tex,
                 corner_radius,
                 noise,
-                alpha,
+                scale,
             } => {
+                let downscaled_dst = Rectangle::new(
+                    dst.loc,
+                    Size::from((
+                        (dst.size.w as f64 / *scale) as i32,
+                        (dst.size.h as f64 / *scale) as i32,
+                    )),
+                );
+
                 if *corner_radius == 0.0 {
                     <OptimizedBlurTextureElement as RenderElement<GlesRenderer>>::draw(
                         tex,
                         gles_frame,
                         src,
-                        dst,
+                        downscaled_dst,
                         damage,
                         opaque_regions,
                     )
@@ -256,7 +263,7 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                             ),
                             Uniform::new("corner_radius", *corner_radius),
                             Uniform::new("noise", *noise),
-                            Uniform::new("alpha", *alpha),
+                            Uniform::new("alpha", self.alpha()),
                         ],
                     );
 
@@ -265,7 +272,7 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                             &tex.0,
                             gles_frame,
                             src,
-                            dst,
+                            downscaled_dst,
                             damage,
                             opaque_regions,
                         );
@@ -279,7 +286,6 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                 output,
                 scale,
                 corner_radius,
-                alpha,
                 config,
                 ..
             } => {
@@ -303,7 +309,7 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                         &shaders,
                         config.clone(),
                         projection_matrix,
-                        *scale,
+                        *scale as i32,
                         &vbos,
                         debug,
                         supports_instancing,
@@ -327,7 +333,7 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                                     dst.size.h as f32,
                                 ],
                             ),
-                            Uniform::new("alpha", *alpha),
+                            Uniform::new("alpha", self.alpha()),
                             Uniform::new("noise", config.noise.0 as f32),
                             Uniform::new("corner_radius", *corner_radius),
                         ],
@@ -341,7 +347,7 @@ impl RenderElement<GlesRenderer> for BlurRenderElement {
                     damage,
                     opaque_regions,
                     Transform::Normal,
-                    *alpha,
+                    self.alpha(),
                     program.as_ref(),
                     &additional_uniforms,
                 )

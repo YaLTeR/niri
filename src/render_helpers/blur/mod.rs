@@ -174,11 +174,9 @@ impl EffectsFramebuffers {
         }
 
         if self.optimized_blur_rerender_at.unwrap() > Instant::now() {
-            debug!("optimized blur buffer is not dirty, skipping update");
             return Ok(());
         }
 
-        debug!("[updating blur] rendering optimized blur buffer");
         self.optimized_blur_rerender_at = None;
 
         // first render layer shell elements
@@ -304,7 +302,6 @@ pub(super) unsafe fn get_main_buffer_blur(
         let mut dst = dst;
         let size =
             (2f32.powi(blur_config.passes as i32 + 1) * blur_config.radius.0 as f32).ceil() as i32;
-
         dst.loc -= Point::from((size, size));
         dst.size += Size::from((size, size)).upscale(2);
         dst
@@ -339,18 +336,23 @@ pub(super) unsafe fn get_main_buffer_blur(
         // NOTE: We are assured that the size of the effects texture is the same
         // as the bound fbo size, so blitting uses dst immediatly
         gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, sample_fbo);
-        // Flip the destination Y coordinates to fix upside-down image
-        let y0 = dst_expanded.loc.y;
-        let y1 = dst_expanded.loc.y + dst_expanded.size.h;
+
+        // OpenGL is bottom-left based
+        let fb_height = tex_size.h;
+        let src_x0 = dst_expanded.loc.x;
+        let src_x1 = dst_expanded.loc.x + dst_expanded.size.w;
+        let src_y0 = fb_height - (dst_expanded.loc.y + dst_expanded.size.h);
+        let src_y1 = fb_height - dst_expanded.loc.y;
+
         gl.BlitFramebuffer(
-            dst_expanded.loc.x,
-            y0,
-            dst_expanded.loc.x + dst_expanded.size.w,
-            y1,
-            dst_expanded.loc.x,
-            y1, // flip Y: destination top is bottom
-            dst_expanded.loc.x + dst_expanded.size.w,
-            y0, // destination bottom is top
+            src_x0,
+            src_y0,
+            src_x1,
+            src_y1,
+            src_x0,
+            dst_expanded.loc.y + dst_expanded.size.h,
+            src_x1,
+            dst_expanded.loc.y,
             ffi::COLOR_BUFFER_BIT,
             ffi::LINEAR,
         );
@@ -605,7 +607,7 @@ unsafe fn render_blur_pass_with_gl(
     config: Blur,
     // dst is the region that should have blur
     // it gets up/downscaled with passes
-    damage: Rectangle<i32, Physical>,
+    _damage: Rectangle<i32, Physical>,
 ) -> Result<(), GlesError> {
     let tex_size = sample_buffer.size();
     let src = Rectangle::from_size(tex_size.to_f64());
@@ -613,6 +615,8 @@ unsafe fn render_blur_pass_with_gl(
         .to_logical(1.0, Transform::Normal, &src.size)
         .to_physical(scale as f64)
         .to_i32_round();
+
+    let damage = dest;
 
     // FIXME: Should we call gl.Finish() when done rendering this pass? If yes, should we check
     // if the gl context is shared or not? What about fencing, we don't have access to that
