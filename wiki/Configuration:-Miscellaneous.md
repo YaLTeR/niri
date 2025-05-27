@@ -24,7 +24,7 @@ cursor {
 }
 
 overview {
-    zoom 0.5
+    zoom 0.3 0.7
     backdrop-color "#262626"
 
     workspace-shadow {
@@ -163,7 +163,7 @@ Settings for the [Overview](./Overview.md).
 #### `zoom`
 
 Control how much the workspaces zoom out in the overview.
-`zoom` ranges from 0 to 0.75 where lower values make everything smaller.
+`zoom` ranges from 0 to 0.75 where lower values make everything smaller. If a single float is provided the zoom level will always be set to that. if two floats are provided then the zoom level will be set dynamically within that range based on how many non-empty workspaces there are.
 
 ```kdl
 // Make workspaces four times smaller than normal in the overview.
