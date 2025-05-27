@@ -168,14 +168,8 @@ pub struct Column<W: LayoutElement> {
     /// Animation of the render offset during window swapping.
     move_animation: Option<Animation>,
 
-    /// Latest known view size for this column's workspace.
-    view_size: Size<f64, Logical>,
-
-    /// Latest known working area for this column's workspace.
-    working_area: Rectangle<f64, Logical>,
-
-    /// Scale of the output the column is on (and rounds its sizes to).
-    scale: f64,
+    /// Latest known dimensions (view size/working area/scale) for this column's workspace.
+    dimensions: WorkspaceDimensions,
 
     /// Clock for driving animations.
     clock: Clock,
@@ -275,12 +269,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         ));
 
         for (column, data) in zip(&mut self.columns, &mut self.data) {
-            column.update_config(
-                dimensions.view_size(),
-                dimensions.working_area(),
-                dimensions.fractional_scale(),
-                options.clone(),
-            );
+            column.update_config(dimensions.clone(), options.clone());
             data.update(column);
         }
 
@@ -824,15 +813,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         is_full_width: bool,
         anim_config: Option<niri_config::Animation>,
     ) {
-        let column = Column::new_with_tile(
-            tile,
-            self.dimensions.view_size(),
-            self.dimensions.working_area(),
-            self.dimensions.fractional_scale(),
-            width,
-            is_full_width,
-            true,
-        );
+        let column =
+            Column::new_with_tile(tile, self.dimensions.clone(), width, is_full_width, true);
 
         self.add_column(col_idx, column, activate, anim_config);
     }
@@ -935,12 +917,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         });
 
-        column.update_config(
-            self.dimensions.view_size(),
-            self.dimensions.working_area(),
-            self.dimensions.fractional_scale(),
-            self.options.clone(),
-        );
+        column.update_config(self.dimensions.clone(), self.options.clone());
         self.data.insert(idx, ColumnData::new(&column));
         self.columns.insert(idx, column);
 
@@ -2388,7 +2365,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 // Adjust for place-within-column tab indicator.
                 let origin_x = col.tiles_origin().x;
                 let extra_w = if is_tabbed && !col.is_fullscreen {
-                    col.tab_indicator.extra_size(col.tiles.len(), col.scale).w
+                    col.tab_indicator
+                        .extra_size(col.tiles.len(), col.dimensions.fractional_scale())
+                        .w
                 } else {
                     0.
                 };
@@ -2707,9 +2686,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // Create a column manually to disable the resize animation.
             let column = Column::new_with_tile(
                 removed.tile,
-                self.dimensions.view_size(),
-                self.dimensions.working_area(),
-                self.dimensions.fractional_scale(),
+                self.dimensions.clone(),
                 removed.width,
                 removed.is_full_width,
                 false,
@@ -3567,7 +3544,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             for (column, data) in zip(&self.columns, &self.data) {
                 assert!(Rc::ptr_eq(&self.options, &column.options));
                 assert_eq!(self.clock, column.clock);
-                assert_eq!(self.dimensions.fractional_scale(), column.scale);
+                assert_eq!(
+                    self.dimensions.fractional_scale(),
+                    column.dimensions.fractional_scale()
+                );
                 column.verify_invariants();
 
                 let mut data2 = *data;
@@ -3737,9 +3717,7 @@ impl<W: LayoutElement> Column<W> {
     #[allow(clippy::too_many_arguments)]
     fn new_with_tile(
         tile: Tile<W>,
-        view_size: Size<f64, Logical>,
-        working_area: Rectangle<f64, Logical>,
-        scale: f64,
+        dimensions: WorkspaceDimensions,
         width: ColumnWidth,
         is_full_width: bool,
         animate_resize: bool,
@@ -3763,9 +3741,7 @@ impl<W: LayoutElement> Column<W> {
             display_mode,
             tab_indicator: TabIndicator::new(options.tab_indicator),
             move_animation: None,
-            view_size,
-            working_area,
-            scale,
+            dimensions,
             clock: tile.clock.clone(),
             options,
         };
@@ -3792,16 +3768,12 @@ impl<W: LayoutElement> Column<W> {
         rv
     }
 
-    fn update_config(
-        &mut self,
-        view_size: Size<f64, Logical>,
-        working_area: Rectangle<f64, Logical>,
-        scale: f64,
-        options: Rc<Options>,
-    ) {
+    fn update_config(&mut self, dimensions: WorkspaceDimensions, options: Rc<Options>) {
         let mut update_sizes = false;
 
-        if self.view_size != view_size || self.working_area != working_area {
+        if self.dimensions.view_size() != dimensions.view_size()
+            || self.dimensions.working_area() != dimensions.working_area()
+        {
             update_sizes = true;
         }
 
@@ -3831,14 +3803,16 @@ impl<W: LayoutElement> Column<W> {
         }
 
         for (tile, data) in zip(&mut self.tiles, &mut self.data) {
-            tile.update_config(view_size, scale, options.clone());
+            tile.update_config(
+                dimensions.view_size(),
+                dimensions.fractional_scale(),
+                options.clone(),
+            );
             data.update(tile);
         }
 
         self.tab_indicator.update_config(options.tab_indicator);
-        self.view_size = view_size;
-        self.working_area = working_area;
-        self.scale = scale;
+        self.dimensions = dimensions;
         self.options = options;
 
         if update_sizes {
@@ -3906,7 +3880,7 @@ impl<W: LayoutElement> Column<W> {
             self.tiles.len(),
             tabs,
             is_active,
-            self.scale,
+            self.dimensions.fractional_scale(),
         );
     }
 
@@ -3975,7 +3949,11 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn add_tile_at(&mut self, idx: usize, mut tile: Tile<W>, animate: bool) {
-        tile.update_config(self.view_size, self.scale, self.options.clone());
+        tile.update_config(
+            self.dimensions.view_size(),
+            self.dimensions.fractional_scale(),
+            self.options.clone(),
+        );
 
         // Inserting a tile pushes down all tiles below it, but also in always-centering mode it
         // will affect the X position of all tiles in the column.
@@ -4040,7 +4018,8 @@ impl<W: LayoutElement> Column<W> {
     /// Extra size taken up by elements in the column such as the tab indicator.
     fn extra_size(&self) -> Size<f64, Logical> {
         if self.display_mode == ColumnDisplay::Tabbed {
-            self.tab_indicator.extra_size(self.tiles.len(), self.scale)
+            self.tab_indicator
+                .extra_size(self.tiles.len(), self.dimensions.fractional_scale())
         } else {
             Size::from((0., 0.))
         }
@@ -4048,16 +4027,26 @@ impl<W: LayoutElement> Column<W> {
 
     fn resolve_preset_width(&self, preset: PresetSize) -> ResolvedSize {
         let extra = self.extra_size();
-        resolve_preset_size(preset, &self.options, self.working_area.size.w, extra.w)
+        resolve_preset_size(
+            preset,
+            &self.options,
+            self.dimensions.working_area().size.w,
+            extra.w,
+        )
     }
 
     fn resolve_preset_height(&self, preset: PresetSize) -> ResolvedSize {
         let extra = self.extra_size();
-        resolve_preset_size(preset, &self.options, self.working_area.size.h, extra.h)
+        resolve_preset_size(
+            preset,
+            &self.options,
+            self.dimensions.working_area().size.h,
+            extra.h,
+        )
     }
 
     fn resolve_column_width(&self, width: ColumnWidth) -> f64 {
-        let working_size = self.working_area.size;
+        let working_size = self.dimensions.working_area().size;
         let gaps = self.options.gaps;
         let extra = self.extra_size();
 
@@ -4135,7 +4124,7 @@ impl<W: LayoutElement> Column<W> {
             self.width
         };
 
-        let working_size = self.working_area.size;
+        let working_size = self.dimensions.working_area().size;
         let extra_size = self.extra_size();
 
         let width = self.resolve_column_width(width);
@@ -4372,7 +4361,9 @@ impl<W: LayoutElement> Column<W> {
             .unwrap();
 
         if self.display_mode == ColumnDisplay::Tabbed && !self.is_fullscreen {
-            let extra_size = self.tab_indicator.extra_size(self.tiles.len(), self.scale);
+            let extra_size = self
+                .tab_indicator
+                .extra_size(self.tiles.len(), self.dimensions.fractional_scale());
             tiles_width += extra_size.w;
         }
 
@@ -4523,7 +4514,7 @@ impl<W: LayoutElement> Column<W> {
                 ColumnWidth::Proportion(proportion)
             }
             (ColumnWidth::Fixed(_), SizeChange::AdjustProportion(delta)) => {
-                let full = self.working_area.size.w - self.options.gaps;
+                let full = self.dimensions.working_area().size.w - self.options.gaps;
                 let current = if full == 0. {
                     1.
                 } else {
@@ -4560,7 +4551,7 @@ impl<W: LayoutElement> Column<W> {
         };
         let current_tile_px = tile.tile_height_for_window_height(current_window_px);
 
-        let working_size = self.working_area.size.h;
+        let working_size = self.dimensions.working_area().size.h;
         let gaps = self.options.gaps;
         let extra_size = self.extra_size().h;
         let full = working_size - gaps;
@@ -4773,7 +4764,7 @@ impl<W: LayoutElement> Column<W> {
                 // window geometry (so they remain visible even if the window scrolls flush with
                 // the left/right edge of the screen), and vertically wihin the whole view size.
                 let width = tile.window_size().w;
-                let height = self.view_size.h;
+                let height = self.dimensions.view_size().h;
 
                 let mut target = Rectangle::from_size(Size::from((width, height)));
                 target.loc.y -= pos.y;
@@ -4792,12 +4783,12 @@ impl<W: LayoutElement> Column<W> {
             return origin;
         }
 
-        origin.y += self.working_area.loc.y + self.options.gaps;
+        origin.y += self.dimensions.working_area().loc.y + self.options.gaps;
 
         if self.display_mode == ColumnDisplay::Tabbed {
             origin += self
                 .tab_indicator
-                .content_offset(self.tiles.len(), self.scale);
+                .content_offset(self.tiles.len(), self.dimensions.fractional_scale());
         }
 
         origin
@@ -4991,7 +4982,7 @@ impl<W: LayoutElement> Column<W> {
             }
         }
 
-        let working_size = self.working_area.size;
+        let working_size = self.dimensions.working_area().size;
         let extra_size = self.extra_size();
         let gaps = self.options.gaps;
 
@@ -5001,9 +4992,9 @@ impl<W: LayoutElement> Column<W> {
         for (tile, data) in zip(&self.tiles, &self.data) {
             assert!(Rc::ptr_eq(&self.options, &tile.options));
             assert_eq!(self.clock, tile.clock);
-            assert_eq!(self.scale, tile.scale());
+            assert_eq!(self.dimensions.fractional_scale(), tile.scale());
             assert_eq!(self.is_fullscreen, tile.window().is_pending_fullscreen());
-            assert_eq!(self.view_size, tile.view_size());
+            assert_eq!(self.dimensions.view_size(), tile.view_size());
             tile.verify_invariants();
 
             let mut data2 = *data;
@@ -5028,7 +5019,7 @@ impl<W: LayoutElement> Column<W> {
             let min_tile_height = f64::max(1., tile.min_size_nonfullscreen().h);
 
             if !self.is_fullscreen
-                && self.scale.round() == self.scale
+                && self.dimensions.fractional_scale().round() == self.dimensions.fractional_scale()
                 && working_size.h.round() == working_size.h
                 && gaps.round() == gaps
             {
@@ -5048,7 +5039,7 @@ impl<W: LayoutElement> Column<W> {
 
         if !is_tabbed
             && tile_count > 1
-            && self.scale.round() == self.scale
+            && self.dimensions.fractional_scale().round() == self.dimensions.fractional_scale()
             && working_size.h.round() == working_size.h
             && gaps.round() == gaps
         {
