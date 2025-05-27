@@ -15,6 +15,7 @@ use smithay::utils::{Logical, Point, Rectangle, Serial, Size, Transform};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
+use super::dimensions::WorkspaceDimensions;
 use super::floating::{FloatingSpace, FloatingSpaceRenderElement};
 use super::scrolling::{
     Column, ColumnWidth, ScrollDirection, ScrollingSpace, ScrollingSpaceRenderElement,
@@ -58,31 +59,17 @@ pub struct Workspace<W: LayoutElement> {
     /// Current output of this workspace.
     output: Option<Output>,
 
-    /// Latest known output scale for this workspace.
+    /// Latest known dimensions (output scale/view size/working area) for this workspace.
     ///
     /// This should be set from the current workspace output, or, if all outputs have been
     /// disconnected, preserved until a new output is connected.
-    scale: smithay::output::Scale,
+    dimensions: WorkspaceDimensions,
 
     /// Latest known output transform for this workspace.
     ///
     /// This should be set from the current workspace output, or, if all outputs have been
     /// disconnected, preserved until a new output is connected.
     transform: Transform,
-
-    /// Latest known view size for this workspace.
-    ///
-    /// This should be computed from the current workspace output size, or, if all outputs have
-    /// been disconnected, preserved until a new output is connected.
-    view_size: Size<f64, Logical>,
-
-    /// Latest known working area for this workspace.
-    ///
-    /// Not rounded to physical pixels.
-    ///
-    /// This is similar to view size, but takes into account things like layer shell exclusive
-    /// zones.
-    working_area: Rectangle<f64, Logical>,
 
     /// This workspace's shadow in the overview.
     shadow: Shadow,
@@ -213,27 +200,16 @@ impl<W: LayoutElement> Workspace<W> {
             .unwrap_or(OutputId::new(&output));
 
         let scale = output.current_scale();
+        let view_size = output_size(&output);
+        let working_area = compute_working_area(&output);
+        let dimensions = WorkspaceDimensions::new(scale, view_size, working_area);
+
         let options =
             Rc::new(Options::clone(&base_options).adjusted_for_scale(scale.fractional_scale()));
 
-        let view_size = output_size(&output);
-        let working_area = compute_working_area(&output);
+        let scrolling = ScrollingSpace::new(dimensions.clone(), clock.clone(), options.clone());
 
-        let scrolling = ScrollingSpace::new(
-            view_size,
-            working_area,
-            scale.fractional_scale(),
-            clock.clone(),
-            options.clone(),
-        );
-
-        let floating = FloatingSpace::new(
-            view_size,
-            working_area,
-            scale.fractional_scale(),
-            clock.clone(),
-            options.clone(),
-        );
+        let floating = FloatingSpace::new(dimensions.clone(), clock.clone(), options.clone());
 
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
@@ -243,10 +219,8 @@ impl<W: LayoutElement> Workspace<W> {
             floating,
             floating_is_active: FloatingActive::No,
             original_output,
-            scale,
+            dimensions,
             transform: output.current_transform(),
-            view_size,
-            working_area,
             shadow: Shadow::new(shadow_config),
             output: Some(output),
             clock,
@@ -275,22 +249,11 @@ impl<W: LayoutElement> Workspace<W> {
 
         let view_size = Size::from((1280., 720.));
         let working_area = Rectangle::from_size(Size::from((1280., 720.)));
+        let dimensions = WorkspaceDimensions::new(scale, view_size, working_area);
 
-        let scrolling = ScrollingSpace::new(
-            view_size,
-            working_area,
-            scale.fractional_scale(),
-            clock.clone(),
-            options.clone(),
-        );
+        let scrolling = ScrollingSpace::new(dimensions.clone(), clock.clone(), options.clone());
 
-        let floating = FloatingSpace::new(
-            view_size,
-            working_area,
-            scale.fractional_scale(),
-            clock.clone(),
-            options.clone(),
-        );
+        let floating = FloatingSpace::new(dimensions.clone(), clock.clone(), options.clone());
 
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
@@ -300,11 +263,9 @@ impl<W: LayoutElement> Workspace<W> {
             floating,
             floating_is_active: FloatingActive::No,
             output: None,
-            scale,
+            dimensions,
             transform: Transform::Normal,
             original_output,
-            view_size,
-            working_area,
             shadow: Shadow::new(shadow_config),
             clock,
             base_options,
@@ -335,7 +296,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn scale(&self) -> smithay::output::Scale {
-        self.scale
+        self.dimensions.scale()
     }
 
     pub fn advance_animations(&mut self) {
@@ -355,39 +316,33 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling
             .update_render_elements(is_active && !self.floating_is_active.get());
 
-        let view_rect = Rectangle::from_size(self.view_size);
+        let view_rect = Rectangle::from_size(self.dimensions.view_size());
         self.floating
             .update_render_elements(is_active && self.floating_is_active.get(), view_rect);
 
         self.shadow.update_render_elements(
-            self.view_size,
+            self.dimensions.view_size(),
             true,
             CornerRadius::default(),
-            self.scale.fractional_scale(),
+            self.dimensions.scale().fractional_scale(),
             1.,
         );
     }
 
     pub fn update_config(&mut self, base_options: Rc<Options>) {
-        let scale = self.scale.fractional_scale();
+        let scale = self.dimensions.fractional_scale();
         let options = Rc::new(Options::clone(&base_options).adjusted_for_scale(scale));
 
-        self.scrolling.update_config(
-            self.view_size,
-            self.working_area,
-            self.scale.fractional_scale(),
-            options.clone(),
-        );
+        self.scrolling
+            .update_config(self.dimensions.clone(), options.clone());
 
-        self.floating.update_config(
-            self.view_size,
-            self.working_area,
-            self.scale.fractional_scale(),
-            options.clone(),
-        );
+        self.floating
+            .update_config(self.dimensions.clone(), options.clone());
 
-        let shadow_config =
-            compute_workspace_shadow_config(options.overview.workspace_shadow, self.view_size);
+        let shadow_config = compute_workspace_shadow_config(
+            options.overview.workspace_shadow,
+            self.dimensions.view_size(),
+        );
         self.shadow.update_config(shadow_config);
 
         self.base_options = base_options;
@@ -477,7 +432,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     fn enter_output_for_window(&self, window: &W) {
         if let Some(output) = &self.output {
-            window.set_preferred_scale_transform(self.scale, self.transform);
+            window.set_preferred_scale_transform(self.dimensions.scale(), self.transform);
             window.output_enter(output);
         }
     }
@@ -488,69 +443,60 @@ impl<W: LayoutElement> Workspace<W> {
         let transform = output.current_transform();
         let view_size = output_size(output);
         let working_area = compute_working_area(output);
-        self.set_view_size(scale, transform, view_size, working_area);
+        let dimensions = WorkspaceDimensions::new(scale, view_size, working_area);
+        self.set_view_size(dimensions, transform);
     }
 
-    fn set_view_size(
-        &mut self,
-        scale: smithay::output::Scale,
-        transform: Transform,
-        size: Size<f64, Logical>,
-        working_area: Rectangle<f64, Logical>,
-    ) {
+    fn set_view_size(&mut self, dimensions: WorkspaceDimensions, transform: Transform) {
         let scale_transform_changed = self.transform != transform
-            || self.scale.integer_scale() != scale.integer_scale()
-            || self.scale.fractional_scale() != scale.fractional_scale();
-        if !scale_transform_changed && self.view_size == size && self.working_area == working_area {
+            || self.dimensions.scale().integer_scale() != dimensions.scale().integer_scale()
+            || self.dimensions.scale().fractional_scale() != dimensions.scale().fractional_scale();
+        if !scale_transform_changed
+            && self.dimensions.view_size() == dimensions.view_size()
+            && self.dimensions.working_area() == dimensions.working_area()
+        {
             return;
         }
 
-        let fractional_scale_changed = self.scale.fractional_scale() != scale.fractional_scale();
+        let fractional_scale_changed =
+            self.dimensions.fractional_scale() != dimensions.fractional_scale();
 
-        self.scale = scale;
         self.transform = transform;
-        self.view_size = size;
-        self.working_area = working_area;
+        self.dimensions = dimensions.clone();
 
         if fractional_scale_changed {
             // Options need to be recomputed for the new scale.
             self.update_config(self.base_options.clone());
         } else {
             // Pass our existing options as is.
-            self.scrolling.update_config(
-                size,
-                working_area,
-                scale.fractional_scale(),
-                self.options.clone(),
-            );
-            self.floating.update_config(
-                size,
-                working_area,
-                scale.fractional_scale(),
-                self.options.clone(),
-            );
+            self.scrolling
+                .update_config(dimensions.clone(), self.options.clone());
+            self.floating
+                .update_config(dimensions.clone(), self.options.clone());
 
-            let shadow_config =
-                compute_workspace_shadow_config(self.options.overview.workspace_shadow, size);
+            let shadow_config = compute_workspace_shadow_config(
+                self.options.overview.workspace_shadow,
+                dimensions.view_size(),
+            );
             self.shadow.update_config(shadow_config);
         }
 
         if scale_transform_changed {
             for window in self.windows() {
-                window.set_preferred_scale_transform(self.scale, self.transform);
+                window.set_preferred_scale_transform(self.dimensions.scale(), self.transform);
             }
         }
     }
 
     pub fn view_size(&self) -> Size<f64, Logical> {
-        self.view_size
+        self.dimensions.view_size()
     }
 
     pub fn make_tile(&self, window: W) -> Tile<W> {
         Tile::new(
             window,
-            self.view_size,
-            self.scale.fractional_scale(),
+            self.dimensions.view_size(),
+            self.dimensions.scale().fractional_scale(),
             self.clock.clone(),
             self.options.clone(),
         )
@@ -812,7 +758,7 @@ impl<W: LayoutElement> Workspace<W> {
         rules: &ResolvedWindowRules,
     ) {
         window.with_surfaces(|surface, data| {
-            send_scale_transform(surface, data, self.scale, self.transform);
+            send_scale_transform(surface, data, self.dimensions.scale(), self.transform);
         });
 
         let toplevel = window.toplevel().expect("no x11 support");
@@ -823,7 +769,7 @@ impl<W: LayoutElement> Workspace<W> {
         });
         toplevel.with_pending_state(|state| {
             if state.states.contains(xdg_toplevel::State::Fullscreen) {
-                state.size = Some(self.view_size.to_i32_round());
+                state.size = Some(self.dimensions.view_size().to_i32_round());
             } else {
                 let size =
                     self.new_window_size(width, height, is_floating, rules, (min_size, max_size));
@@ -1460,7 +1406,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let floating_focus_ring = focus_ring && self.floating_is_active();
         let floating = self.is_floating_visible().then(|| {
-            let view_rect = Rectangle::from_size(self.view_size);
+            let view_rect = Rectangle::from_size(self.dimensions.view_size());
             let floating =
                 self.floating
                     .render_elements(renderer, view_rect, target, floating_focus_ring);
@@ -1685,8 +1631,8 @@ impl<W: LayoutElement> Workspace<W> {
         let trigger_width = config.trigger_width.0;
 
         // This working area intentionally does not include extra struts from Options.
-        let x = pos.x - self.working_area.loc.x;
-        let width = self.working_area.size.w;
+        let x = pos.x - self.dimensions.working_area().loc.x;
+        let width = self.dimensions.working_area().size.w;
 
         let x = x.clamp(0., width);
         let trigger_width = trigger_width.clamp(0., width / 2.);
@@ -1760,7 +1706,7 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn working_area(&self) -> Rectangle<f64, Logical> {
-        self.working_area
+        self.dimensions.working_area()
     }
 
     #[cfg(test)]
@@ -1777,19 +1723,20 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn verify_invariants(&self, move_win_id: Option<&W::Id>) {
         use approx::assert_abs_diff_eq;
 
-        let scale = self.scale.fractional_scale();
-        assert!(self.view_size.w > 0.);
-        assert!(self.view_size.h > 0.);
+        let scale = self.dimensions.scale().fractional_scale();
+        assert!(self.dimensions.view_size().w > 0.);
+        assert!(self.dimensions.view_size().h > 0.);
         assert!(scale > 0.);
         assert!(scale.is_finite());
 
-        assert_eq!(self.view_size, self.scrolling.view_size());
+        assert_eq!(self.dimensions.view_size(), self.scrolling.view_size());
         assert_eq!(&self.clock, self.scrolling.clock());
         assert!(Rc::ptr_eq(&self.options, self.scrolling.options()));
-        self.scrolling.verify_invariants(self.working_area);
+        self.scrolling
+            .verify_invariants(self.dimensions.working_area());
 
-        assert_eq!(self.view_size, self.floating.view_size());
-        assert_eq!(self.working_area, self.floating.working_area());
+        assert_eq!(self.dimensions.view_size(), self.floating.view_size());
+        assert_eq!(self.dimensions.working_area(), self.floating.working_area());
         assert_eq!(&self.clock, self.floating.clock());
         assert!(Rc::ptr_eq(&self.options, self.floating.options()));
         self.floating.verify_invariants();
