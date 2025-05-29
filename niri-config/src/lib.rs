@@ -1936,8 +1936,8 @@ pub enum Action {
 
     MruAdvance(
         #[knuffel(argument)] MruDirection,
-        #[knuffel(argument)] MruScope,
-        #[knuffel(argument)] MruFilter,
+        #[knuffel(property(name = "scope"))] Option<MruScope>,
+        #[knuffel(property(name = "filter"))] Option<MruFilter>,
     ),
     #[knuffel(skip)]
     MruClose,

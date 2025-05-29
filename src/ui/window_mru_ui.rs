@@ -6,6 +6,9 @@ Todo:
 - Transition when wrapping around during Mru navigation(?)
 - support clicking on the target thumbnail
 - add title of the current Mru selection under the thumbnail
+- change BakedBuffers to TextureBuffers
+- add bindings in the UI to switch to Output or Workspace modes
+x in UI, left/right should not change the current mode
 x "advance" bindings for the MruUI should be copied over from the general
   bindings for the same action.
 x support only considering windows from current output/workspace
@@ -27,7 +30,7 @@ use std::str::FromStr;
 use std::time::Instant;
 
 use niri_config::{
-    Action, Bind, Binds, Key, Match, Modifiers, MruDirection, MruFilter, MruScope, RegexEq, Trigger,
+    Action, Bind, Key, Match, Modifiers, MruDirection, MruFilter, MruScope, RegexEq, Trigger,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::Kind;
@@ -87,7 +90,15 @@ pub struct WindowMru {
 }
 
 impl WindowMru {
-    pub fn new(niri: &Niri, direction: MruDirection, scope: MruScope, filter: MruFilter) -> Self {
+    pub fn new(
+        niri: &Niri,
+        direction: MruDirection,
+        scope: Option<MruScope>,
+        filter: Option<MruFilter>,
+    ) -> Self {
+        let scope = scope.unwrap_or_default();
+        let filter = filter.unwrap_or_default();
+
         // todo: maybe using a `Match` is overkill here and a plain app_id
         // compare would suffice
         let window_match = filter.to_match(niri);
@@ -254,7 +265,7 @@ impl WindowMruUi {
         matches!(self, WindowMruUi::Open { .. })
     }
 
-    pub fn open(&mut self, config: impl Deref<Target = niri_config::Config>, wmru: WindowMru) {
+    pub fn open(&mut self, config: &niri_config::Config, wmru: WindowMru) {
         let Self::Closed {} = self else { return };
         let nids = wmru.ids.len();
         *self = Self::Open {
@@ -282,16 +293,18 @@ impl WindowMruUi {
     pub fn derive_new_mru_list(
         &self,
         niri: &Niri,
-        scope: MruScope,
-        filter: MruFilter,
+        scope: Option<MruScope>,
+        filter: Option<MruFilter>,
     ) -> Option<WindowMru> {
         let Self::Open { wmru, .. } = self else {
             return None;
         };
-        if wmru.scope == scope && wmru.filter == filter {
-            return None;
+
+        if scope.is_some_and(|s| s != wmru.scope) || filter.is_some_and(|f| f != wmru.filter) {
+            Some(WindowMru::new(niri, wmru.direction, scope, filter))
+        } else {
+            None
         }
-        Some(WindowMru::new(niri, wmru.direction, scope, filter))
     }
 
     pub fn update_mru_list(&mut self, dir: MruDirection, mut wmru: WindowMru) {
@@ -729,7 +742,7 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Right),
             modifiers: Modifiers::ALT,
         },
-        action: Action::MruAdvance(MruDirection::Forward, MruScope::All, MruFilter::None),
+        action: Action::MruAdvance(MruDirection::Forward, None, None),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -741,7 +754,32 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Left),
             modifiers: Modifiers::ALT,
         },
-        action: Action::MruAdvance(MruDirection::Backward, MruScope::All, MruFilter::None),
+        action: Action::MruAdvance(MruDirection::Backward, None, None),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    // j and k can be used as well
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::j),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::MruAdvance(MruDirection::Forward, None, None),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::k),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::MruAdvance(MruDirection::Backward, None, None),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,

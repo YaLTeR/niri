@@ -7,8 +7,7 @@ use std::time::Duration;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
-    Action, Bind, Binds, Key, ModKey, Modifiers, MruDirection, MruFilter, MruScope, SwitchBinds,
-    Trigger,
+    Action, Bind, Binds, Key, ModKey, Modifiers, MruDirection, MruFilter, SwitchBinds, Trigger,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -4063,7 +4062,7 @@ pub const PRESET_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Tab),
             modifiers: Modifiers::ALT,
         },
-        action: Action::MruAdvance(MruDirection::Forward, MruScope::All, MruFilter::None),
+        action: Action::MruAdvance(MruDirection::Forward, None, Some(MruFilter::None)),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -4075,7 +4074,7 @@ pub const PRESET_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::Tab),
             modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
         },
-        action: Action::MruAdvance(MruDirection::Backward, MruScope::All, MruFilter::None),
+        action: Action::MruAdvance(MruDirection::Backward, None, Some(MruFilter::None)),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -4088,7 +4087,7 @@ pub const PRESET_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::grave),
             modifiers: Modifiers::ALT,
         },
-        action: Action::MruAdvance(MruDirection::Forward, MruScope::All, MruFilter::AppId),
+        action: Action::MruAdvance(MruDirection::Forward, None, Some(MruFilter::AppId)),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
@@ -4100,7 +4099,7 @@ pub const PRESET_BINDINGS: &[Bind] = &[
             trigger: Trigger::Keysym(Keysym::grave),
             modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
         },
-        action: Action::MruAdvance(MruDirection::Backward, MruScope::All, MruFilter::AppId),
+        action: Action::MruAdvance(MruDirection::Backward, None, Some(MruFilter::AppId)),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,

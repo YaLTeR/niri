@@ -584,6 +584,6 @@ binds {
 
     // Cycle through windows from the currently focused application using
     // most-recently-used-order.
-    // Mod+grave { mru-advance "forward" "all" "app-id"; }
-    // Mod+Shift+grave { mru-advance "backward" "all" "app-id"; }
+    // Mod+grave { mru-advance "forward" scope="all" filter="app-id"; }
+    // Mod+Shift+grave { mru-advance "backward" scope="all" filter="app-id"; }
 }
