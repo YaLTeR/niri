@@ -665,7 +665,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_height_idx {
-            let len = self.options.preset_column_widths.len();
+            let len = self.options.preset_window_heights.len();
             (idx + if FORWARDS { 1 } else { len - 1 }) % len
         } else {
             let current_window = tile.window_expected_or_current_size().h;

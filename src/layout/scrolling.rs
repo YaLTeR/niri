@@ -4642,7 +4642,7 @@ impl<W: LayoutElement> Column<W> {
 
         let preset_idx = match self.data[tile_idx].height {
             WindowHeight::Preset(idx) => {
-                let len = self.options.preset_column_widths.len();
+                let len = self.options.preset_window_heights.len();
                 (idx + if FORWARDS { 1 } else { len - 1 }) % len
             }
             _ => {
