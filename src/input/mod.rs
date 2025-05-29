@@ -47,7 +47,7 @@ use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
-use crate::ui::window_mru_ui::{WindowMru, MRU_UI_TRANSITION_DELAY};
+use crate::ui::window_mru_ui::{WindowMru, MRU_UI_BINDINGS, MRU_UI_TRANSITION_DELAY};
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
@@ -409,25 +409,45 @@ impl State {
                 }
 
                 let res = {
-                    // let mru_bindings;
-                    let bindings = if this.niri.window_mru_ui.is_open() {
-                        this.niri.window_mru_ui.binds()
+                    let config = this.niri.config.borrow();
+                    let bindings = config.binds.into_iter().chain(PRESET_BINDINGS);
+
+                    // Both branches of the following if statement call `should_intercept_key` the same
+                    // way but with different types for the bindings parameter.
+                    if this.niri.window_mru_ui.is_open() {
+                        // Only a subset of keybindings are available in the WindowMruUi
+                        // plus a few extra specific ones from `MRU_UI_BINDINGS`.
+                        let bindings = bindings
+                            .filter(|b| matches!(b.action, Action::MruAdvance(..)))
+                            .chain(MRU_UI_BINDINGS);
+                        should_intercept_key(
+                            &mut this.niri.suppressed_keys,
+                            bindings,
+                            mod_key,
+                            key_code,
+                            modified,
+                            raw,
+                            pressed,
+                            *mods,
+                            &this.niri.screenshot_ui,
+                            this.niri.config.borrow().input.disable_power_key_handling,
+                            is_inhibiting_shortcuts,
+                        )
                     } else {
-                        &this.niri.config.borrow().binds
-                    };
-                    should_intercept_key(
-                        &mut this.niri.suppressed_keys,
-                        bindings,
-                        mod_key,
-                        key_code,
-                        modified,
-                        raw,
-                        pressed,
-                        *mods,
-                        &this.niri.screenshot_ui,
-                        this.niri.config.borrow().input.disable_power_key_handling,
-                        is_inhibiting_shortcuts,
-                    )
+                        should_intercept_key(
+                            &mut this.niri.suppressed_keys,
+                            bindings,
+                            mod_key,
+                            key_code,
+                            modified,
+                            raw,
+                            pressed,
+                            *mods,
+                            &this.niri.screenshot_ui,
+                            this.niri.config.borrow().input.disable_power_key_handling,
+                            is_inhibiting_shortcuts,
+                        )
+                    }
                 };
                 if matches!(res, FilterResult::Forward) {
                     // MRU UI prevents interaction with regular windows
@@ -2088,7 +2108,7 @@ impl State {
                     self.niri.mru_commit();
                     let config = self.niri.config.borrow();
                     let wmru = WindowMru::new(&self.niri, dir, scope, filter);
-                    self.niri.window_mru_ui.open(&*config, wmru);
+                    self.niri.window_mru_ui.open(&config, wmru);
                 }
                 // FIXME: granular
                 self.niri.queue_redraw_all();
@@ -2467,8 +2487,7 @@ impl State {
                 }
                 .and_then(|trigger| {
                     let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
-                    find_configured_bind(bindings, mod_key, trigger, mods)
+                    find_configured_bind(&config.binds, mod_key, trigger, mods)
                 }) {
                     self.niri.suppressed_buttons.insert(button_code);
                     self.handle_bind(bind.clone());
@@ -3900,9 +3919,9 @@ impl State {
 /// pressed keys as `suppressed`, thus preventing `releases` corresponding
 /// to them from being delivered.
 #[allow(clippy::too_many_arguments)]
-fn should_intercept_key(
+fn should_intercept_key<'a>(
     suppressed_keys: &mut HashSet<Keycode>,
-    bindings: &Binds,
+    bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
     key_code: Keycode,
     modified: Keysym,
@@ -3984,8 +4003,8 @@ fn should_intercept_key(
     }
 }
 
-fn find_bind(
-    bindings: &Binds,
+fn find_bind<'a>(
+    bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
     modified: Keysym,
     raw: Option<Keysym>,
@@ -4090,8 +4109,8 @@ pub const PRESET_BINDINGS: &[Bind] = &[
     },
 ];
 
-fn find_configured_bind(
-    bindings: &Binds,
+fn find_configured_bind<'a>(
+    bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
     trigger: Trigger,
     mods: ModifiersState,
@@ -4104,9 +4123,8 @@ fn find_configured_bind(
         modifiers |= Modifiers::COMPOSITOR;
     }
 
-    // iterate through configured bindings looking for a match, and
-    // then check in  `PRESET_BINDINGS` if none were found
-    for bind in bindings.0.iter().chain(PRESET_BINDINGS.iter()) {
+    // iterate through configured bindings looking for a match
+    for bind in bindings {
         if bind.key.trigger != trigger {
             continue;
         }

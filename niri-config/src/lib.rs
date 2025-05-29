@@ -1586,6 +1586,15 @@ pub enum RelativeTo {
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds(pub Vec<Bind>);
 
+impl<'a> IntoIterator for &'a Binds {
+    type Item = &'a Bind;
+    type IntoIter = std::slice::Iter<'a, Bind>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
     pub key: Key,

@@ -22,7 +22,7 @@ x Transition when opening/closing MruUI
 use std::cell::RefCell;
 use std::cmp::{self};
 use std::iter;
-use std::ops::{ControlFlow, Deref};
+use std::ops::ControlFlow;
 use std::str::FromStr;
 use std::time::Instant;
 
@@ -37,7 +37,6 @@ use smithay::input::keyboard::Keysym;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
 
-use crate::input::PRESET_BINDINGS;
 use crate::layout::focus_ring::{FocusRing, FocusRingRenderElement};
 use crate::layout::LayoutElement;
 use crate::niri::Niri;
@@ -165,7 +164,6 @@ pub enum WindowMruUi {
         wmru: WindowMru,
         textures: RefCell<TextureCache>,
         focus_ring: Box<RefCell<FocusRing>>,
-        binds: Binds,
     },
 }
 
@@ -263,30 +261,12 @@ impl WindowMruUi {
             wmru,
             textures: RefCell::new(TextureCache::with_capacity(nids)),
             focus_ring: Box::new(RefCell::new(FocusRing::new(config.layout.focus_ring))),
-            binds: Binds(
-                config
-                    .binds
-                    .0
-                    .iter()
-                    .chain(PRESET_BINDINGS.iter())
-                    .filter(|b| matches!(&b.action, Action::MruAdvance(..)))
-                    .chain(MRU_UI_BINDINGS.iter())
-                    .cloned()
-                    .collect(),
-            ),
         };
     }
 
     pub fn close(&mut self) {
         let Self::Open { .. } = self else { return };
         *self = Self::Closed {};
-    }
-
-    pub fn binds(&self) -> &Binds {
-        let Self::Open { ref binds, .. } = self else {
-            panic!("Requested binds on a closed WindowMruUI")
-        };
-        binds
     }
 
     pub fn advance(&mut self, dir: MruDirection) {
