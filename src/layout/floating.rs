@@ -609,6 +609,22 @@ impl<W: LayoutElement> FloatingSpace<W> {
     }
 
     pub fn toggle_window_width<const FORWARDS: bool>(&mut self, id: Option<&W::Id>) {
+        self.toggle_window::<FORWARDS, true>(id);
+    }
+
+    pub fn toggle_window_height<const FORWARDS: bool>(&mut self, id: Option<&W::Id>) {
+        self.toggle_window::<FORWARDS, false>(id);
+    }
+
+    // We use const generic IS_WIDTH, because we cannot specifically pass the option as parameter
+    // without cloning it. This is because we'd need to pass immutable and mutable references,
+    // which is not possible.
+    fn toggle_window<const FORWARDS: bool, const IS_WIDTH: bool>(&mut self, id: Option<&W::Id>) {
+        let option = if IS_WIDTH {
+            &self.options.preset_column_widths
+        } else {
+            &self.options.preset_window_heights
+        };
         let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
             return;
         };
@@ -618,14 +634,13 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_width_idx {
-            let len = self.options.preset_column_widths.len();
+            let len = option.len();
             (idx + if FORWARDS { 1 } else { len - 1 }) % len
         } else {
             let current_window = tile.window_expected_or_current_size().w;
             let current_tile = tile.tile_expected_or_current_size().w;
 
-            self.options
-                .preset_column_widths
+            option
                 .iter()
                 .position(|preset| {
                     let resolved = resolve_preset_size(*preset, available_size);
@@ -653,45 +668,6 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         self.tiles[idx].start_open_animation();
         true
-    }
-
-    pub fn toggle_window_height<const FORWARDS: bool>(&mut self, id: Option<&W::Id>) {
-        let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
-            return;
-        };
-        let idx = self.idx_of(&id).unwrap();
-
-        let available_size = self.working_area.size.h;
-
-        let tile = &mut self.tiles[idx];
-        let preset_idx = if let Some(idx) = tile.floating_preset_height_idx {
-            let len = self.options.preset_window_heights.len();
-            (idx + if FORWARDS { 1 } else { len - 1 }) % len
-        } else {
-            let current_window = tile.window_expected_or_current_size().h;
-            let current_tile = tile.tile_expected_or_current_size().h;
-
-            self.options
-                .preset_window_heights
-                .iter()
-                .position(|preset| {
-                    let resolved = resolve_preset_size(*preset, available_size);
-                    match resolved {
-                        // Some allowance for fractional scaling purposes.
-                        ResolvedSize::Tile(resolved) => current_tile + 1. < resolved,
-                        ResolvedSize::Window(resolved) => current_window + 1. < resolved,
-                    }
-                })
-                .unwrap_or(0)
-        };
-
-        let preset = self.options.preset_window_heights[preset_idx];
-        self.set_window_height(Some(&id), SizeChange::from(preset), true);
-
-        let tile = &mut self.tiles[idx];
-        tile.floating_preset_height_idx = Some(preset_idx);
-
-        self.interactive_resize_end(Some(&id));
     }
 
     pub fn set_window_width(&mut self, id: Option<&W::Id>, change: SizeChange, animate: bool) {

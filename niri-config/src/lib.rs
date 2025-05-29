@@ -2089,15 +2089,28 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ResetWindowHeight { id: None } => Self::ResetWindowHeight,
             niri_ipc::Action::ResetWindowHeight { id: Some(id) } => Self::ResetWindowHeightById(id),
             niri_ipc::Action::SwitchPresetColumnWidth {} => Self::SwitchPresetColumnWidth,
+            niri_ipc::Action::SwitchPresetColumnWidthBack {} => Self::SwitchPresetColumnWidthBack,
             niri_ipc::Action::SwitchPresetWindowWidth { id: None } => Self::SwitchPresetWindowWidth,
+            niri_ipc::Action::SwitchPresetWindowWidthBack { id: None } => {
+                Self::SwitchPresetWindowWidthBack
+            }
             niri_ipc::Action::SwitchPresetWindowWidth { id: Some(id) } => {
                 Self::SwitchPresetWindowWidthById(id)
+            }
+            niri_ipc::Action::SwitchPresetWindowWidthBack { id: Some(id) } => {
+                Self::SwitchPresetWindowWidthByIdBack(id)
             }
             niri_ipc::Action::SwitchPresetWindowHeight { id: None } => {
                 Self::SwitchPresetWindowHeight
             }
+            niri_ipc::Action::SwitchPresetWindowHeightBack { id: None } => {
+                Self::SwitchPresetWindowHeightBack
+            }
             niri_ipc::Action::SwitchPresetWindowHeight { id: Some(id) } => {
                 Self::SwitchPresetWindowHeightById(id)
+            }
+            niri_ipc::Action::SwitchPresetWindowHeightBack { id: Some(id) } => {
+                Self::SwitchPresetWindowHeightByIdBack(id)
             }
             niri_ipc::Action::MaximizeColumn {} => Self::MaximizeColumn,
             niri_ipc::Action::SetColumnWidth { change } => Self::SetColumnWidth(change),

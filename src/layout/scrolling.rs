@@ -2537,30 +2537,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn toggle_window_width<const FORWARDS: bool>(&mut self, window: Option<&W::Id>) {
-        if self.columns.is_empty() {
-            return;
-        }
-
-        let (col, tile_idx) = if let Some(window) = window {
-            self.columns
-                .iter_mut()
-                .find_map(|col| {
-                    col.tiles
-                        .iter()
-                        .position(|tile| tile.window().id() == window)
-                        .map(|tile_idx| (col, Some(tile_idx)))
-                })
-                .unwrap()
-        } else {
-            (&mut self.columns[self.active_column_idx], None)
-        };
-
-        col.toggle_width::<FORWARDS>(tile_idx);
-
-        cancel_resize_for_column(&mut self.interactive_resize, col);
+        self.toggle_window::<FORWARDS, true>(window);
     }
 
     pub fn toggle_window_height<const FORWARDS: bool>(&mut self, window: Option<&W::Id>) {
+        self.toggle_window::<FORWARDS, false>(window);
+    }
+
+    fn toggle_window<const FORWARDS: bool, const IS_WIDTH: bool>(
+        &mut self,
+        window: Option<&W::Id>,
+    ) {
         if self.columns.is_empty() {
             return;
         }
@@ -2579,7 +2566,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             (&mut self.columns[self.active_column_idx], None)
         };
 
-        col.toggle_window_height::<FORWARDS>(tile_idx, true);
+        if IS_WIDTH {
+            col.toggle_width::<FORWARDS>(tile_idx);
+        } else {
+            col.toggle_window_height::<FORWARDS>(tile_idx, true);
+        }
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
