@@ -2,12 +2,13 @@
 Todo:
 
 - Add test cases
-- Animation. Likely to need a position cache as for Tiles
+- Animation. Likely to need a position cache as is done for Tiles
 - Transition when wrapping around during Mru navigation(?)
 - support clicking on the target thumbnail
-- add title of the current Mru selection under the thumbnail
-- change BakedBuffers to TextureBuffers
+x add title of the current Mru selection under the thumbnail
+x change BakedBuffers to TextureBuffers
 - add bindings in the UI to switch to Output or Workspace modes
+- add a help panel in the UI listing key bindings (e.g. screenshot UI)
 x in UI, left/right should not change the current mode
 x "advance" bindings for the MruUI should be copied over from the general
   bindings for the same action.
@@ -22,23 +23,26 @@ x Mru list should contain an Option<BakedBuffer> to cache the texture
 x Transition when opening/closing MruUI
 
 */
+use std::borrow::BorrowMut;
 use std::cell::RefCell;
-use std::cmp::{self};
-use std::iter;
+use std::cmp::{self, min};
 use std::ops::ControlFlow;
 use std::str::FromStr;
 use std::time::Instant;
+use std::{iter, mem};
 
 use niri_config::{
     Action, Bind, Key, Match, Modifiers, MruDirection, MruFilter, MruScope, RegexEq, Trigger,
 };
+use pango::{Alignment, EllipsizeMode, FontDescription};
+use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::Color32F;
 use smithay::input::keyboard::Keysym;
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Coordinate, Logical, Point, Rectangle, Scale, Size, Transform};
 
 use crate::layout::focus_ring::{FocusRing, FocusRingRenderElement};
 use crate::layout::LayoutElement;
@@ -49,7 +53,7 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{render_to_texture, BakedBuffer, RenderTarget, ToRenderElement};
-use crate::utils::{output_size, with_toplevel_role};
+use crate::utils::{output_size, to_physical_precise_round, with_toplevel_role};
 use crate::window::mapped::MappedId;
 use crate::window::{window_matches, Mapped, WindowRef};
 
@@ -69,6 +73,9 @@ const BACKGROUND: Color32F = Color32F::new(0., 0., 0., 0.7);
 
 // Transition delay in ms for MRU UI open/close and wrap-arounds
 pub const MRU_UI_TRANSITION_DELAY: u16 = 20;
+
+// Font used to render window titles
+const FONT: &str = "sans 14px";
 
 /// Window MRU traversal context.
 #[derive(Debug)]
@@ -165,9 +172,13 @@ impl WindowMru {
     pub fn backward(&mut self) {
         self.current = self.current.checked_sub(1).unwrap_or(self.ids.len() - 1)
     }
+
+    pub fn get_id(&self, index: usize) -> MappedId {
+        self.ids[index].0
+    }
 }
 
-type Thumbnail = BakedBuffer<TextureBuffer<GlesTexture>>;
+type MruTexture = TextureBuffer<GlesTexture>;
 
 pub enum WindowMruUi {
     Closed {},
@@ -335,25 +346,28 @@ impl WindowMruUi {
 
         // Retain textures from the TextureCache that match window Ids from
         // the updated MruList.
-        let mut start_pos = 0;
-        textures.replace_with(|v| TextureCache {
-            textures: wmru
+        textures.replace_with(|v| {
+            let mut start_pos = 0;
+            let textures = wmru
                 .ids
                 .iter()
                 .map(|(id, t)| {
-                    prev_wmru
+                    let mut tile_texture = Default::default();
+                    if let Some(index) = prev_wmru
                         .ids
                         .iter()
                         .skip(start_pos)
                         .take_while(|(_, pt)| t >= pt)
                         .position(|(pid, _)| id == pid)
-                        .map(|index| {
-                            let adjusted_idx = index + start_pos;
-                            start_pos = adjusted_idx;
-                            v.textures[adjusted_idx].take()
-                        })?
+                    {
+                        let adjusted_idx = index + start_pos;
+                        start_pos = adjusted_idx;
+                        mem::swap(&mut tile_texture, &mut v.0[adjusted_idx]);
+                    }
+                    tile_texture
                 })
-                .collect(),
+                .collect();
+            TextureCache(textures)
         });
 
         // Replace the UI's WindowMru.
@@ -399,7 +413,7 @@ impl WindowMruUi {
             if wmru.current >= wmru.ids.len() {
                 wmru.current = wmru.current.saturating_sub(1);
             }
-            textures.borrow_mut().textures.remove(idx);
+            textures.borrow_mut().get_mut().0.remove(idx);
         }
     }
 
@@ -426,16 +440,20 @@ impl WindowMruUi {
         let output_size = output_size(output);
 
         if !wmru.ids.is_empty() {
-            let mut textures = textures.borrow_mut();
-
             let allowance = output_size.w - 2. * SPACING;
 
             let current = wmru.current;
+            let mut textures = textures.borrow_mut();
             let current_texture_width = {
-                let Some(t) = textures.get(niri, renderer, wmru, current) else {
+                if let Some(t) =
+                    textures
+                        .get_mut(current)
+                        .get_thumbnail(niri, renderer, wmru.get_id(current))
+                {
+                    t.logical_size().w
+                } else {
                     return vec![];
-                };
-                t.buffer.logical_size().w
+                }
             };
             let mut total_width = current_texture_width;
 
@@ -456,23 +474,39 @@ impl WindowMruUi {
                             return ControlFlow::Break((MruAlign::Left, l, r));
                         }
                         (Some(a), None) => {
-                            if let Some(t) = textures.get(niri, renderer, wmru, a) {
-                                total_width += t.buffer.logical_size().w + SPACING;
+                            if let Some(t) = textures.borrow_mut().get_mut(a).get_thumbnail(
+                                niri,
+                                renderer,
+                                wmru.get_id(a),
+                            ) {
+                                total_width += t.logical_size().w + SPACING;
                             }
                             (MruAlign::Left, l, a)
                         }
                         (None, Some(b)) => {
-                            if let Some(t) = textures.get(niri, renderer, wmru, b) {
-                                total_width += t.buffer.logical_size().w + SPACING;
+                            if let Some(t) = textures.borrow_mut().get_mut(b).get_thumbnail(
+                                niri,
+                                renderer,
+                                wmru.get_id(b),
+                            ) {
+                                total_width += t.logical_size().w + SPACING;
                             }
                             (MruAlign::Right, b, r)
                         }
                         (Some(a), Some(b)) => {
-                            if let Some(t) = textures.get(niri, renderer, wmru, a) {
-                                total_width += t.buffer.logical_size().w + SPACING;
+                            if let Some(t) = textures.borrow_mut().get_mut(a).get_thumbnail(
+                                niri,
+                                renderer,
+                                wmru.get_id(a),
+                            ) {
+                                total_width += t.logical_size().w + SPACING;
                             }
-                            if let Some(t) = textures.get(niri, renderer, wmru, b) {
-                                total_width += t.buffer.logical_size().w + SPACING;
+                            if let Some(t) = textures.borrow_mut().get_mut(b).get_thumbnail(
+                                niri,
+                                renderer,
+                                wmru.get_id(b),
+                            ) {
+                                total_width += t.logical_size().w + SPACING;
                             }
                             (align, b, a)
                         }
@@ -496,7 +530,21 @@ impl WindowMruUi {
                         Point::from((SPACING, output_size.h / 2.))
                     };
                     for idx in left..=right {
-                        if let Some(t) = textures.get(niri, renderer, wmru, idx) {
+                        let tile_textures = textures.get_mut(idx);
+                        if let Some(t) =
+                            tile_textures.get_thumbnail(niri, renderer, wmru.get_id(idx))
+                        {
+                            let title_texture = (idx == current)
+                                .then(|| {
+                                    tile_textures.get_title(
+                                        niri,
+                                        renderer,
+                                        wmru.get_id(idx),
+                                        t.logical_size().to_physical(1.).to_i32_round().w,
+                                    )
+                                })
+                                .flatten();
+
                             render_elements_for_thumbnail(
                                 t,
                                 &mut location,
@@ -507,6 +555,7 @@ impl WindowMruUi {
                                 } else {
                                     None
                                 },
+                                title_texture,
                                 &mut elements,
                             );
                         }
@@ -518,7 +567,20 @@ impl WindowMruUi {
                     let mut location = center - Point::from((current_texture_width / 2., 0.));
 
                     for idx in current..=right {
-                        if let Some(t) = textures.get(niri, renderer, wmru, idx) {
+                        let tile_textures = textures.get_mut(idx);
+                        if let Some(t) =
+                            tile_textures.get_thumbnail(niri, renderer, wmru.get_id(idx))
+                        {
+                            let title_texture = (idx == current)
+                                .then(|| {
+                                    tile_textures.get_title(
+                                        niri,
+                                        renderer,
+                                        wmru.get_id(idx),
+                                        t.logical_size().to_physical(1.).to_i32_round().w,
+                                    )
+                                })
+                                .flatten();
                             render_elements_for_thumbnail(
                                 t,
                                 &mut location,
@@ -529,6 +591,7 @@ impl WindowMruUi {
                                 } else {
                                     None
                                 },
+                                title_texture,
                                 &mut elements,
                             );
                         }
@@ -537,12 +600,16 @@ impl WindowMruUi {
                     let mut location =
                         center - Point::from((current_texture_width / 2. + SPACING, 0.));
                     for idx in (left..current).rev() {
-                        if let Some(t) = textures.get(niri, renderer, wmru, idx) {
+                        let tile_textures = textures.get_mut(idx);
+                        if let Some(t) =
+                            tile_textures.get_thumbnail(niri, renderer, wmru.get_id(idx))
+                        {
                             render_elements_for_thumbnail(
                                 t,
                                 &mut location,
                                 false,
                                 renderer,
+                                None,
                                 None,
                                 &mut elements,
                             );
@@ -554,7 +621,20 @@ impl WindowMruUi {
                     let mut location = Point::from((output_size.w - SPACING, output_size.h / 2.));
 
                     for idx in (left..=right).rev() {
-                        if let Some(t) = textures.get(niri, renderer, wmru, idx) {
+                        let tile_textures = textures.get_mut(idx);
+                        if let Some(t) =
+                            tile_textures.get_thumbnail(niri, renderer, wmru.get_id(idx))
+                        {
+                            let title_texture = (idx == current)
+                                .then(|| {
+                                    tile_textures.get_title(
+                                        niri,
+                                        renderer,
+                                        wmru.get_id(idx),
+                                        t.logical_size().to_physical(1.).to_i32_round().w,
+                                    )
+                                })
+                                .flatten();
                             render_elements_for_thumbnail(
                                 t,
                                 &mut location,
@@ -565,6 +645,7 @@ impl WindowMruUi {
                                 } else {
                                     None
                                 },
+                                title_texture,
                                 &mut elements,
                             );
                         }
@@ -597,28 +678,36 @@ impl Default for WindowMruUi {
 }
 
 fn render_elements_for_thumbnail(
-    bb: &BakedBuffer<TextureBuffer<GlesTexture>>,
+    thumbnail_texture: MruTexture,
     location: &mut Point<f64, Logical>,
     forward: bool,
     renderer: &mut GlesRenderer,
     focus_ring: Option<&RefCell<FocusRing>>,
+    title_texture: Option<MruTexture>,
     elements: &mut Vec<WindowMruUiRenderElement>,
 ) {
-    let bb_size = bb.buffer.logical_size();
+    let texture_size = thumbnail_texture.logical_size();
     if !forward {
-        *location -= Point::from((bb_size.w, 0.));
+        *location -= Point::from((texture_size.w, 0.));
     }
 
-    let render_location = *location - Point::from((0., bb_size.h / 2.));
+    let render_location = *location - Point::from((0., texture_size.h / 2.));
 
-    elements.push(
+    elements.push({
+        let bb = BakedBuffer {
+            buffer: thumbnail_texture,
+            location: Point::default(),
+            src: None,
+            dst: None,
+        };
+
         bb.to_render_element(render_location, Scale::from(1.0), 1.0, Kind::Unspecified)
-            .into(),
-    );
+            .into()
+    });
     if let Some(focus_ring) = focus_ring {
         let mut focus_ring = focus_ring.borrow_mut();
         focus_ring.update_render_elements(
-            bb_size,
+            texture_size,
             true,
             true,
             false,
@@ -634,35 +723,51 @@ fn render_elements_for_thumbnail(
         );
         elements.extend(focus_ring.render(renderer, render_location).map(Into::into));
     }
+
+    if let Some(title_texture) = title_texture {
+        let location = *location
+            + Point::from((
+                texture_size
+                    .w
+                    .saturating_sub(title_texture.logical_size().w)
+                    / 2.,
+                (SPACING + texture_size.h) / 2.,
+            ));
+        let bb = BakedBuffer {
+            buffer: title_texture,
+            location: Point::default(),
+            src: None,
+            dst: None,
+        };
+        elements.push(
+            bb.to_render_element(location, 1.0.into(), 1.0, Kind::Unspecified)
+                .into(),
+        );
+    }
+
     if forward {
-        *location += Point::from((SPACING + bb_size.w, 0.));
+        *location += Point::from((SPACING + texture_size.w, 0.));
     } else {
         *location -= Point::from((SPACING, 0.));
     }
 }
 
-pub struct TextureCache {
-    textures: Vec<Option<Thumbnail>>,
+#[derive(Default)]
+struct MruUiTileTextures {
+    thumbnail: Option<MruTexture>,
+    title: Option<MruTexture>,
 }
 
-impl TextureCache {
-    fn with_capacity(size: usize) -> Self {
-        let mut textures = Vec::with_capacity(size);
-        textures.resize_with(textures.capacity(), Default::default);
-        Self { textures }
-    }
-
-    fn get(
+impl MruUiTileTextures {
+    fn get_thumbnail(
         &mut self,
         niri: &Niri,
         renderer: &mut GlesRenderer,
-        wmru: &WindowMru,
-        index: usize,
-    ) -> Option<&Thumbnail> {
-        if self.textures[index].is_none() {
-            let id = wmru.ids[index].0;
-            self.textures[index] = niri.layout.windows().find_map(|(_, mapped)| {
-                if mapped.id() != id {
+        mid: MappedId,
+    ) -> Option<MruTexture> {
+        if self.thumbnail.is_none() {
+            self.thumbnail = niri.layout.windows().find_map(|(_, mapped)| {
+                if mapped.id() != mid {
                     return None;
                 }
 
@@ -697,26 +802,110 @@ impl TextureCache {
                 )
                 .ok()
                 .map(|(texture, _)| {
-                    let tb = TextureBuffer::from_texture(
+                    TextureBuffer::from_texture(
                         renderer,
                         texture,
                         THUMBNAIL_SCALE,
                         Transform::Normal,
                         vec![],
-                    );
-
-                    // wrap the texture into a BakedBuffer
-                    BakedBuffer {
-                        buffer: tb,
-                        location: Point::default(),
-                        src: None,
-                        dst: None,
-                    }
+                    )
                 })
             });
         }
-        self.textures[index].as_ref()
+        // TextureBuffer is an Arc, so cloning is cheap
+        self.thumbnail.clone()
     }
+
+    fn get_title(
+        &mut self,
+        niri: &Niri,
+        renderer: &mut GlesRenderer,
+        mid: MappedId,
+        width: i32,
+    ) -> Option<MruTexture> {
+        if self.title.is_none() {
+            self.title = get_window_title_by_id(niri, mid)
+                .and_then(|title| generate_title_texture(&title, renderer, width).ok());
+        }
+        // TextureBuffer is an Arc, so cloning is cheap
+        self.title.clone()
+    }
+}
+
+pub struct TextureCache(Vec<MruUiTileTextures>);
+
+impl TextureCache {
+    fn with_capacity(size: usize) -> Self {
+        let mut textures = Vec::with_capacity(size);
+        textures.resize_with(size, Default::default);
+        Self(textures)
+    }
+
+    fn get_mut(&mut self, index: usize) -> &mut MruUiTileTextures {
+        &mut self.0[index]
+    }
+}
+
+fn get_window_title_by_id(niri: &Niri, id: MappedId) -> Option<String> {
+    niri.layout.windows().find_map(|(_, mapped)| {
+        (mapped.id() == id).then(|| with_toplevel_role(mapped.toplevel(), |r| r.title.clone()))?
+    })
+}
+
+fn generate_title_texture(
+    title: &str,
+    renderer: &mut GlesRenderer,
+    width: i32,
+) -> anyhow::Result<MruTexture> {
+    let mut font = FontDescription::from_string(FONT);
+    let font_size = to_physical_precise_round(1.0, font.size());
+    font.set_absolute_size(font_size);
+
+    // Create an initial surface to determine the font height
+    let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
+    let cr = cairo::Context::new(&surface)?;
+    let layout = pangocairo::functions::create_layout(&cr);
+    layout.set_font_description(Some(&font));
+    layout.set_alignment(Alignment::Left);
+    layout.set_markup(title);
+
+    // Use the initial surface to determine the height of the final surface
+    let (text_width, height) = layout.pixel_size();
+    let width = min(width, text_width);
+
+    // Create a second surface with the final dimensions
+    let surface = ImageSurface::create(cairo::Format::ARgb32, width, height)?;
+    let cr = cairo::Context::new(&surface)?;
+    let layout = pangocairo::functions::create_layout(&cr);
+    layout.set_font_description(Some(&font));
+    layout.set_ellipsize(EllipsizeMode::End);
+    layout.set_alignment(Alignment::Center);
+    layout.set_markup(title);
+
+    // set a transparent background
+    cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
+    cr.paint()?;
+
+    // render the title
+    cr.set_source_rgb(1., 1., 1.);
+    pangocairo::functions::show_layout(&cr, &layout);
+
+    // release the cr so we can access the surface content
+    drop(cr);
+
+    // Convert the the pango surface to a TextureBuffer
+    let data = surface.take_data().unwrap();
+    let buffer = TextureBuffer::from_memory(
+        renderer,
+        &data,
+        Fourcc::Argb8888,
+        (width, height),
+        false,
+        1.0,
+        Transform::Normal,
+        Vec::new(),
+    )?;
+    Ok(buffer)
 }
 
 /// Key bindings available when the MRU UI is open.
