@@ -876,7 +876,7 @@ fn generate_title_texture(
     layout.set_font_description(Some(&font));
     layout.set_ellipsize(EllipsizeMode::End);
     layout.set_alignment(Alignment::Center);
-    layout.set_markup(title);
+    layout.set_text(title);
 
     // set a transparent background
     cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
@@ -904,7 +904,7 @@ fn generate_title_texture(
     drop(cr);
 
     // Convert the the pango surface to a TextureBuffer
-    let data = surface.take_data().unwrap();
+    let data = surface.take_data()?;
     let buffer = TextureBuffer::from_memory(
         renderer,
         &data,
