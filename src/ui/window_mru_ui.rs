@@ -25,7 +25,7 @@ x Transition when opening/closing MruUI
 */
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
-use std::cmp::{self, min};
+use std::cmp::{self};
 use std::ops::ControlFlow;
 use std::str::FromStr;
 use std::time::Instant;
@@ -859,7 +859,13 @@ fn generate_title_texture(
 
     // Use the initial surface to determine the height of the final surface
     let (text_width, height) = layout.pixel_size();
-    let width = min(width, text_width);
+
+    // apply a gradient to the end of the text to avoid a weird cut-off
+    let (width, apply_gradient) = if text_width > width {
+        (width, true)
+    } else {
+        (text_width, false)
+    };
 
     // Create a second surface with the final dimensions
     let surface = ImageSurface::create(cairo::Format::ARgb32, width, height)?;
@@ -877,6 +883,20 @@ fn generate_title_texture(
     // render the title
     cr.set_source_rgb(1., 1., 1.);
     pangocairo::functions::show_layout(&cr, &layout);
+
+    // apply overflow gradient if needed
+    if apply_gradient {
+        let gradient = cairo::LinearGradient::new(0., 0., width as f64, 0.);
+        gradient.add_color_stop_rgba(0.0, 1.0, 1.0, 1.0, 1.0); // fully opaque
+        gradient.add_color_stop_rgba(0.9, 1.0, 1.0, 1.0, 1.0); // fully opaque
+        gradient.add_color_stop_rgba(1.0, 1.0, 1.0, 1.0, 0.0); // fade to transparent
+
+        // Use destination-in to mask the content with the gradient
+        cr.set_operator(cairo::Operator::DestIn);
+        cr.rectangle(0., 0., width as f64, height as f64);
+        cr.set_source(&gradient)?;
+        cr.fill()?;
+    }
 
     // release the cr so we can access the surface content
     drop(cr);
