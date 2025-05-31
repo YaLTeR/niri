@@ -361,6 +361,7 @@ pub struct Options {
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
+    pub force_xdg_deactivation_on_invisible_workspaces: bool,
 }
 
 impl Default for Options {
@@ -393,6 +394,7 @@ impl Default for Options {
                 PresetSize::Proportion(0.5),
                 PresetSize::Proportion(2. / 3.),
             ],
+            force_xdg_deactivation_on_invisible_workspaces: false,
         }
     }
 }
@@ -658,6 +660,7 @@ impl Options {
             overview: config.overview,
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
+            force_xdg_deactivation_on_invisible_workspaces: config.debug.force_xdg_deactivation_on_invisible_workspaces,
             preset_window_heights,
         }
     }
@@ -5123,8 +5126,15 @@ impl<W: LayoutElement> Layout<W> {
                         mon.dnd_scroll_gesture_end();
                     }
 
+                    let active_ws_id = mon.active_workspace_ref().id();
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
-                        ws.refresh(is_active);
+
+                        let active = match self.options.force_xdg_deactivation_on_invisible_workspaces {
+                            false => is_active,
+                            true => is_active && ws.id() == active_ws_id,
+                        };
+
+                        ws.refresh(active);
 
                         if let Some(is_scrolling) = ongoing_scrolling_dnd {
                             // Lock or unlock the view for scrolling interactive move.

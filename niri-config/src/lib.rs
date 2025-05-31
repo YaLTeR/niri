@@ -2329,6 +2329,8 @@ pub struct DebugConfig {
     pub strict_new_window_focus_policy: bool,
     #[knuffel(child)]
     pub honor_xdg_activation_with_invalid_serial: bool,
+    #[knuffel(child)]
+    pub force_xdg_deactivation_on_invisible_workspaces: bool,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]

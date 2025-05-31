@@ -29,6 +29,7 @@ debug {
     disable-monitor-names
     strict-new-window-focus-policy
     honor-xdg-activation-with-invalid-serial 
+    force-xdg-deactivation-on-invisible-workspaces
 }
 
 binds {
@@ -275,6 +276,19 @@ debug {
 }
 ```
 
+### `force-xdg-deactivation-on-invisible-workspaces`
+
+<sup>Since: 25.05.2</sup>
+
+This is related to honor-xdg-activation-with-invalid-serial in some way, some of the chromium based chat clients (e.g. teams-for-linux) don't send notifications if they happen to be active on a workspace that is not visible on any monitor.
+
+
+```kdl
+debug {
+    force-xdg-deactivation-on-invisible-workspaces
+}
+```
+    
 ### Key Bindings
 
 These are not debug options, but rather key bindings.
