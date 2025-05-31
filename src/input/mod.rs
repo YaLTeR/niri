@@ -411,8 +411,9 @@ impl State {
                     let config = this.niri.config.borrow();
                     let bindings = config.binds.into_iter().chain(PRESET_BINDINGS);
 
-                    // Both branches of the following if statement call `should_intercept_key` the same
-                    // way but with different types for the bindings parameter.
+                    // Both branches of the following if statement call `should_intercept_key` the
+                    // same way but with different types for the bindings
+                    // parameter.
                     if this.niri.window_mru_ui.is_open() {
                         // Only a subset of keybindings are available in the WindowMruUi
                         // plus a few extra specific ones from `MRU_UI_BINDINGS`.

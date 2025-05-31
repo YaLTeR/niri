@@ -550,11 +550,7 @@ impl WindowMruUi {
                                 &mut location,
                                 true,
                                 renderer,
-                                if idx == current {
-                                    Some(focus_ring)
-                                } else {
-                                    None
-                                },
+                                (idx == current).then_some(focus_ring),
                                 title_texture,
                                 &mut elements,
                             );
@@ -586,11 +582,7 @@ impl WindowMruUi {
                                 &mut location,
                                 true,
                                 renderer,
-                                if idx == current {
-                                    Some(focus_ring)
-                                } else {
-                                    None
-                                },
+                                (idx == current).then_some(focus_ring),
                                 title_texture,
                                 &mut elements,
                             );
@@ -640,11 +632,7 @@ impl WindowMruUi {
                                 &mut location,
                                 false,
                                 renderer,
-                                if idx == current {
-                                    Some(focus_ring)
-                                } else {
-                                    None
-                                },
+                                (idx == current).then_some(focus_ring),
                                 title_texture,
                                 &mut elements,
                             );
