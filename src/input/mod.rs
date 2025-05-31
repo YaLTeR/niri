@@ -2100,7 +2100,7 @@ impl State {
                         // using a mut call to window_mru_ui because we would need to also pass
                         // in a ref to niri, so the process is broken down into two steps:
                         // 1. generate a new WindowMru 2. pass that into the WindowMruUi).
-                        self.niri.window_mru_ui.update_mru_list(dir, wmru);
+                        self.niri.window_mru_ui.update_mru_list(Some(dir), wmru);
                     } else {
                         self.niri.window_mru_ui.advance(dir);
                     }
@@ -2138,6 +2138,19 @@ impl State {
                     self.niri.window_mru_ui.last();
                     // FIXME: granular
                     self.niri.queue_redraw_all();
+                }
+            }
+            Action::MruChangeScope(scope) => {
+                if self.niri.window_mru_ui.is_open() {
+                    if let Some(wmru) =
+                        self.niri
+                            .window_mru_ui
+                            .derive_new_mru_list(&self.niri, Some(scope), None)
+                    {
+                        self.niri.window_mru_ui.update_mru_list(None, wmru);
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
                 }
             }
         }

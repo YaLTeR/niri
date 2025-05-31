@@ -7,7 +7,7 @@ Todo:
 - support clicking on the target thumbnail
 x add title of the current Mru selection under the thumbnail
 x change BakedBuffers to TextureBuffers
-- add bindings in the UI to switch to Output or Workspace modes
+x add bindings in the UI to switch to Output or Workspace modes
 - add a help panel in the UI listing key bindings (e.g. screenshot UI)
 x in UI, left/right should not change the current mode
 x "advance" bindings for the MruUI should be copied over from the general
@@ -318,7 +318,7 @@ impl WindowMruUi {
         }
     }
 
-    pub fn update_mru_list(&mut self, dir: MruDirection, mut wmru: WindowMru) {
+    pub fn update_mru_list(&mut self, dir: Option<MruDirection>, mut wmru: WindowMru) {
         let Self::Open {
             wmru: ref mut prev_wmru,
             textures,
@@ -375,7 +375,9 @@ impl WindowMruUi {
 
         // And (possibly) advance in the requested direction.
         if should_advance {
-            self.advance(dir);
+            if let Some(dir) = dir {
+                self.advance(dir);
+            }
         }
     }
 
@@ -1026,6 +1028,42 @@ pub const MRU_UI_BINDINGS: &[Bind] = &[
             modifiers: Modifiers::ALT,
         },
         action: Action::MruLast,
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::a),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::MruChangeScope(MruScope::All),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::w),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::MruChangeScope(MruScope::Workspace),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::o),
+            modifiers: Modifiers::ALT,
+        },
+        action: Action::MruChangeScope(MruScope::Output),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,

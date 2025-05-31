@@ -1949,6 +1949,8 @@ pub enum Action {
     MruFirst,
     #[knuffel(skip)]
     MruLast,
+    #[knuffel(skip)]
+    MruChangeScope(#[knuffel(argument)] MruScope),
 }
 
 impl From<niri_ipc::Action> for Action {
