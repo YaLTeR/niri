@@ -2,24 +2,19 @@ When starting niri from a display manager like GDM, or otherwise through the `ni
 This provides the necessary systemd integration to run programs like `mako` and services like `xdg-desktop-portal` bound to the graphical session.
 
 Here's an example on how you might set up [`mako`](https://github.com/emersion/mako), [`waybar`](https://github.com/Alexays/Waybar), [`swaybg`](https://github.com/swaywm/swaybg) and [`swayidle`](https://github.com/swaywm/swayidle) to run as systemd services with niri.
-In contrast to [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup), this lets you easily monitor their status and output, and restart or reload them.
+Unlike [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup), this lets you easily monitor their status, output, and restart or reload them.
 
 1. Install them, i.e. `sudo dnf install mako waybar swaybg swayidle`
-2. Create a `niri.service.wants` folder: `mkdir -p ~/.config/systemd/user/niri.service.wants`
-
-    This is a special systemd folder.
-    Any services linked there will be started together with `niri.service` (which is a systemd unit used by niri when running as a session).
-
-3. `mako` and `waybar` provide systemd units out of the box, so you can simply symlink them into the `niri.service.wants` folder:
-
+2. `mako` and `waybar` provide systemd units. To add them to your niri session run: 
     ```
-    ln -s /usr/lib/systemd/user/mako.service ~/.config/systemd/user/niri.service.wants/
-    ln -s /usr/lib/systemd/user/waybar.service ~/.config/systemd/user/niri.service.wants/
+    systemctl --user add-wants niri.service mako.service
+    systemctl --user add-wants niri.service waybar.service
     ```
+    This wil provide links in `$HOME/.config/systemd/user/niri.service.wants` or for XDG configurations `$XDG_CONFIG_HOME/systemd/user/niri.service.wants`.
 
-4. `swaybg` does not provide a systemd unit, since you need to pass the background image as a command-line argument.
-    So we will make our own.
-    Put the following into `~/.config/systemd/user/swaybg.service`:
+    **Next** we willl create two example units for `swaybg` and `swayidle`. These will be saved in `$HOME/.config/system/user` or for XDG configurations, `$XDG_CONFIG_HOME/systemd/user`;
+4. `swaybg` does not provide a systemd unit. Create `swaybg.service` from one
+    of the above directories.
 
     ```
     [Unit]
@@ -32,18 +27,17 @@ In contrast to [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-s
     Restart=on-failure
     ```
 
-    Replace the image path with the one you want.
-    `%h` is expanded to your home directory.
+    Replace the image path with the one you want. `%h` is expanded to your home directory.
 
-    After editing `swaybg.service`, run `systemctl --user daemon-reload` so systemd picks up the changes in the file.
-
-    Now, also symlink this to `niri.service.wants`:
+    Save your changes, then run
+    ```systemctl --user daemon-reload```
+    so systemd picks up the file changes. Now,
 
     ```
-    ln -s ~/.config/systemd/user/swaybg.service ~/.config/systemd/user/niri.service.wants/
+    systemctl --user add-wants niri.service swaybg.service
     ```
-
-5. `swayidle` similarly does not provide a service so we will also make our own. Put the following into `~/.config/systemd/user/swayidle.service`:
+    This will add a dependancy `swaybg.service` to the niri session.
+5. Similarly, for `swayidle` we will also make our own. Create a `swayidle.service` _in one of the directories from **step 2***_.
 
     ```
     [Unit]
@@ -56,14 +50,16 @@ In contrast to [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-s
     Restart=on-failure
     ```
 
-    Then, run `systemctl --user daemon-reload` and symlink this file to `niri.service.wants`:
+    Save the file and run `systemctl --user daemon-reload`. Now,
 
     ```
-    ln -s ~/.config/systemd/user/swayidle.service ~/.config/systemd/user/niri.service.wants/
+    systemctl --user add-wants niri.service swayidle.service
     ```
 
-That's it!
-Now these three utilities will be started together with the niri session and stopped when it exits.
+To stop using a service on a niri session startup remove their link from `$HOME/.config/systemd/user/niri.service.wants` or `$XDG_CONFIG_HOME/systemd/user/niri.service.wants` for XDG configuration. Then, do a `systemctl --user daemon-reload`.
+
+**That's it!** Now these utilities will be started together with the niri session and stopped when it exits.
+
 You can also restart them with a command like `systemctl --user restart waybar.service`, for example after editing their config files.
 
 ### Running Programs Across Logout
