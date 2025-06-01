@@ -5,7 +5,8 @@ However, there are multiple solutions to running X11 apps in niri.
 
 [xwayland-satellite] implements rootless Xwayland in a separate application, without the host compositor's involvement.
 It makes X11 windows appear as normal windows, just like a native Xwayland integration.
-While it is still somewhat experimental, it handles a lot of applications correctly, like Steam, games and Discord.
+xwayland-satellite works well with most applications: Steam, games, Discord, even more exotic things like Ardour with wine Windows VST plugins.
+However, X11 apps that want to position windows or bars at specific screen coordinates won't behave correctly.
 
 Install it from your package manager, or build it according to instructions from its README, then run the `xwayland-satellite` binary.
 Look for a log message like: `Connected to Xwayland on :0`.
