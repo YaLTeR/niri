@@ -407,7 +407,7 @@ impl State {
                     return FilterResult::Intercept(None);
                 }
 
-                let res = {
+                let intercept_result = {
                     let config = this.niri.config.borrow();
                     let bindings = config.binds.into_iter().chain(PRESET_BINDINGS);
 
@@ -449,7 +449,7 @@ impl State {
                         )
                     }
                 };
-                if matches!(res, FilterResult::Forward) {
+                if matches!(intercept_result, FilterResult::Forward) {
                     // MRU UI prevents interaction with regular windows
                     if this.niri.window_mru_ui.is_open() {
                         return FilterResult::Intercept(None);
@@ -467,7 +467,7 @@ impl State {
                         this.niri.mru_commit();
                     }
                 }
-                res
+                intercept_result
             },
         ) else {
             return;
@@ -4065,7 +4065,7 @@ fn find_bind<'a>(
 /// Preset bindings can be overridden in the user configuration.
 /// The reason for treating them differently is that their key + modifier
 /// combination needs to be frozen for some reason.
-pub const PRESET_BINDINGS: &[Bind] = &[
+const PRESET_BINDINGS: &[Bind] = &[
     // The following two bindings cover MRU window navigation. They are
     // preset because the `Alt` key is treated specially in `on_keyboard`.
     // When it is released the active MRU traversal is considered to have

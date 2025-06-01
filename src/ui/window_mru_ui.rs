@@ -25,11 +25,10 @@ x Transition when opening/closing MruUI
 */
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
-use std::cmp::{self};
 use std::ops::ControlFlow;
 use std::str::FromStr;
 use std::time::Instant;
-use std::{iter, mem};
+use std::{cmp, iter, mem};
 
 use niri_config::{
     Action, Bind, Key, Match, Modifiers, MruDirection, MruFilter, MruScope, RegexEq, Trigger,
