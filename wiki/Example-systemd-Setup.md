@@ -12,9 +12,8 @@ Unlike [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup),
     ```
     This wil provide links in `$HOME/.config/systemd/user/niri.service.wants`.
 
-    **Next** we willl create two example units for `swaybg` and `swayidle`. These will be saved in `$HOME/.config/system/user`; You can edit these files manually or use `systemctl --user edit --force --full filename.service`.
-4. `swaybg` does not provide a systemd unit. Create `swaybg.service` from one
-    of the above directories.
+    **Next** we willl create two example units for `swaybg` and `swayidle`. These will be saved in `$HOME/.config/system/user`.
+4. `swaybg` does not provide a systemd unit. Create `swaybg.service` in the above directories.
 
     ```
     [Unit]
@@ -37,7 +36,7 @@ Unlike [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup),
     systemctl --user add-wants niri.service swaybg.service
     ```
     This will add a dependancy `swaybg.service` to the niri session.
-5. Similarly, for `swayidle` we will also make our own. Create a `swayidle.service` _in one of the directories from **step 2***_.
+5. Similarly, for `swayidle` we will also make our own. Create a `swayidle.service` in `$HOME/.config/system/user`.
 
     ```
     [Unit]
