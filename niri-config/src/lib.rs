@@ -2330,7 +2330,7 @@ pub struct DebugConfig {
     #[knuffel(child)]
     pub honor_xdg_activation_with_invalid_serial: bool,
     #[knuffel(child)]
-    pub force_xdg_deactivation_on_invisible_workspaces: bool,
+    pub deactivate_unfocused_windows: bool,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]

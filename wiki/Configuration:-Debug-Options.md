@@ -28,8 +28,8 @@ debug {
     keep-laptop-panel-on-when-lid-is-closed
     disable-monitor-names
     strict-new-window-focus-policy
-    honor-xdg-activation-with-invalid-serial 
-    force-xdg-deactivation-on-invisible-workspaces
+    honor-xdg-activation-with-invalid-serial
+    deactivate-unfocused-windows
 }
 
 binds {
@@ -276,7 +276,7 @@ debug {
 }
 ```
 
-### `force-xdg-deactivation-on-invisible-workspaces`
+### `deactivate-unfocused-windows`
 
 <sup>Since: 25.05.2</sup>
 
@@ -285,7 +285,7 @@ This is related to honor-xdg-activation-with-invalid-serial in some way, some of
 
 ```kdl
 debug {
-    force-xdg-deactivation-on-invisible-workspaces
+    deactivate-unfocused-windows
 }
 ```
     
