@@ -2,7 +2,7 @@ When starting niri from a display manager like GDM, or otherwise through the `ni
 This provides the necessary systemd integration to run programs like `mako` and services like `xdg-desktop-portal` bound to the graphical session.
 
 Here's an example on how you might set up [`mako`](https://github.com/emersion/mako), [`waybar`](https://github.com/Alexays/Waybar), [`swaybg`](https://github.com/swaywm/swaybg) and [`swayidle`](https://github.com/swaywm/swayidle) to run as systemd services with niri.
-Unlike [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup), this lets you easily monitor their status, output, and restart or reload them.
+Unlike [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup), this lets you easily monitor their status and output, and restart or reload them.
 
 1. Install them, i.e. `sudo dnf install mako waybar swaybg swayidle`
 2. `mako` and `waybar` provide systemd units. To add them to your niri session run: 
@@ -10,10 +10,8 @@ Unlike [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup),
     systemctl --user add-wants niri.service mako.service
     systemctl --user add-wants niri.service waybar.service
     ```
-    This wil provide links in `$HOME/.config/systemd/user/niri.service.wants`.
-
-    **Next** we willl create two example units for `swaybg` and `swayidle`. These will be saved in `$HOME/.config/system/user`.
-4. `swaybg` does not provide a systemd unit. Create `swaybg.service` in the above directories.
+    This will provide links in `~/.config/systemd/user/niri.service.wants`.
+3. `swaybg` does not provide a systemd unit. Create `swaybg.service` in `~/.config/systemd/user`.
 
     ```
     [Unit]
@@ -36,7 +34,7 @@ Unlike [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup),
     systemctl --user add-wants niri.service swaybg.service
     ```
     This will add a dependancy `swaybg.service` to the niri session.
-5. Similarly, for `swayidle` we will also make our own. Create a `swayidle.service` in `$HOME/.config/system/user`.
+4. Similarly, for `swayidle` we will also make our own. Create a `swayidle.service` in `~/.config/systemd/user`.
 
     ```
     [Unit]
@@ -55,7 +53,7 @@ Unlike [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup),
     systemctl --user add-wants niri.service swayidle.service
     ```
 
-To stop using a service on session startup remove the link from `$HOME/.config/systemd/user/niri.service.wants`. Then, do a `systemctl --user daemon-reload`.
+To stop using a service on session startup remove the link from `~/.config/systemd/user/niri.service.wants`. Then, do a `systemctl --user daemon-reload`.
 
 **That's it!** Now these utilities will be started together with your niri session and stopped when it exits.
 
