@@ -2656,7 +2656,7 @@ impl State {
             pointer
                 .current_focus()
                 .map(|surface| self.niri.find_root_shell_surface(&surface))
-                .map_or(true, |root| {
+                .is_none_or(|root| {
                     !self
                         .niri
                         .mapped_layer_surfaces
