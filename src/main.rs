@@ -201,8 +201,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if cli.session {
-        // We're starting as a session. Import our variables.
-        import_environment();
+        if (!cli.no_import_environment) {
+            // We're starting as a session. Import our variables.
+            import_environment();
+        }
 
         // Inhibit power key handling so we can suspend on it.
         #[cfg(feature = "dbus")]
