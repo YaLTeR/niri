@@ -38,6 +38,28 @@ const DEFAULT_LOG_FILTER: &str = "niri=debug,smithay::backend::renderer::gles=er
 static GLOBAL: tracy_client::ProfiledAllocator<std::alloc::System> =
     tracy_client::ProfiledAllocator::new(std::alloc::System, 100);
 
+// SCHED_RESET_ON_FORK only exists on linux
+#[cfg(target_os = "linux")]
+fn set_rt_scheduling() -> () {
+    // Set SCHED_RESET_ON_FORK and request minimal realtime round-robin prio for main pid
+    let param = libc::sched_param {
+        sched_priority: unsafe { libc::sched_get_priority_min(libc::SCHED_RR) }
+    };
+    let res = unsafe { libc::pthread_setschedparam(libc::pthread_self(), libc::SCHED_RR | libc::SCHED_RESET_ON_FORK, &param) };
+    match res {
+        libc::EPERM => debug!("No permission to set real-time policy"),
+        libc::EINVAL => debug!("RT Policy not recognized or scheduling params wrong"),
+        libc::ESRCH => debug!("Thread ID not found for RT scheduling policy"),
+        0 => (),
+        _ => warn!("Unknown failure: {res}")
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn set_rt_scheduling() -> () {
+    ()
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set backtrace defaults if not set.
     if env::var_os("RUST_BACKTRACE").is_none() {
@@ -245,6 +267,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if let Some(path) = config_created_at {
         state.niri.config_error_notification.show_created(path);
     }
+
+    set_rt_scheduling();
 
     // Run the compositor.
     event_loop
