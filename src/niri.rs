@@ -160,11 +160,12 @@ use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
-use crate::utils::spawning::CHILD_ENV;
+use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
+use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
     logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
-    write_png_rgba8,
+    write_png_rgba8, xwayland,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -375,6 +376,8 @@ pub struct Niri {
 
     pub ipc_server: Option<IpcServer>,
     pub ipc_outputs_changed: bool,
+
+    pub satellite: Option<Satellite>,
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
@@ -1332,6 +1335,7 @@ impl State {
         let mut layer_rules_changed = false;
         let mut shaders_changed = false;
         let mut cursor_inactivity_timeout_changed = false;
+        let mut xwls_changed = false;
         let mut old_config = self.niri.config.borrow_mut();
 
         // Reload the cursor.
@@ -1443,6 +1447,10 @@ impl State {
             output_config_changed = true;
         }
 
+        if config.xwayland_satellite != old_config.xwayland_satellite {
+            xwls_changed = true;
+        }
+
         *old_config = config;
 
         if let Some(outputs) = preserved_output_config {
@@ -1504,6 +1512,30 @@ impl State {
             // Force reset due to timeout change.
             self.niri.pointer_inactivity_timer_got_reset = false;
             self.niri.reset_pointer_inactivity_timer();
+        }
+
+        if xwls_changed {
+            // If xwl-s was previously working and is now off, we don't try to kill it or stop
+            // watching the sockets, for simplicity's sake.
+            let was_working = self.niri.satellite.is_some();
+
+            // Try to start, or restart in case the user corrected the path or something.
+            xwayland::satellite::setup(self);
+
+            let config = self.niri.config.borrow();
+            let display_name = (!config.xwayland_satellite.off)
+                .then_some(self.niri.satellite.as_ref())
+                .flatten()
+                .map(|satellite| satellite.display_name().to_owned());
+
+            if let Some(name) = &display_name {
+                if !was_working {
+                    info!("listening on X11 socket: {name}");
+                }
+            }
+
+            // This won't change the systemd environment, but oh well.
+            *CHILD_DISPLAY.write().unwrap() = display_name;
         }
 
         // Can't really update xdg-decoration settings since we have to hide the globals for CSD
@@ -2568,6 +2600,8 @@ impl Niri {
 
             ipc_server,
             ipc_outputs_changed: false,
+
+            satellite: None,
 
             pipewire: None,
             casts: vec![],
