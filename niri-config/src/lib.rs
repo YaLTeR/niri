@@ -65,6 +65,8 @@ pub struct Config {
     pub overview: Overview,
     #[knuffel(child, default)]
     pub environment: Environment,
+    #[knuffel(child, default)]
+    pub xwayland_satellite: XwaylandSatellite,
     #[knuffel(children(name = "window-rule"))]
     pub window_rules: Vec<WindowRule>,
     #[knuffel(children(name = "layer-rule"))]
@@ -1362,6 +1364,23 @@ pub struct EnvironmentVariable {
     pub name: String,
     #[knuffel(argument)]
     pub value: Option<String>,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+pub struct XwaylandSatellite {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, unwrap(argument), default = Self::default().path)]
+    pub path: String,
+}
+
+impl Default for XwaylandSatellite {
+    fn default() -> Self {
+        Self {
+            off: false,
+            path: String::from("xwayland-satellite"),
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
@@ -4796,6 +4815,10 @@ mod tests {
                     },
                 ],
             ),
+            xwayland_satellite: XwaylandSatellite {
+                off: false,
+                path: "xwayland-satellite",
+            },
             window_rules: [
                 WindowRule {
                     matches: [

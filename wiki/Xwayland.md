@@ -8,6 +8,14 @@ It makes X11 windows appear as normal windows, just like a native Xwayland integ
 xwayland-satellite works well with most applications: Steam, games, Discord, even more exotic things like Ardour with wine Windows VST plugins.
 However, X11 apps that want to position windows or bars at specific screen coordinates won't behave correctly.
 
+> [!NOTE]
+> In the next release, niri will have [built-in xwayland-satellite integration](./Configuration:-Miscellaneous.md#xwayland-satellite).
+> You can try it by installing git versions of both niri and xwayland-satellite.
+> With no further configuration, niri will create X11 sockets, then when an X11 client connects, automatically start xwayland-satellite.
+>
+> This matches how other compositors run Xwayland (but in niri's case, it's xwayland-satellite rather than Xwayland itself).
+> It also makes X11 apps work fine in `spawn-at-startup` and in XDG autostart.
+
 Install it from your package manager, or build it according to instructions from its README, then run the `xwayland-satellite` binary.
 Look for a log message like: `Connected to Xwayland on :0`.
 Now you can start X11 applications on this X11 DISPLAY:
