@@ -57,6 +57,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
+pub mod diagnostic;
 pub mod socket;
 pub mod state;
 
