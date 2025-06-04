@@ -1031,6 +1031,8 @@ pub struct Struts {
 pub struct HotkeyOverlay {
     #[knuffel(child)]
     pub skip_at_startup: bool,
+    #[knuffel(child)]
+    pub hide_not_bound: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -2349,6 +2351,8 @@ pub struct DebugConfig {
     pub strict_new_window_focus_policy: bool,
     #[knuffel(child)]
     pub honor_xdg_activation_with_invalid_serial: bool,
+    #[knuffel(child)]
+    pub skip_cursor_only_updates_during_vrr: bool,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
@@ -4628,6 +4632,7 @@ mod tests {
             },
             hotkey_overlay: HotkeyOverlay {
                 skip_at_startup: true,
+                hide_not_bound: false,
             },
             animations: Animations {
                 off: false,
@@ -5306,6 +5311,7 @@ mod tests {
                 disable_monitor_names: false,
                 strict_new_window_focus_policy: false,
                 honor_xdg_activation_with_invalid_serial: false,
+                skip_cursor_only_updates_during_vrr: false,
             },
             workspaces: [
                 Workspace {

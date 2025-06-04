@@ -285,6 +285,11 @@ fn render(
         }
     }
 
+    if config.hotkey_overlay.hide_not_bound {
+        // Only keep actions that have been bound
+        actions.retain(|&action| binds.iter().any(|bind| bind.action == *action))
+    }
+
     let strings = actions
         .into_iter()
         .filter_map(|action| format_bind(binds, mod_key, action))

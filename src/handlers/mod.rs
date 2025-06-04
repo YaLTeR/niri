@@ -25,7 +25,7 @@ use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
-use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::utils::{Logical, Point, Rectangle};
 use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
 use smithay::wayland::drm_lease::{
@@ -470,7 +470,7 @@ delegate_session_lock!(State);
 pub fn configure_lock_surface(surface: &LockSurface, output: &Output) {
     surface.with_pending_state(|states| {
         let size = output_size(output);
-        states.size = Some(Size::from((size.w as u32, size.h as u32)));
+        states.size = Some(size.to_i32_round());
     });
     let scale = output.current_scale();
     let transform = output.current_transform();
