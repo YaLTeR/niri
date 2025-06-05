@@ -42,6 +42,7 @@ clipboard {
 
 hotkey-overlay {
     skip-at-startup
+    hide-not-bound
 }
 ```
 
@@ -236,6 +237,8 @@ hotkey-overlay {
 ```
 
 #### `hide-not-bound`
+
+<sup>Since: next release</sup>
 
 By default, niri will show the most important actions even if they aren't bound to any key, to prevent confusion.
 Set the `hide-not-bound` flag if you want to hide all actions not bound to any key.
