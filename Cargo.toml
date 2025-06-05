@@ -152,7 +152,7 @@ insta.opt-level = 3
 similar.opt-level = 3
 
 [package.metadata.generate-rpm]
-version = "25.02"
+version = "25.05.1"
 assets = [
     { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
     { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },
