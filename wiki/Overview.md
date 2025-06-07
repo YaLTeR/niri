@@ -8,9 +8,10 @@ It lets you see what's going on at a glance, navigate, and drag windows around.
 https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995
 
 Open it with the `toggle-overview` bind, via the top-left hot corner, or using a touchpad four-finger swipe up.
-While in the overview, all keyboard shortcuts keep working, while pointing devices get easier:
+While in the overview, the navigation gets easier:
 
-- Mouse: left click and drag windows to move them, right click and drag to scroll workspaces left/right, scroll to switch workspaces (no holding Mod required).
+- Keyboard: all keyboard shortcuts keep working, shortcuts featuring Mod key no longer require it to be held.
+- Mouse: left click and drag windows to move them, right click and drag to scroll workspaces left/right. Other button and scroll wheel bindings with Mod do not require holding it.
 - Touchpad: two-finger scrolling that matches the normal three-finger gestures.
 - Touchscreen: one-finger scrolling, or one-finger long press to move a window.
 
