@@ -2442,13 +2442,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .find_map(|col| col.popup_target_rect(id))
     }
 
-    pub fn toggle_width(&mut self) {
+    pub fn toggle_width<const FORWARDS: bool>(&mut self) {
         if self.columns.is_empty() {
             return;
         }
 
         let col = &mut self.columns[self.active_column_idx];
-        col.toggle_width(None);
+        col.toggle_width::<FORWARDS>(None);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2536,31 +2536,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
-    pub fn toggle_window_width(&mut self, window: Option<&W::Id>) {
-        if self.columns.is_empty() {
-            return;
-        }
-
-        let (col, tile_idx) = if let Some(window) = window {
-            self.columns
-                .iter_mut()
-                .find_map(|col| {
-                    col.tiles
-                        .iter()
-                        .position(|tile| tile.window().id() == window)
-                        .map(|tile_idx| (col, Some(tile_idx)))
-                })
-                .unwrap()
-        } else {
-            (&mut self.columns[self.active_column_idx], None)
-        };
-
-        col.toggle_width(tile_idx);
-
-        cancel_resize_for_column(&mut self.interactive_resize, col);
+    pub fn toggle_window_width<const FORWARDS: bool>(&mut self, window: Option<&W::Id>) {
+        self.toggle_window::<FORWARDS, true>(window);
     }
 
-    pub fn toggle_window_height(&mut self, window: Option<&W::Id>) {
+    pub fn toggle_window_height<const FORWARDS: bool>(&mut self, window: Option<&W::Id>) {
+        self.toggle_window::<FORWARDS, false>(window);
+    }
+
+    fn toggle_window<const FORWARDS: bool, const IS_WIDTH: bool>(
+        &mut self,
+        window: Option<&W::Id>,
+    ) {
         if self.columns.is_empty() {
             return;
         }
@@ -2579,7 +2566,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             (&mut self.columns[self.active_column_idx], None)
         };
 
-        col.toggle_window_height(tile_idx, true);
+        if IS_WIDTH {
+            col.toggle_width::<FORWARDS>(tile_idx);
+        } else {
+            col.toggle_window_height::<FORWARDS>(tile_idx, true);
+        }
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -4436,7 +4427,7 @@ impl<W: LayoutElement> Column<W> {
         true
     }
 
-    fn toggle_width(&mut self, tile_idx: Option<usize>) {
+    fn toggle_width<const FORWARDS: bool>(&mut self, tile_idx: Option<usize>) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         let preset_idx = if self.is_full_width {
@@ -4446,7 +4437,8 @@ impl<W: LayoutElement> Column<W> {
         };
 
         let preset_idx = if let Some(idx) = preset_idx {
-            (idx + 1) % self.options.preset_column_widths.len()
+            let len = self.options.preset_column_widths.len();
+            (idx + if FORWARDS { 1 } else { len - 1 }) % len
         } else {
             let tile = &self.tiles[tile_idx];
             let current_window = tile.window_expected_or_current_size().w;
@@ -4623,7 +4615,11 @@ impl<W: LayoutElement> Column<W> {
         self.update_tile_sizes(animate);
     }
 
-    fn toggle_window_height(&mut self, tile_idx: Option<usize>, animate: bool) {
+    fn toggle_window_height<const FORWARDS: bool>(
+        &mut self,
+        tile_idx: Option<usize>,
+        animate: bool,
+    ) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         // Start by converting all heights to automatic, since only one window in the column can be
@@ -4636,7 +4632,10 @@ impl<W: LayoutElement> Column<W> {
         }
 
         let preset_idx = match self.data[tile_idx].height {
-            WindowHeight::Preset(idx) => (idx + 1) % self.options.preset_window_heights.len(),
+            WindowHeight::Preset(idx) => {
+                let len = self.options.preset_window_heights.len();
+                (idx + if FORWARDS { 1 } else { len - 1 }) % len
+            }
             _ => {
                 let current = self.data[tile_idx].size.h;
                 let tile = &self.tiles[tile_idx];
