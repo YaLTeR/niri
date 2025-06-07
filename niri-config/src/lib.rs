@@ -178,6 +178,17 @@ pub enum CenterFocusedColumn {
     OnOverflow,
 }
 
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum ScrollingOrientation {
+    /// Use Horizontal, except on portrait monitors
+    #[default]
+    Auto,
+    /// Screen scrolls horizontally
+    Horizontal,
+    /// Screen scrolls vertically
+    Vertical,
+}
+
 #[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]
 pub enum TrackLayout {
     /// The layout change is global.
@@ -545,6 +556,8 @@ pub struct Layout {
     pub struts: Struts,
     #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
     pub background_color: Color,
+    #[knuffel(child, unwrap(argument), default)]
+    pub scrolling_orientation: ScrollingOrientation,
 }
 
 impl Default for Layout {
@@ -565,6 +578,7 @@ impl Default for Layout {
             struts: Default::default(),
             preset_window_heights: Default::default(),
             background_color: DEFAULT_BACKGROUND_COLOR,
+            scrolling_orientation: Default::default(),
         }
     }
 }

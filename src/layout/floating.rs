@@ -10,6 +10,7 @@ use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
 use super::scrolling::ColumnWidth;
 use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
+use super::uv::Orientation;
 use super::workspace::{InteractiveResize, ResolvedSize};
 use super::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, Options, RemovedTile, SizeFrac,
@@ -31,6 +32,8 @@ pub const DIRECTIONAL_MOVE_PX: f64 = 50.;
 /// Space for floating windows.
 #[derive(Debug)]
 pub struct FloatingSpace<W: LayoutElement> {
+    orientation: Orientation,
+
     /// Tiles in top-to-bottom order.
     tiles: Vec<Tile<W>>,
 
@@ -206,6 +209,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
         options: Rc<Options>,
     ) -> Self {
         Self {
+            orientation: super::orientation_from_config(
+                options.scrolling_orientation,
+                &working_area.size,
+            ),
             tiles: Vec::new(),
             data: Vec::new(),
             active_window_id: None,
@@ -513,7 +520,11 @@ impl<W: LayoutElement> FloatingSpace<W> {
         // Store the floating position.
         tile.floating_pos = Some(data.pos);
 
-        let width = ColumnWidth::Fixed(tile.tile_expected_or_current_size().w);
+        let width = ColumnWidth::Fixed(
+            self.orientation
+                .size_to_uv(tile.tile_expected_or_current_size())
+                .u,
+        );
         RemovedTile {
             tile,
             width,
