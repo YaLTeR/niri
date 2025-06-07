@@ -1615,6 +1615,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.scroll_amount_to_activate(window)
     }
 
+    pub fn is_active_column_full_width(&self) -> bool {
+        self.scrolling.is_active_column_full_width()
+    }
+
     pub fn is_urgent(&self) -> bool {
         self.windows().any(|win| win.is_urgent())
     }

@@ -1339,6 +1339,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         (from_view_offset - new_view_offset).abs() / self.working_area.size.w
     }
 
+    pub fn is_active_column_full_width(&self) -> bool {
+        self.columns[self.active_column_idx].is_full_width
+    }
+
     pub fn activate_window(&mut self, window: &W::Id) -> bool {
         let column_idx = self.columns.iter().position(|col| col.contains(window));
         let Some(column_idx) = column_idx else {
