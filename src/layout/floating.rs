@@ -8,6 +8,7 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
+use super::dimensions::WorkspaceDimensions;
 use super::scrolling::ColumnWidth;
 use super::tile::{Tile, TileRenderElement, TileRenderSnapshot};
 use super::workspace::{InteractiveResize, ResolvedSize};
@@ -51,14 +52,8 @@ pub struct FloatingSpace<W: LayoutElement> {
     /// Windows in the closing animation.
     closing_windows: Vec<ClosingWindow>,
 
-    /// View size for this space.
-    view_size: Size<f64, Logical>,
-
-    /// Working area for this space.
-    working_area: Rectangle<f64, Logical>,
-
-    /// Scale of the output the space is on (and rounds its sizes to).
-    scale: f64,
+    /// Dimensions (output scale/view size/working area) for this space.
+    dimensions: WorkspaceDimensions,
 
     /// Clock for driving animations.
     clock: Clock,
@@ -198,43 +193,31 @@ impl Data {
 }
 
 impl<W: LayoutElement> FloatingSpace<W> {
-    pub fn new(
-        view_size: Size<f64, Logical>,
-        working_area: Rectangle<f64, Logical>,
-        scale: f64,
-        clock: Clock,
-        options: Rc<Options>,
-    ) -> Self {
+    pub fn new(dimensions: WorkspaceDimensions, clock: Clock, options: Rc<Options>) -> Self {
         Self {
             tiles: Vec::new(),
             data: Vec::new(),
             active_window_id: None,
             interactive_resize: None,
             closing_windows: Vec::new(),
-            view_size,
-            working_area,
-            scale,
+            dimensions,
             clock,
             options,
         }
     }
 
-    pub fn update_config(
-        &mut self,
-        view_size: Size<f64, Logical>,
-        working_area: Rectangle<f64, Logical>,
-        scale: f64,
-        options: Rc<Options>,
-    ) {
+    pub fn update_config(&mut self, dimensions: WorkspaceDimensions, options: Rc<Options>) {
         for (tile, data) in zip(&mut self.tiles, &mut self.data) {
-            tile.update_config(view_size, scale, options.clone());
+            tile.update_config(
+                dimensions.view_size(),
+                dimensions.fractional_scale(),
+                options.clone(),
+            );
             data.update(tile);
-            data.update_config(working_area);
+            data.update_config(dimensions.working_area());
         }
 
-        self.view_size = view_size;
-        self.working_area = working_area;
-        self.scale = scale;
+        self.dimensions = dimensions;
         self.options = options;
     }
 
@@ -298,7 +281,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
     pub fn tiles_with_render_positions(
         &self,
     ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>)> {
-        let scale = self.scale;
+        let scale = self.dimensions.fractional_scale();
         self.tiles_with_offsets().map(move |(tile, offset)| {
             let pos = offset + tile.render_offset();
             // Round to physical pixels.
@@ -311,7 +294,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         &mut self,
         round: bool,
     ) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> {
-        let scale = self.scale;
+        let scale = self.dimensions.fractional_scale();
         self.tiles_with_offsets_mut().map(move |(tile, offset)| {
             let mut pos = offset + tile.render_offset();
             // Round to physical pixels.
@@ -324,7 +307,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
     pub fn new_window_toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
         let border_config = rules.border.resolve_against(self.options.border);
-        compute_toplevel_bounds(border_config, self.working_area.size)
+        compute_toplevel_bounds(border_config, self.dimensions.working_area().size)
     }
 
     /// Returns the geometry of the active tile relative to and clamped to the working area.
@@ -336,14 +319,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let tile_size = tile.tile_size();
         let tile_rect = Rectangle::new(offset, tile_size);
 
-        self.working_area.intersection(tile_rect)
+        self.dimensions.working_area().intersection(tile_rect)
     }
 
     pub fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
         for (tile, pos) in self.tiles_with_offsets() {
             if tile.window().id() == id {
                 // Position within the working area.
-                let mut target = self.working_area;
+                let mut target = self.dimensions.working_area();
                 target.loc -= pos;
                 target.loc -= tile.window_loc();
 
@@ -390,7 +373,11 @@ impl<W: LayoutElement> FloatingSpace<W> {
     }
 
     fn add_tile_at(&mut self, mut idx: usize, mut tile: Tile<W>, activate: bool) {
-        tile.update_config(self.view_size, self.scale, self.options.clone());
+        tile.update_config(
+            self.dimensions.view_size(),
+            self.dimensions.fractional_scale(),
+            self.options.clone(),
+        );
 
         // Restore the previous floating window size, and in case the tile is fullscreen,
         // unfullscreen it.
@@ -428,10 +415,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
 
         let pos = self.stored_or_default_tile_pos(&tile).unwrap_or_else(|| {
-            center_preferring_top_left_in_area(self.working_area, tile.tile_size())
+            center_preferring_top_left_in_area(self.dimensions.working_area(), tile.tile_size())
         });
 
-        let data = Data::new(self.working_area, &tile, pos);
+        let data = Data::new(self.dimensions.working_area(), &tile, pos);
         self.data.insert(idx, data);
         self.tiles.insert(idx, tile);
 
@@ -594,7 +581,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             blocker
         };
 
-        let scale = Scale::from(self.scale);
+        let scale = Scale::from(self.dimensions.fractional_scale());
         let res = ClosingWindow::new(
             renderer, snapshot, scale, tile_size, tile_pos, blocker, anim,
         );
@@ -614,7 +601,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
         let idx = self.idx_of(&id).unwrap();
 
-        let available_size = self.working_area.size.w;
+        let available_size = self.dimensions.working_area().size.w;
 
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_width_idx {
@@ -660,7 +647,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
         let idx = self.idx_of(&id).unwrap();
 
-        let available_size = self.working_area.size.h;
+        let available_size = self.dimensions.working_area().size.h;
 
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_height_idx {
@@ -701,7 +688,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let tile = &mut self.tiles[idx];
         tile.floating_preset_width_idx = None;
 
-        let available_size = self.working_area.size.w;
+        let available_size = self.dimensions.working_area().size.w;
         let win = tile.window();
         let current_window = win.expected_size().unwrap_or_else(|| win.size()).w;
         let current_tile = tile.tile_expected_or_current_size().w;
@@ -748,7 +735,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let tile = &mut self.tiles[idx];
         tile.floating_preset_width_idx = None;
 
-        let available_size = self.working_area.size.h;
+        let available_size = self.dimensions.working_area().size.h;
         let win = tile.window();
         let current_window = win.expected_size().unwrap_or_else(|| win.size()).h;
         let current_tile = tile.tile_expected_or_current_size().h;
@@ -916,11 +903,11 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let mut new_pos = self.data[idx].logical_pos;
         match x {
-            PositionChange::SetFixed(x) => new_pos.x = x + self.working_area.loc.x,
+            PositionChange::SetFixed(x) => new_pos.x = x + self.dimensions.working_area().loc.x,
             PositionChange::AdjustFixed(x) => new_pos.x += x,
         }
         match y {
-            PositionChange::SetFixed(y) => new_pos.y = y + self.working_area.loc.y,
+            PositionChange::SetFixed(y) => new_pos.y = y + self.dimensions.working_area().loc.y,
             PositionChange::AdjustFixed(y) => new_pos.y += y,
         }
 
@@ -933,7 +920,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
         let idx = self.idx_of(&id).unwrap();
 
-        let new_pos = center_preferring_top_left_in_area(self.working_area, self.data[idx].size);
+        let new_pos =
+            center_preferring_top_left_in_area(self.dimensions.working_area(), self.data[idx].size);
         self.move_to(idx, new_pos, true);
     }
 
@@ -990,7 +978,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
     ) -> Vec<FloatingSpaceRenderElement<R>> {
         let mut rv = Vec::new();
 
-        let scale = Scale::from(self.scale);
+        let scale = Scale::from(self.dimensions.fractional_scale());
 
         // Draw the closing windows on top of the other windows.
         //
@@ -1109,7 +1097,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
             win.set_interactive_resize(resize_data);
 
             let border_config = win.rules().border.resolve_against(self.options.border);
-            let bounds = compute_toplevel_bounds(border_config, self.working_area.size);
+            let bounds =
+                compute_toplevel_bounds(border_config, self.dimensions.working_area().size);
             win.set_bounds(bounds);
 
             // If transactions are disabled, also disable combined throttling, for more
@@ -1137,16 +1126,16 @@ impl<W: LayoutElement> FloatingSpace<W> {
         size: Size<f64, Logical>,
     ) -> Point<f64, Logical> {
         let mut rect = Rectangle::new(pos, size);
-        clamp_preferring_top_left_in_area(self.working_area, &mut rect);
+        clamp_preferring_top_left_in_area(self.dimensions.working_area(), &mut rect);
         rect.loc
     }
 
     pub fn scale_by_working_area(&self, pos: Point<f64, SizeFrac>) -> Point<f64, Logical> {
-        Data::scale_by_working_area(self.working_area, pos)
+        Data::scale_by_working_area(self.dimensions.working_area(), pos)
     }
 
     pub fn logical_to_size_frac(&self, logical_pos: Point<f64, Logical>) -> Point<f64, SizeFrac> {
-        Data::logical_to_size_frac_in_working_area(self.working_area, logical_pos)
+        Data::logical_to_size_frac_in_working_area(self.dimensions.working_area(), logical_pos)
     }
 
     fn move_and_animate(&mut self, idx: usize, new_pos: Point<f64, Logical>) {
@@ -1192,8 +1181,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
             }
         };
 
-        let width = resolve(width, self.working_area.size.w);
-        let height = resolve(height, self.working_area.size.h);
+        let width = resolve(width, self.dimensions.working_area().size.w);
+        let height = resolve(height, self.dimensions.working_area().size.h);
 
         Size::from((width, height))
     }
@@ -1204,7 +1193,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             tile.window().rules().default_floating_position.map(|pos| {
                 let relative_to = pos.relative_to;
                 let size = tile.tile_size();
-                let area = self.working_area;
+                let area = self.dimensions.working_area();
 
                 let mut pos = Point::from((pos.x.0, pos.y.0));
                 if relative_to == RelativeTo::TopRight
@@ -1226,23 +1215,23 @@ impl<W: LayoutElement> FloatingSpace<W> {
                     pos.y += area.size.h / 2.0 - size.h / 2.0
                 }
 
-                pos + self.working_area.loc
+                pos + self.dimensions.working_area().loc
             })
         })
     }
 
     #[cfg(test)]
     pub fn view_size(&self) -> Size<f64, Logical> {
-        self.view_size
+        self.dimensions.view_size()
     }
 
     pub fn working_area(&self) -> Rectangle<f64, Logical> {
-        self.working_area
+        self.dimensions.working_area()
     }
 
     #[cfg(test)]
     pub fn scale(&self) -> f64 {
-        self.scale
+        self.dimensions.fractional_scale()
     }
 
     #[cfg(test)]
@@ -1257,15 +1246,15 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
     #[cfg(test)]
     pub fn verify_invariants(&self) {
-        assert!(self.scale > 0.);
-        assert!(self.scale.is_finite());
+        assert!(self.dimensions.fractional_scale() > 0.);
+        assert!(self.dimensions.fractional_scale().is_finite());
         assert_eq!(self.tiles.len(), self.data.len());
 
         for (i, (tile, data)) in zip(&self.tiles, &self.data).enumerate() {
             assert!(Rc::ptr_eq(&self.options, &tile.options));
-            assert_eq!(self.view_size, tile.view_size());
+            assert_eq!(self.dimensions.view_size(), tile.view_size());
             assert_eq!(self.clock, tile.clock);
-            assert_eq!(self.scale, tile.scale());
+            assert_eq!(self.dimensions.fractional_scale(), tile.scale());
             tile.verify_invariants();
 
             if let Some(idx) = tile.floating_preset_width_idx {
@@ -1284,7 +1273,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
             let mut data2 = *data;
             data2.update(tile);
-            data2.update_config(self.working_area);
+            data2.update_config(self.dimensions.working_area());
             assert_eq!(data, &data2, "tile data must be up to date");
 
             for tile_below in &self.tiles[i + 1..] {
