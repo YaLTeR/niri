@@ -400,12 +400,10 @@ impl XdgShellHandler for State {
 
         let keyboard_grab_mismatches = keyboard.is_grabbed()
             && !(keyboard.has_grab(serial)
-                || grab
-                    .previous_serial()
-                    .map_or(true, |s| keyboard.has_grab(s)));
+                || grab.previous_serial().is_none_or(|s| keyboard.has_grab(s)));
         let pointer_grab_mismatches = pointer.is_grabbed()
             && !(pointer.has_grab(serial)
-                || grab.previous_serial().map_or(true, |s| pointer.has_grab(s)));
+                || grab.previous_serial().is_none_or(|s| pointer.has_grab(s)));
         if (can_receive_keyboard_focus && keyboard_grab_mismatches) || pointer_grab_mismatches {
             trace!("ignoring popup grab because of current grab mismatch");
             grab.ungrab(PopupUngrabStrategy::All);
@@ -663,9 +661,9 @@ impl XdgShellHandler for State {
         let window = mapped.window.clone();
         let output = output.cloned();
 
-        self.niri.stop_casts_for_target(CastTarget::Window {
-            id: mapped.id().get(),
-        });
+        let id = mapped.id();
+        self.niri
+            .stop_casts_for_target(CastTarget::Window { id: id.get() });
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri.layout.store_unmap_snapshot(renderer, &window);
@@ -683,6 +681,7 @@ impl XdgShellHandler for State {
         let was_active = active_window == Some(&window);
 
         self.niri.layout.remove_window(&window, transaction.clone());
+        self.niri.window_mru_ui.remove_window(id);
         self.add_default_dmabuf_pre_commit_hook(surface.wl_surface());
 
         // If this is the only instance, then this transaction will complete immediately, so no
