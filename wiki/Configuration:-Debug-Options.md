@@ -28,7 +28,8 @@ debug {
     keep-laptop-panel-on-when-lid-is-closed
     disable-monitor-names
     strict-new-window-focus-policy
-    honor-xdg-activation-with-invalid-serial 
+    honor-xdg-activation-with-invalid-serial
+    deactivate-unfocused-windows
     skip-cursor-only-updates-during-vrr
 }
 
@@ -276,6 +277,20 @@ debug {
 }
 ```
 
+### `deactivate-unfocused-windows`
+
+<sup>Since: 25.05.2</sup>
+
+This is related to honor-xdg-activation-with-invalid-serial in some way, some of the chromium based chat clients (e.g. teams-for-linux) don't send notifications if they happen to be active on a workspace that is not visible on any monitor.
+
+
+```kdl
+debug {
+    deactivate-unfocused-windows
+}
+```
+    
+
 ### `skip-cursor-only-updates-during-vrr`
 
 <sup>Since: next release</sup>
@@ -291,6 +306,7 @@ debug {
     skip-cursor-only-updates-during-vrr
 }
 ```
+
 
 ### Key Bindings
 

@@ -2351,6 +2351,8 @@ pub struct DebugConfig {
     #[knuffel(child)]
     pub honor_xdg_activation_with_invalid_serial: bool,
     #[knuffel(child)]
+    pub deactivate_unfocused_windows: bool,
+    #[knuffel(child)]
     pub skip_cursor_only_updates_during_vrr: bool,
 }
 
