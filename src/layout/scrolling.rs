@@ -75,6 +75,12 @@ pub struct ScrollingSpace<W: LayoutElement> {
     /// Takes into account layer-shell exclusive zones and niri struts.
     working_area: Rectangle<f64, Logical>,
 
+    /// Working area for this space excluding struts.
+    ///
+    /// Used for popup unconstraining. Popups can go over struts, but they shouldn't go over
+    /// the layer-shell top layer (which renders on top of popups).
+    parent_area: Rectangle<f64, Logical>,
+
     /// Scale of the output the space is on (and rounds its sizes to).
     scale: f64,
 
@@ -251,12 +257,12 @@ pub enum ScrollDirection {
 impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn new(
         view_size: Size<f64, Logical>,
-        working_area: Rectangle<f64, Logical>,
+        parent_area: Rectangle<f64, Logical>,
         scale: f64,
         clock: Clock,
         options: Rc<Options>,
     ) -> Self {
-        let working_area = compute_working_area(working_area, scale, options.struts);
+        let working_area = compute_working_area(parent_area, scale, options.struts);
 
         Self {
             columns: Vec::new(),
@@ -269,6 +275,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             closing_windows: Vec::new(),
             view_size,
             working_area,
+            parent_area,
             scale,
             clock,
             options,
@@ -278,11 +285,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn update_config(
         &mut self,
         view_size: Size<f64, Logical>,
-        working_area: Rectangle<f64, Logical>,
+        parent_area: Rectangle<f64, Logical>,
         scale: f64,
         options: Rc<Options>,
     ) {
-        let working_area = compute_working_area(working_area, scale, options.struts);
+        let working_area = compute_working_area(parent_area, scale, options.struts);
 
         for (column, data) in zip(&mut self.columns, &mut self.data) {
             column.update_config(view_size, working_area, scale, options.clone());
@@ -291,6 +298,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         self.view_size = view_size;
         self.working_area = working_area;
+        self.parent_area = parent_area;
         self.scale = scale;
         self.options = options;
 
@@ -3535,6 +3543,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     #[cfg(test)]
+    pub fn parent_area(&self) -> Rectangle<f64, Logical> {
+        self.parent_area
+    }
+
+    #[cfg(test)]
     pub fn clock(&self) -> &Clock {
         &self.clock
     }
@@ -3555,7 +3568,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     #[cfg(test)]
-    pub fn verify_invariants(&self, working_area: Rectangle<f64, Logical>) {
+    pub fn verify_invariants(&self) {
         assert!(self.view_size.w > 0.);
         assert!(self.view_size.h > 0.);
         assert!(self.scale > 0.);
@@ -3563,7 +3576,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         assert_eq!(self.columns.len(), self.data.len());
         assert_eq!(
             self.working_area,
-            compute_working_area(working_area, self.scale, self.options.struts)
+            compute_working_area(self.parent_area, self.scale, self.options.struts)
         );
 
         if !self.columns.is_empty() {

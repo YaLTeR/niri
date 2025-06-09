@@ -1784,9 +1784,10 @@ impl<W: LayoutElement> Workspace<W> {
         assert!(scale.is_finite());
 
         assert_eq!(self.view_size, self.scrolling.view_size());
+        assert_eq!(self.working_area, self.scrolling.parent_area());
         assert_eq!(&self.clock, self.scrolling.clock());
         assert!(Rc::ptr_eq(&self.options, self.scrolling.options()));
-        self.scrolling.verify_invariants(self.working_area);
+        self.scrolling.verify_invariants();
 
         assert_eq!(self.view_size, self.floating.view_size());
         assert_eq!(self.working_area, self.floating.working_area());
