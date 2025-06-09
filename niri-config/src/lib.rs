@@ -4218,7 +4218,9 @@ mod tests {
                     click_method: Some(
                         Clickfinger,
                     ),
-                    accel_speed: 0.2,
+                    accel_speed: FloatOrInt(
+                        0.2,
+                    ),
                     accel_profile: Some(
                         Flat,
                     ),
@@ -4243,7 +4245,9 @@ mod tests {
                 mouse: Mouse {
                     off: false,
                     natural_scroll: true,
-                    accel_speed: 0.4,
+                    accel_speed: FloatOrInt(
+                        0.4,
+                    ),
                     accel_profile: Some(
                         Flat,
                     ),
@@ -4264,7 +4268,9 @@ mod tests {
                 trackpoint: Trackpoint {
                     off: true,
                     natural_scroll: true,
-                    accel_speed: 0.0,
+                    accel_speed: FloatOrInt(
+                        0.0,
+                    ),
                     accel_profile: Some(
                         Flat,
                     ),
@@ -4280,7 +4286,9 @@ mod tests {
                 trackball: Trackball {
                     off: true,
                     natural_scroll: true,
-                    accel_speed: 0.0,
+                    accel_speed: FloatOrInt(
+                        0.0,
+                    ),
                     accel_profile: Some(
                         Flat,
                     ),
@@ -4635,7 +4643,9 @@ mod tests {
             },
             animations: Animations {
                 off: false,
-                slowdown: 2.0,
+                slowdown: FloatOrInt(
+                    2.0,
+                ),
                 workspace_switch: WorkspaceSwitchAnim(
                     Animation {
                         off: false,
