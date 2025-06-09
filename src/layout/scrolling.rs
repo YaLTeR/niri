@@ -2437,9 +2437,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
-        self.columns
-            .iter()
-            .find_map(|col| col.popup_target_rect(id))
+        for col in &self.columns {
+            for (tile, pos) in col.tiles() {
+                if tile.window().id() == id {
+                    // In the scrolling layout, we try to position popups horizontally within the
+                    // window geometry (so they remain visible even if the window scrolls flush with
+                    // the left/right edge of the screen), and vertically wihin the whole view size.
+                    let width = tile.window_size().w;
+                    let height = self.view_size.h;
+
+                    let mut target = Rectangle::from_size(Size::from((width, height)));
+                    target.loc.y -= pos.y;
+                    target.loc.y -= tile.window_loc().y;
+
+                    return Some(target);
+                }
+            }
+        }
+        None
     }
 
     pub fn toggle_width(&mut self) {
@@ -4754,25 +4769,6 @@ impl<W: LayoutElement> Column<W> {
         // Now switch the display mode for real.
         self.display_mode = display;
         self.update_tile_sizes(true);
-    }
-
-    fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
-        for (tile, pos) in self.tiles() {
-            if tile.window().id() == id {
-                // In the scrolling layout, we try to position popups horizontally within the
-                // window geometry (so they remain visible even if the window scrolls flush with
-                // the left/right edge of the screen), and vertically wihin the whole view size.
-                let width = tile.window_size().w;
-                let height = self.view_size.h;
-
-                let mut target = Rectangle::from_size(Size::from((width, height)));
-                target.loc.y -= pos.y;
-                target.loc.y -= tile.window_loc().y;
-
-                return Some(target);
-            }
-        }
-        None
     }
 
     fn tiles_origin(&self) -> Point<f64, Logical> {
