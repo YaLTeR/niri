@@ -51,6 +51,8 @@ use smithay::wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlob
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
+use smithay::wayland::drm_syncobj::DrmSyncobjState;
+use smithay::wayland::drm_syncobj::supports_syncobj_eventfd;
 use smithay::wayland::presentation::Refresh;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
@@ -93,6 +95,7 @@ pub struct Tty {
     // Whether the debug tinting is enabled.
     debug_tint: bool,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
+    syncobj_state: Option<DrmSyncobjState>,
 }
 
 pub type TtyRenderer<'render> = MultiRenderer<
@@ -332,6 +335,7 @@ impl Tty {
             primary_render_node,
             devices: HashMap::new(),
             dmabuf_global: None,
+            syncobj_state: None,
             update_output_config_on_resume: false,
             debug_tint: false,
             ipc_outputs: Arc::new(Mutex::new(HashMap::new())),
@@ -342,6 +346,21 @@ impl Tty {
         for (device_id, path) in self.udev_dispatcher.clone().as_source_ref().device_list() {
             if let Err(err) = self.device_added(device_id, path, niri) {
                 warn!("error adding device: {err:?}");
+            }
+        }
+       if let Some(primary_node) = self.primary_node
+        .node_with_type(NodeType::Primary)
+        .and_then(|x| x.ok())
+        {
+            if let Some(backend) = self.devices.get(&primary_node) {
+                let import_device = backend.drm.device_fd().clone();
+                if supports_syncobj_eventfd(&import_device) {
+                    info!("enabling drm_syncobj");
+                    let new_syncobj_state = DrmSyncobjState::new::<State>(&niri.display_handle, import_device);
+                    self.syncobj_state = Some(new_syncobj_state);
+                } else {
+                    info!("drm_syncobj is not supported");
+                }
             }
         }
     }
@@ -1566,6 +1585,10 @@ impl Tty {
         }
     }
 
+    pub fn get_drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
+        self.syncobj_state.as_mut()
+    }
+
     pub fn get_gamma_size(&self, output: &Output) -> anyhow::Result<u32> {
         let tty_state = output.user_data().get::<TtyOutputState>().unwrap();
         let crtc = tty_state.crtc;
@@ -2221,7 +2244,7 @@ fn surface_dmabuf_feedback(
             surface_render_node.dev_id(),
             Some(TrancheFlags::Scanout),
             primary_or_overlay_scanout_formats,
-        )
+        // )
         .build()?;
 
     // If this is the primary node surface, send scanout formats in both tranches to avoid

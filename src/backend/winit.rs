@@ -16,6 +16,7 @@ use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_pre
 use smithay::reexports::winit::dpi::LogicalSize;
 use smithay::reexports::winit::window::Window;
 use smithay::wayland::presentation::Refresh;
+use smithay::wayland::drm_syncobj::DrmSyncobjState;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
 use crate::niri::{Niri, RedrawState, State};
@@ -266,6 +267,10 @@ impl Winit {
             }
         }
     }
+
+        pub fn get_drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
+            unimplemented!()
+        }
 
     pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {
         self.ipc_outputs.clone()

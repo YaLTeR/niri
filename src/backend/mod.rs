@@ -7,6 +7,7 @@ use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::wayland::drm_syncobj::DrmSyncobjState;
 
 use crate::niri::Niri;
 use crate::utils::id::IdCounter;
@@ -145,6 +146,14 @@ impl Backend {
             Backend::Tty(tty) => tty.early_import(surface),
             Backend::Winit(_) => (),
             Backend::Headless(_) => (),
+        }
+    }
+
+    pub fn get_drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
+        match self {
+            Backend::Tty(tty) => tty.get_drm_syncobj_state(),
+            Backend::Winit(winit) => winit.get_drm_syncobj_state(),
+            Backend::Headless(headless) => headless.get_drm_syncobj_state(),
         }
     }
 

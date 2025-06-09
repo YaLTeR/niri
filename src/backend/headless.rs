@@ -14,6 +14,7 @@ use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::utils::Size;
 use smithay::wayland::presentation::Refresh;
+use smithay::wayland::drm_syncobj::DrmSyncobjState;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
 use crate::niri::{Niri, RedrawState};
@@ -125,6 +126,10 @@ impl Headless {
     }
 
     pub fn import_dmabuf(&mut self, _dmabuf: &Dmabuf) -> bool {
+        unimplemented!()
+    }
+
+    pub fn get_drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
         unimplemented!()
     }
 

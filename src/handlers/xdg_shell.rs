@@ -23,6 +23,7 @@ use smithay::wayland::compositor::{
     HookId, SurfaceAttributes,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
+use smithay::wayland::drm_syncobj::DrmSyncobjCachedState;
 use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
@@ -1235,8 +1236,15 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
             return;
         };
 
+        let mut acquire_point = None;
         let (got_unmapped, dmabuf, commit_serial) = with_states(surface, |states| {
             let (got_unmapped, dmabuf) = {
+                acquire_point = states
+                .cached_state
+                .get::<DrmSyncobjCachedState>()
+                .pending()
+                .acquire_point
+                .clone();
                 let mut guard = states.cached_state.get::<SurfaceAttributes>();
                 match guard.pending().buffer.as_ref() {
                     Some(BufferAssignment::NewBuffer(buffer)) => {
@@ -1303,6 +1311,25 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
         } else {
             error!("commit on a mapped surface without a configured serial");
         };
+
+        if let Some(acquire_point) = acquire_point {
+            if let Ok((blocker, source)) = acquire_point.generate_blocker() {
+                let client = surface.client().unwrap();
+                let res = state.niri.event_loop.insert_source(
+                    source,
+                    move |_, _, state| {
+                        let dh = state.niri.display_handle.clone();
+                        state
+                        .client_compositor_state(&client)
+                        .blocker_cleared(state, &dh);
+                        Ok(())
+                    },
+                );
+                if res.is_ok() {
+                    add_blocker(surface, blocker);
+                }
+            }
+        }
 
         if let Some((blocker, source)) =
             dmabuf.and_then(|dmabuf| dmabuf.generate_blocker(Interest::READ).ok())

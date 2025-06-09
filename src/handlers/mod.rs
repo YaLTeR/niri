@@ -28,6 +28,10 @@ use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Rectangle};
 use smithay::wayland::compositor::{get_parent, with_states};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportNotifier};
+use smithay::{
+    delegate_drm_syncobj,
+    wayland::drm_syncobj::{DrmSyncobjHandler, DrmSyncobjState},
+};
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
@@ -439,6 +443,14 @@ impl DmabufHandler for State {
     }
 }
 delegate_dmabuf!(State);
+
+impl DrmSyncobjHandler for State {
+    fn drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
+        self.backend.get_drm_syncobj_state()
+    }
+}
+
+delegate_drm_syncobj!(State);
 
 impl SessionLockHandler for State {
     fn lock_state(&mut self) -> &mut SessionLockManagerState {
