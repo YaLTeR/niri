@@ -2450,11 +2450,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 if tile.window().id() == id {
                     // In the scrolling layout, we try to position popups horizontally within the
                     // window geometry (so they remain visible even if the window scrolls flush with
-                    // the left/right edge of the screen), and vertically wihin the whole view size.
+                    // the left/right edge of the screen), and vertically wihin the whole parent
+                    // working area.
                     let width = tile.window_size().w;
-                    let height = self.view_size.h;
+                    let height = self.parent_area.size.h;
 
                     let mut target = Rectangle::from_size(Size::from((width, height)));
+                    target.loc.y += self.parent_area.loc.y;
                     target.loc.y -= pos.y;
                     target.loc.y -= tile.window_loc().y;
 
