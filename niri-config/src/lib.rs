@@ -206,7 +206,7 @@ pub struct Touchpad {
     #[knuffel(child, unwrap(argument, str))]
     pub click_method: Option<ClickMethod>,
     #[knuffel(child, unwrap(argument), default)]
-    pub accel_speed: f64,
+    pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
@@ -232,7 +232,7 @@ pub struct Mouse {
     #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
-    pub accel_speed: f64,
+    pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
@@ -254,7 +254,7 @@ pub struct Trackpoint {
     #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
-    pub accel_speed: f64,
+    pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
@@ -274,7 +274,7 @@ pub struct Trackball {
     #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
-    pub accel_speed: f64,
+    pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
@@ -1047,8 +1047,8 @@ pub struct Clipboard {
 pub struct Animations {
     #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child, unwrap(argument), default = 1.)]
-    pub slowdown: f64,
+    #[knuffel(child, unwrap(argument), default = FloatOrInt(1.))]
+    pub slowdown: FloatOrInt<0, { i32::MAX }>,
     #[knuffel(child, default)]
     pub workspace_switch: WorkspaceSwitchAnim,
     #[knuffel(child, default)]
@@ -1073,7 +1073,7 @@ impl Default for Animations {
     fn default() -> Self {
         Self {
             off: false,
-            slowdown: 1.,
+            slowdown: FloatOrInt(1.),
             workspace_switch: Default::default(),
             horizontal_view_movement: Default::default(),
             window_movement: Default::default(),

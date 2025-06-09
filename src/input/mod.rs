@@ -4162,7 +4162,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         let _ = device.config_dwtp_set_enabled(c.dwtp);
         let _ = device.config_tap_set_drag_lock_enabled(c.drag_lock);
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-        let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
@@ -4237,7 +4237,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             input::SendEventsMode::ENABLED
         });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-        let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
@@ -4274,7 +4274,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             input::SendEventsMode::ENABLED
         });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-        let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
         let _ = device.config_left_handed_set(c.left_handed);
 
@@ -4311,7 +4311,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             input::SendEventsMode::ENABLED
         });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-        let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
