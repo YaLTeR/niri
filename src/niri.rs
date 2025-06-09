@@ -15,21 +15,22 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
-    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_BACKGROUND_COLOR,
+    WarpMouseToFocusMode, WorkspaceReference,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
-use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
 use smithay::backend::renderer::element::utils::{
-    select_dmabuf_feedback, Relocate, RelocateRenderElement,
+    select_dmabuf_feedback, CropRenderElement, Relocate, RelocateRenderElement,
+    RescaleRenderElement,
 };
 use smithay::backend::renderer::element::{
-    default_primary_scanout_output_compare, Id, Kind, PrimaryScanoutOutput, RenderElementStates,
+    default_primary_scanout_output_compare, Element, Id, Kind, PrimaryScanoutOutput,
+    RenderElementStates,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
@@ -122,6 +123,7 @@ use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
 use crate::input::pick_color_grab::PickColorGrab;
+use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
@@ -131,7 +133,7 @@ use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
-use crate::layout::workspace::WorkspaceId;
+use crate::layout::workspace::{Workspace, WorkspaceId};
 use crate::layout::{HitType, Layout, LayoutElement as _, MonitorRenderElement};
 use crate::niri_render_elements;
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
@@ -146,6 +148,7 @@ use crate::pw_utils::{CastSizeChange, PwToNiri};
 use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
     encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
@@ -157,11 +160,12 @@ use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
-use crate::utils::spawning::CHILD_ENV;
+use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
+use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
     logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
-    write_png_rgba8,
+    write_png_rgba8, xwayland,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -328,11 +332,7 @@ pub struct Niri {
     /// taking grabs into account is expected, because we pass the information to pointer.motion()
     /// which passes it down through grabs, which decide what to do with it as they see fit.
     pub pointer_contents: PointContents,
-    /// Whether the pointer is hidden, for example due to a previous touch input.
-    ///
-    /// When this happens, the pointer also loses any focus. This is so that touch can prevent
-    /// various tooltips from sticking around.
-    pub pointer_hidden: bool,
+    pub pointer_visibility: PointerVisibility,
     pub pointer_inactivity_timer: Option<RegistrationToken>,
     /// Whether the pointer inactivity timer got reset this event loop iteration.
     ///
@@ -344,8 +344,10 @@ pub struct Niri {
     /// Used for limiting the notify to once per iteration, so that it's not spammed with high
     /// resolution mice.
     pub notified_activity_this_iteration: bool,
+    pub pointer_inside_hot_corner: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
+    pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
     pub vertical_wheel_tracker: ScrollTracker,
     pub horizontal_wheel_tracker: ScrollTracker,
     pub mods_with_mouse_binds: HashSet<Modifiers>,
@@ -375,6 +377,8 @@ pub struct Niri {
     pub ipc_server: Option<IpcServer>,
     pub ipc_outputs_changed: bool,
 
+    pub satellite: Option<Satellite>,
+
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
     pub pipewire: Option<PipeWire>,
@@ -388,6 +392,28 @@ pub struct Niri {
     /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
     #[cfg(feature = "xdp-gnome-screencast")]
     pub dynamic_cast_id_for_portal: MappedId,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PointerVisibility {
+    /// The pointer is visible.
+    Visible,
+    /// The pointer is invisible, but retains its focus.
+    ///
+    /// This state is set temporarily after auto-hiding the pointer to keep tooltips open and grabs
+    /// ongoing.
+    Hidden,
+    /// The pointer is invisible and cannot focus.
+    ///
+    /// Corresponds to a fully disabled pointer, for example after a touchscreen input, or after
+    /// the pointer contents changed in a Hidden state.
+    Disabled,
+}
+
+impl PointerVisibility {
+    pub fn is_visible(&self) -> bool {
+        matches!(self, Self::Visible)
+    }
 }
 
 #[derive(Debug)]
@@ -428,6 +454,7 @@ pub struct OutputState {
     /// Solid color buffer for the background that we use instead of clearing to avoid damage
     /// tracking issues and make screenshots easier.
     pub background_buffer: SolidColorBuffer,
+    pub backdrop_buffer: SolidColorBuffer,
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
     pub lock_color_buffer: SolidColorBuffer,
@@ -467,6 +494,7 @@ pub enum KeyboardFocus {
     LayerShell { surface: WlSurface },
     LockScreen { surface: Option<WlSurface> },
     ScreenshotUi,
+    Overview,
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -563,6 +591,7 @@ impl KeyboardFocus {
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface.as_ref(),
             KeyboardFocus::ScreenshotUi => None,
+            KeyboardFocus::Overview => None,
         }
     }
 
@@ -572,11 +601,16 @@ impl KeyboardFocus {
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface,
             KeyboardFocus::ScreenshotUi => None,
+            KeyboardFocus::Overview => None,
         }
     }
 
     pub fn is_layout(&self) -> bool {
         matches!(self, KeyboardFocus::Layout { .. })
+    }
+
+    pub fn is_overview(&self) -> bool {
+        matches!(self, KeyboardFocus::Overview)
     }
 }
 
@@ -709,7 +743,21 @@ impl State {
     }
 
     pub fn move_cursor(&mut self, location: Point<f64, Logical>) {
-        let under = self.niri.contents_under(location);
+        let mut under = match self.niri.pointer_visibility {
+            PointerVisibility::Disabled => PointContents::default(),
+            _ => self.niri.contents_under(location),
+        };
+
+        // Disable the hidden pointer if the contents underneath have changed.
+        if !self.niri.pointer_visibility.is_visible() && self.niri.pointer_contents != under {
+            self.niri.pointer_visibility = PointerVisibility::Disabled;
+
+            // When setting PointerVisibility::Hidden together with pointer contents changing,
+            // we can change straight to nothing to avoid one frame of hover. Notably, this can
+            // be triggered through warp-mouse-to-focus combined with hide-when-typing.
+            under = PointContents::default();
+        }
+
         self.niri.pointer_contents.clone_from(&under);
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
@@ -898,16 +946,28 @@ impl State {
 
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
-        let under = if self.niri.pointer_hidden {
-            PointContents::default()
-        } else {
-            self.niri.contents_under(location)
+        let mut under = match self.niri.pointer_visibility {
+            PointerVisibility::Disabled => PointContents::default(),
+            _ => self.niri.contents_under(location),
         };
 
         // We're not changing the global cursor location here, so if the contents did not change,
         // then nothing changed.
         if self.niri.pointer_contents == under {
             return false;
+        }
+
+        // Disable the hidden pointer if the contents underneath have changed.
+        if !self.niri.pointer_visibility.is_visible() {
+            self.niri.pointer_visibility = PointerVisibility::Disabled;
+
+            // When setting PointerVisibility::Hidden together with pointer contents changing,
+            // we can change straight to nothing to avoid one frame of hover. Notably, this can
+            // be triggered through warp-mouse-to-focus combined with hide-when-typing.
+            under = PointContents::default();
+            if self.niri.pointer_contents == under {
+                return false;
+            }
         }
 
         self.niri.pointer_contents.clone_from(&under);
@@ -957,9 +1017,20 @@ impl State {
         // Clean up on-demand layer surface focus if necessary.
         if let Some(surface) = &self.niri.layer_shell_on_demand_focus {
             // Still alive and has on-demand interactivity.
-            let good = surface.alive()
+            let mut good = surface.alive()
                 && surface.cached_state().keyboard_interactivity
                     == wlr_layer::KeyboardInteractivity::OnDemand;
+
+            if let Some(mapped) = self.niri.mapped_layer_surfaces.get(surface) {
+                // Check if it moved to the overview backdrop.
+                if mapped.place_within_backdrop() {
+                    good = false;
+                }
+            } else {
+                // The layer surface is alive but it got unmapped.
+                good = false;
+            }
+
             if !good {
                 self.niri.layer_shell_on_demand_focus = None;
             }
@@ -1001,11 +1072,19 @@ impl State {
 
             let excl_focus_on_layer = |layer| {
                 layers.layers_on(layer).find_map(|surface| {
-                    let can_receive_exclusive_focus = surface.cached_state().keyboard_interactivity
-                        == wlr_layer::KeyboardInteractivity::Exclusive;
-                    can_receive_exclusive_focus
-                        .then(|| surface.wl_surface().clone())
-                        .map(|surface| KeyboardFocus::LayerShell { surface })
+                    if surface.cached_state().keyboard_interactivity
+                        != wlr_layer::KeyboardInteractivity::Exclusive
+                    {
+                        return None;
+                    }
+
+                    let mapped = self.niri.mapped_layer_surfaces.get(surface)?;
+                    if mapped.place_within_backdrop() {
+                        return None;
+                    }
+
+                    let surface = surface.wl_surface().clone();
+                    Some(KeyboardFocus::LayerShell { surface })
                 })
             };
 
@@ -1023,13 +1102,18 @@ impl State {
             let focus_on_layer =
                 |layer| excl_focus_on_layer(layer).or_else(|| on_d_focus_on_layer(layer));
 
+            let is_overview_open = self.niri.layout.is_overview_open();
+
             let mut surface = grab_on_layer(Layer::Overlay);
             // FIXME: we shouldn't prioritize the top layer grabs over regular overlay input or a
             // fullscreen layout window. This will need tracking in grab() to avoid handing it out
             // in the first place. Or a better way to structure this code.
             surface = surface.or_else(|| grab_on_layer(Layer::Top));
-            surface = surface.or_else(|| grab_on_layer(Layer::Bottom));
-            surface = surface.or_else(|| grab_on_layer(Layer::Background));
+
+            if !is_overview_open {
+                surface = surface.or_else(|| grab_on_layer(Layer::Bottom));
+                surface = surface.or_else(|| grab_on_layer(Layer::Background));
+            }
 
             surface = surface.or_else(|| focus_on_layer(Layer::Overlay));
 
@@ -1040,6 +1124,11 @@ impl State {
                 surface = surface.or_else(|| focus_on_layer(Layer::Background));
             } else {
                 surface = surface.or_else(|| focus_on_layer(Layer::Top));
+
+                if is_overview_open {
+                    surface = Some(surface.unwrap_or(KeyboardFocus::Overview));
+                }
+
                 surface = surface.or_else(|| on_d_focus_on_layer(Layer::Bottom));
                 surface = surface.or_else(|| on_d_focus_on_layer(Layer::Background));
                 surface = surface.or_else(layout_focus);
@@ -1099,7 +1188,9 @@ impl State {
             // focused window.
             //
             // FIXME: Ideally this should happen inside Layout itself, then there wouldn't be any
-            // problems with layer-shell, etc.
+            // problems with layer-shell, etc. Or a similar problem now with the Overview where we
+            // don't update the previously focused window because the keyboard focus is on the
+            // Overview rather than on the Layout.
             if matches!(self.niri.keyboard_focus, KeyboardFocus::Layout { .. })
                 && matches!(focus, KeyboardFocus::Layout { .. })
             {
@@ -1228,7 +1319,7 @@ impl State {
             self.niri.layout.ensure_named_workspace(ws_config);
         }
 
-        let rate = 1.0 / config.animations.slowdown.max(0.001);
+        let rate = 1.0 / config.animations.slowdown.0.max(0.001);
         self.niri.clock.set_rate(rate);
         self.niri
             .clock
@@ -1244,6 +1335,7 @@ impl State {
         let mut layer_rules_changed = false;
         let mut shaders_changed = false;
         let mut cursor_inactivity_timeout_changed = false;
+        let mut xwls_changed = false;
         let mut old_config = self.niri.config.borrow_mut();
 
         // Reload the cursor.
@@ -1347,6 +1439,18 @@ impl State {
             output_config_changed = true;
         }
 
+        // FIXME: move backdrop rendering into layout::Monitor, then this will become unnecessary.
+        if config.overview.backdrop_color != old_config.overview.backdrop_color {
+            output_config_changed = true;
+        }
+        if config.layout.background_color != old_config.layout.background_color {
+            output_config_changed = true;
+        }
+
+        if config.xwayland_satellite != old_config.xwayland_satellite {
+            xwls_changed = true;
+        }
+
         *old_config = config;
 
         if let Some(outputs) = preserved_output_config {
@@ -1410,6 +1514,30 @@ impl State {
             self.niri.reset_pointer_inactivity_timer();
         }
 
+        if xwls_changed {
+            // If xwl-s was previously working and is now off, we don't try to kill it or stop
+            // watching the sockets, for simplicity's sake.
+            let was_working = self.niri.satellite.is_some();
+
+            // Try to start, or restart in case the user corrected the path or something.
+            xwayland::satellite::setup(self);
+
+            let config = self.niri.config.borrow();
+            let display_name = (!config.xwayland_satellite.off)
+                .then_some(self.niri.satellite.as_ref())
+                .flatten()
+                .map(|satellite| satellite.display_name().to_owned());
+
+            if let Some(name) = &display_name {
+                if !was_working {
+                    info!("listening on X11 socket: {name}");
+                }
+            }
+
+            // This won't change the systemd environment, but oh well.
+            *CHILD_DISPLAY.write().unwrap() = display_name;
+        }
+
         // Can't really update xdg-decoration settings since we have to hide the globals for CSD
         // due to the SDL2 bug... I don't imagine clients are prepared for the xdg-decoration
         // global suddenly appearing? Either way, right now it's live-reloaded in a sense that new
@@ -1424,8 +1552,8 @@ impl State {
 
         for output in self.niri.global_space.outputs() {
             let name = output.user_data().get::<OutputName>().unwrap();
-            let config = self.niri.config.borrow_mut();
-            let config = config.outputs.find(name);
+            let full_config = self.niri.config.borrow_mut();
+            let config = full_config.outputs.find(name);
 
             let scale = config
                 .and_then(|c| c.scale)
@@ -1458,16 +1586,26 @@ impl State {
                 resized_outputs.push(output.clone());
             }
 
-            let mut background_color = config
-                .map(|c| c.background_color)
-                .unwrap_or(DEFAULT_BACKGROUND_COLOR)
+            let background_color = config
+                .and_then(|c| c.background_color)
+                .unwrap_or(full_config.layout.background_color)
                 .to_array_unpremul();
-            background_color[3] = 1.;
             let background_color = Color32F::from(background_color);
+
+            let mut backdrop_color = config
+                .and_then(|c| c.backdrop_color)
+                .unwrap_or(full_config.overview.backdrop_color)
+                .to_array_unpremul();
+            backdrop_color[3] = 1.;
+            let backdrop_color = Color32F::from(backdrop_color);
 
             if let Some(state) = self.niri.output_state.get_mut(output) {
                 if state.background_buffer.color() != background_color {
                     state.background_buffer.set_color(background_color);
+                    recolored_outputs.push(output.clone());
+                }
+                if state.backdrop_buffer.color() != backdrop_color {
+                    state.backdrop_buffer.set_color(backdrop_color);
                     recolored_outputs.push(output.clone());
                 }
             }
@@ -1629,6 +1767,9 @@ impl State {
             SERIAL_COUNTER.next_serial(),
             get_monotonic_time().as_millis() as u32,
         );
+        if let Some(touch) = self.niri.seat.get_touch() {
+            touch.unset_grab(self);
+        }
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri
@@ -1655,6 +1796,31 @@ impl State {
         self.niri
             .cursor_manager
             .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
+        self.niri.queue_redraw_all();
+    }
+
+    pub fn confirm_screenshot(&mut self, write_to_disk: bool) {
+        if !self.niri.screenshot_ui.is_open() {
+            return;
+        }
+
+        self.backend.with_primary_renderer(|renderer| {
+            match self.niri.screenshot_ui.capture(renderer) {
+                Ok((size, pixels)) => {
+                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk) {
+                        warn!("error saving screenshot: {err:?}");
+                    }
+                }
+                Err(err) => {
+                    warn!("error capturing screenshot: {err:?}");
+                }
+            }
+        });
+
+        self.niri.screenshot_ui.close();
+        self.niri
+            .cursor_manager
+            .set_cursor_image(CursorImageStatus::default_named());
         self.niri.queue_redraw_all();
     }
 
@@ -2061,7 +2227,7 @@ impl Niri {
 
         let mut animation_clock = Clock::default();
 
-        let rate = 1.0 / config_.animations.slowdown.max(0.001);
+        let rate = 1.0 / config_.animations.slowdown.0.max(0.001);
         animation_clock.set_rate(rate);
         animation_clock.set_complete_instantly(config_.animations.off);
 
@@ -2185,22 +2351,30 @@ impl Niri {
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
-        if let Err(err) = seat.add_keyboard(
+        let keyboard = match seat.add_keyboard(
             config_.input.keyboard.xkb.to_xkb_config(),
             config_.input.keyboard.repeat_delay.into(),
             config_.input.keyboard.repeat_rate.into(),
         ) {
-            if let smithay::input::keyboard::Error::BadKeymap = err {
-                warn!("error loading the configured xkb keymap, trying default");
-            } else {
-                warn!("error adding keyboard: {err:?}");
+            Err(err) => {
+                if let smithay::input::keyboard::Error::BadKeymap = err {
+                    warn!("error loading the configured xkb keymap, trying default");
+                } else {
+                    warn!("error adding keyboard: {err:?}");
+                }
+                seat.add_keyboard(
+                    Default::default(),
+                    config_.input.keyboard.repeat_delay.into(),
+                    config_.input.keyboard.repeat_rate.into(),
+                )
+                .unwrap()
             }
-            seat.add_keyboard(
-                Default::default(),
-                config_.input.keyboard.repeat_delay.into(),
-                config_.input.keyboard.repeat_rate.into(),
-            )
-            .unwrap();
+            Ok(keyboard) => keyboard,
+        };
+        if config_.input.keyboard.numlock {
+            let mut modifier_state = keyboard.modifier_state();
+            modifier_state.num_lock = true;
+            keyboard.set_modifier_state(modifier_state);
         }
         seat.add_pointer();
 
@@ -2388,12 +2562,14 @@ impl Niri {
             cursor_shape_manager_state,
             dnd_icon: None,
             pointer_contents: PointContents::default(),
-            pointer_hidden: false,
+            pointer_visibility: PointerVisibility::Visible,
             pointer_inactivity_timer: None,
             pointer_inactivity_timer_got_reset: false,
             notified_activity_this_iteration: false,
+            pointer_inside_hot_corner: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
+            overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
             vertical_wheel_tracker: ScrollTracker::new(120),
             horizontal_wheel_tracker: ScrollTracker::new(120),
             mods_with_mouse_binds,
@@ -2424,6 +2600,8 @@ impl Niri {
 
             ipc_server,
             ipc_outputs_changed: false,
+
+            satellite: None,
 
             pipewire: None,
             casts: vec![],
@@ -2634,11 +2812,16 @@ impl Niri {
             .map(|c| ipc_transform_to_smithay(c.transform))
             .unwrap_or(Transform::Normal);
 
-        let mut background_color = c
-            .map(|c| c.background_color)
-            .unwrap_or(DEFAULT_BACKGROUND_COLOR)
+        let background_color = c
+            .and_then(|c| c.background_color)
+            .unwrap_or(config.layout.background_color)
             .to_array_unpremul();
-        background_color[3] = 1.;
+
+        let mut backdrop_color = c
+            .and_then(|c| c.backdrop_color)
+            .unwrap_or(config.overview.backdrop_color)
+            .to_array_unpremul();
+        backdrop_color[3] = 1.;
 
         // FIXME: fix winit damage on other transforms.
         if name.connector == "winit" {
@@ -2663,7 +2846,7 @@ impl Niri {
             LockRenderState::Unlocked
         };
 
-        let size = output_size(&output).to_i32_round();
+        let size = output_size(&output);
         let state = OutputState {
             global,
             redraw_state: RedrawState::Idle,
@@ -2673,6 +2856,7 @@ impl Niri {
             last_drm_sequence: None,
             frame_callback_sequence: 0,
             background_buffer: SolidColorBuffer::new(size, background_color),
+            backdrop_buffer: SolidColorBuffer::new(size, backdrop_color),
             lock_render_state,
             lock_surface: None,
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
@@ -2759,7 +2943,7 @@ impl Niri {
     }
 
     pub fn output_resized(&mut self, output: &Output) {
-        let output_size = output_size(output).to_i32_round();
+        let output_size = output_size(output);
         let scale = output.current_scale();
         let transform = output.current_transform();
 
@@ -2769,6 +2953,10 @@ impl Niri {
                 layer.with_surfaces(|surface, data| {
                     send_scale_transform(surface, data, scale, transform);
                 });
+
+                if let Some(mapped) = self.mapped_layer_surfaces.get_mut(layer) {
+                    mapped.update_sizes(output_size, scale.fractional_scale());
+                }
             }
             layer_map.arrange();
         }
@@ -2777,6 +2965,7 @@ impl Niri {
 
         if let Some(state) = self.output_state.get_mut(output) {
             state.background_buffer.resize(output_size);
+            state.backdrop_buffer.resize(output_size);
 
             state.lock_color_buffer.resize(output_size);
             if let Some(lock_surface) = &state.lock_surface {
@@ -2837,17 +3026,11 @@ impl Niri {
         Some((output, pos_within_output))
     }
 
-    /// Returns the window under the position to be activated.
-    ///
-    /// The cursor may be inside the window's activation region, but not within the window's input
-    /// region.
-    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Mapped> {
-        if self.is_locked() || self.screenshot_ui.is_open() {
-            return None;
-        }
-
-        let (output, pos_within_output) = self.output_under(pos)?;
-
+    pub fn is_sticky_obscured_under(
+        &self,
+        output: &Output,
+        pos_within_output: Point<f64, Logical>,
+    ) -> bool {
         // The ordering here must be consistent with the ordering in render() so that input is
         // consistent with the visuals.
 
@@ -2858,8 +3041,12 @@ impl Niri {
                 .layers_on(layer)
                 .rev()
                 .find_map(|layer| {
-                    let layer_pos_within_output =
+                    let mapped = self.mapped_layer_surfaces.get(layer)?;
+
+                    let mut layer_pos_within_output =
                         layers.layer_geometry(layer).unwrap().loc.to_f64();
+                    layer_pos_within_output += mapped.bob_offset();
+
                     let surface_type = if popup {
                         WindowSurfaceType::POPUP
                     } else {
@@ -2874,16 +3061,132 @@ impl Niri {
         let layer_popup_under = |layer| layer_surface_under(layer, true);
 
         if layer_popup_under(Layer::Overlay) || layer_toplevel_under(Layer::Overlay) {
-            return None;
+            return true;
         }
 
         let mon = self.layout.monitor_for_output(output).unwrap();
-        if !mon.render_above_top_layer()
-            && (layer_popup_under(Layer::Top)
-                || layer_popup_under(Layer::Bottom)
-                || layer_popup_under(Layer::Background)
-                || layer_toplevel_under(Layer::Top))
+        if mon.render_above_top_layer() {
+            return false;
+        }
+
+        let hot_corners = self.config.borrow().gestures.hot_corners;
+        if !hot_corners.off {
+            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
+            if hot_corner.contains(pos_within_output) {
+                return true;
+            }
+        }
+
+        if layer_popup_under(Layer::Top) || layer_toplevel_under(Layer::Top) {
+            return true;
+        }
+
+        false
+    }
+
+    pub fn is_layout_obscured_under(
+        &self,
+        output: &Output,
+        pos_within_output: Point<f64, Logical>,
+    ) -> bool {
+        if self.layout.is_overview_open() {
+            return false;
+        }
+
+        // Check if some layer-shell surface is on top.
+        let layers = layer_map_for_output(output);
+        let layer_popup_under = |layer| {
+            layers
+                .layers_on(layer)
+                .rev()
+                .find_map(|layer_surface| {
+                    let mapped = self.mapped_layer_surfaces.get(layer_surface)?;
+                    if mapped.place_within_backdrop() {
+                        return None;
+                    }
+
+                    let mut layer_pos_within_output =
+                        layers.layer_geometry(layer_surface).unwrap().loc.to_f64();
+                    layer_pos_within_output += mapped.bob_offset();
+
+                    // Background and bottom layers move together with the workspaces.
+                    let mon = self.layout.monitor_for_output(output)?;
+                    let (_, geo) = mon.workspace_under(pos_within_output)?;
+                    layer_pos_within_output += geo.loc;
+
+                    let surface_type = WindowSurfaceType::POPUP | WindowSurfaceType::SUBSURFACE;
+                    layer_surface
+                        .surface_under(pos_within_output - layer_pos_within_output, surface_type)
+                })
+                .is_some()
+        };
+
+        if layer_popup_under(Layer::Bottom) || layer_popup_under(Layer::Background) {
+            return true;
+        }
+
+        false
+    }
+
+    /// Returns the workspace under the position to be activated.
+    ///
+    /// The return value is an output and a workspace index on it.
+    pub fn workspace_under(
+        &self,
+        extended_bounds: bool,
+        pos: Point<f64, Logical>,
+    ) -> Option<(Output, &Workspace<Mapped>)> {
+        if self.is_locked() || self.screenshot_ui.is_open() {
+            return None;
+        }
+
+        let (output, pos_within_output) = self.output_under(pos)?;
+
+        if self.is_sticky_obscured_under(output, pos_within_output) {
+            return None;
+        }
+
+        if self.is_layout_obscured_under(output, pos_within_output) {
+            return None;
+        }
+
+        let ws = self
+            .layout
+            .workspace_under(extended_bounds, output, pos_within_output)?;
+        Some((output.clone(), ws))
+    }
+
+    pub fn workspace_under_cursor(
+        &self,
+        extended_bounds: bool,
+    ) -> Option<(Output, &Workspace<Mapped>)> {
+        let pos = self.seat.get_pointer().unwrap().current_location();
+        self.workspace_under(extended_bounds, pos)
+    }
+
+    /// Returns the window under the position to be activated.
+    ///
+    /// The cursor may be inside the window's activation region, but not within the window's input
+    /// region.
+    pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Mapped> {
+        if self.is_locked() || self.screenshot_ui.is_open() {
+            return None;
+        }
+
+        let (output, pos_within_output) = self.output_under(pos)?;
+
+        if self.is_sticky_obscured_under(output, pos_within_output) {
+            return None;
+        }
+
+        if let Some((window, _loc)) = self
+            .layout
+            .interactive_moved_window_under(output, pos_within_output)
         {
+            return Some(window);
+        }
+
+        if self.is_layout_obscured_under(output, pos_within_output) {
             return None;
         }
 
@@ -2952,20 +3255,37 @@ impl Niri {
             layers
                 .layers_on(layer)
                 .rev()
-                .find_map(|layer| {
-                    let layer_pos_within_output =
-                        layers.layer_geometry(layer).unwrap().loc.to_f64();
+                .find_map(|layer_surface| {
+                    let mapped = self.mapped_layer_surfaces.get(layer_surface)?;
+                    if mapped.place_within_backdrop() {
+                        return None;
+                    }
+
+                    let mut layer_pos_within_output =
+                        layers.layer_geometry(layer_surface).unwrap().loc.to_f64();
+                    layer_pos_within_output += mapped.bob_offset();
+
+                    // Background and bottom layers move together with the workspaces.
+                    if matches!(layer, Layer::Background | Layer::Bottom) {
+                        let mon = self.layout.monitor_for_output(output)?;
+                        let (_, geo) = mon.workspace_under(pos_within_output)?;
+                        layer_pos_within_output += geo.loc;
+                        // Don't need to deal with zoom here because in the overview background and
+                        // bottom layers don't receive input.
+                    }
+
                     let surface_type = if popup {
                         WindowSurfaceType::POPUP
                     } else {
                         WindowSurfaceType::TOPLEVEL
                     } | WindowSurfaceType::SUBSURFACE;
-                    layer
+
+                    layer_surface
                         .surface_under(pos_within_output - layer_pos_within_output, surface_type)
                         .map(|(surface, pos_within_layer)| {
                             (
                                 (surface, pos_within_layer.to_f64() + layer_pos_within_output),
-                                layer,
+                                layer_surface,
                             )
                         })
                 })
@@ -2975,26 +3295,33 @@ impl Niri {
         let layer_toplevel_under = |layer| layer_surface_under(layer, false);
         let layer_popup_under = |layer| layer_surface_under(layer, true);
 
+        let mapped_hit_data = |(mapped, hit): (&Mapped, HitType)| {
+            let window = &mapped.window;
+            let surface_and_pos = if let HitType::Input { win_pos } = hit {
+                let win_pos_within_output = win_pos;
+                window
+                    .surface_under(
+                        pos_within_output - win_pos_within_output,
+                        WindowSurfaceType::ALL,
+                    )
+                    .map(|(s, pos_within_window)| {
+                        (s, pos_within_window.to_f64() + win_pos_within_output)
+                    })
+            } else {
+                None
+            };
+            (surface_and_pos, (Some((window.clone(), hit)), None))
+        };
+
+        let interactive_moved_window_under = || {
+            self.layout
+                .interactive_moved_window_under(output, pos_within_output)
+                .map(mapped_hit_data)
+        };
         let window_under = || {
             self.layout
                 .window_under(output, pos_within_output)
-                .map(|(mapped, hit)| {
-                    let window = &mapped.window;
-                    let surface_and_pos = if let HitType::Input { win_pos } = hit {
-                        let win_pos_within_output = win_pos;
-                        window
-                            .surface_under(
-                                pos_within_output - win_pos_within_output,
-                                WindowSurfaceType::ALL,
-                            )
-                            .map(|(s, pos_within_window)| {
-                                (s, pos_within_window.to_f64() + win_pos_within_output)
-                            })
-                    } else {
-                        None
-                    };
-                    (surface_and_pos, (Some((window.clone(), hit)), None))
-                })
+                .map(mapped_hit_data)
         };
 
         let mon = self.layout.monitor_for_output(output).unwrap();
@@ -3002,26 +3329,48 @@ impl Niri {
         let mut under =
             layer_popup_under(Layer::Overlay).or_else(|| layer_toplevel_under(Layer::Overlay));
 
+        let is_overview_open = self.layout.is_overview_open();
+
         // When rendering above the top layer, we put the regular monitor elements first.
         // Otherwise, we will render all layer-shell pop-ups and the top layer on top.
         if mon.render_above_top_layer() {
             under = under
+                .or_else(interactive_moved_window_under)
                 .or_else(window_under)
                 .or_else(|| layer_popup_under(Layer::Top))
+                .or_else(|| layer_toplevel_under(Layer::Top))
                 .or_else(|| layer_popup_under(Layer::Bottom))
                 .or_else(|| layer_popup_under(Layer::Background))
-                .or_else(|| layer_toplevel_under(Layer::Top))
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
+            let hot_corners = self.config.borrow().gestures.hot_corners;
+            if !hot_corners.off {
+                let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
+                if hot_corner.contains(pos_within_output) {
+                    return rv;
+                }
+            }
+
             under = under
                 .or_else(|| layer_popup_under(Layer::Top))
-                .or_else(|| layer_popup_under(Layer::Bottom))
-                .or_else(|| layer_popup_under(Layer::Background))
-                .or_else(|| layer_toplevel_under(Layer::Top))
-                .or_else(window_under)
-                .or_else(|| layer_toplevel_under(Layer::Bottom))
-                .or_else(|| layer_toplevel_under(Layer::Background));
+                .or_else(|| layer_toplevel_under(Layer::Top));
+
+            under = under.or_else(interactive_moved_window_under);
+
+            if !is_overview_open {
+                under = under
+                    .or_else(|| layer_popup_under(Layer::Bottom))
+                    .or_else(|| layer_popup_under(Layer::Background));
+            }
+
+            under = under.or_else(window_under);
+
+            if !is_overview_open {
+                under = under
+                    .or_else(|| layer_toplevel_under(Layer::Bottom))
+                    .or_else(|| layer_toplevel_under(Layer::Background));
+            }
         }
 
         let Some((mut surface_and_pos, (window, layer))) = under else {
@@ -3236,7 +3585,7 @@ impl Niri {
         renderer: &mut R,
         output: &Output,
     ) -> Vec<OutputRenderElements<R>> {
-        if self.pointer_hidden {
+        if !self.pointer_visibility.is_visible() {
             return vec![];
         }
 
@@ -3323,7 +3672,7 @@ impl Niri {
     }
 
     pub fn refresh_pointer_outputs(&mut self) {
-        if self.pointer_hidden {
+        if !self.pointer_visibility.is_visible() {
             return;
         }
 
@@ -3480,6 +3829,7 @@ impl Niri {
             // layer-shell, the layout will briefly draw as active, despite never having focus.
             KeyboardFocus::LockScreen { .. } => true,
             KeyboardFocus::ScreenshotUi => true,
+            KeyboardFocus::Overview => true,
         };
 
         self.layout.refresh(layout_is_active);
@@ -3641,7 +3991,7 @@ impl Niri {
                         continue;
                     };
 
-                    mapped.update_render_elements(geo.size.to_f64(), scale);
+                    mapped.update_render_elements(geo.size.to_f64());
                 }
             }
         }
@@ -3719,8 +4069,7 @@ impl Niri {
             elements.push(
                 SolidColorRenderElement::from_buffer(
                     &state.lock_color_buffer,
-                    (0, 0),
-                    output_scale,
+                    (0., 0.),
                     1.,
                     Kind::Unspecified,
                 )
@@ -3733,12 +4082,18 @@ impl Niri {
             return elements;
         }
 
-        // Prepare the background element.
+        // Prepare the background elements.
         let state = self.output_state.get(output).unwrap();
+        let background_buffer = state.background_buffer.clone();
         let background = SolidColorRenderElement::from_buffer(
-            &state.background_buffer,
-            (0, 0),
-            output_scale,
+            &background_buffer,
+            (0., 0.),
+            1.,
+            Kind::Unspecified,
+        );
+        let backdrop = SolidColorRenderElement::from_buffer(
+            &state.backdrop_buffer,
+            (0., 0.),
             1.,
             Kind::Unspecified,
         )
@@ -3753,8 +4108,8 @@ impl Niri {
                     .map(OutputRenderElements::from),
             );
 
-            // Add the background for outputs that were connected while the screenshot UI was open.
-            elements.push(background);
+            // Add the backdrop for outputs that were connected while the screenshot UI was open.
+            elements.push(backdrop);
 
             if self.debug_draw_opaque_regions {
                 draw_opaque_regions(&mut elements, output_scale);
@@ -3773,52 +4128,129 @@ impl Niri {
 
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
-        let monitor_elements: Vec<_> = mon.render_elements(renderer, target, focus_ring).collect();
-        let float_elements: Vec<_> = self
+        let zoom = mon.overview_zoom();
+        let monitor_elements = Vec::from_iter(
+            mon.render_elements(renderer, target, focus_ring)
+                .map(|(geo, iter)| (geo, Vec::from_iter(iter))),
+        );
+        let workspace_shadow_elements = Vec::from_iter(mon.render_workspace_shadows(renderer));
+        let insert_hint_elements = mon.render_insert_hint_between_workspaces(renderer);
+        let int_move_elements: Vec<_> = self
             .layout
-            .render_floating_for_output(renderer, output, target)
+            .render_interactive_move_for_output(renderer, output, target)
             .collect();
 
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
-        let mut extend_from_layer = |elements: &mut SplitElements<LayerSurfaceRenderElement<R>>,
-                                     layer| {
-            self.render_layer(renderer, target, output_scale, &layer_map, layer, elements);
-        };
+        let mut extend_from_layer =
+            |elements: &mut SplitElements<LayerSurfaceRenderElement<R>>, layer, for_backdrop| {
+                self.render_layer(renderer, target, &layer_map, layer, elements, for_backdrop);
+            };
 
         // The overlay layer elements go next.
         let mut layer_elems = SplitElements::default();
-        extend_from_layer(&mut layer_elems, Layer::Overlay);
+        extend_from_layer(&mut layer_elems, Layer::Overlay, false);
         elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
 
-        // Collect all other layer-shell elements.
+        // Collect the top layer elements.
         let mut layer_elems = SplitElements::default();
-        extend_from_layer(&mut layer_elems, Layer::Top);
-        let top_layer_normal = mem::take(&mut layer_elems.normal);
-        extend_from_layer(&mut layer_elems, Layer::Bottom);
-        extend_from_layer(&mut layer_elems, Layer::Background);
+        extend_from_layer(&mut layer_elems, Layer::Top, false);
+        let top_layer = layer_elems;
 
         // When rendering above the top layer, we put the regular monitor elements first.
         // Otherwise, we will render all layer-shell pop-ups and the top layer on top.
         if mon.render_above_top_layer() {
-            elements.extend(float_elements.into_iter().map(OutputRenderElements::from));
-            elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
+            // Collect all other layer-shell elements.
+            let mut layer_elems = SplitElements::default();
+            extend_from_layer(&mut layer_elems, Layer::Bottom, false);
+            extend_from_layer(&mut layer_elems, Layer::Background, false);
 
-            elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
-            elements.extend(top_layer_normal.into_iter().map(OutputRenderElements::from));
-            elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
+            elements.extend(
+                int_move_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
+            elements.extend(
+                insert_hint_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
+            elements.extend(
+                monitor_elements
+                    .into_iter()
+                    .flat_map(|(_ws_geo, iter)| iter)
+                    .map(OutputRenderElements::from),
+            );
+
+            elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
+            elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
+
+            elements.push(OutputRenderElements::from(background));
+
+            elements.extend(
+                workspace_shadow_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
         } else {
-            elements.extend(layer_elems.popups.drain(..).map(OutputRenderElements::from));
-            elements.extend(top_layer_normal.into_iter().map(OutputRenderElements::from));
+            elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
 
-            elements.extend(float_elements.into_iter().map(OutputRenderElements::from));
-            elements.extend(monitor_elements.into_iter().map(OutputRenderElements::from));
+            elements.extend(
+                int_move_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
 
-            elements.extend(layer_elems.normal.drain(..).map(OutputRenderElements::from));
+            elements.extend(
+                insert_hint_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
+
+            for (ws_geo, ws_elements) in monitor_elements {
+                // Collect all other layer-shell elements.
+                let mut layer_elems = SplitElements::default();
+                extend_from_layer(&mut layer_elems, Layer::Bottom, false);
+                extend_from_layer(&mut layer_elems, Layer::Background, false);
+
+                elements.extend(
+                    layer_elems
+                        .popups
+                        .into_iter()
+                        .filter_map(|elem| scale_relocate_crop(elem, output_scale, zoom, ws_geo))
+                        .map(OutputRenderElements::from),
+                );
+
+                elements.extend(ws_elements.into_iter().map(OutputRenderElements::from));
+
+                elements.extend(
+                    layer_elems
+                        .normal
+                        .into_iter()
+                        .filter_map(|elem| scale_relocate_crop(elem, output_scale, zoom, ws_geo))
+                        .map(OutputRenderElements::from),
+                );
+
+                if let Some(elem) =
+                    scale_relocate_crop(background.clone(), output_scale, zoom, ws_geo)
+                {
+                    elements.push(OutputRenderElements::from(elem));
+                }
+            }
+
+            elements.extend(
+                workspace_shadow_elements
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            );
         }
 
-        // Then the background.
-        elements.push(background);
+        // Then the backdrop.
+        let mut layer_elems = SplitElements::default();
+        extend_from_layer(&mut layer_elems, Layer::Background, true);
+        elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
+
+        elements.push(backdrop);
 
         if self.debug_draw_opaque_regions {
             draw_opaque_regions(&mut elements, output_scale);
@@ -3827,23 +4259,29 @@ impl Niri {
         elements
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_layer<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         target: RenderTarget,
-        scale: Scale<f64>,
         layer_map: &LayerMap,
         layer: Layer,
         elements: &mut SplitElements<LayerSurfaceRenderElement<R>>,
+        for_backdrop: bool,
     ) {
         // LayerMap returns layers in reverse stacking order.
         let iter = layer_map.layers_on(layer).rev().filter_map(|surface| {
             let mapped = self.mapped_layer_surfaces.get(surface)?;
+
+            if for_backdrop != mapped.place_within_backdrop() {
+                return None;
+            }
+
             let geo = layer_map.layer_geometry(surface)?;
             Some((mapped, geo))
         });
         for (mapped, geo) in iter {
-            elements.extend(mapped.render(renderer, geo.loc.to_f64(), scale, target));
+            elements.extend(mapped.render(renderer, geo.loc.to_f64(), target));
         }
     }
 
@@ -3877,6 +4315,14 @@ impl Niri {
             state.unfinished_animations_remain |= self
                 .cursor_manager
                 .is_current_cursor_animated(output.current_scale().integer_scale());
+
+            // Also check layer surfaces.
+            if !state.unfinished_animations_remain {
+                state.unfinished_animations_remain |= layer_map_for_output(output)
+                    .layers()
+                    .filter_map(|surface| self.mapped_layer_surfaces.get(surface))
+                    .any(|mapped| mapped.are_animations_ongoing());
+            }
 
             // Render.
             res = backend.render(self, output, target_presentation_time);
@@ -5407,7 +5853,7 @@ impl Niri {
         }
 
         if let Some(window) = &new_focus.window {
-            if current_focus.window.as_ref() != Some(window) {
+            if !self.layout.is_overview_open() && current_focus.window.as_ref() != Some(window) {
                 let (window, hit) = window;
 
                 // Don't trigger focus-follows-mouse over the tab indicator.
@@ -5596,8 +6042,13 @@ impl Niri {
             .event_loop
             .insert_source(timer, move |_, _, state| {
                 state.niri.pointer_inactivity_timer = None;
-                state.niri.pointer_hidden = true;
-                state.niri.queue_redraw_all();
+
+                // If the pointer is already invisible, don't reset it back to Hidden causing one
+                // frame of hover.
+                if state.niri.pointer_visibility.is_visible() {
+                    state.niri.pointer_visibility = PointerVisibility::Hidden;
+                    state.niri.queue_redraw_all();
+                }
 
                 TimeoutAction::Drop
             })
@@ -5641,14 +6092,32 @@ impl ClientData for ClientState {
     fn disconnected(&self, _client_id: ClientId, _reason: DisconnectReason) {}
 }
 
+fn scale_relocate_crop<E: Element>(
+    elem: E,
+    output_scale: Scale<f64>,
+    zoom: f64,
+    ws_geo: Rectangle<f64, Logical>,
+) -> Option<CropRenderElement<RelocateRenderElement<RescaleRenderElement<E>>>> {
+    let ws_geo = ws_geo.to_physical_precise_round(output_scale);
+    let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
+    let elem = RelocateRenderElement::from_element(elem, ws_geo.loc, Relocate::Relative);
+    CropRenderElement::from_element(elem, output_scale, ws_geo)
+}
+
 niri_render_elements! {
     OutputRenderElements<R> => {
         Monitor = MonitorRenderElement<R>,
-        Tile = TileRenderElement<R>,
+        RescaledTile = RescaleRenderElement<TileRenderElement<R>>,
         LayerSurface = LayerSurfaceRenderElement<R>,
+        RelocatedLayerSurface = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            LayerSurfaceRenderElement<R>
+        >>>,
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
+        RelocatedSolidColor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            SolidColorRenderElement
+        >>>,
         ScreenshotUi = ScreenshotUiRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.

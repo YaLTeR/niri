@@ -1,5 +1,3 @@
-### Overview
-
 This page documents all top-level options that don't otherwise have dedicated pages.
 
 Here are all of these options at a glance:
@@ -25,12 +23,31 @@ cursor {
     hide-after-inactive-ms 1000
 }
 
+overview {
+    zoom 0.5
+    backdrop-color "#262626"
+
+    workspace-shadow {
+        // off
+        softness 40
+        spread 10
+        offset x=0 y=10
+        color "#00000050"
+    }
+}
+
+xwayland-satellite {
+    // off
+    path "xwayland-satellite"
+}
+
 clipboard {
     disable-primary
 }
 
 hotkey-overlay {
     skip-at-startup
+    hide-not-bound
 }
 ```
 
@@ -143,6 +160,80 @@ cursor {
 }
 ```
 
+### `overview`
+
+<sup>Since: 25.05</sup>
+
+Settings for the [Overview](./Overview.md).
+
+#### `zoom`
+
+Control how much the workspaces zoom out in the overview.
+`zoom` ranges from 0 to 0.75 where lower values make everything smaller.
+
+```kdl
+// Make workspaces four times smaller than normal in the overview.
+overview {
+    zoom 0.25
+}
+```
+
+#### `backdrop-color`
+
+Set the backdrop color behind workspaces in the overview.
+The backdrop is also visible between workspaces when switching.
+
+The alpha channel for this color will be ignored.
+
+```kdl
+// Make the backdrop light.
+overview {
+    backdrop-color "#777777"
+}
+```
+
+You can also set the color per-output [in the output config](./Configuration:-Outputs.md#backdrop-color).
+
+#### `workspace-shadow`
+
+Control the shadow behind workspaces visible in the overview.
+
+Settings here mirror the normal [`shadow` config in the layout section](./Configuration:-Layout.md#shadow), so check the documentation there.
+
+Workspace shadows are configured for a workspace size normalized to 1080 pixels tall, then zoomed out together with the workspace.
+Practically, this means that you'll want bigger spread, offset, and softness compared to window shadows.
+
+```kdl
+// Disable workspace shadows in the overview.
+overview {
+    workspace-shadow {
+        off
+    }
+}
+```
+
+### `xwayland-satellite`
+
+<sup>Since: next release</sup>
+
+Settings for integration with [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite).
+
+When a recent enough xwayland-satellite is detected, niri will create the X11 sockets and set `DISPLAY`, then automatically spawn `xwayland-satellite` when an X11 client tries to connect.
+If Xwayland dies, niri will keep watching the X11 socket and restart `xwayland-satellite` as needed.
+This is very similar to how built-in Xwayland works in other compositors.
+
+`off` disables the integration: niri won't create an X11 socket and won't set the `DISPLAY` environment variable.
+
+`path` sets the path to the `xwayland-satellite` binary.
+By default, it's just `xwayland-satellite`, so it's looked up like any other non-absolute program name.
+
+```kdl
+// Use a custom build of xwayland-satellite.
+xwayland-satellite {
+    path "~/source/rs/xwayland-satellite/target/release/xwayland-satellite"
+}
+```
+
 ### `clipboard`
 
 <sup>Since: 25.02</sup>
@@ -162,11 +253,26 @@ clipboard {
 
 Settings for the "Important Hotkeys" overlay.
 
+#### `skip-at-startup`
+
 Set the `skip-at-startup` flag if you don't want to see the hotkey help at niri startup.
 
 ```kdl
 hotkey-overlay {
     skip-at-startup
+}
+```
+
+#### `hide-not-bound`
+
+<sup>Since: next release</sup>
+
+By default, niri will show the most important actions even if they aren't bound to any key, to prevent confusion.
+Set the `hide-not-bound` flag if you want to hide all actions not bound to any key.
+
+```kdl
+hotkey-overlay {
+    hide-not-bound
 }
 ```
 

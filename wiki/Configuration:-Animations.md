@@ -50,6 +50,10 @@ animations {
         duration-ms 200
         curve "ease-out-quad"
     }
+
+    overview-open-close {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
+    }
 }
 ```
 
@@ -159,7 +163,7 @@ animations {
 
 ##### `custom-shader`
 
-<sup>Since: 0.1.6, experimental</sup>
+<sup>Since: 0.1.6</sup>
 
 You can write a custom shader for drawing the window during an open animation.
 
@@ -219,7 +223,7 @@ animations {
 
 ##### `custom-shader`
 
-<sup>Since: 0.1.6, experimental</sup>
+<sup>Since: 0.1.6</sup>
 
 You can write a custom shader for drawing the window during a close animation.
 
@@ -315,7 +319,7 @@ animations {
 
 ##### `custom-shader`
 
-<sup>Since: 0.1.6, experimental</sup>
+<sup>Since: 0.1.6</sup>
 
 You can write a custom shader for drawing the window during a resize animation.
 
@@ -370,6 +374,20 @@ animations {
     screenshot-ui-open {
         duration-ms 200
         curve "ease-out-quad"
+    }
+}
+```
+
+#### `overview-open-close`
+
+<sup>Since: 25.05</sup>
+
+The open/close zoom animation of the [Overview](./Overview.md).
+
+```kdl
+animations {
+    overview-open-close {
+        spring damping-ratio=1.0 stiffness=800 epsilon=0.0001
     }
 }
 ```

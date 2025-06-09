@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "25.2.0"
+version = "25.5.1"
 description = "A scrollable-tiling Wayland compositor"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -15,10 +15,10 @@ repository = "https://github.com/YaLTeR/niri"
 rust-version = "1.80.1"
 
 [workspace.dependencies]
-anyhow = "1.0.97"
-bitflags = "2.9.0"
-clap = { version = "4.5.34", features = ["derive"] }
-insta = "1.42.2"
+anyhow = "1.0.98"
+bitflags = "2.9.1"
+clap = { version = "4.5.38", features = ["derive"] }
+insta = "1.43.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 tracing = { version = "0.1.41", features = ["max_level_trace", "release_max_level_debug"] }
@@ -56,26 +56,26 @@ async-channel = "2.3.1"
 async-io = { version = "2.4.0", optional = true }
 atomic = "0.6.0"
 bitflags.workspace = true
-bytemuck = { version = "1.22.0", features = ["derive"] }
+bytemuck = { version = "1.23.0", features = ["derive"] }
 calloop = { version = "0.14.2", features = ["executor", "futures-io"] }
 clap = { workspace = true, features = ["string"] }
-clap_complete = "4.5.47"
+clap_complete = "4.5.50"
 directories = "6.0.0"
 drm-ffi = "0.9.0"
 fastrand = "2.3.0"
 futures-util = { version = "0.3.31", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
-glam = "0.30.1"
+glam = "0.30.3"
 input = { version = "0.9.1", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.171"
+libc = "0.2.172"
 libdisplay-info = "0.2.2"
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_debug"] }
-niri-config = { version = "25.2.0", path = "niri-config" }
-niri-ipc = { version = "25.2.0", path = "niri-ipc", features = ["clap"] }
+niri-config = { version = "25.5.1", path = "niri-config" }
+niri-ipc = { version = "25.5.1", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.0.0"
-pango = { version = "0.20.9", features = ["v1_44"] }
-pangocairo = "0.20.7"
+pango = { version = "0.20.10", features = ["v1_44"] }
+pangocairo = "0.20.10"
 pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", optional = true, features = ["v0_3_33"] }
 png = "0.17.16"
 portable-atomic = { version = "1.11.0", default-features = false, features = ["float"] }
@@ -88,10 +88,10 @@ tracing-subscriber.workspace = true
 tracing.workspace = true
 tracy-client.workspace = true
 url = { version = "2.5.4", optional = true }
-wayland-backend = "0.3.8"
+wayland-backend = "0.3.10"
 wayland-scanner = "0.31.6"
 xcursor = "0.3.8"
-zbus = { version = "5.5.0", optional = true }
+zbus = { version = "5.7.0", optional = true }
 
 [dependencies.smithay]
 workspace = true
@@ -118,7 +118,7 @@ insta.workspace = true
 proptest = "1.6.0"
 proptest-derive = { version = "0.5.1", features = ["boxed_union"] }
 rayon = "1.10.0"
-wayland-client = "0.31.8"
+wayland-client = "0.31.10"
 xshell = "0.2.7"
 
 [features]
@@ -152,7 +152,7 @@ insta.opt-level = 3
 similar.opt-level = 3
 
 [package.metadata.generate-rpm]
-version = "25.02"
+version = "25.05.1"
 assets = [
     { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
     { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },

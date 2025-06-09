@@ -16,7 +16,9 @@ use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
-use niri_ipc::{Event, KeyboardLayouts, OutputConfigChanged, Reply, Request, Response, Workspace};
+use niri_ipc::{
+    Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response, Workspace,
+};
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, Focus, GrabStartData as PointerGrabStartData,
@@ -183,76 +185,86 @@ fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
 
 async fn handle_client(ctx: ClientCtx, stream: Async<'static, UnixStream>) -> anyhow::Result<()> {
     let (read, mut write) = stream.split();
-    let mut buf = String::new();
+    let mut read = BufReader::new(read);
 
-    // Read a single line to allow extensibility in the future to keep reading.
-    BufReader::new(read)
-        .read_line(&mut buf)
-        .await
-        .context("error reading request")?;
-
-    let request = serde_json::from_str(&buf)
-        .context("error parsing request")
-        .map_err(|err| err.to_string());
-    let requested_error = matches!(request, Ok(Request::ReturnError));
-    let requested_event_stream = matches!(request, Ok(Request::EventStream));
-
-    let reply = match request {
-        Ok(request) => process(&ctx, request).await,
-        Err(err) => Err(err),
-    };
-
-    if let Err(err) = &reply {
-        if !requested_error {
-            warn!("error processing IPC request: {err:?}");
-        }
-    }
-
-    let mut buf = serde_json::to_vec(&reply).context("error formatting reply")?;
-    buf.push(b'\n');
-    write.write_all(&buf).await.context("error writing reply")?;
-
-    if requested_event_stream {
-        let (events_tx, events_rx) = async_channel::bounded(EVENT_STREAM_BUFFER_SIZE);
-        let (disconnect_tx, disconnect_rx) = async_channel::bounded(1);
-
-        // Spawn a task for the client.
-        let client = EventStreamClient {
-            events: events_rx,
-            disconnect: disconnect_rx,
-            write: Box::new(write) as _,
-        };
-        let future = async move {
-            if let Err(err) = handle_event_stream_client(client).await {
-                warn!("error handling IPC event stream client: {err:?}");
-            }
-        };
-        if let Err(err) = ctx.scheduler.schedule(future) {
-            warn!("error scheduling IPC event stream future: {err:?}");
-        }
-
-        // Send the initial state.
-        {
-            let state = ctx.event_stream_state.borrow();
-            for event in state.replicate() {
-                events_tx
-                    .try_send(event)
-                    .expect("initial event burst had more events than buffer size");
+    loop {
+        // Don't keep buf around to avoid clients wasting RAM by filling it with bogus data.
+        let mut buf = Vec::new();
+        let res = read.read_until(b'\n', &mut buf).await;
+        match res {
+            Ok(0) => return Ok(()),
+            Ok(_) => (),
+            // Normal client disconnection.
+            Err(err) if err.kind() == io::ErrorKind::BrokenPipe => return Ok(()),
+            Err(err) => {
+                return Err(err).context("error reading request");
             }
         }
 
-        // Add it to the list.
-        {
-            let mut streams = ctx.event_streams.borrow_mut();
-            let sender = EventStreamSender {
-                events: events_tx,
-                disconnect: disconnect_tx,
+        let request = serde_json::from_slice(&buf)
+            .context("error parsing request")
+            .map_err(|err| err.to_string());
+        let requested_error = matches!(request, Ok(Request::ReturnError));
+        let requested_event_stream = matches!(request, Ok(Request::EventStream));
+
+        let reply = match request {
+            Ok(request) => process(&ctx, request).await,
+            Err(err) => Err(err),
+        };
+
+        if let Err(err) = &reply {
+            if !requested_error {
+                warn!("error processing IPC request: {err:?}");
+            }
+        }
+
+        buf.clear();
+        serde_json::to_writer(&mut buf, &reply).context("error formatting reply")?;
+        buf.push(b'\n');
+        write.write_all(&buf).await.context("error writing reply")?;
+
+        if requested_event_stream {
+            let (events_tx, events_rx) = async_channel::bounded(EVENT_STREAM_BUFFER_SIZE);
+            let (disconnect_tx, disconnect_rx) = async_channel::bounded(1);
+
+            // Spawn a task for the client.
+            let client = EventStreamClient {
+                events: events_rx,
+                disconnect: disconnect_rx,
+                write: Box::new(write) as _,
             };
-            streams.push(sender);
+            let future = async move {
+                if let Err(err) = handle_event_stream_client(client).await {
+                    warn!("error handling IPC event stream client: {err:?}");
+                }
+            };
+            if let Err(err) = ctx.scheduler.schedule(future) {
+                warn!("error scheduling IPC event stream future: {err:?}");
+            }
+
+            // Send the initial state.
+            {
+                let state = ctx.event_stream_state.borrow();
+                for event in state.replicate() {
+                    events_tx
+                        .try_send(event)
+                        .expect("initial event burst had more events than buffer size");
+                }
+            }
+
+            // Add it to the list.
+            {
+                let mut streams = ctx.event_streams.borrow_mut();
+                let sender = EventStreamSender {
+                    events: events_tx,
+                    disconnect: disconnect_tx,
+                };
+                streams.push(sender);
+            }
+
+            return Ok(());
         }
     }
-
-    Ok(())
 }
 
 async fn process(ctx: &ClientCtx, request: Request) -> Reply {
@@ -428,6 +440,11 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::FocusedOutput(output)
         }
         Request::EventStream => Response::Handled,
+        Request::OverviewState => {
+            let state = ctx.event_stream_state.borrow();
+            let is_open = state.overview.is_open;
+            Response::OverviewState(Overview { is_open })
+        }
     };
 
     Ok(response)
@@ -469,6 +486,7 @@ fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_i
         workspace_id: workspace_id.map(|id| id.get()),
         is_focused: mapped.is_focused(),
         is_floating: mapped.is_floating(),
+        is_urgent: mapped.is_urgent(),
     })
 }
 
@@ -524,6 +542,7 @@ impl State {
     pub fn ipc_refresh_layout(&mut self) {
         self.ipc_refresh_workspaces();
         self.ipc_refresh_windows();
+        self.ipc_refresh_overview();
     }
 
     fn ipc_refresh_workspaces(&mut self) {
@@ -571,6 +590,12 @@ impl State {
                 });
             }
 
+            // Check if this workspace urgent state changed.
+            let urgent = ws.is_urgent();
+            if urgent != ipc_ws.is_urgent {
+                events.push(Event::WorkspaceUrgencyChanged { id, urgent });
+            }
+
             // Check if this workspace became focused.
             let is_focused = Some(id) == focused_ws_id;
             if is_focused && !ipc_ws.is_focused {
@@ -602,6 +627,7 @@ impl State {
                         idx: u8::try_from(ws_idx + 1).unwrap_or(u8::MAX),
                         name: ws.name().cloned(),
                         output: mon.map(|mon| mon.output_name().clone()),
+                        is_urgent: ws.is_urgent(),
                         is_active: mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx),
                         is_focused: Some(id) == focused_ws_id,
                         active_window_id: ws.active_window().map(|win| win.id().get()),
@@ -665,6 +691,11 @@ impl State {
             if mapped.is_focused() && !ipc_win.is_focused {
                 events.push(Event::WindowFocusChanged { id: Some(id) });
             }
+
+            let urgent = mapped.is_urgent();
+            if urgent != ipc_win.is_urgent {
+                events.push(Event::WindowUrgencyChanged { id, urgent })
+            }
         });
 
         // Check for closed windows.
@@ -689,5 +720,23 @@ impl State {
             state.apply(event.clone());
             server.send_event(event);
         }
+    }
+
+    pub fn ipc_refresh_overview(&mut self) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.overview;
+        let is_open = self.niri.layout.is_overview_open();
+
+        if state.is_open == is_open {
+            return;
+        }
+
+        let event = Event::OverviewOpenedOrClosed { is_open };
+        state.apply(event.clone());
+        server.send_event(event);
     }
 }

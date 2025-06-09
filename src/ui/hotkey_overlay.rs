@@ -211,33 +211,33 @@ fn render(
     ]);
 
     // Prefer move-column-to-workspace-down, but fall back to move-window-to-workspace-down.
-    if binds
+    if let Some(bind) = binds
         .iter()
-        .any(|bind| bind.action == Action::MoveColumnToWorkspaceDown)
+        .find(|bind| matches!(bind.action, Action::MoveColumnToWorkspaceDown(_)))
     {
-        actions.push(&Action::MoveColumnToWorkspaceDown);
+        actions.push(&bind.action);
     } else if binds
         .iter()
-        .any(|bind| bind.action == Action::MoveWindowToWorkspaceDown)
+        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceDown))
     {
         actions.push(&Action::MoveWindowToWorkspaceDown);
     } else {
-        actions.push(&Action::MoveColumnToWorkspaceDown);
+        actions.push(&Action::MoveColumnToWorkspaceDown(true));
     }
 
     // Same for -up.
-    if binds
+    if let Some(bind) = binds
         .iter()
-        .any(|bind| bind.action == Action::MoveColumnToWorkspaceUp)
+        .find(|bind| matches!(bind.action, Action::MoveColumnToWorkspaceUp(_)))
     {
-        actions.push(&Action::MoveColumnToWorkspaceUp);
+        actions.push(&bind.action);
     } else if binds
         .iter()
-        .any(|bind| bind.action == Action::MoveWindowToWorkspaceUp)
+        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceUp))
     {
         actions.push(&Action::MoveWindowToWorkspaceUp);
     } else {
-        actions.push(&Action::MoveColumnToWorkspaceUp);
+        actions.push(&Action::MoveColumnToWorkspaceUp(true));
     }
 
     actions.extend(&[
@@ -247,6 +247,7 @@ fn render(
         &Action::ConsumeOrExpelWindowRight,
         &Action::ToggleWindowFloating,
         &Action::SwitchFocusBetweenFloatingAndTiling,
+        &Action::ToggleOverview,
     ]);
 
     // Screenshot is not as important, can omit if not bound.
@@ -282,6 +283,11 @@ fn render(
         if !actions.contains(&action) {
             actions.push(action);
         }
+    }
+
+    if config.hotkey_overlay.hide_not_bound {
+        // Only keep actions that have been bound
+        actions.retain(|&action| binds.iter().any(|bind| bind.action == *action))
     }
 
     let strings = actions
@@ -423,8 +429,8 @@ fn action_name(action: &Action) -> String {
         Action::MoveColumnRight => String::from("Move Column Right"),
         Action::FocusWorkspaceDown => String::from("Switch Workspace Down"),
         Action::FocusWorkspaceUp => String::from("Switch Workspace Up"),
-        Action::MoveColumnToWorkspaceDown => String::from("Move Column to Workspace Down"),
-        Action::MoveColumnToWorkspaceUp => String::from("Move Column to Workspace Up"),
+        Action::MoveColumnToWorkspaceDown(_) => String::from("Move Column to Workspace Down"),
+        Action::MoveColumnToWorkspaceUp(_) => String::from("Move Column to Workspace Up"),
         Action::MoveWindowToWorkspaceDown => String::from("Move Window to Workspace Down"),
         Action::MoveWindowToWorkspaceUp => String::from("Move Window to Workspace Up"),
         Action::SwitchPresetColumnWidth => String::from("Switch Preset Column Widths"),
@@ -435,6 +441,7 @@ fn action_name(action: &Action) -> String {
         Action::SwitchFocusBetweenFloatingAndTiling => {
             String::from("Switch Focus Between Floating and Tiling")
         }
+        Action::ToggleOverview => String::from("Open the Overview"),
         Action::Screenshot(_) => String::from("Take a Screenshot"),
         Action::Spawn(args) => format!(
             "Spawn <span face='monospace' bgcolor='#000000'>{}</span>",

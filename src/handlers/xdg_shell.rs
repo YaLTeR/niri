@@ -153,7 +153,7 @@ impl XdgShellHandler for State {
 
         match start_data {
             PointerOrTouchStartData::Pointer(start_data) => {
-                let grab = MoveGrab::new(start_data, window);
+                let grab = MoveGrab::new(start_data, window, false);
                 pointer.set_grab(self, grab, serial, Focus::Clear);
             }
             PointerOrTouchStartData::Touch(start_data) => {
@@ -316,17 +316,28 @@ impl XdgShellHandler for State {
         } else if let Some(output) = self.niri.layout.active_output() {
             let layers = layer_map_for_output(output);
 
-            if layers
-                .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)
-                .is_none()
-            {
+            // FIXME: somewhere here we probably need to check is_overview_open to match the logic
+            // in update_keyboard_focus().
+
+            if let Some(layer) = layers.layer_for_surface(&root, WindowSurfaceType::TOPLEVEL) {
+                // This is a grab for a layer surface.
+
+                if let Some(mapped) = self.niri.mapped_layer_surfaces.get(layer) {
+                    if mapped.place_within_backdrop() {
+                        trace!("ignoring popup grab for a layer surface within overview backdrop");
+                        let _ = PopupManager::dismiss_popup(&root, &popup);
+                        return;
+                    }
+                }
+            } else {
                 // This is a grab for a regular window; check that there's no layer surface with a
                 // higher input priority.
 
                 if layers.layers_on(Layer::Overlay).any(|l| {
-                    l.cached_state().keyboard_interactivity
+                    (l.cached_state().keyboard_interactivity
                         == wlr_layer::KeyboardInteractivity::Exclusive
-                        || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref()
+                        || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref())
+                        && self.niri.mapped_layer_surfaces.contains_key(l)
                 }) {
                     trace!("ignoring toplevel popup grab because the overlay layer has focus");
                     let _ = PopupManager::dismiss_popup(&root, &popup);
@@ -336,9 +347,10 @@ impl XdgShellHandler for State {
                 let mon = self.niri.layout.monitor_for_output(output).unwrap();
                 if !mon.render_above_top_layer()
                     && layers.layers_on(Layer::Top).any(|l| {
-                        l.cached_state().keyboard_interactivity
+                        (l.cached_state().keyboard_interactivity
                             == wlr_layer::KeyboardInteractivity::Exclusive
-                            || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref()
+                            || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref())
+                            && self.niri.mapped_layer_surfaces.contains_key(l)
                     })
                 {
                     trace!("ignoring toplevel popup grab because the top layer has focus");
@@ -1062,6 +1074,19 @@ impl State {
         // The target geometry for the positioner should be relative to its parent's geometry, so
         // we will compute that here.
         let mut target = Rectangle::from_size(output_geo.size);
+
+        // Background and bottom layer popups render below the top and the overlay layer, so let's
+        // put them into the non-exclusive zone.
+        //
+        // FIXME: ideally this should use the "top and overlay layer" non-exclusive zone, but
+        // Smithay only computes the "all layers" non-exclusive zone atm.
+        //
+        // FIXME: related to the above, top layer popups should use the "overlay layer"
+        // non-exclusive zone.
+        if matches!(layer_surface.layer(), Layer::Background | Layer::Bottom) {
+            target = map.non_exclusive_zone();
+        }
+
         target.loc -= layer_geo.loc;
         target.loc -= get_popup_toplevel_coords(popup);
 

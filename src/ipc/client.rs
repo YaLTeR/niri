@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use std::iter::Peekable;
 use std::slice;
 
@@ -5,8 +6,8 @@ use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
-    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Request, Response,
-    Transform, Window,
+    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview, Request,
+    Response, Transform, Window,
 };
 use serde_json::json;
 
@@ -32,24 +33,35 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
+        Msg::OverviewState => Request::OverviewState,
     };
 
-    let socket = Socket::connect().context("error connecting to the niri socket")?;
+    let mut socket = Socket::connect().context("error connecting to the niri socket")?;
 
-    let (reply, mut read_event) = socket
-        .send(request)
-        .context("error communicating with niri")?;
+    let result = socket.send(request);
 
-    let compositor_version = match reply {
-        Err(_) if !matches!(msg, Msg::Version) => {
-            // If we got an error, it might be that the CLI is a different version from the running
-            // niri instance. Request the running instance version to compare and print a message.
-            Socket::connect()
-                .and_then(|socket| socket.send(Request::Version))
-                .ok()
-                .map(|(reply, _read_event)| reply)
+    // For errors that can be caused by a version mismatch between the running niri instance and
+    // the niri msg CLI, we will try to fetch and compare the versions.
+    let check_compositor_version = match &result {
+        Err(err) => {
+            // Response JSON parsing errors.
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidData | ErrorKind::UnexpectedEof
+            )
         }
-        _ => None,
+        // Error returned from niri.
+        Ok(Err(_)) => true,
+        _ => false,
+    };
+
+    let compositor_version = if check_compositor_version && !matches!(msg, Msg::Version) {
+        // Reconnect to support older niri versions with one request per connection.
+        Socket::connect()
+            .and_then(|mut socket| socket.send(Request::Version))
+            .ok()
+    } else {
+        None
     };
 
     // Default SIGPIPE so that our prints don't panic on stdout closing.
@@ -57,32 +69,31 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
 
-    let response = reply.map_err(|err_msg| {
-        // Check for CLI-server version mismatch to add helpful context.
-        match compositor_version {
-            Some(Ok(Response::Version(compositor_version))) => {
-                let cli_version = version();
-                if cli_version != compositor_version {
-                    eprintln!("Running niri compositor has a different version from the niri CLI:");
-                    eprintln!("Compositor version: {compositor_version}");
-                    eprintln!("CLI version:        {cli_version}");
-                    eprintln!("Did you forget to restart niri after an update?");
-                    eprintln!();
-                }
-            }
-            Some(_) => {
-                eprintln!("Unable to get the running niri compositor version.");
+    // Check for CLI-server version mismatch to add helpful context.
+    match compositor_version {
+        Some(Ok(Response::Version(compositor_version))) => {
+            let cli_version = version();
+            if cli_version != compositor_version {
+                eprintln!("Running niri compositor has a different version from the niri CLI:");
+                eprintln!("Compositor version: {compositor_version}");
+                eprintln!("CLI version:        {cli_version}");
                 eprintln!("Did you forget to restart niri after an update?");
                 eprintln!();
             }
-            None => {
-                // Communication error, or the original request was already a version request.
-                // Don't add irrelevant context.
-            }
         }
+        Some(_) => {
+            eprintln!("Unable to get the running niri compositor version.");
+            eprintln!("Did you forget to restart niri after an update?");
+            eprintln!();
+        }
+        None => {
+            // Communication error, or the original request was already a version request, or the
+            // original request had succeeded. Don't add irrelevant context.
+        }
+    }
 
-        anyhow!(err_msg).context("niri returned an error")
-    })?;
+    let reply = result.context("error communicating with niri")?;
+    let response = reply.map_err(|err_msg| anyhow!(err_msg).context("niri returned an error"))?;
 
     match msg {
         Msg::RequestError => {
@@ -391,6 +402,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!("Started reading events.");
             }
 
+            let mut read_event = socket.read_events();
             loop {
                 let event = read_event().context("error reading event from niri")?;
 
@@ -403,6 +415,9 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 match event {
                     Event::WorkspacesChanged { workspaces } => {
                         println!("Workspaces changed: {workspaces:?}");
+                    }
+                    Event::WorkspaceUrgencyChanged { id, urgent } => {
+                        println!("Workspace {id}: urgency changed to {urgent}");
                     }
                     Event::WorkspaceActivated { id, focused } => {
                         let word = if focused { "focused" } else { "activated" };
@@ -429,13 +444,38 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowFocusChanged { id } => {
                         println!("Window focus changed: {id:?}");
                     }
+                    Event::WindowUrgencyChanged { id, urgent } => {
+                        println!("Window {id}: urgency changed to {urgent}");
+                    }
                     Event::KeyboardLayoutsChanged { keyboard_layouts } => {
                         println!("Keyboard layouts changed: {keyboard_layouts:?}");
                     }
                     Event::KeyboardLayoutSwitched { idx } => {
                         println!("Keyboard layout switched: {idx}");
                     }
+                    Event::OverviewOpenedOrClosed { is_open: opened } => {
+                        println!("Overview toggled: {opened}");
+                    }
                 }
+            }
+        }
+        Msg::OverviewState => {
+            let Response::OverviewState(response) = response else {
+                bail!("unexpected response: expected Overview, got {response:?}");
+            };
+
+            if json {
+                let response =
+                    serde_json::to_string(&response).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+
+            let Overview { is_open } = response;
+            if is_open {
+                println!("Overview is open.");
+            } else {
+                println!("Overview is closed.");
             }
         }
     }
@@ -541,7 +581,8 @@ fn print_output(output: Output) -> anyhow::Result<()> {
 
 fn print_window(window: &Window) {
     let focused = if window.is_focused { " (focused)" } else { "" };
-    println!("Window ID {}:{focused}", window.id);
+    let urgent = if window.is_urgent { " (urgent)" } else { "" };
+    println!("Window ID {}:{focused}{urgent}", window.id);
 
     if let Some(title) = &window.title {
         println!("  Title: \"{title}\"");

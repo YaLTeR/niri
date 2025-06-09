@@ -10,7 +10,9 @@ use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
-use crate::utils::{floor_logical_in_physical_max1, round_logical_in_physical};
+use crate::utils::{
+    floor_logical_in_physical_max1, round_logical_in_physical, round_logical_in_physical_max1,
+};
 
 #[derive(Debug)]
 pub struct TabIndicator {
@@ -77,12 +79,14 @@ impl TabIndicator {
         scale: f64,
     ) -> impl Iterator<Item = Rectangle<f64, Logical>> {
         let round = |logical: f64| round_logical_in_physical(scale, logical);
+        let round_max1 = |logical: f64| round_logical_in_physical_max1(scale, logical);
 
         let progress = self.open_anim.as_ref().map_or(1., |a| a.value().max(0.));
 
-        let width = round(self.config.width.0);
-        let gap = round(self.config.gap.0);
-        let gaps_between = round(self.config.gaps_between_tabs.0);
+        let width = round_max1(self.config.width.0);
+        let gap = self.config.gap.0;
+        let gap = round_max1(gap.abs()).copysign(gap);
+        let gaps_between = round_max1(self.config.gaps_between_tabs.0);
 
         let position = self.config.position;
         let side = match position {
@@ -346,13 +350,16 @@ impl TabInfo {
         tile: &Tile<W>,
         position: Point<f64, Logical>,
         is_active: bool,
+        is_urgent: bool,
         config: &niri_config::TabIndicator,
     ) -> Self {
         let rules = tile.window().rules();
         let rule = rules.tab_indicator;
 
         let gradient_from_rule = || {
-            let (color, gradient) = if is_active {
+            let (color, gradient) = if is_urgent {
+                (rule.urgent_color, rule.urgent_gradient)
+            } else if is_active {
                 (rule.active_color, rule.active_gradient)
             } else {
                 (rule.inactive_color, rule.inactive_gradient)
@@ -362,7 +369,9 @@ impl TabInfo {
         };
 
         let gradient_from_config = || {
-            let (color, gradient) = if is_active {
+            let (color, gradient) = if is_urgent {
+                (config.urgent_color, config.urgent_gradient)
+            } else if is_active {
                 (config.active_color, config.active_gradient)
             } else {
                 (config.inactive_color, config.inactive_gradient)
@@ -382,7 +391,9 @@ impl TabInfo {
                 focus_ring_config
             };
 
-            let (color, gradient) = if is_active {
+            let (color, gradient) = if is_urgent {
+                (config.urgent_color, config.urgent_gradient)
+            } else if is_active {
                 (config.active_color, config.active_gradient)
             } else {
                 (config.inactive_color, config.inactive_gradient)

@@ -11,6 +11,7 @@ layout {
     always-center-single-column
     empty-workspace-above-first
     default-column-display "tabbed"
+    background-color "#003300"
 
     preset-column-widths {
         proportion 0.33333
@@ -31,8 +32,10 @@ layout {
         width 4
         active-color "#7fc8ff"
         inactive-color "#505050"
+        urgent-color "#9b0000"
         // active-gradient from="#80c8ff" to="#bbddff" angle=45
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+        // urgent-gradient from="#800" to="#a33" angle=45
     }
 
     border {
@@ -40,8 +43,10 @@ layout {
         width 4
         active-color "#ffc87f"
         inactive-color "#505050"
+        urgent-color "#9b0000"
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" in="srgb-linear"
+        // urgent-gradient from="#800" to="#a33" angle=45
     }
 
     shadow {
@@ -66,8 +71,10 @@ layout {
         corner-radius 8
         active-color "red"
         inactive-color "gray"
+        urgent-color "blue"
         // active-gradient from="#80c8ff" to="#bbddff" angle=45
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view"
+        // urgent-gradient from="#800" to="#a33" angle=45
     }
 
     insert-hint {
@@ -269,6 +276,9 @@ layout {
         active-color "#ffc87f"
         inactive-color "#505050"
 
+        // Color of the border around windows that request your attention.
+        urgent-color "#9b0000"
+
         // active-gradient from="#ffbb66" to="#ffc880" angle=45 relative-to="workspace-view"
         // inactive-gradient from="#505050" to="#808080" angle=45 relative-to="workspace-view" in="srgb-linear"
     }
@@ -372,7 +382,7 @@ Set `on` to enable the shadow.
 Setting `softness 0` will give you hard shadows.
 
 `spread` is the distance to expand the window rectangle in logical pixels, same as CSS box-shadow spread.
-<sup>Since: next release</sup> Spread can be negative.
+<sup>Since: 25.05</sup> Spread can be negative.
 
 `offset` moves the shadow relative to the window in logical pixels, same as CSS box-shadow offset.
 For example, `offset x=2 y=2` will move the shadow 2 logical pixels downwards and to the right.
@@ -440,7 +450,7 @@ It can be `left`, `right`, `top`, or `bottom`.
 `corner-radius` sets the rounded corner radius for tabs in the indicator in logical pixels.
 When `gaps-between-tabs` is zero, only the first and the last tabs have rounded corners, otherwise all tabs do.
 
-`active-color`, `inactive-color`, `active-gradient`, `inactive-gradient` let you override the colors for the tabs.
+`active-color`, `inactive-color`, `urgent-color`, `active-gradient`, `inactive-gradient`, `urgent-gradient` let you override the colors for the tabs.
 They have the same semantics as the border and focus ring colors and gradients.
 
 Tab colors are picked in this order:
@@ -526,3 +536,18 @@ layout {
     }
 }
 ```
+
+### `background-color`
+
+<sup>Since: 25.05</sup>
+
+Set the default background color that niri draws for workspaces.
+This is visible when you're not using any background tools like swaybg.
+
+```kdl
+layout {
+    background-color "#003300"
+}
+```
+
+You can also set the color per-output [in the output config](./Configuration:-Outputs.md#background-color).

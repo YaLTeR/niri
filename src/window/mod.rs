@@ -100,7 +100,7 @@ pub struct ResolvedWindowRules {
     /// Whether to clip this window to its geometry, including the corner radius.
     pub clip_to_geometry: Option<bool>,
 
-    /// Whether bob this window up and down.
+    /// Whether to bob this window up and down.
     pub baba_is_float: Option<bool>,
 
     /// Whether to block out this window from certain render targets.
@@ -128,6 +128,13 @@ impl<'a> WindowRef<'a> {
         match self {
             WindowRef::Unmapped(_) => false,
             WindowRef::Mapped(mapped) => mapped.is_focused(),
+        }
+    }
+
+    pub fn is_urgent(self) -> bool {
+        match self {
+            WindowRef::Unmapped(_) => false,
+            WindowRef::Mapped(mapped) => mapped.is_urgent(),
         }
     }
 
@@ -184,8 +191,10 @@ impl ResolvedWindowRules {
                 width: None,
                 active_color: None,
                 inactive_color: None,
+                urgent_color: None,
                 active_gradient: None,
                 inactive_gradient: None,
+                urgent_gradient: None,
             },
             border: BorderRule {
                 off: false,
@@ -193,8 +202,10 @@ impl ResolvedWindowRules {
                 width: None,
                 active_color: None,
                 inactive_color: None,
+                urgent_color: None,
                 active_gradient: None,
                 inactive_gradient: None,
+                urgent_gradient: None,
             },
             shadow: ShadowRule {
                 off: false,
@@ -209,8 +220,10 @@ impl ResolvedWindowRules {
             tab_indicator: TabIndicatorRule {
                 active_color: None,
                 inactive_color: None,
+                urgent_color: None,
                 active_gradient: None,
                 inactive_gradient: None,
+                urgent_gradient: None,
             },
             draw_border_with_background: None,
             opacity: None,
@@ -423,6 +436,12 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
 
     if let Some(is_focused) = m.is_focused {
         if window.is_focused() != is_focused {
+            return false;
+        }
+    }
+
+    if let Some(is_urgent) = m.is_urgent {
+        if window.is_urgent() != is_urgent {
             return false;
         }
     }

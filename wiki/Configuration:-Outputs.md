@@ -15,6 +15,7 @@ output "eDP-1" {
     variable-refresh-rate // on-demand=true
     focus-at-startup
     background-color "#003300"
+    backdrop-color "#001100"
 }
 
 output "HDMI-A-1" {
@@ -167,7 +168,7 @@ output "HDMI-A-1" {
 
 ### `focus-at-startup`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Focus this output by default when niri starts.
 
@@ -191,13 +192,28 @@ output "DP-2" {
 
 <sup>Since: 0.1.8</sup>
 
-Set the background color that niri draws for this output.
+Set the background color that niri draws for workspaces on this output.
 This is visible when you're not using any background tools like swaybg.
+
+<sup>Until: 25.05</sup> The alpha channel for this color will be ignored.
+
+```kdl
+output "HDMI-A-1" {
+    background-color "#003300"
+}
+```
+
+### `backdrop-color`
+
+<sup>Since: 25.05</sup>
+
+Set the backdrop color that niri draws for this output.
+This is visible between workspaces or in the overview.
 
 The alpha channel for this color will be ignored.
 
 ```kdl
 output "HDMI-A-1" {
-    background-color "#003300"
+    backdrop-color "#001100"
 }
 ```

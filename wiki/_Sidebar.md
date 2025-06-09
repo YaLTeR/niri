@@ -5,6 +5,7 @@
 * [Workspaces](./Workspaces.md)
 * [Floating Windows](./Floating-Windows.md)
 * [Tabs](./Tabs.md)
+* [Overview](./Overview.md)
 * [Screencasting](./Screencasting.md)
 * [Layer‐Shell Components](./Layer%E2%80%90Shell-Components.md)
 * [IPC, `niri msg`](./IPC.md)
@@ -15,7 +16,7 @@
 * [FAQ](./FAQ.md)
 
 ## Configuration
-* [Overview](./Configuration:-Overview.md)
+* [Introduction](./Configuration:-Introduction.md)
 * [Input](./Configuration:-Input.md)
 * [Outputs](./Configuration:-Outputs.md)
 * [Key Bindings](./Configuration:-Key-Bindings.md)

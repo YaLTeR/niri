@@ -17,11 +17,11 @@ use niri::dbus;
 use niri::ipc::client::handle_msg;
 use niri::niri::State;
 use niri::utils::spawning::{
-    spawn, store_and_increase_nofile_rlimit, CHILD_ENV, REMOVE_ENV_RUST_BACKTRACE,
+    spawn, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV, REMOVE_ENV_RUST_BACKTRACE,
     REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
 use niri::utils::watcher::Watcher;
-use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
+use niri::utils::{cause_panic, version, xwayland, IS_SYSTEMD_SERVICE};
 use niri_config::Config;
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
@@ -161,12 +161,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut config_errored = false;
-    let mut config = Config::load(&path)
-        .map_err(|err| {
-            warn!("{err:?}");
-            config_errored = true;
-        })
+    let config_load_result = Config::load(&path);
+    let config_errored = config_load_result.is_err();
+    let mut config = config_load_result
+        .map_err(|err| warn!("{err:?}"))
         .unwrap_or_default();
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
@@ -200,6 +198,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let socket_path = ipc.socket_path.as_deref().unwrap();
         env::set_var(SOCKET_PATH_ENV, socket_path);
         info!("IPC listening on: {}", socket_path.to_string_lossy());
+    }
+
+    // Setup xwayland-satellite integration.
+    xwayland::satellite::setup(&mut state);
+    if let Some(satellite) = &state.niri.satellite {
+        let name = satellite.display_name();
+        *CHILD_DISPLAY.write().unwrap() = Some(name.to_owned());
+        env::set_var("DISPLAY", name);
+        info!("listening on X11 socket: {name}");
+    } else {
+        // Avoid spawning children in the host X11.
+        env::remove_var("DISPLAY");
     }
 
     if cli.session {
@@ -277,6 +287,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn import_environment() {
     let variables = [
         "WAYLAND_DISPLAY",
+        "DISPLAY",
         "XDG_CURRENT_DESKTOP",
         "XDG_SESSION_TYPE",
         SOCKET_PATH_ENV,
@@ -355,7 +366,7 @@ fn config_path(cli_path: Option<PathBuf>) -> (PathBuf, PathBuf, bool) {
     let system_path = system_config_path();
     if let Some(path) = default_config_path() {
         if path.exists() {
-            return (path.clone(), path, true);
+            return (path.clone(), path, false);
         }
 
         if system_path.exists() {

@@ -12,7 +12,7 @@ use smithay::wayland::shell::xdg::PopupSurface;
 
 use crate::layer::{MappedLayer, ResolvedLayerRules};
 use crate::niri::State;
-use crate::utils::{is_mapped, send_scale_transform};
+use crate::utils::{is_mapped, output_size, send_scale_transform};
 
 impl WlrLayerShellHandler for State {
     fn shell_state(&mut self) -> &mut WlrLayerShellState {
@@ -125,10 +125,23 @@ impl State {
                     // Resolve rules for newly mapped layer surfaces.
                     if was_unmapped {
                         let config = self.niri.config.borrow();
+
                         let rules = &config.layer_rules;
                         let rules =
                             ResolvedLayerRules::compute(rules, layer, self.niri.is_at_startup);
-                        let mapped = MappedLayer::new(layer.clone(), rules, &config);
+
+                        let output_size = output_size(&output);
+                        let scale = output.current_scale().fractional_scale();
+
+                        let mapped = MappedLayer::new(
+                            layer.clone(),
+                            rules,
+                            output_size,
+                            scale,
+                            self.niri.clock.clone(),
+                            &config,
+                        );
+
                         let prev = self
                             .niri
                             .mapped_layer_surfaces
@@ -161,8 +174,24 @@ impl State {
                         self.niri.layer_shell_on_demand_focus = Some(layer.clone());
                     }
                 } else {
-                    self.niri.mapped_layer_surfaces.remove(layer);
+                    let was_mapped = self.niri.mapped_layer_surfaces.remove(layer).is_some();
                     self.niri.unmapped_layer_surfaces.insert(surface.clone());
+
+                    // After layer surface unmaps it has to perform the initial commit-configure
+                    // sequence again. This is a workaround until Smithay properly resets
+                    // initial_configure_sent upon the surface unmapping itself as it does for
+                    // toplevels.
+                    if was_mapped {
+                        with_states(surface, |states| {
+                            let mut data = states
+                                .data_map
+                                .get::<LayerSurfaceData>()
+                                .unwrap()
+                                .lock()
+                                .unwrap();
+                            data.initial_configure_sent = false;
+                        });
+                    }
                 }
             } else {
                 let scale = output.current_scale();
