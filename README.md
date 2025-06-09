@@ -99,6 +99,8 @@ Here are some other projects which implement a similar workflow:
 My talk from the 2024 Moscow RustCon about niri, and how I do randomized property testing and profiling, and measure input latency.
 The talk is in Russian, but I prepared full English subtitles that you can find in YouTube's subtitle language selector.
 
+[Brodie Robertson's take on `niri`](https://www.youtube.com/watch?v=r0JUm77inIA)
+
 ## Contact
 
 We have a Matrix chat, feel free to join and ask a question: https://matrix.to/#/#niri:matrix.org
