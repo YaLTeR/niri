@@ -165,6 +165,9 @@ layout {
         active-color "#7fc8ff"
 
         // Color of the ring on inactive monitors.
+        //
+        // The focus ring only draws around the active window, so the only place
+        // where you can see its inactive-color is on other monitors.
         inactive-color "#505050"
 
         // You can also use gradients. They take precedence over solid colors.
