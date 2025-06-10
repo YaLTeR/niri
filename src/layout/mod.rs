@@ -51,6 +51,7 @@ use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 use tile::{Tile, TileRenderElement};
+use uv::{Orientation, UCoord};
 use workspace::{WorkspaceAddWindowTarget, WorkspaceId};
 
 pub use self::monitor::MonitorRenderElement;
@@ -84,6 +85,7 @@ pub mod scrolling;
 pub mod shadow;
 pub mod tab_indicator;
 pub mod tile;
+pub mod uv;
 pub mod workspace;
 
 #[cfg(test)]
@@ -361,6 +363,7 @@ pub struct Options {
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
+    pub scrolling_orientation: niri_config::ScrollingOrientation,
 }
 
 impl Default for Options {
@@ -393,6 +396,7 @@ impl Default for Options {
                 PresetSize::Proportion(0.5),
                 PresetSize::Proportion(2. / 3.),
             ],
+            scrolling_orientation: Default::default(),
         }
     }
 }
@@ -659,6 +663,7 @@ impl Options {
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
             preset_window_heights,
+            scrolling_orientation: layout.scrolling_orientation,
         }
     }
 
@@ -5247,7 +5252,7 @@ impl<W: LayoutElement> Layout<W> {
                     fixed += border.width.0 * 2.;
                 }
 
-                ColumnWidth::Fixed(fixed)
+                ColumnWidth::Fixed(UCoord::new(fixed))
             }
             PresetSize::Proportion(prop) => ColumnWidth::Proportion(prop),
         }
@@ -5268,5 +5273,22 @@ fn compute_overview_zoom(options: &Options, overview_progress: Option<f64>) -> f
         (1. - p * (1. - zoom)).max(0.0001)
     } else {
         1.
+    }
+}
+
+fn orientation_from_config(
+    value: niri_config::ScrollingOrientation,
+    working_area_size: &Size<f64, Logical>,
+) -> Orientation {
+    match value {
+        niri_config::ScrollingOrientation::Auto => {
+            if working_area_size.w >= working_area_size.h {
+                Orientation::XY
+            } else {
+                Orientation::YX
+            }
+        }
+        niri_config::ScrollingOrientation::Horizontal => Orientation::XY,
+        niri_config::ScrollingOrientation::Vertical => Orientation::YX,
     }
 }
