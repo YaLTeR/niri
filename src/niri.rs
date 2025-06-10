@@ -5707,8 +5707,18 @@ impl Niri {
     }
 
     pub fn new_lock_surface(&mut self, surface: LockSurface, output: &Output) {
-        if matches!(self.lock_state, LockState::Unlocked) {
-            error!("tried to add a lock surface on an unlocked session");
+        let lock = match &self.lock_state {
+            LockState::Unlocked => {
+                error!("tried to add a lock surface on an unlocked session");
+                return;
+            }
+            LockState::WaitingForSurfaces { confirmation, .. } => confirmation.ext_session_lock(),
+            LockState::Locking(confirmation) => confirmation.ext_session_lock(),
+            LockState::Locked(lock) => lock,
+        };
+
+        if lock.client() != surface.wl_surface().client() {
+            debug!("ignoring lock surface from an unrelated client");
             return;
         }
 
