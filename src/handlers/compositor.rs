@@ -226,6 +226,7 @@ impl CompositorHandler for State {
             if let Some((mapped, output)) = self.niri.layout.find_window_and_output(surface) {
                 let window = mapped.window.clone();
                 let output = output.cloned();
+                let foreign_toplevel_handle = mapped.foreign_toplevel_handle().clone();
 
                 let id = mapped.id();
 
@@ -251,6 +252,10 @@ impl CompositorHandler for State {
                     // Test client: wleird-unmap.
                     let active_window = self.niri.layout.focus().map(|m| &m.window);
                     let was_active = active_window == Some(&window);
+
+                    self.niri
+                        .foreign_toplevel_list_state
+                        .remove_toplevel(&foreign_toplevel_handle);
 
                     self.niri
                         .stop_casts_for_target(CastTarget::Window { id: id.get() });

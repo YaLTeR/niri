@@ -712,17 +712,16 @@ impl XdgShellHandler for State {
     }
 
     fn app_id_changed(&mut self, toplevel: ToplevelSurface) {
-        if let Some((mapped, _)) = self
-            .niri
-            .layout
-            .find_window_and_output_mut(toplevel.wl_surface())
-        {
+        let surface = toplevel.wl_surface();
+        if let Some((mapped, _)) = self.niri.layout.find_window_and_output(surface) {
             with_toplevel_role(&toplevel, |role| {
-                mapped.foreign_toplevel_handle().send_app_id(
-                    role.app_id
-                        .as_deref()
-                        .expect("app_id must be set because it changed and cannot be unset"),
-                );
+                let app_id = role
+                    .app_id
+                    .as_deref()
+                    .expect("app_id must be set because it changed and cannot be unset");
+                let handle = mapped.foreign_toplevel_handle();
+                handle.send_app_id(app_id);
+                handle.send_done();
             });
         }
 
@@ -730,17 +729,16 @@ impl XdgShellHandler for State {
     }
 
     fn title_changed(&mut self, toplevel: ToplevelSurface) {
-        if let Some((mapped, _)) = self
-            .niri
-            .layout
-            .find_window_and_output_mut(toplevel.wl_surface())
-        {
+        let surface = toplevel.wl_surface();
+        if let Some((mapped, _)) = self.niri.layout.find_window_and_output(surface) {
             with_toplevel_role(&toplevel, |role| {
-                mapped.foreign_toplevel_handle().send_title(
-                    role.title
-                        .as_deref()
-                        .expect("title must be set because it changed and cannot be unset"),
-                );
+                let title = role
+                    .title
+                    .as_deref()
+                    .expect("title must be set because it changed and cannot be unset");
+                let handle = mapped.foreign_toplevel_handle();
+                handle.send_title(title);
+                handle.send_done();
             });
         }
 

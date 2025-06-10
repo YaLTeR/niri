@@ -161,6 +161,7 @@ pub struct Mapped {
     /// in response yet.
     uncommited_windowed_fullscreen: Vec<(Serial, bool)>,
 
+    /// A foreign toplevel handle for this mapped toplevel.
     foreign_toplevel_handle: ForeignToplevelHandle,
 }
 
