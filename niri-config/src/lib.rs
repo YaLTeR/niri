@@ -2677,7 +2677,10 @@ impl FromStr for Color {
     type Err = miette::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let color = csscolorparser::parse(s).into_diagnostic()?.to_array();
+        let color = csscolorparser::parse(s)
+            .into_diagnostic()?
+            .clamp()
+            .to_array();
         Ok(Self::from_array_unpremul(color))
     }
 }
