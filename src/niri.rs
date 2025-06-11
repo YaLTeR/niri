@@ -357,7 +357,7 @@ pub struct Niri {
     pub mods_with_finger_scroll_binds: HashSet<Modifiers>,
 
     pub lock_state: LockState,
-    pub locked_hint: bool,
+    pub locked_hint: Option<bool>,
 
     pub screenshot_ui: ScreenshotUi,
     pub config_error_notification: ConfigErrorNotification,
@@ -2585,6 +2585,7 @@ impl Niri {
             mods_with_finger_scroll_binds,
 
             lock_state: LockState::Unlocked,
+            locked_hint: None,
 
             screenshot_ui,
             config_error_notification,
@@ -5760,11 +5761,11 @@ impl Niri {
         }
 
         let locked = matches!(self.lock_state, LockState::Locked(_));
-        if locked == self.locked_hint {
+        if self.locked_hint.is_some_and(|h| h == locked) {
             return;
         }
 
-        self.locked_hint = locked;
+        self.locked_hint = Some(locked);
         let res = thread::Builder::new()
             .name("logind LockedHint updater".to_owned())
             .spawn(move || {
