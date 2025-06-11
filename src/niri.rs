@@ -3392,80 +3392,119 @@ impl Niri {
         self.global_space.output_under(pos).next().cloned()
     }
 
-    pub fn output_left(&self) -> Option<Output> {
-        let active = self.layout.active_output()?;
-        let active_geo = self.global_space.output_geometry(active).unwrap();
+    pub fn output_left_of(&self, current: &Output) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
         let extended_geo = Rectangle::new(
-            Point::from((i32::MIN / 2, active_geo.loc.y)),
-            Size::from((i32::MAX, active_geo.size.h)),
+            Point::from((i32::MIN / 2, current_geo.loc.y)),
+            Size::from((i32::MAX, current_geo.size.h)),
         );
 
         self.global_space
             .outputs()
             .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).x < center(active_geo).x && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(active_geo).x - center(*geo).x)
+            .filter(|(_, geo)| center(*geo).x < center(current_geo).x && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(current_geo).x - center(*geo).x)
             .map(|(output, _)| output)
             .cloned()
+    }
+
+    pub fn output_right_of(&self, current: &Output) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
+        let extended_geo = Rectangle::new(
+            Point::from((i32::MIN / 2, current_geo.loc.y)),
+            Size::from((i32::MAX, current_geo.size.h)),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(*geo).x > center(current_geo).x && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(*geo).x - center(current_geo).x)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_up_of(&self, current: &Output) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
+        let extended_geo = Rectangle::new(
+            Point::from((current_geo.loc.x, i32::MIN / 2)),
+            Size::from((current_geo.size.w, i32::MAX)),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(*geo).y < center(current_geo).y && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(current_geo).y - center(*geo).y)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_down_of(&self, current: &Output) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
+        let extended_geo = Rectangle::new(
+            Point::from((current_geo.loc.x, i32::MIN / 2)),
+            Size::from((current_geo.size.w, i32::MAX)),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(*geo).y > center(current_geo).y && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(*geo).y - center(current_geo).y)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_previous_of(&self, current: &Output) -> Option<Output> {
+        self.sorted_outputs
+            .iter()
+            .rev()
+            .skip_while(|&output| output != current)
+            .nth(1)
+            .or(self.sorted_outputs.last())
+            .filter(|&output| output != current)
+            .cloned()
+    }
+
+    pub fn output_next_of(&self, current: &Output) -> Option<Output> {
+        self.sorted_outputs
+            .iter()
+            .skip_while(|&output| output != current)
+            .nth(1)
+            .or(self.sorted_outputs.first())
+            .filter(|&output| output != current)
+            .cloned()
+    }
+
+    pub fn output_left(&self) -> Option<Output> {
+        let active = self.layout.active_output()?;
+        self.output_left_of(active)
     }
 
     pub fn output_right(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
-        let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::new(
-            Point::from((i32::MIN / 2, active_geo.loc.y)),
-            Size::from((i32::MAX, active_geo.size.h)),
-        );
-
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).x > center(active_geo).x && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(*geo).x - center(active_geo).x)
-            .map(|(output, _)| output)
-            .cloned()
+        self.output_right_of(active)
     }
 
     pub fn output_up(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
-        let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::new(
-            Point::from((active_geo.loc.x, i32::MIN / 2)),
-            Size::from((active_geo.size.w, i32::MAX)),
-        );
+        self.output_up_of(active)
+    }
 
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).y < center(active_geo).y && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(active_geo).y - center(*geo).y)
-            .map(|(output, _)| output)
-            .cloned()
+    pub fn output_down(&self) -> Option<Output> {
+        let active = self.layout.active_output()?;
+        self.output_down_of(active)
     }
 
     pub fn output_previous(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
-
-        self.sorted_outputs
-            .iter()
-            .rev()
-            .skip_while(|&output| output != active)
-            .nth(1)
-            .or(self.sorted_outputs.last())
-            .filter(|&output| output != active)
-            .cloned()
+        self.output_previous_of(active)
     }
 
     pub fn output_next(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
-
-        self.sorted_outputs
-            .iter()
-            .skip_while(|&output| output != active)
-            .nth(1)
-            .or(self.sorted_outputs.first())
-            .filter(|&output| output != active)
-            .cloned()
+        self.output_next_of(active)
     }
 
     pub fn find_output_and_workspace_index(
@@ -3485,23 +3524,6 @@ impl Niri {
 
         let target_output = target_workspace.current_output();
         Some((target_output.cloned(), target_workspace_index))
-    }
-
-    pub fn output_down(&self) -> Option<Output> {
-        let active = self.layout.active_output()?;
-        let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::new(
-            Point::from((active_geo.loc.x, i32::MIN / 2)),
-            Size::from((active_geo.size.w, i32::MAX)),
-        );
-
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(active_geo).y < center(*geo).y && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(*geo).y - center(active_geo).y)
-            .map(|(output, _)| output)
-            .cloned()
     }
 
     pub fn output_for_tablet(&self) -> Option<&Output> {
