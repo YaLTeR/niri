@@ -357,6 +357,7 @@ pub struct Niri {
     pub mods_with_finger_scroll_binds: HashSet<Modifiers>,
 
     pub lock_state: LockState,
+    pub locked_hint: bool,
 
     pub screenshot_ui: ScreenshotUi,
     pub config_error_notification: ConfigErrorNotification,
@@ -687,6 +688,9 @@ impl State {
             let _span = tracy_client::span!("flush_clients");
             self.niri.display_handle.flush_clients().unwrap();
         }
+
+        #[cfg(feature = "dbus")]
+        self.niri.update_locked_hint();
 
         // Clear the time so it's fetched afresh next iteration.
         self.niri.clock.clear();
@@ -2924,8 +2928,6 @@ impl Niri {
                     let lock = confirmation.ext_session_lock().clone();
                     confirmation.lock();
                     self.lock_state = LockState::Locked(lock);
-                    #[cfg(feature = "dbus")]
-                    self.set_locked_hint(true);
                 } else {
                     // Still waiting.
                     self.lock_state = LockState::Locking(confirmation);
@@ -4374,8 +4376,6 @@ impl Niri {
                         let lock = confirmation.ext_session_lock().clone();
                         confirmation.lock();
                         self.lock_state = LockState::Locked(lock);
-                        #[cfg(feature = "dbus")]
-                        self.set_locked_hint(true);
                     } else {
                         // Still waiting for other outputs.
                         self.lock_state = LockState::Locking(confirmation);
@@ -5607,9 +5607,6 @@ impl Niri {
             confirmation.lock();
             self.lock_state = LockState::Locked(lock);
 
-            #[cfg(feature = "dbus")]
-            self.set_locked_hint(true);
-
             return;
         }
 
@@ -5624,9 +5621,6 @@ impl Niri {
             let lock = confirmation.ext_session_lock().clone();
             confirmation.lock();
             self.lock_state = LockState::Locked(lock);
-
-            #[cfg(feature = "dbus")]
-            self.set_locked_hint(true);
         } else {
             // There are outputs which we need to redraw before locking. But before we do that,
             // let's wait for the lock surfaces.
@@ -5689,9 +5683,6 @@ impl Niri {
                     let lock = confirmation.ext_session_lock().clone();
                     confirmation.lock();
                     self.lock_state = LockState::Locked(lock);
-
-                    #[cfg(feature = "dbus")]
-                    self.set_locked_hint(true);
                 } else {
                     // There are outputs which we need to redraw before locking.
                     self.lock_state = LockState::Locking(confirmation);
@@ -5713,11 +5704,6 @@ impl Niri {
             self.event_loop.remove(deadline_token);
         }
 
-        if let LockState::Locked(_) = prev {
-            #[cfg(feature = "dbus")]
-            self.set_locked_hint(false);
-        }
-
         for output_state in self.output_state.values_mut() {
             output_state.lock_surface = None;
         }
@@ -5725,7 +5711,7 @@ impl Niri {
     }
 
     #[cfg(feature = "dbus")]
-    fn set_locked_hint(&mut self, locked: bool) {
+    fn update_locked_hint(&mut self) {
         use std::sync::LazyLock;
 
         static XDG_SESSION_ID: LazyLock<Option<String>> = LazyLock::new(|| {
@@ -5773,6 +5759,12 @@ impl Niri {
             Ok(())
         }
 
+        let locked = matches!(self.lock_state, LockState::Locked(_));
+        if locked == self.locked_hint {
+            return;
+        }
+
+        self.locked_hint = locked;
         let res = thread::Builder::new()
             .name("logind LockedHint updater".to_owned())
             .spawn(move || {
