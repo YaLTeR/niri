@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use anyhow::Context;
 use arrayvec::ArrayVec;
-use niri_config::{Action, Config};
+use niri_config::{Action, Config, Modifiers};
 use niri_ipc::SizeChange;
 use pango::{Alignment, FontDescription};
 use pangocairo::cairo::{self, ImageSurface};
@@ -17,7 +17,7 @@ use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ExportMem, Texture as _};
-use smithay::input::keyboard::{Keysym, ModifiersState};
+use smithay::input::keyboard::Keysym;
 use smithay::output::{Output, WeakOutput};
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
 
@@ -655,14 +655,6 @@ impl ScreenshotUi {
         Ok((rect.size, copy.to_vec()))
     }
 
-    pub fn action(&self, raw: Keysym, mods: ModifiersState) -> Option<Action> {
-        if !matches!(self, Self::Open { .. }) {
-            return None;
-        }
-
-        action(raw, mods)
-    }
-
     pub fn selection_output(&self) -> Option<&Output> {
         if let Self::Open {
             selection: (output, _, _),
@@ -883,27 +875,27 @@ impl OutputScreenshot {
     }
 }
 
-fn action(raw: Keysym, mods: ModifiersState) -> Option<Action> {
+pub fn hardcoded_screenshot_bind(raw: Keysym, mods: Modifiers) -> Option<Action> {
     if raw == Keysym::Escape {
         return Some(Action::CancelScreenshot);
     }
 
-    if mods.alt || mods.shift {
+    if mods.intersects(Modifiers::ALT | Modifiers::SHIFT) {
         return None;
     }
 
-    if !mods.ctrl && (raw == Keysym::space || raw == Keysym::Return) {
+    if !mods.contains(Modifiers::CTRL) && (raw == Keysym::space || raw == Keysym::Return) {
         return Some(Action::ConfirmScreenshot {
             write_to_disk: true,
         });
     }
-    if mods.ctrl && raw == Keysym::c {
+    if mods.contains(Modifiers::CTRL) && raw == Keysym::c {
         return Some(Action::ConfirmScreenshot {
             write_to_disk: false,
         });
     }
 
-    if !mods.ctrl && raw == Keysym::p {
+    if !mods.contains(Modifiers::CTRL) && raw == Keysym::p {
         return Some(Action::ScreenshotTogglePointer);
     }
 

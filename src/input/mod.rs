@@ -42,8 +42,8 @@ use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
-use crate::niri::{CastTarget, PointerVisibility, State};
-use crate::ui::screenshot_ui::ScreenshotUi;
+use crate::niri::{CastTarget, KeyboardFocus, PointerVisibility, State};
+use crate::ui::screenshot_ui;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
@@ -369,6 +369,7 @@ impl State {
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
+                let modifiers = modifiers_from_state(*mods);
 
                 if let Some(dialog) = &this.niri.exit_confirm_dialog {
                     if dialog.is_open() && pressed && raw == Some(Keysym::Return) {
@@ -405,22 +406,11 @@ impl State {
                     modified,
                     raw,
                     pressed,
-                    *mods,
-                    &this.niri.screenshot_ui,
+                    modifiers,
+                    &this.niri.keyboard_focus,
                     this.niri.config.borrow().input.disable_power_key_handling,
                     is_inhibiting_shortcuts,
                 );
-
-                if matches!(res, FilterResult::Forward) {
-                    // If we didn't find any bind, try other hardcoded keys.
-                    if this.niri.keyboard_focus.is_overview() && pressed {
-                        if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
-                        {
-                            this.niri.suppressed_keys.insert(key_code);
-                            return FilterResult::Intercept(Some(bind));
-                        }
-                    }
-                }
 
                 res
             },
@@ -894,38 +884,12 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusColumnLeftUnderMouse => {
-                if let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
-                    let ws_id = ws.id();
-                    let ws = {
-                        let mut workspaces = self.niri.layout.workspaces_mut();
-                        workspaces.find(|ws| ws.id() == ws_id).unwrap()
-                    };
-                    ws.focus_left();
-                    self.maybe_warp_cursor_to_focus();
-                    self.niri.layer_shell_on_demand_focus = None;
-                    self.niri.queue_redraw(&output);
-                }
-            }
             Action::FocusColumnRight => {
                 self.niri.layout.focus_right();
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
-            }
-            Action::FocusColumnRightUnderMouse => {
-                if let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
-                    let ws_id = ws.id();
-                    let ws = {
-                        let mut workspaces = self.niri.layout.workspaces_mut();
-                        workspaces.find(|ws| ws.id() == ws_id).unwrap()
-                    };
-                    ws.focus_right();
-                    self.maybe_warp_cursor_to_focus();
-                    self.niri.layer_shell_on_demand_focus = None;
-                    self.niri.queue_redraw(&output);
-                }
             }
             Action::FocusColumnFirst => {
                 self.niri.layout.focus_column_first();
@@ -1279,32 +1243,12 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWorkspaceDownUnderMouse => {
-                if let Some(output) = self.niri.output_under_cursor() {
-                    if let Some(mon) = self.niri.layout.monitor_for_output_mut(&output) {
-                        mon.switch_workspace_down();
-                        self.maybe_warp_cursor_to_focus();
-                        self.niri.layer_shell_on_demand_focus = None;
-                        self.niri.queue_redraw(&output);
-                    }
-                }
-            }
             Action::FocusWorkspaceUp => {
                 self.niri.layout.switch_workspace_up();
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
-            }
-            Action::FocusWorkspaceUpUnderMouse => {
-                if let Some(output) = self.niri.output_under_cursor() {
-                    if let Some(mon) = self.niri.layout.monitor_for_output_mut(&output) {
-                        mon.switch_workspace_up();
-                        self.maybe_warp_cursor_to_focus();
-                        self.niri.layer_shell_on_demand_focus = None;
-                        self.niri.queue_redraw(&output);
-                    }
-                }
             }
             Action::FocusWorkspace(reference) => {
                 if let Some((mut output, index)) =
@@ -2362,7 +2306,12 @@ impl State {
 
         if ButtonState::Pressed == button_state {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
-            let modifiers = modifiers_from_state(mods);
+            let mut modifiers = modifiers_from_state(mods);
+
+            let is_overview_open = self.niri.layout.is_overview_open();
+            if is_overview_open {
+                modifiers |= mod_key.to_modifiers();
+            }
 
             if self.niri.mods_with_mouse_binds.contains(&modifiers) {
                 if let Some(bind) = match button {
@@ -2376,7 +2325,7 @@ impl State {
                 .and_then(|trigger| {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
-                    find_configured_bind(bindings, mod_key, trigger, mods)
+                    find_configured_bind(bindings, mod_key, trigger, modifiers)
                 }) {
                     self.niri.suppressed_buttons.insert(button_code);
                     self.handle_bind(bind.clone());
@@ -2388,7 +2337,6 @@ impl State {
             self.niri.pointer_visibility = PointerVisibility::Visible;
             self.niri.tablet_cursor_location = None;
 
-            let is_overview_open = self.niri.layout.is_overview_open();
 
             if is_overview_open && !pointer.is_grabbed() && button == Some(MouseButton::Right) {
                 if let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
@@ -2419,7 +2367,7 @@ impl State {
             }
 
             if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
-                let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
+                let mod_down = modifiers.contains(mod_key.to_modifiers());
                 if mod_down {
                     let output_ws = if is_overview_open {
                         self.niri.workspace_under_cursor(true)
@@ -2464,7 +2412,7 @@ impl State {
 
                 // Check if we need to start an interactive move.
                 if button == Some(MouseButton::Left) && !pointer.is_grabbed() {
-                    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
+                    let mod_down = modifiers.contains(mod_key.to_modifiers());
                     if is_overview_open || mod_down {
                         let location = pointer.current_location();
                         let (output, pos_within_output) = self.niri.output_under(location).unwrap();
@@ -2497,7 +2445,7 @@ impl State {
                 }
                 // Check if we need to start an interactive resize.
                 else if button == Some(MouseButton::Right) && !pointer.is_grabbed() {
-                    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
+                    let mod_down = modifiers.contains(mod_key.to_modifiers());
                     if mod_down {
                         let location = pointer.current_location();
                         let (output, pos_within_output) = self.niri.output_under(location).unwrap();
@@ -2684,51 +2632,25 @@ impl State {
             // If we have a scroll bind with current modifiers, then accumulate and don't pass to
             // Wayland. If there's no bind, reset the accumulator.
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
-            let modifiers = modifiers_from_state(mods);
-            let should_handle =
-                should_handle_in_overview || self.niri.mods_with_wheel_binds.contains(&modifiers);
+            let mut modifiers = modifiers_from_state(mods);
+            if should_handle_in_overview {
+                modifiers |= mod_key.to_modifiers();
+            }
+            let should_handle = self.niri.mods_with_wheel_binds.contains(&modifiers);
             if should_handle {
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.horizontal_wheel_tracker.accumulate(horizontal);
                 if ticks != 0 {
-                    let (bind_left, bind_right) = if should_handle_in_overview
-                        && modifiers.is_empty()
-                    {
-                        let bind_left = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollLeft,
-                                modifiers: Modifiers::empty(),
-                            },
-                            action: Action::FocusColumnLeftUnderMouse,
-                            repeat: true,
-                            cooldown: None,
-                            allow_when_locked: false,
-                            allow_inhibiting: false,
-                            hotkey_overlay_title: None,
-                        });
-                        let bind_right = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollRight,
-                                modifiers: Modifiers::empty(),
-                            },
-                            action: Action::FocusColumnRightUnderMouse,
-                            repeat: true,
-                            cooldown: None,
-                            allow_when_locked: false,
-                            allow_inhibiting: false,
-                            hotkey_overlay_title: None,
-                        });
-                        (bind_left, bind_right)
-                    } else {
+                    let (bind_left, bind_right) = {
                         let config = self.niri.config.borrow();
                         let bindings = &config.binds;
                         let bind_left =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, mods);
+                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, modifiers);
                         let bind_right = find_configured_bind(
                             bindings,
                             mod_key,
                             Trigger::WheelScrollRight,
-                            mods,
+                            modifiers,
                         );
                         (bind_left, bind_right)
                     };
@@ -2748,66 +2670,13 @@ impl State {
                 let vertical = vertical_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.vertical_wheel_tracker.accumulate(vertical);
                 if ticks != 0 {
-                    let (bind_up, bind_down) = if should_handle_in_overview && modifiers.is_empty()
-                    {
-                        let bind_up = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollUp,
-                                modifiers: Modifiers::empty(),
-                            },
-                            action: Action::FocusWorkspaceUpUnderMouse,
-                            repeat: true,
-                            cooldown: Some(Duration::from_millis(50)),
-                            allow_when_locked: false,
-                            allow_inhibiting: false,
-                            hotkey_overlay_title: None,
-                        });
-                        let bind_down = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollDown,
-                                modifiers: Modifiers::empty(),
-                            },
-                            action: Action::FocusWorkspaceDownUnderMouse,
-                            repeat: true,
-                            cooldown: Some(Duration::from_millis(50)),
-                            allow_when_locked: false,
-                            allow_inhibiting: false,
-                            hotkey_overlay_title: None,
-                        });
-                        (bind_up, bind_down)
-                    } else if should_handle_in_overview && modifiers == Modifiers::SHIFT {
-                        let bind_up = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollUp,
-                                modifiers: Modifiers::empty(),
-                            },
-                            action: Action::FocusColumnLeftUnderMouse,
-                            repeat: true,
-                            cooldown: Some(Duration::from_millis(50)),
-                            allow_when_locked: false,
-                            allow_inhibiting: false,
-                            hotkey_overlay_title: None,
-                        });
-                        let bind_down = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollDown,
-                                modifiers: Modifiers::empty(),
-                            },
-                            action: Action::FocusColumnRightUnderMouse,
-                            repeat: true,
-                            cooldown: Some(Duration::from_millis(50)),
-                            allow_when_locked: false,
-                            allow_inhibiting: false,
-                            hotkey_overlay_title: None,
-                        });
-                        (bind_up, bind_down)
-                    } else {
+                    let (bind_up, bind_down) = {
                         let config = self.niri.config.borrow();
                         let bindings = &config.binds;
                         let bind_up =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, mods);
+                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, modifiers);
                         let bind_down =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods);
+                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, modifiers);
                         (bind_up, bind_down)
                     };
 
@@ -2945,9 +2814,9 @@ impl State {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
                     let bind_left =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollLeft, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollLeft, modifiers);
                     let bind_right =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollRight, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollRight, modifiers);
                     drop(config);
 
                     if let Some(right) = bind_right {
@@ -2970,9 +2839,9 @@ impl State {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
                     let bind_up =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollUp, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollUp, modifiers);
                     let bind_down =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollDown, mods);
+                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollDown, modifiers);
                     drop(config);
 
                     if let Some(down) = bind_down {
@@ -3822,8 +3691,8 @@ fn should_intercept_key(
     modified: Keysym,
     raw: Option<Keysym>,
     pressed: bool,
-    mods: ModifiersState,
-    screenshot_ui: &ScreenshotUi,
+    modifiers: Modifiers,
+    keyboard_focus: &KeyboardFocus,
     disable_power_key_handling: bool,
     is_inhibiting_shortcuts: bool,
 ) -> FilterResult<Option<Bind>> {
@@ -3839,13 +3708,30 @@ fn should_intercept_key(
         mod_key,
         modified,
         raw,
-        mods,
+        modifiers,
         disable_power_key_handling,
     );
 
+    // If we are in the overview mode and no keybinding matched, check for
+    // hardcoded binds.  If still no match, repeat with a mod_key in modifiers.
+    if keyboard_focus.is_overview() {
+        final_bind = final_bind
+            .or_else(|| raw.and_then(|raw| hardcoded_overview_bind(raw, modifiers)))
+            .or_else(|| {
+                find_bind(
+                    bindings,
+                    mod_key,
+                    modified,
+                    raw,
+                    modifiers | mod_key.to_modifiers(),
+                    disable_power_key_handling,
+                )
+            });
+    }
+
     // Allow only a subset of compositor actions while the screenshot UI is open, since the user
     // cannot see the screen.
-    if screenshot_ui.is_open() {
+    if keyboard_focus.is_screenshotui() {
         let mut use_screenshot_ui_action = true;
 
         if let Some(bind) = &final_bind {
@@ -3856,7 +3742,7 @@ fn should_intercept_key(
 
         if use_screenshot_ui_action {
             if let Some(raw) = raw {
-                final_bind = screenshot_ui.action(raw, mods).map(|action| Bind {
+                final_bind = screenshot_ui::hardcoded_screenshot_bind(raw, modifiers).map(|action| Bind {
                     key: Key {
                         trigger: Trigger::Keysym(raw),
                         // Not entirely correct but it doesn't matter in how we currently use it.
@@ -3903,7 +3789,7 @@ fn find_bind(
     mod_key: ModKey,
     modified: Keysym,
     raw: Option<Keysym>,
-    mods: ModifiersState,
+    modifiers: Modifiers,
     disable_power_key_handling: bool,
 ) -> Option<Bind> {
     use keysyms::*;
@@ -3941,19 +3827,18 @@ fn find_bind(
     }
 
     let trigger = Trigger::Keysym(raw?);
-    find_configured_bind(bindings, mod_key, trigger, mods)
+    find_configured_bind(bindings, mod_key, trigger, modifiers)
 }
 
 fn find_configured_bind(
     bindings: &Binds,
     mod_key: ModKey,
     trigger: Trigger,
-    mods: ModifiersState,
+    mut modifiers: Modifiers,
 ) -> Option<Bind> {
     // Handle configured binds.
-    let mut modifiers = modifiers_from_state(mods);
 
-    let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
+    let mod_down = modifiers.contains(mod_key.to_modifiers());
     if mod_down {
         modifiers |= Modifiers::COMPOSITOR;
     }
@@ -4126,22 +4011,14 @@ fn allowed_during_screenshot(action: &Action) -> bool {
     )
 }
 
-fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
-    let mods = modifiers_from_state(mods);
+fn hardcoded_overview_bind(raw: Keysym, mods: Modifiers) -> Option<Bind> {
     if !mods.is_empty() {
         return None;
     }
 
-    let mut repeat = true;
+    let repeat = false;
     let action = match raw {
-        Keysym::Escape | Keysym::Return => {
-            repeat = false;
-            Action::ToggleOverview
-        }
-        Keysym::Left => Action::FocusColumnLeft,
-        Keysym::Right => Action::FocusColumnRight,
-        Keysym::Up => Action::FocusWindowOrWorkspaceUp,
-        Keysym::Down => Action::FocusWindowOrWorkspaceDown,
+        Keysym::Escape | Keysym::Return => Action::ToggleOverview,
         _ => {
             return None;
         }
@@ -4457,7 +4334,6 @@ mod tests {
     use std::cell::Cell;
 
     use super::*;
-    use crate::animation::Clock;
 
     #[test]
     fn bindings_suppress_keys() {
@@ -4478,7 +4354,7 @@ mod tests {
         let comp_mod = ModKey::Super;
         let mut suppressed_keys = HashSet::new();
 
-        let screenshot_ui = ScreenshotUi::new(Clock::default(), Default::default());
+        let keyboard_focus = KeyboardFocus::Layout { surface: None };
         let disable_power_key_handling = false;
         let is_inhibiting_shortcuts = Cell::new(false);
 
@@ -4486,7 +4362,7 @@ mod tests {
         // that matters is that they are different between cases.
 
         let close_key_code = Keycode::from(close_keysym.raw() + 8u32);
-        let close_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
+        let close_key_event = |suppr: &mut HashSet<Keycode>, mods: Modifiers, pressed| {
             should_intercept_key(
                 suppr,
                 &bindings,
@@ -4496,14 +4372,14 @@ mod tests {
                 Some(close_keysym),
                 pressed,
                 mods,
-                &screenshot_ui,
+                &keyboard_focus,
                 disable_power_key_handling,
                 is_inhibiting_shortcuts.get(),
             )
         };
 
         // Key event with the code which can't trigger any action.
-        let none_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
+        let none_key_event = |suppr: &mut HashSet<Keycode>, mods: Modifiers, pressed| {
             should_intercept_key(
                 suppr,
                 &bindings,
@@ -4513,17 +4389,13 @@ mod tests {
                 Some(Keysym::l),
                 pressed,
                 mods,
-                &screenshot_ui,
+                &keyboard_focus,
                 disable_power_key_handling,
                 is_inhibiting_shortcuts.get(),
             )
         };
 
-        let mut mods = ModifiersState {
-            logo: true,
-            ctrl: true,
-            ..Default::default()
-        };
+        let mut mods = Modifiers::SUPER | Modifiers::CTRL;
 
         // Action press/release.
 
@@ -4543,11 +4415,11 @@ mod tests {
 
         // Remove mod to make it for a binding.
 
-        mods.shift = true;
+        mods.insert(Modifiers::SHIFT);
         let filter = close_key_event(&mut suppressed_keys, mods, true);
         assert!(matches!(filter, FilterResult::Forward));
 
-        mods.shift = false;
+        mods.remove(Modifiers::SHIFT);
         let filter = close_key_event(&mut suppressed_keys, mods, false);
         assert!(matches!(filter, FilterResult::Forward));
 
@@ -4590,7 +4462,7 @@ mod tests {
             }))
         ));
 
-        mods = Default::default();
+        mods = Modifiers::empty();
         let filter = close_key_event(&mut suppressed_keys, mods, false);
         assert!(matches!(filter, FilterResult::Intercept(None)));
 
@@ -4602,11 +4474,7 @@ mod tests {
         // With inhibited shortcuts, we don't intercept our shortcut.
         is_inhibiting_shortcuts.set(true);
 
-        mods = ModifiersState {
-            logo: true,
-            ctrl: true,
-            ..Default::default()
-        };
+        mods = Modifiers::SUPER | Modifiers::CTRL;
 
         let filter = close_key_event(&mut suppressed_keys, mods, true);
         assert!(matches!(filter, FilterResult::Forward));
@@ -4715,10 +4583,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::q),
-                ModifiersState {
-                    logo: true,
-                    ..Default::default()
-                }
+                Modifiers::SUPER,
             )
             .as_ref(),
             Some(&bindings.0[0])
@@ -4728,7 +4593,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::q),
-                ModifiersState::default(),
+                Modifiers::empty(),
             ),
             None,
         );
@@ -4738,10 +4603,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::h),
-                ModifiersState {
-                    logo: true,
-                    ..Default::default()
-                }
+                Modifiers::SUPER,
             )
             .as_ref(),
             Some(&bindings.0[1])
@@ -4751,7 +4613,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::h),
-                ModifiersState::default(),
+                Modifiers::empty(),
             ),
             None,
         );
@@ -4761,10 +4623,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::j),
-                ModifiersState {
-                    logo: true,
-                    ..Default::default()
-                }
+                Modifiers::SUPER,
             ),
             None,
         );
@@ -4773,7 +4632,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::j),
-                ModifiersState::default(),
+                Modifiers::empty(),
             )
             .as_ref(),
             Some(&bindings.0[2])
@@ -4784,10 +4643,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::k),
-                ModifiersState {
-                    logo: true,
-                    ..Default::default()
-                }
+                Modifiers::SUPER,
             )
             .as_ref(),
             Some(&bindings.0[3])
@@ -4797,7 +4653,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::k),
-                ModifiersState::default(),
+                Modifiers::empty(),
             ),
             None,
         );
@@ -4807,11 +4663,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::l),
-                ModifiersState {
-                    logo: true,
-                    alt: true,
-                    ..Default::default()
-                }
+                Modifiers::SUPER | Modifiers::ALT,
             )
             .as_ref(),
             Some(&bindings.0[4])
@@ -4821,10 +4673,7 @@ mod tests {
                 &bindings,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::l),
-                ModifiersState {
-                    logo: true,
-                    ..Default::default()
-                },
+                Modifiers::SUPER,
             ),
             None,
         );

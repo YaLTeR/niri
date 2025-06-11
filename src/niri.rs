@@ -612,6 +612,10 @@ impl KeyboardFocus {
     pub fn is_overview(&self) -> bool {
         matches!(self, KeyboardFocus::Overview)
     }
+
+    pub fn is_screenshotui(&self) -> bool {
+        matches!(self, KeyboardFocus::ScreenshotUi)
+    }
 }
 
 pub struct State {
