@@ -29,8 +29,8 @@ debug {
     disable-monitor-names
     strict-new-window-focus-policy
     honor-xdg-activation-with-invalid-serial
-    deactivate-unfocused-windows
     skip-cursor-only-updates-during-vrr
+    deactivate-unfocused-windows
 }
 
 binds {
@@ -277,20 +277,6 @@ debug {
 }
 ```
 
-### `deactivate-unfocused-windows`
-
-<sup>Since: 25.05.2</sup>
-
-This is related to honor-xdg-activation-with-invalid-serial in some way, some of the chromium based chat clients (e.g. teams-for-linux) don't send notifications if they happen to be active on a workspace that is not visible on any monitor.
-
-
-```kdl
-debug {
-    deactivate-unfocused-windows
-}
-```
-    
-
 ### `skip-cursor-only-updates-during-vrr`
 
 <sup>Since: next release</sup>
@@ -307,6 +293,21 @@ debug {
 }
 ```
 
+### `deactivate-unfocused-windows`
+
+<sup>Since: next release</sup>
+
+Some clients (notably, Chromium- and Electron-based, like Teams or Slack) erroneously use the Activated xdg window state instead of keyboard focus for things like deciding whether to send notifications for new messages, or for picking where to show an IME popup.
+Niri keeps the Activated state on unfocused workspaces and invisible tabbed windows (to reduce unwanted animations), surfacing bugs in these applications.
+
+Set this debug flag to work around these problems.
+It will cause niri to drop the Activated state for all unfocused windows.
+
+```kdl
+debug {
+    deactivate-unfocused-windows
+}
+```
 
 ### Key Bindings
 

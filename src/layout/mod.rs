@@ -5126,14 +5126,8 @@ impl<W: LayoutElement> Layout<W> {
                         mon.dnd_scroll_gesture_end();
                     }
 
-                    let active_ws_id = mon.active_workspace_ref().id();
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
-
-                        let is_focused = match self.options.deactivate_unfocused_windows {
-                            false => is_active,
-                            true => is_active && ws.id() == active_ws_id,
-                        };
-
+                        let is_focused = is_active && ws_idx == mon.active_workspace_idx;
                         ws.refresh(is_active, is_focused);
 
                         if let Some(is_scrolling) = ongoing_scrolling_dnd {

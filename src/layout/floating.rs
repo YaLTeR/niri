@@ -1098,7 +1098,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
             win.set_active_in_column(true);
             win.set_floating(true);
 
-            let is_active = is_active && Some(win.id()) == active.as_ref() && is_focused;
+            let mut is_active = is_active && Some(win.id()) == active.as_ref();
+            if self.options.deactivate_unfocused_windows {
+                is_active &= is_focused;
+            }
             win.set_activated(is_active);
 
             let resize_data = self

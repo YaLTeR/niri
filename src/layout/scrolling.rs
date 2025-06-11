@@ -3503,12 +3503,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 win.set_active_in_column(active_in_column);
                 win.set_floating(false);
 
-                let active = is_active
-                    && self.active_column_idx == col_idx
+                let mut active = is_active && self.active_column_idx == col_idx;
+                if self.options.deactivate_unfocused_windows {
+                    active &= active_in_column && is_focused;
+                } else {
                     // In tabbed mode, all tabs have activated state to reduce unnecessary
                     // animations when switching tabs.
-                    && (active_in_column || is_tabbed)
-                    && is_focused;
+                    active &= active_in_column || is_tabbed;
+                }
                 win.set_activated(active);
 
                 win.set_interactive_resize(col_resize_data);
