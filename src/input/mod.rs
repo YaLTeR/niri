@@ -776,7 +776,7 @@ impl State {
             Action::MoveColumnLeftOrToMonitorLeft => {
                 if self.niri.screenshot_ui.is_open() {
                     self.niri.screenshot_ui.move_left();
-                } if let Some(output) = self.niri.output_left() {
+                } else if let Some(output) = self.niri.output_left() {
                     if self.niri.layout.move_column_left_or_to_output(&output)
                         && !self.maybe_warp_cursor_to_focus_centered()
                     {
