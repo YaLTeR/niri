@@ -26,6 +26,10 @@ use smithay::reexports::input;
 pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.25, 0.25, 0.25, 1.]);
 pub const DEFAULT_BACKDROP_COLOR: Color = Color::from_array_unpremul([0.15, 0.15, 0.15, 1.]);
 
+/// Delay before the window focus is considered to be locked-in for Window
+/// MRU ordering. For now the delay is not configurable.
+pub const DEFAULT_MRU_COMMIT_MS: u64 = 750;
+
 pub mod layer_rule;
 
 mod utils;
@@ -1603,6 +1607,15 @@ pub enum RelativeTo {
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds(pub Vec<Bind>);
 
+impl<'a> IntoIterator for &'a Binds {
+    type Item = &'a Bind;
+    type IntoIter = std::slice::Iter<'a, Bind>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
     pub key: Key,
@@ -1667,6 +1680,33 @@ pub struct SwitchBinds {
 pub struct SwitchAction {
     #[knuffel(child, unwrap(arguments))]
     pub spawn: Vec<String>,
+}
+
+#[derive(knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
+pub enum MruDirection {
+    #[default]
+    Forward, // From most recently used to least
+    Backward, // From least recently used to most
+}
+
+#[derive(knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
+pub enum MruScope {
+    /// Consider all windows
+    #[default]
+    All,
+    /// Consider windows on the active output
+    Output,
+    /// Consider windows on the active workspace
+    Workspace,
+}
+
+#[derive(knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
+pub enum MruFilter {
+    /// No filter
+    #[default]
+    None,
+    /// Windows with the same AppId as the active window
+    AppId,
 }
 
 // Remember to add new actions to the CLI enum too.
@@ -1914,6 +1954,24 @@ pub enum Action {
     SetWindowUrgent(u64),
     #[knuffel(skip)]
     UnsetWindowUrgent(u64),
+
+    MruAdvance(
+        #[knuffel(argument)] MruDirection,
+        #[knuffel(property(name = "scope"))] Option<MruScope>,
+        #[knuffel(property(name = "filter"))] Option<MruFilter>,
+    ),
+    #[knuffel(skip)]
+    MruClose,
+    #[knuffel(skip)]
+    MruCancel,
+    #[knuffel(skip)]
+    MruCloseCurrent,
+    #[knuffel(skip)]
+    MruFirst,
+    #[knuffel(skip)]
+    MruLast,
+    #[knuffel(skip)]
+    MruChangeScope(#[knuffel(argument)] MruScope),
 }
 
 impl From<niri_ipc::Action> for Action {
