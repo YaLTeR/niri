@@ -4138,10 +4138,10 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
             repeat = false;
             Action::ToggleOverview
         }
-        Keysym::Left => Action::FocusColumnLeft,
-        Keysym::Right => Action::FocusColumnRight,
-        Keysym::Up => Action::FocusWindowOrWorkspaceUp,
-        Keysym::Down => Action::FocusWindowOrWorkspaceDown,
+        Keysym::Left | Keysym::h => Action::FocusColumnLeft,
+        Keysym::Right | Keysym::l => Action::FocusColumnRight,
+        Keysym::Up | Keysym::k => Action::FocusWindowOrWorkspaceUp,
+        Keysym::Down | Keysym::j => Action::FocusWindowOrWorkspaceDown,
         _ => {
             return None;
         }
