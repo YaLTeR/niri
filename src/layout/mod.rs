@@ -361,6 +361,7 @@ pub struct Options {
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
+    pub deactivate_unfocused_windows: bool,
 }
 
 impl Default for Options {
@@ -393,6 +394,7 @@ impl Default for Options {
                 PresetSize::Proportion(0.5),
                 PresetSize::Proportion(2. / 3.),
             ],
+            deactivate_unfocused_windows: false,
         }
     }
 }
@@ -658,6 +660,7 @@ impl Options {
             overview: config.overview,
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
+            deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
             preset_window_heights,
         }
     }
@@ -5124,7 +5127,8 @@ impl<W: LayoutElement> Layout<W> {
                     }
 
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
-                        ws.refresh(is_active);
+                        let is_focused = is_active && ws_idx == mon.active_workspace_idx;
+                        ws.refresh(is_active, is_focused);
 
                         if let Some(is_scrolling) = ongoing_scrolling_dnd {
                             // Lock or unlock the view for scrolling interactive move.
@@ -5144,7 +5148,7 @@ impl<W: LayoutElement> Layout<W> {
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
-                    ws.refresh(false);
+                    ws.refresh(false, false);
                     ws.view_offset_gesture_end(None);
                 }
             }

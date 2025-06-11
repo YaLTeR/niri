@@ -2351,6 +2351,8 @@ pub struct DebugConfig {
     #[knuffel(child)]
     pub honor_xdg_activation_with_invalid_serial: bool,
     #[knuffel(child)]
+    pub deactivate_unfocused_windows: bool,
+    #[knuffel(child)]
     pub skip_cursor_only_updates_during_vrr: bool,
 }
 
@@ -5324,6 +5326,7 @@ mod tests {
                 disable_monitor_names: false,
                 strict_new_window_focus_policy: false,
                 honor_xdg_activation_with_invalid_serial: false,
+                deactivate_unfocused_windows: false,
                 skip_cursor_only_updates_during_vrr: false,
             },
             workspaces: [
