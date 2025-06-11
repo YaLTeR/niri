@@ -1535,7 +1535,12 @@ impl State {
                 }
             }
             Action::MoveWindowToMonitorLeft => {
-                if let Some(output) = self.niri.output_left() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_left_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_left() {
                     self.niri
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
@@ -1546,7 +1551,12 @@ impl State {
                 }
             }
             Action::MoveWindowToMonitorRight => {
-                if let Some(output) = self.niri.output_right() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_right_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_right() {
                     self.niri
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
@@ -1557,7 +1567,12 @@ impl State {
                 }
             }
             Action::MoveWindowToMonitorDown => {
-                if let Some(output) = self.niri.output_down() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_down_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_down() {
                     self.niri
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
@@ -1568,7 +1583,12 @@ impl State {
                 }
             }
             Action::MoveWindowToMonitorUp => {
-                if let Some(output) = self.niri.output_up() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_up_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_up() {
                     self.niri
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
@@ -1579,7 +1599,12 @@ impl State {
                 }
             }
             Action::MoveWindowToMonitorPrevious => {
-                if let Some(output) = self.niri.output_previous() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_previous_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_previous() {
                     self.niri
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
@@ -1590,7 +1615,12 @@ impl State {
                 }
             }
             Action::MoveWindowToMonitorNext => {
-                if let Some(output) = self.niri.output_next() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_next_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_next() {
                     self.niri
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
@@ -1602,12 +1632,17 @@ impl State {
             }
             Action::MoveWindowToMonitor(output) => {
                 if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
-                    self.niri
-                        .layout
-                        .move_to_output(None, &output, None, ActivateWindow::Smart);
-                    self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if self.niri.screenshot_ui.is_open() {
                         self.move_cursor_to_output(&output);
+                        self.niri.screenshot_ui.move_to_output(output);
+                    } else {
+                        self.niri
+                            .layout
+                            .move_to_output(None, &output, None, ActivateWindow::Smart);
+                        self.niri.layout.focus_output(&output);
+                        if !self.maybe_warp_cursor_to_focus_centered() {
+                            self.move_cursor_to_output(&output);
+                        }
                     }
                 }
             }
@@ -1641,7 +1676,12 @@ impl State {
                 }
             }
             Action::MoveColumnToMonitorLeft => {
-                if let Some(output) = self.niri.output_left() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_left_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1650,7 +1690,12 @@ impl State {
                 }
             }
             Action::MoveColumnToMonitorRight => {
-                if let Some(output) = self.niri.output_right() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_right_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_right() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1659,7 +1704,12 @@ impl State {
                 }
             }
             Action::MoveColumnToMonitorDown => {
-                if let Some(output) = self.niri.output_down() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_down_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_down() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1668,7 +1718,12 @@ impl State {
                 }
             }
             Action::MoveColumnToMonitorUp => {
-                if let Some(output) = self.niri.output_up() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_up_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_up() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1677,7 +1732,12 @@ impl State {
                 }
             }
             Action::MoveColumnToMonitorPrevious => {
-                if let Some(output) = self.niri.output_previous() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_previous_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_previous() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1686,7 +1746,12 @@ impl State {
                 }
             }
             Action::MoveColumnToMonitorNext => {
-                if let Some(output) = self.niri.output_next() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_next_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_next() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1696,10 +1761,15 @@ impl State {
             }
             Action::MoveColumnToMonitor(output) => {
                 if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
-                    self.niri.layout.move_column_to_output(&output, None, true);
-                    self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if self.niri.screenshot_ui.is_open() {
                         self.move_cursor_to_output(&output);
+                        self.niri.screenshot_ui.move_to_output(output);
+                    } else {
+                        self.niri.layout.move_column_to_output(&output, None, true);
+                        self.niri.layout.focus_output(&output);
+                        if !self.maybe_warp_cursor_to_focus_centered() {
+                            self.move_cursor_to_output(&output);
+                        }
                     }
                 }
             }
@@ -4120,6 +4190,20 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::MoveWindowUpOrToWorkspaceUp
             | Action::MoveWindowDown
             | Action::MoveWindowDownOrToWorkspaceDown
+            | Action::MoveColumnToMonitorLeft
+            | Action::MoveColumnToMonitorRight
+            | Action::MoveColumnToMonitorUp
+            | Action::MoveColumnToMonitorDown
+            | Action::MoveColumnToMonitorPrevious
+            | Action::MoveColumnToMonitorNext
+            | Action::MoveColumnToMonitor(_)
+            | Action::MoveWindowToMonitorLeft
+            | Action::MoveWindowToMonitorRight
+            | Action::MoveWindowToMonitorUp
+            | Action::MoveWindowToMonitorDown
+            | Action::MoveWindowToMonitorPrevious
+            | Action::MoveWindowToMonitorNext
+            | Action::MoveWindowToMonitor(_)
             | Action::SetWindowWidth(_)
             | Action::SetWindowHeight(_)
             | Action::SetColumnWidth(_)

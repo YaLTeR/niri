@@ -347,6 +347,75 @@ impl ScreenshotUi {
         self.update_buffers();
     }
 
+    /// Moves the screenshot selection to a different output.
+    ///
+    /// This preserves the relative position while keeping logical size. It is (intentionally) very
+    /// similar to how floating windows move across monitors, but with one difference: floating
+    /// windows can go partially outside the view, while the screenshot selection cannot. So, we
+    /// clamp it to new output bounds, trying to preserve the size if possible.
+    pub fn move_to_output(&mut self, new_output: Output) {
+        let Self::Open {
+            selection,
+            output_data,
+            ..
+        } = self
+        else {
+            return;
+        };
+
+        let (current_output, current_a, current_b) = selection;
+
+        if current_output == &new_output {
+            return;
+        }
+
+        let Some(target_data) = output_data.get(&new_output) else {
+            return;
+        };
+
+        let current_data = &output_data[current_output];
+
+        let current_rect: Rectangle<_, Physical> = Rectangle::new(
+            Point::from((current_a.x.min(current_b.x), current_a.y.min(current_b.y))),
+            Size::from((
+                (current_a.x.max(current_b.x) - current_a.x.min(current_b.x) + 1),
+                (current_a.y.max(current_b.y) - current_a.y.min(current_b.y) + 1),
+            )),
+        );
+        let current_rect = current_rect.to_f64();
+
+        let rel_x = current_rect.loc.x / current_data.size.w as f64;
+        let rel_y = current_rect.loc.y / current_data.size.h as f64;
+
+        let factor = target_data.scale / current_data.scale;
+        let mut new_width = (current_rect.size.w * factor).round() as i32;
+        let mut new_height = (current_rect.size.h * factor).round() as i32;
+
+        new_width = new_width.clamp(1, target_data.size.w);
+        new_height = new_height.clamp(1, target_data.size.h);
+
+        let new_x = (rel_x * target_data.size.w as f64).round() as i32;
+        let new_y = (rel_y * target_data.size.h as f64).round() as i32;
+
+        let max_x = target_data.size.w - new_width;
+        let max_y = target_data.size.h - new_height;
+        let new_x = new_x.clamp(0, max_x);
+        let new_y = new_y.clamp(0, max_y);
+
+        let new_rect = Rectangle::new(
+            Point::from((new_x, new_y)),
+            Size::from((new_width, new_height)),
+        );
+
+        *selection = (
+            new_output,
+            new_rect.loc,
+            new_rect.loc + new_rect.size - Size::from((1, 1)),
+        );
+
+        self.update_buffers();
+    }
+
     pub fn set_width(&mut self, change: SizeChange) {
         let Self::Open {
             selection: (output, a, b),
