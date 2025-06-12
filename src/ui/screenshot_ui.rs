@@ -66,14 +66,22 @@ pub enum ScreenshotUi {
     },
 }
 
+/// State for moving the selection (as opposed to just drawing).
+pub struct MoveState {
+    // Cursor offset from selection.1 when starting the move.
+    pointer_offset: Point<i32, Physical>,
+    // If the move is initiated by a touch, this is the slot. If `None`, the move was initiated by
+    // holding Space.
+    touch_slot: Option<TouchSlot>,
+}
+
 pub enum Button {
     Up,
     Down {
         touch_slot: Option<TouchSlot>,
         on_capture_button: bool,
         last_pos: (Output, Point<i32, Physical>),
-        /// Offset from the selection.1 corner to cursor grab point when moving the selection.
-        move_cursor_offset: Option<Point<i32, Physical>>,
+        move_state: Option<MoveState>,
     },
 }
 
@@ -274,7 +282,7 @@ impl ScreenshotUi {
             selection,
             button:
                 Button::Down {
-                    move_cursor_offset,
+                    move_state,
                     last_pos,
                     ..
                 },
@@ -282,9 +290,20 @@ impl ScreenshotUi {
         } = self
         {
             if down {
-                *move_cursor_offset = Some(last_pos.1 - selection.1);
+                if move_state.is_none() {
+                    *move_state = Some(MoveState {
+                        pointer_offset: last_pos.1 - selection.1,
+                        touch_slot: None,
+                    });
+                }
             } else {
-                *move_cursor_offset = None;
+                // Only clear if moving with Space.
+                if let Some(MoveState {
+                    touch_slot: None, ..
+                }) = move_state
+                {
+                    *move_state = None;
+                }
             }
         }
     }
@@ -790,7 +809,7 @@ impl ScreenshotUi {
                     touch_slot,
                     on_capture_button,
                     last_pos,
-                    move_cursor_offset,
+                    move_state,
                 },
             ..
         } = self
@@ -808,9 +827,9 @@ impl ScreenshotUi {
             return;
         }
 
-        if let Some(cursor_offset) = move_cursor_offset {
+        if let Some(move_state) = move_state {
             // The cursor offset is relative to selection.1.
-            let delta = point - (selection.1 + *cursor_offset);
+            let delta = point - (selection.1 + move_state.pointer_offset);
 
             let desired = rect_from_corner_points(selection.1 + delta, selection.2 + delta);
             let bounds = Rectangle::from_size(output_data[&selection.0].size - desired.size);
@@ -843,6 +862,24 @@ impl ScreenshotUi {
             return false;
         };
 
+        // Check if this is a second touch (different slot) while already dragging.
+        if let Some(new_slot) = slot {
+            if let Button::Down {
+                on_capture_button: false,
+                move_state,
+                last_pos,
+                ..
+            } = button
+            {
+                if move_state.is_none() {
+                    *move_state = Some(MoveState {
+                        pointer_offset: last_pos.1 - selection.1,
+                        touch_slot: Some(new_slot),
+                    });
+                }
+            }
+        }
+
         if button.is_down() {
             return false;
         }
@@ -861,7 +898,7 @@ impl ScreenshotUi {
                     touch_slot: slot,
                     on_capture_button: true,
                     last_pos: (output, point),
-                    move_cursor_offset: None,
+                    move_state: None,
                 };
                 return false;
             }
@@ -871,7 +908,7 @@ impl ScreenshotUi {
             touch_slot: slot,
             on_capture_button: false,
             last_pos: (output.clone(), point),
-            move_cursor_offset: None,
+            move_state: None,
         };
         *selection = (output, point, point);
 
@@ -896,10 +933,19 @@ impl ScreenshotUi {
             touch_slot,
             on_capture_button,
             ref last_pos,
+            ref mut move_state,
             ..
         } = *button
         else {
             return None;
+        };
+
+        // Check if this is a move touch and if so, stop the move.
+        if let Some(state) = move_state {
+            if state.touch_slot.is_some_and(|m_slot| Some(m_slot) == slot) {
+                *move_state = None;
+                return None;
+            }
         };
 
         if touch_slot != slot {
