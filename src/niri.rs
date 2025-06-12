@@ -192,6 +192,9 @@ pub struct Niri {
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
 
+    /// Whether niri was run with `--session`
+    pub is_session_instance: bool,
+
     /// Name of the Wayland socket.
     ///
     /// This is `None` when creating `Niri` without a Wayland socket.
@@ -628,6 +631,7 @@ impl State {
         display: Display<State>,
         headless: bool,
         create_wayland_socket: bool,
+        is_session_instance: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let _span = tracy_client::span!("State::new");
 
@@ -656,6 +660,7 @@ impl State {
             display,
             &backend,
             create_wayland_socket,
+            is_session_instance,
         );
         backend.init(&mut niri);
 
@@ -2219,6 +2224,7 @@ impl Niri {
         display: Display<State>,
         backend: &Backend,
         create_wayland_socket: bool,
+        is_session_instance: bool,
     ) -> Self {
         let _span = tracy_client::span!("Niri::new");
 
@@ -2487,6 +2493,7 @@ impl Niri {
             stop_signal,
             socket_name,
             display_handle,
+            is_session_instance,
             start_time: Instant::now(),
             is_at_startup: true,
             clock: animation_clock,
@@ -5714,6 +5721,10 @@ impl Niri {
     #[cfg(feature = "dbus")]
     fn update_locked_hint(&mut self) {
         use std::sync::LazyLock;
+
+        if !self.is_session_instance {
+            return;
+        }
 
         static XDG_SESSION_ID: LazyLock<Option<String>> = LazyLock::new(|| {
             let id = std::env::var("XDG_SESSION_ID").ok();
