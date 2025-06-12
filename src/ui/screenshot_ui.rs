@@ -72,6 +72,8 @@ pub enum Button {
         touch_slot: Option<TouchSlot>,
         on_capture_button: bool,
         last_pos: (Output, Point<i32, Physical>),
+        /// Offset from the selection.1 corner to cursor grab point when moving the selection.
+        move_cursor_offset: Option<Point<i32, Physical>>,
     },
 }
 
@@ -265,6 +267,26 @@ impl ScreenshotUi {
 
     pub fn is_open(&self) -> bool {
         matches!(self, ScreenshotUi::Open { .. })
+    }
+
+    pub fn set_space_down(&mut self, down: bool) {
+        if let Self::Open {
+            selection,
+            button:
+                Button::Down {
+                    move_cursor_offset,
+                    last_pos,
+                    ..
+                },
+            ..
+        } = self
+        {
+            if down {
+                *move_cursor_offset = Some(last_pos.1 - selection.1);
+            } else {
+                *move_cursor_offset = None;
+            }
+        }
     }
 
     pub fn move_left(&mut self) {
@@ -725,7 +747,12 @@ impl ScreenshotUi {
     }
 
     pub fn action(&self, raw: Keysym, mods: ModifiersState) -> Option<Action> {
-        if !matches!(self, Self::Open { .. }) {
+        let Self::Open { button, .. } = self else {
+            return None;
+        };
+
+        // Pressing Space while the button is down goes into origin moving rather than capture.
+        if matches!(button, Button::Down { .. }) && raw == Keysym::space {
             return None;
         }
 
@@ -757,11 +784,13 @@ impl ScreenshotUi {
     pub fn pointer_motion(&mut self, point: Point<i32, Physical>, slot: Option<TouchSlot>) {
         let Self::Open {
             selection,
+            output_data,
             button:
                 Button::Down {
                     touch_slot,
                     on_capture_button,
                     last_pos,
+                    move_cursor_offset,
                 },
             ..
         } = self
@@ -779,7 +808,21 @@ impl ScreenshotUi {
             return;
         }
 
-        selection.2 = point;
+        if let Some(cursor_offset) = move_cursor_offset {
+            // The cursor offset is relative to selection.1.
+            let delta = point - (selection.1 + *cursor_offset);
+
+            let desired = rect_from_corner_points(selection.1 + delta, selection.2 + delta);
+            let bounds = Rectangle::from_size(output_data[&selection.0].size - desired.size);
+            let clamped_loc = desired.loc.constrain(bounds);
+
+            let delta = clamped_loc - rect_from_corner_points(selection.1, selection.2).loc;
+            selection.1 += delta;
+            selection.2 += delta;
+        } else {
+            selection.2 = point;
+        }
+
         self.update_buffers();
     }
 
@@ -818,6 +861,7 @@ impl ScreenshotUi {
                     touch_slot: slot,
                     on_capture_button: true,
                     last_pos: (output, point),
+                    move_cursor_offset: None,
                 };
                 return false;
             }
@@ -827,6 +871,7 @@ impl ScreenshotUi {
             touch_slot: slot,
             on_capture_button: false,
             last_pos: (output.clone(), point),
+            move_cursor_offset: None,
         };
         *selection = (output, point, point);
 
@@ -851,6 +896,7 @@ impl ScreenshotUi {
             touch_slot,
             on_capture_button,
             ref last_pos,
+            ..
         } = *button
         else {
             return None;

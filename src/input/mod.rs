@@ -396,6 +396,10 @@ impl State {
                     return FilterResult::Intercept(None);
                 }
 
+                if let Some(Keysym::space) = raw {
+                    this.niri.screenshot_ui.set_space_down(pressed);
+                }
+
                 let bindings = &this.niri.config.borrow().binds;
                 let res = should_intercept_key(
                     &mut this.niri.suppressed_keys,
