@@ -47,7 +47,8 @@ use crate::layout::ActivateWindow;
 use crate::niri::{CastTarget, PopupGrabState, State};
 use crate::utils::transaction::Transaction;
 use crate::utils::{
-    get_monotonic_time, output_matches_name, send_scale_transform, update_tiled_state, ResizeEdge,
+    get_monotonic_time, output_matches_name, send_scale_transform, update_tiled_state,
+    with_toplevel_role, ResizeEdge,
 };
 use crate::window::{InitialConfigureState, ResolvedWindowRules, Unmapped, WindowRef};
 
@@ -663,6 +664,10 @@ impl XdgShellHandler for State {
         let window = mapped.window.clone();
         let output = output.cloned();
 
+        self.niri
+            .foreign_toplevel_list_state
+            .remove_toplevel(mapped.foreign_toplevel_handle());
+
         self.niri.stop_casts_for_target(CastTarget::Window {
             id: mapped.id().get(),
         });
@@ -707,10 +712,36 @@ impl XdgShellHandler for State {
     }
 
     fn app_id_changed(&mut self, toplevel: ToplevelSurface) {
+        let surface = toplevel.wl_surface();
+        if let Some((mapped, _)) = self.niri.layout.find_window_and_output(surface) {
+            with_toplevel_role(&toplevel, |role| {
+                let app_id = role
+                    .app_id
+                    .as_deref()
+                    .expect("app_id must be set because it changed and cannot be unset");
+                let handle = mapped.foreign_toplevel_handle();
+                handle.send_app_id(app_id);
+                handle.send_done();
+            });
+        }
+
         self.update_window_rules(&toplevel);
     }
 
     fn title_changed(&mut self, toplevel: ToplevelSurface) {
+        let surface = toplevel.wl_surface();
+        if let Some((mapped, _)) = self.niri.layout.find_window_and_output(surface) {
+            with_toplevel_role(&toplevel, |role| {
+                let title = role
+                    .title
+                    .as_deref()
+                    .expect("title must be set because it changed and cannot be unset");
+                let handle = mapped.foreign_toplevel_handle();
+                handle.send_title(title);
+                handle.send_done();
+            });
+        }
+
         self.update_window_rules(&toplevel);
     }
 
