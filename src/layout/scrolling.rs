@@ -1291,20 +1291,28 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 self.view_offset.offset(offset);
             }
 
-            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
-                // We might need to move the view to ensure the resized window is still visible.
+            // Upon unfullscreening, restore the view offset.
+            //
+            // In tabbed display mode, there can be multiple tiles in a fullscreen column. They
+            // will unfullscreen one by one, and the column width will shrink only when the
+            // last tile unfullscreens. This is when we want to restore the view offset,
+            // otherwise it will immediately reset back by the animate_view_offset below.
+            let is_fullscreen = self.columns[col_idx].tiles.iter().any(Tile::is_fullscreen);
+            let unfullscreen_offset = if was_fullscreen && !is_fullscreen {
+                // Take the value unconditionally, even if the view is currently frozen by
+                // a view gesture. It shouldn't linger around because it's only valid for this
+                // particular unfullscreen.
+                self.view_offset_before_fullscreen.take()
+            } else {
+                None
+            };
 
-                // Upon unfullscreening, restore the view offset.
-                //
-                // In tabbed display mode, there can be multiple tiles in a fullscreen column. They
-                // will unfullscreen one by one, and the column width will shrink only when the
-                // last tile unfullscreens. This is when we want to restore the view offset,
-                // otherwise it will immediately reset back by the animate_view_offset below.
-                let is_fullscreen = self.columns[col_idx].tiles.iter().any(Tile::is_fullscreen);
-                if was_fullscreen && !is_fullscreen {
-                    if let Some(prev_offset) = self.view_offset_before_fullscreen.take() {
-                        self.animate_view_offset(col_idx, prev_offset);
-                    }
+            // We might need to move the view to ensure the resized window is still visible. But
+            // only do it when the view isn't frozen by an interactive resize or a view gesture.
+            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
+                // Restore the view offset upon unfullscreening if needed.
+                if let Some(prev_offset) = unfullscreen_offset {
+                    self.animate_view_offset(col_idx, prev_offset);
                 }
 
                 // Synchronize the horizontal view movement with the resize so that it looks nice.
