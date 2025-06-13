@@ -76,6 +76,8 @@ pub struct Config {
     pub prefer_no_csd: bool,
     pub cursor: Cursor,
     pub screenshot_path: ScreenshotPath,
+    pub screenshot_notification: bool,
+    #[knuffel(child, default)]
     pub clipboard: Clipboard,
     pub hotkey_overlay: HotkeyOverlay,
     pub config_notification: ConfigNotification,
@@ -765,6 +767,7 @@ mod tests {
             }
 
             screenshot-path "~/Screenshots/screenshot.png"
+            screenshot-notification false
 
             clipboard {
                 disable-primary
@@ -1418,6 +1421,7 @@ mod tests {
                     "~/Screenshots/screenshot.png",
                 ),
             ),
+            screenshot_notification: false,
             clipboard: Clipboard {
                 disable_primary: true,
             },
