@@ -916,6 +916,17 @@ pub enum Action {
     /// Can be useful for scripts changing the config file, to avoid waiting the small duration for
     /// niri's config file watcher to notice the changes.
     LoadConfigFile {},
+    /// Set view offset of window.
+    ViewOffset {
+        /// Id of the window to set view offset.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+        /// View offset to set
+        #[cfg_attr(feature = "clap", arg(long))]
+        offset: f64,
+    },
 }
 
 /// Change in window or column size.

@@ -84,6 +84,11 @@ pub struct Mapped {
     /// Whether this has an urgent indicator.
     is_urgent: bool,
 
+    /// View offset of window.
+    ///
+    /// This field makes view to be shifted while current window is focused.
+    view_offset: f64,
+
     /// Whether this window has the keyboard focus.
     is_focused: bool,
 
@@ -262,6 +267,7 @@ impl Mapped {
             needs_frame_callback: false,
             offscreen_data: RefCell::new(None),
             is_urgent: false,
+            view_offset: 0.0,
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
@@ -572,6 +578,14 @@ impl Mapped {
 
     pub fn is_urgent(&self) -> bool {
         self.is_urgent
+    }
+
+    pub fn set_view_offset(&mut self, offset: f64) {
+        self.view_offset = offset;
+    }
+
+    pub fn get_view_offset(&self) -> f64 {
+        self.view_offset
     }
 }
 
@@ -916,6 +930,10 @@ impl LayoutElement for Mapped {
 
     fn is_urgent(&self) -> bool {
         self.is_urgent
+    }
+
+    fn get_view_offset(&self) -> f64 {
+        self.view_offset
     }
 
     fn set_activated(&mut self, active: bool) {
