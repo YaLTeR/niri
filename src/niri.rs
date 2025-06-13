@@ -5760,8 +5760,7 @@ impl Niri {
                 calloop::channel::Event::Closed => (),
             })
             .unwrap();
-            
-        let show_notification = self.config.borrow().screenshot_notification;
+        let show_notification = !self.config.borrow().screenshot_notification_disable;
         // Prepare to send screenshot completion event back to main thread.
         let (event_tx, event_rx) = calloop::channel::sync_channel::<Option<String>>(1);
         self.event_loop
