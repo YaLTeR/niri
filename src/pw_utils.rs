@@ -599,7 +599,7 @@ impl PipeWire {
                             let spa_data = (*spa_buffer).datas.add(i);
                             assert!((*spa_data).type_ & (1 << DataType::DmaBuf.as_raw()) > 0);
 
-                            (*spa_data).type_ = DataType::DmaBuf.as_raw();
+                            (*spa_data).type_ = 1 << DataType::DmaBuf.as_raw();
                             (*spa_data).maxsize = 1;
                             (*spa_data).fd = fd.as_raw_fd() as i64;
                             (*spa_data).flags = SPA_DATA_FLAG_READWRITE;
