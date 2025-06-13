@@ -23,6 +23,7 @@ impl Server {
             display,
             true,
             false,
+            false,
         )
         .unwrap();
 
