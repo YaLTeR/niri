@@ -1914,6 +1914,11 @@ pub enum Action {
     SetWindowUrgent(u64),
     #[knuffel(skip)]
     UnsetWindowUrgent(u64),
+    #[knuffel(skip)]
+    ViewOffset {
+        id: Option<u64>,
+        offset: f64,
+    },
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -2189,6 +2194,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
+            niri_ipc::Action::ViewOffset { id, offset } => Self::ViewOffset { id, offset },
         }
     }
 }
