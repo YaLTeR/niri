@@ -748,8 +748,22 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn resolve_default_width(
         &self,
         default_width: Option<Option<PresetSize>>,
+        first_width: Option<Option<PresetSize>>,
+        is_first: bool,
         is_floating: bool,
     ) -> Option<PresetSize> {
+        if is_first {
+            match first_width {
+                Some(Some(width)) => return Some(width),
+                Some(None) => return None,
+                None if is_floating => return None,
+                None => match self.options.first_column_width {
+                    Some(width) => return width.0,
+                    None => (),
+                },
+            }
+        }
+
         match default_width {
             Some(Some(width)) => Some(width),
             Some(None) => None,
@@ -1761,6 +1775,10 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn working_area(&self) -> Rectangle<f64, Logical> {
         self.working_area
+    }
+
+    pub fn is_scrolling_empty(&self) -> bool {
+        self.scrolling.is_empty()
     }
 
     #[cfg(test)]

@@ -37,6 +37,13 @@ pub struct ResolvedWindowRules {
     /// - `Some(Some(width))`: set to a particular width.
     pub default_width: Option<Option<PresetSize>>,
 
+    /// Default width used if this window is the first window of the workspace.
+    ///
+    /// - `None`: unset (fall back to global_default if set, otherwise to default_width).
+    /// - `Some(None)`: set to empty (window picks its own width).
+    /// - `Some(Some(width))`: set to a particular width.
+    pub first_width: Option<Option<PresetSize>>,
+
     /// Default height for this window.
     ///
     /// - `None`: unset (global default should be used).
@@ -172,6 +179,7 @@ impl ResolvedWindowRules {
     pub const fn empty() -> Self {
         Self {
             default_width: None,
+            first_width: None,
             default_height: None,
             default_column_display: None,
             default_floating_position: None,
@@ -272,6 +280,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.default_column_width {
                     resolved.default_width = Some(x.0);
+                }
+
+                if let Some(x) = rule.first_column_width {
+                    resolved.first_width = Some(x.0);
                 }
 
                 if let Some(x) = rule.default_window_height {

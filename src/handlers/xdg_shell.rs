@@ -940,8 +940,18 @@ impl State {
                 });
             }
 
-            width = ws.resolve_default_width(rules.default_width, false);
-            floating_width = ws.resolve_default_width(rules.default_width, true);
+            width = ws.resolve_default_width(
+                rules.default_width,
+                rules.first_width,
+                ws.is_scrolling_empty(),
+                false,
+            );
+            floating_width = ws.resolve_default_width(
+                rules.default_width,
+                rules.first_width,
+                ws.is_scrolling_empty(),
+                true,
+            );
             height = ws.resolve_default_height(rules.default_height, false);
             floating_height = ws.resolve_default_height(rules.default_height, true);
 

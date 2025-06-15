@@ -529,6 +529,8 @@ pub struct Layout {
     pub preset_column_widths: Vec<PresetSize>,
     #[knuffel(child)]
     pub default_column_width: Option<DefaultPresetSize>,
+    #[knuffel(child)]
+    pub first_column_width: Option<DefaultPresetSize>,
     #[knuffel(child, unwrap(children), default)]
     pub preset_window_heights: Vec<PresetSize>,
     #[knuffel(child, unwrap(argument), default)]
@@ -557,6 +559,7 @@ impl Default for Layout {
             insert_hint: Default::default(),
             preset_column_widths: Default::default(),
             default_column_width: Default::default(),
+            first_column_width: Default::default(),
             center_focused_column: Default::default(),
             always_center_single_column: false,
             empty_workspace_above_first: false,
@@ -1404,6 +1407,8 @@ pub struct WindowRule {
     // Rules applied at initial configure.
     #[knuffel(child)]
     pub default_column_width: Option<DefaultPresetSize>,
+    #[knuffel(child)]
+    pub first_column_width: Option<DefaultPresetSize>,
     #[knuffel(child)]
     pub default_window_height: Option<DefaultPresetSize>,
     #[knuffel(child, unwrap(argument))]

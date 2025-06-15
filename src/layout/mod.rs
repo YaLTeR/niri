@@ -39,7 +39,7 @@ use std::time::Duration;
 
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
 use niri_config::{
-    CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
+    CenterFocusedColumn, Config, CornerRadius, DefaultPresetSize, FloatOrInt, PresetSize, Struts,
     Workspace as WorkspaceConfig, WorkspaceReference,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
@@ -351,6 +351,8 @@ pub struct Options {
     pub default_column_display: ColumnDisplay,
     /// Column or window widths that `toggle_width()` switches between.
     pub preset_column_widths: Vec<PresetSize>,
+    /// Initial width for new columns created on empty workspaces.
+    pub first_column_width: Option<DefaultPresetSize>,
     /// Initial width for new columns.
     pub default_column_width: Option<PresetSize>,
     /// Window height that `toggle_window_height()` switches between.
@@ -384,6 +386,7 @@ impl Default for Options {
                 PresetSize::Proportion(2. / 3.),
             ],
             default_column_width: None,
+            first_column_width: None,
             animations: Default::default(),
             gestures: Default::default(),
             overview: Default::default(),
@@ -655,6 +658,7 @@ impl Options {
             default_column_display: layout.default_column_display,
             preset_column_widths,
             default_column_width,
+            first_column_width: layout.first_column_width,
             animations: config.animations.clone(),
             gestures: config.gestures,
             overview: config.overview,
