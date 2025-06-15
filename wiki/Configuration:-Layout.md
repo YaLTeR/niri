@@ -20,6 +20,7 @@ layout {
     }
 
     default-column-width { proportion 0.5; }
+    first-column-width { proprtion 1.0; }
 
     preset-window-heights {
         proportion 0.33333
@@ -216,6 +217,30 @@ layout {
 >
 > This is a bit [unclearly defined](https://gitlab.freedesktop.org/wayland/wayland-protocols/-/issues/155) in the Wayland protocol, so some clients may misinterpret it.
 > Either way, `default-column-width {}` is most useful for specific windows, in form of a [window rule](./Configuration:-Window-Rules.md#default-column-width) with the same syntax.
+
+### `first-column-width`
+
+Set the default width of new windows opened on workspaces without any columns.
+
+The syntax is the same as in `default-column-width` above.
+
+```kdl
+layout {
+    // New windows on empty worksapces at the full size of the output.
+    default-column-width { proportion 1.0; }
+}
+```
+
+As with `default-column-width`, you can leave the brackets empty, in which case the windows themselves will decide their initial width.
+
+```kdl
+layout {
+    // New windows on empty workspaces decide their initial width themselves.
+    default-column-width {}
+}
+```
+
+If `first-column-width` is **not** set, then niri will use `default-column-width` instead.
 
 ### `preset-window-heights`
 
