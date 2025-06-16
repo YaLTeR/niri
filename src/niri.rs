@@ -160,11 +160,12 @@ use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
-use crate::utils::spawning::CHILD_ENV;
+use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
+use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
     logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
-    write_png_rgba8,
+    write_png_rgba8, xwayland,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -375,6 +376,8 @@ pub struct Niri {
 
     pub ipc_server: Option<IpcServer>,
     pub ipc_outputs_changed: bool,
+
+    pub satellite: Option<Satellite>,
 
     // Casts are dropped before PipeWire to prevent a double-free (yay).
     pub casts: Vec<Cast>,
@@ -1316,7 +1319,7 @@ impl State {
             self.niri.layout.ensure_named_workspace(ws_config);
         }
 
-        let rate = 1.0 / config.animations.slowdown.max(0.001);
+        let rate = 1.0 / config.animations.slowdown.0.max(0.001);
         self.niri.clock.set_rate(rate);
         self.niri
             .clock
@@ -1332,6 +1335,7 @@ impl State {
         let mut layer_rules_changed = false;
         let mut shaders_changed = false;
         let mut cursor_inactivity_timeout_changed = false;
+        let mut xwls_changed = false;
         let mut old_config = self.niri.config.borrow_mut();
 
         // Reload the cursor.
@@ -1443,6 +1447,10 @@ impl State {
             output_config_changed = true;
         }
 
+        if config.xwayland_satellite != old_config.xwayland_satellite {
+            xwls_changed = true;
+        }
+
         *old_config = config;
 
         if let Some(outputs) = preserved_output_config {
@@ -1504,6 +1512,30 @@ impl State {
             // Force reset due to timeout change.
             self.niri.pointer_inactivity_timer_got_reset = false;
             self.niri.reset_pointer_inactivity_timer();
+        }
+
+        if xwls_changed {
+            // If xwl-s was previously working and is now off, we don't try to kill it or stop
+            // watching the sockets, for simplicity's sake.
+            let was_working = self.niri.satellite.is_some();
+
+            // Try to start, or restart in case the user corrected the path or something.
+            xwayland::satellite::setup(self);
+
+            let config = self.niri.config.borrow();
+            let display_name = (!config.xwayland_satellite.off)
+                .then_some(self.niri.satellite.as_ref())
+                .flatten()
+                .map(|satellite| satellite.display_name().to_owned());
+
+            if let Some(name) = &display_name {
+                if !was_working {
+                    info!("listening on X11 socket: {name}");
+                }
+            }
+
+            // This won't change the systemd environment, but oh well.
+            *CHILD_DISPLAY.write().unwrap() = display_name;
         }
 
         // Can't really update xdg-decoration settings since we have to hide the globals for CSD
@@ -2152,7 +2184,7 @@ impl State {
             self.niri.dynamic_cast_id_for_portal.get(),
             gnome_shell_introspect::WindowProperties {
                 title: String::from("niri Dynamic Cast Target"),
-                app_id: String::from("rs.bxt.niri"),
+                app_id: String::from("rs.bxt.niri.desktop"),
             },
         );
 
@@ -2161,7 +2193,14 @@ impl State {
             let props = with_toplevel_role(mapped.toplevel(), |role| {
                 gnome_shell_introspect::WindowProperties {
                     title: role.title.clone().unwrap_or_default(),
-                    app_id: role.app_id.clone().unwrap_or_default(),
+                    app_id: role
+                        .app_id
+                        .as_ref()
+                        // We don't do proper .desktop file tracking (it's quite involved), and
+                        // Wayland windows can set any app id they want. However, this seems to
+                        // work well enough in practice.
+                        .map(|app_id| format!("{app_id}.desktop"))
+                        .unwrap_or_default(),
                 }
             });
 
@@ -2195,7 +2234,7 @@ impl Niri {
 
         let mut animation_clock = Clock::default();
 
-        let rate = 1.0 / config_.animations.slowdown.max(0.001);
+        let rate = 1.0 / config_.animations.slowdown.0.max(0.001);
         animation_clock.set_rate(rate);
         animation_clock.set_complete_instantly(config_.animations.off);
 
@@ -2568,6 +2607,8 @@ impl Niri {
 
             ipc_server,
             ipc_outputs_changed: false,
+
+            satellite: None,
 
             pipewire: None,
             casts: vec![],
@@ -3358,80 +3399,119 @@ impl Niri {
         self.global_space.output_under(pos).next().cloned()
     }
 
-    pub fn output_left(&self) -> Option<Output> {
-        let active = self.layout.active_output()?;
-        let active_geo = self.global_space.output_geometry(active).unwrap();
+    pub fn output_left_of(&self, current: &Output) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
         let extended_geo = Rectangle::new(
-            Point::from((i32::MIN / 2, active_geo.loc.y)),
-            Size::from((i32::MAX, active_geo.size.h)),
+            Point::from((i32::MIN / 2, current_geo.loc.y)),
+            Size::from((i32::MAX, current_geo.size.h)),
         );
 
         self.global_space
             .outputs()
             .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).x < center(active_geo).x && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(active_geo).x - center(*geo).x)
+            .filter(|(_, geo)| center(*geo).x < center(current_geo).x && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(current_geo).x - center(*geo).x)
             .map(|(output, _)| output)
             .cloned()
+    }
+
+    pub fn output_right_of(&self, current: &Output) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
+        let extended_geo = Rectangle::new(
+            Point::from((i32::MIN / 2, current_geo.loc.y)),
+            Size::from((i32::MAX, current_geo.size.h)),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(*geo).x > center(current_geo).x && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(*geo).x - center(current_geo).x)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_up_of(&self, current: &Output) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
+        let extended_geo = Rectangle::new(
+            Point::from((current_geo.loc.x, i32::MIN / 2)),
+            Size::from((current_geo.size.w, i32::MAX)),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(*geo).y < center(current_geo).y && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(current_geo).y - center(*geo).y)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_down_of(&self, current: &Output) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
+        let extended_geo = Rectangle::new(
+            Point::from((current_geo.loc.x, i32::MIN / 2)),
+            Size::from((current_geo.size.w, i32::MAX)),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(*geo).y > center(current_geo).y && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(*geo).y - center(current_geo).y)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_previous_of(&self, current: &Output) -> Option<Output> {
+        self.sorted_outputs
+            .iter()
+            .rev()
+            .skip_while(|&output| output != current)
+            .nth(1)
+            .or(self.sorted_outputs.last())
+            .filter(|&output| output != current)
+            .cloned()
+    }
+
+    pub fn output_next_of(&self, current: &Output) -> Option<Output> {
+        self.sorted_outputs
+            .iter()
+            .skip_while(|&output| output != current)
+            .nth(1)
+            .or(self.sorted_outputs.first())
+            .filter(|&output| output != current)
+            .cloned()
+    }
+
+    pub fn output_left(&self) -> Option<Output> {
+        let active = self.layout.active_output()?;
+        self.output_left_of(active)
     }
 
     pub fn output_right(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
-        let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::new(
-            Point::from((i32::MIN / 2, active_geo.loc.y)),
-            Size::from((i32::MAX, active_geo.size.h)),
-        );
-
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).x > center(active_geo).x && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(*geo).x - center(active_geo).x)
-            .map(|(output, _)| output)
-            .cloned()
+        self.output_right_of(active)
     }
 
     pub fn output_up(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
-        let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::new(
-            Point::from((active_geo.loc.x, i32::MIN / 2)),
-            Size::from((active_geo.size.w, i32::MAX)),
-        );
+        self.output_up_of(active)
+    }
 
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).y < center(active_geo).y && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(active_geo).y - center(*geo).y)
-            .map(|(output, _)| output)
-            .cloned()
+    pub fn output_down(&self) -> Option<Output> {
+        let active = self.layout.active_output()?;
+        self.output_down_of(active)
     }
 
     pub fn output_previous(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
-
-        self.sorted_outputs
-            .iter()
-            .rev()
-            .skip_while(|&output| output != active)
-            .nth(1)
-            .or(self.sorted_outputs.last())
-            .filter(|&output| output != active)
-            .cloned()
+        self.output_previous_of(active)
     }
 
     pub fn output_next(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
-
-        self.sorted_outputs
-            .iter()
-            .skip_while(|&output| output != active)
-            .nth(1)
-            .or(self.sorted_outputs.first())
-            .filter(|&output| output != active)
-            .cloned()
+        self.output_next_of(active)
     }
 
     pub fn find_output_and_workspace_index(
@@ -3451,23 +3531,6 @@ impl Niri {
 
         let target_output = target_workspace.current_output();
         Some((target_output.cloned(), target_workspace_index))
-    }
-
-    pub fn output_down(&self) -> Option<Output> {
-        let active = self.layout.active_output()?;
-        let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::new(
-            Point::from((active_geo.loc.x, i32::MIN / 2)),
-            Size::from((active_geo.size.w, i32::MAX)),
-        );
-
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(active_geo).y < center(*geo).y && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(*geo).y - center(active_geo).y)
-            .map(|(output, _)| output)
-            .cloned()
     }
 
     pub fn output_for_tablet(&self) -> Option<&Output> {
@@ -5673,8 +5736,18 @@ impl Niri {
     }
 
     pub fn new_lock_surface(&mut self, surface: LockSurface, output: &Output) {
-        if matches!(self.lock_state, LockState::Unlocked) {
-            error!("tried to add a lock surface on an unlocked session");
+        let lock = match &self.lock_state {
+            LockState::Unlocked => {
+                error!("tried to add a lock surface on an unlocked session");
+                return;
+            }
+            LockState::WaitingForSurfaces { confirmation, .. } => confirmation.ext_session_lock(),
+            LockState::Locking(confirmation) => confirmation.ext_session_lock(),
+            LockState::Locked(lock) => lock,
+        };
+
+        if lock.client() != surface.wl_surface().client() {
+            debug!("ignoring lock surface from an unrelated client");
             return;
         }
 

@@ -17,11 +17,11 @@ use niri::dbus;
 use niri::ipc::client::handle_msg;
 use niri::niri::State;
 use niri::utils::spawning::{
-    spawn, store_and_increase_nofile_rlimit, CHILD_ENV, REMOVE_ENV_RUST_BACKTRACE,
+    spawn, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV, REMOVE_ENV_RUST_BACKTRACE,
     REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
 use niri::utils::watcher::Watcher;
-use niri::utils::{cause_panic, version, IS_SYSTEMD_SERVICE};
+use niri::utils::{cause_panic, version, xwayland, IS_SYSTEMD_SERVICE};
 use niri_config::Config;
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
@@ -200,6 +200,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("IPC listening on: {}", socket_path.to_string_lossy());
     }
 
+    // Setup xwayland-satellite integration.
+    xwayland::satellite::setup(&mut state);
+    if let Some(satellite) = &state.niri.satellite {
+        let name = satellite.display_name();
+        *CHILD_DISPLAY.write().unwrap() = Some(name.to_owned());
+        env::set_var("DISPLAY", name);
+        info!("listening on X11 socket: {name}");
+    } else {
+        // Avoid spawning children in the host X11.
+        env::remove_var("DISPLAY");
+    }
+
     if cli.session {
         // We're starting as a session. Import our variables.
         import_environment();
@@ -275,6 +287,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn import_environment() {
     let variables = [
         "WAYLAND_DISPLAY",
+        "DISPLAY",
         "XDG_CURRENT_DESKTOP",
         "XDG_SESSION_TYPE",
         SOCKET_PATH_ENV,

@@ -16,6 +16,7 @@ use crate::utils::expand_home;
 pub static REMOVE_ENV_RUST_BACKTRACE: AtomicBool = AtomicBool::new(false);
 pub static REMOVE_ENV_RUST_LIB_BACKTRACE: AtomicBool = AtomicBool::new(false);
 pub static CHILD_ENV: RwLock<Environment> = RwLock::new(Environment(Vec::new()));
+pub static CHILD_DISPLAY: RwLock<Option<String>> = RwLock::new(None);
 
 static ORIGINAL_NOFILE_RLIMIT_CUR: Atomic<rlim_t> = Atomic::new(0);
 static ORIGINAL_NOFILE_RLIMIT_MAX: Atomic<rlim_t> = Atomic::new(0);
@@ -114,6 +115,14 @@ fn spawn_sync(
     }
     if REMOVE_ENV_RUST_LIB_BACKTRACE.load(Ordering::Relaxed) {
         process.env_remove("RUST_LIB_BACKTRACE");
+    }
+
+    // Set DISPLAY if needed.
+    let display = CHILD_DISPLAY.read().unwrap();
+    if let Some(display) = &*display {
+        process.env("DISPLAY", display);
+    } else {
+        process.env_remove("DISPLAY");
     }
 
     // Set configured environment.

@@ -65,6 +65,8 @@ pub struct Config {
     pub overview: Overview,
     #[knuffel(child, default)]
     pub environment: Environment,
+    #[knuffel(child, default)]
+    pub xwayland_satellite: XwaylandSatellite,
     #[knuffel(children(name = "window-rule"))]
     pub window_rules: Vec<WindowRule>,
     #[knuffel(children(name = "layer-rule"))]
@@ -204,7 +206,7 @@ pub struct Touchpad {
     #[knuffel(child, unwrap(argument, str))]
     pub click_method: Option<ClickMethod>,
     #[knuffel(child, unwrap(argument), default)]
-    pub accel_speed: f64,
+    pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
@@ -230,7 +232,7 @@ pub struct Mouse {
     #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
-    pub accel_speed: f64,
+    pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
@@ -252,7 +254,7 @@ pub struct Trackpoint {
     #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
-    pub accel_speed: f64,
+    pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
@@ -272,7 +274,7 @@ pub struct Trackball {
     #[knuffel(child)]
     pub natural_scroll: bool,
     #[knuffel(child, unwrap(argument), default)]
-    pub accel_speed: f64,
+    pub accel_speed: FloatOrInt<-1, 1>,
     #[knuffel(child, unwrap(argument, str))]
     pub accel_profile: Option<AccelProfile>,
     #[knuffel(child, unwrap(argument, str))]
@@ -1045,8 +1047,8 @@ pub struct Clipboard {
 pub struct Animations {
     #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child, unwrap(argument), default = 1.)]
-    pub slowdown: f64,
+    #[knuffel(child, unwrap(argument), default = FloatOrInt(1.))]
+    pub slowdown: FloatOrInt<0, { i32::MAX }>,
     #[knuffel(child, default)]
     pub workspace_switch: WorkspaceSwitchAnim,
     #[knuffel(child, default)]
@@ -1071,7 +1073,7 @@ impl Default for Animations {
     fn default() -> Self {
         Self {
             off: false,
-            slowdown: 1.,
+            slowdown: FloatOrInt(1.),
             workspace_switch: Default::default(),
             horizontal_view_movement: Default::default(),
             window_movement: Default::default(),
@@ -1362,6 +1364,23 @@ pub struct EnvironmentVariable {
     pub name: String,
     #[knuffel(argument)]
     pub value: Option<String>,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+pub struct XwaylandSatellite {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, unwrap(argument), default = Self::default().path)]
+    pub path: String,
+}
+
+impl Default for XwaylandSatellite {
+    fn default() -> Self {
+        Self {
+            off: false,
+            path: String::from("xwayland-satellite"),
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
@@ -2352,6 +2371,8 @@ pub struct DebugConfig {
     #[knuffel(child)]
     pub honor_xdg_activation_with_invalid_serial: bool,
     #[knuffel(child)]
+    pub deactivate_unfocused_windows: bool,
+    #[knuffel(child)]
     pub skip_cursor_only_updates_during_vrr: bool,
 }
 
@@ -2676,7 +2697,10 @@ impl FromStr for Color {
     type Err = miette::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let color = csscolorparser::parse(s).into_diagnostic()?.to_array();
+        let color = csscolorparser::parse(s)
+            .into_diagnostic()?
+            .clamp()
+            .to_array();
         Ok(Self::from_array_unpremul(color))
     }
 }
@@ -4219,7 +4243,9 @@ mod tests {
                     click_method: Some(
                         Clickfinger,
                     ),
-                    accel_speed: 0.2,
+                    accel_speed: FloatOrInt(
+                        0.2,
+                    ),
                     accel_profile: Some(
                         Flat,
                     ),
@@ -4244,7 +4270,9 @@ mod tests {
                 mouse: Mouse {
                     off: false,
                     natural_scroll: true,
-                    accel_speed: 0.4,
+                    accel_speed: FloatOrInt(
+                        0.4,
+                    ),
                     accel_profile: Some(
                         Flat,
                     ),
@@ -4265,7 +4293,9 @@ mod tests {
                 trackpoint: Trackpoint {
                     off: true,
                     natural_scroll: true,
-                    accel_speed: 0.0,
+                    accel_speed: FloatOrInt(
+                        0.0,
+                    ),
                     accel_profile: Some(
                         Flat,
                     ),
@@ -4281,7 +4311,9 @@ mod tests {
                 trackball: Trackball {
                     off: true,
                     natural_scroll: true,
-                    accel_speed: 0.0,
+                    accel_speed: FloatOrInt(
+                        0.0,
+                    ),
                     accel_profile: Some(
                         Flat,
                     ),
@@ -4636,7 +4668,9 @@ mod tests {
             },
             animations: Animations {
                 off: false,
-                slowdown: 2.0,
+                slowdown: FloatOrInt(
+                    2.0,
+                ),
                 workspace_switch: WorkspaceSwitchAnim(
                     Animation {
                         off: false,
@@ -4816,6 +4850,10 @@ mod tests {
                     },
                 ],
             ),
+            xwayland_satellite: XwaylandSatellite {
+                off: false,
+                path: "xwayland-satellite",
+            },
             window_rules: [
                 WindowRule {
                     matches: [
@@ -5311,6 +5349,7 @@ mod tests {
                 disable_monitor_names: false,
                 strict_new_window_focus_policy: false,
                 honor_xdg_activation_with_invalid_serial: false,
+                deactivate_unfocused_windows: false,
                 skip_cursor_only_updates_during_vrr: false,
             },
             workspaces: [
