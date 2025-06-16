@@ -294,7 +294,7 @@ pub fn update_tiled_state(
         // global and never reset to None).
         //
         // If the client bound a decoration global, use the mode that we negotiated. This way,
-        // changing the decoration mode on the client at runtime will synchonize with the
+        // changing the decoration mode on the client at runtime will synchronize with the
         // default tiled state.
         if let Some(mode) = toplevel.with_pending_state(|state| state.decoration_mode) {
             mode == zxdg_toplevel_decoration_v1::Mode::ServerSide

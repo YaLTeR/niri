@@ -39,11 +39,11 @@ First, find which devices you have:
 
 ```
 $ ls -l /dev/dri/
-drwxr-xr-x@       - root 14 мая 07:07 by-path
-crw-rw----@   226,0 root 14 мая 07:07 card0
-crw-rw----@   226,1 root 14 мая 07:07 card1
-crw-rw-rw-@ 226,128 root 14 мая 07:07 renderD128
-crw-rw-rw-@ 226,129 root 14 мая 07:07 renderD129
+drwxr-xr-x@       - root 14 May 07:07 by-path
+crw-rw----@   226,0 root 14 May 07:07 card0
+crw-rw----@   226,1 root 14 May 07:07 card1
+crw-rw-rw-@ 226,128 root 14 May 07:07 renderD128
+crw-rw-rw-@ 226,129 root 14 May 07:07 renderD129
 ```
 
 You will likely have one `render` device and two `card` devices.
@@ -92,8 +92,8 @@ The general system is: if a hotkey switches somewhere, then adding <kbd>Ctrl</kb
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>→</kbd> | Move the focused column to the right |
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>J</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>↓</kbd> | Move the focused window below in a column |
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>K</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>↑</kbd> | Move the focused window above in a column |
-| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>↑</kbd><kbd>→</kbd> | Focus the monitor to the side |
-| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>↑</kbd><kbd>→</kbd> | Move the focused column to the monitor to the side |
+| <kbd>Mod</kbd><kbd>Shift</kbd><kbd>H</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>←</kbd> / <kbd>Mod</kbd><kbd>Shift</kbd><kbd>J</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>↓</kbd> / <kbd>Mod</kbd><kbd>Shift</kbd><kbd>K</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>↑</kbd> / <kbd>Mod</kbd><kbd>Shift</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Shift</kbd><kbd>→</kbd> | Focus the monitor to the side |
+| <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>H</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>←</kbd> / <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>↓</kbd> / <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>K</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>↑</kbd> / <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>L</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>→</kbd> | Move the focused column to the monitor to the side |
 | <kbd>Mod</kbd><kbd>U</kbd> or <kbd>Mod</kbd><kbd>PageDown</kbd> | Switch to the workspace below |
 | <kbd>Mod</kbd><kbd>I</kbd> or <kbd>Mod</kbd><kbd>PageUp</kbd> | Switch to the workspace above |
 | <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>U</kbd> or <kbd>Mod</kbd><kbd>Ctrl</kbd><kbd>PageDown</kbd> | Move the focused column to the workspace below |
@@ -128,7 +128,7 @@ First, install the dependencies for your distribution.
 - Ubuntu 24.04:
 
     ```sh
-    sudo apt-get install -y gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
+    sudo apt install -y gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
     ```
 
 - Fedora:
