@@ -228,9 +228,9 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
         actions.push(&bind.action);
     } else if binds
         .iter()
-        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceDown))
+        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceDown(_)))
     {
-        actions.push(&Action::MoveWindowToWorkspaceDown);
+        actions.push(&Action::MoveWindowToWorkspaceDown(true));
     } else {
         actions.push(&Action::MoveColumnToWorkspaceDown(true));
     }
@@ -243,9 +243,9 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
         actions.push(&bind.action);
     } else if binds
         .iter()
-        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceUp))
+        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceUp(_)))
     {
-        actions.push(&Action::MoveWindowToWorkspaceUp);
+        actions.push(&Action::MoveWindowToWorkspaceUp(true));
     } else {
         actions.push(&Action::MoveColumnToWorkspaceUp(true));
     }
@@ -468,8 +468,8 @@ fn action_name(action: &Action) -> String {
         Action::FocusWorkspaceUp => String::from("Switch Workspace Up"),
         Action::MoveColumnToWorkspaceDown(_) => String::from("Move Column to Workspace Down"),
         Action::MoveColumnToWorkspaceUp(_) => String::from("Move Column to Workspace Up"),
-        Action::MoveWindowToWorkspaceDown => String::from("Move Window to Workspace Down"),
-        Action::MoveWindowToWorkspaceUp => String::from("Move Window to Workspace Up"),
+        Action::MoveWindowToWorkspaceDown(_) => String::from("Move Window to Workspace Down"),
+        Action::MoveWindowToWorkspaceUp(_) => String::from("Move Window to Workspace Up"),
         Action::SwitchPresetColumnWidth => String::from("Switch Preset Column Widths"),
         Action::MaximizeColumn => String::from("Maximize Column"),
         Action::ConsumeOrExpelWindowLeft => String::from("Consume or Expel Window Left"),

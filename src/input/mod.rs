@@ -1138,14 +1138,14 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveWindowToWorkspaceDown => {
-                self.niri.layout.move_to_workspace_down();
+            Action::MoveWindowToWorkspaceDown(focus) => {
+                self.niri.layout.move_to_workspace_down(focus);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::MoveWindowToWorkspaceUp => {
-                self.niri.layout.move_to_workspace_up();
+            Action::MoveWindowToWorkspaceUp(focus) => {
+                self.niri.layout.move_to_workspace_up(focus);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();

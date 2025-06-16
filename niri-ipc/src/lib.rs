@@ -447,9 +447,23 @@ pub enum Action {
     /// Focus the previous workspace.
     FocusWorkspacePrevious {},
     /// Move the focused window to the workspace below.
-    MoveWindowToWorkspaceDown {},
+    MoveWindowToWorkspaceDown {
+        /// Whether the focus should follow the target workspace.
+        ///
+        /// If `true` (the default), the focus will follow the window to the new workspace. If
+        /// `false`, the focus will remain on the original workspace.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused window to the workspace above.
-    MoveWindowToWorkspaceUp {},
+    MoveWindowToWorkspaceUp {
+        /// Whether the focus should follow the target workspace.
+        ///
+        /// If `true` (the default), the focus will follow the window to the new workspace. If
+        /// `false`, the focus will remain on the original workspace.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move a window to a workspace.
     #[cfg_attr(
         feature = "clap",

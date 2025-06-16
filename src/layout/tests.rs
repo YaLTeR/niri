@@ -497,8 +497,8 @@ enum Op {
     FocusWorkspace(#[proptest(strategy = "0..=4usize")] usize),
     FocusWorkspaceAutoBackAndForth(#[proptest(strategy = "0..=4usize")] usize),
     FocusWorkspacePrevious,
-    MoveWindowToWorkspaceDown,
-    MoveWindowToWorkspaceUp,
+    MoveWindowToWorkspaceDown(bool),
+    MoveWindowToWorkspaceUp(bool),
     MoveWindowToWorkspace {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         window_id: Option<usize>,
@@ -1113,8 +1113,8 @@ impl Op {
                 layout.switch_workspace_auto_back_and_forth(idx)
             }
             Op::FocusWorkspacePrevious => layout.switch_workspace_previous(),
-            Op::MoveWindowToWorkspaceDown => layout.move_to_workspace_down(),
-            Op::MoveWindowToWorkspaceUp => layout.move_to_workspace_up(),
+            Op::MoveWindowToWorkspaceDown(focus) => layout.move_to_workspace_down(focus),
+            Op::MoveWindowToWorkspaceUp(focus) => layout.move_to_workspace_up(focus),
             Op::MoveWindowToWorkspace {
                 window_id,
                 workspace_idx,
@@ -1615,8 +1615,8 @@ fn operations_dont_panic() {
         Op::FocusWorkspaceUp,
         Op::FocusWorkspace(1),
         Op::FocusWorkspace(2),
-        Op::MoveWindowToWorkspaceDown,
-        Op::MoveWindowToWorkspaceUp,
+        Op::MoveWindowToWorkspaceDown(true),
+        Op::MoveWindowToWorkspaceUp(true),
         Op::MoveWindowToWorkspace {
             window_id: None,
             workspace_idx: 1,
@@ -1671,7 +1671,7 @@ fn operations_from_starting_state_dont_panic() {
         Op::AddWindow {
             params: TestWindowParams::new(1),
         },
-        Op::MoveWindowToWorkspaceDown,
+        Op::MoveWindowToWorkspaceDown(true),
         Op::AddWindow {
             params: TestWindowParams::new(2),
         },
@@ -1786,8 +1786,8 @@ fn operations_from_starting_state_dont_panic() {
         Op::FocusWorkspace(1),
         Op::FocusWorkspace(2),
         Op::FocusWorkspace(3),
-        Op::MoveWindowToWorkspaceDown,
-        Op::MoveWindowToWorkspaceUp,
+        Op::MoveWindowToWorkspaceDown(true),
+        Op::MoveWindowToWorkspaceUp(true),
         Op::MoveWindowToWorkspace {
             window_id: None,
             workspace_idx: 1,
@@ -3366,7 +3366,7 @@ fn move_pending_unfullscreen_window_out_of_active_column() {
         Op::ConsumeWindowIntoColumn,
         // Window 1 is now pending unfullscreen.
         // Moving it out should reset view_offset_before_fullscreen.
-        Op::MoveWindowToWorkspaceDown,
+        Op::MoveWindowToWorkspaceDown(true),
     ];
 
     check_ops(&ops);
@@ -3581,6 +3581,52 @@ fn unfullscreen_view_offset_not_reset_during_ongoing_gesture() {
     ];
 
     check_ops(&ops);
+}
+
+#[test]
+fn move_column_to_workspace_down_focus_false_on_floating_window() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::ToggleWindowFloating { id: None },
+        Op::MoveColumnToWorkspaceDown(false),
+    ];
+
+    let layout = check_ops(&ops);
+
+    let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
+        unreachable!()
+    };
+
+    assert_eq!(monitors[0].active_workspace_idx, 0);
+}
+
+#[test]
+fn move_column_to_workspace_focus_false_on_floating_window() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::ToggleWindowFloating { id: None },
+        Op::MoveColumnToWorkspace(1, false),
+    ];
+
+    let layout = check_ops(&ops);
+
+    let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
+        unreachable!()
+    };
+
+    assert_eq!(monitors[0].active_workspace_idx, 0);
 }
 
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
