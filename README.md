@@ -51,7 +51,7 @@ Also check out this video from Brodie Robertson that showcases a lot of the niri
 ## Status
 
 Niri is stable for day-to-day use and does most things expected of a Wayland compositor.
-Many people are daily-driving niri. You can find help and connect with other users in our [Matrix channel].
+Many people are daily-driving niri, and are happy to help in our [Matrix channel].
 
 Give it a try!
 Follow the instructions on the [Getting Started](https://github.com/YaLTeR/niri/wiki/Getting-Started) wiki page.
@@ -105,7 +105,7 @@ The talk is in Russian, but I prepared full English subtitles that you can find 
 
 [An interview with Ivan, the developer behind Niri](https://www.trommelspeicher.de/podcast/special_the_developer_behind_niri)
 
-A June 2024 interview by a German tech podcast Das Triumvirat (in English).
+A June 2025 interview by a German tech podcast Das Triumvirat (in English).
 We talk about niri development and history, and my experience building and maintaining niri.
 
 ## Contact
