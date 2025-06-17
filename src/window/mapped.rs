@@ -147,11 +147,12 @@ pub struct Mapped {
     /// fullscreen state, and keep the size (since it matches), resulting in no configure.
     ///
     /// So we work around this by emulating a configure-ack/commit cycle through
-    /// is_pending_windowed_fullscreen and uncommitted_windowed_fullscreen. We ensure we send actual
-    /// configures in all cases through needs_configure. This can result in unnecessary configures
-    /// (like in the example above), but in most cases there will be a configure anyway to change
-    /// the Fullscreen state and/or the size. What this gives us is being able to synchronize our
-    /// windowed fullscreen state to the real window updates to avoid any flickering.
+    /// is_pending_windowed_fullscreen and uncommitted_windowed_fullscreen. We ensure we send
+    /// actual configures in all cases through needs_configure. This can result in unnecessary
+    /// configures (like in the example above), but in most cases there will be a configure
+    /// anyway to change the Fullscreen state and/or the size. What this gives us is being able
+    /// to synchronize our windowed fullscreen state to the real window updates to avoid any
+    /// flickering.
     is_pending_windowed_fullscreen: bool,
 
     /// Pending windowed fullscreen updates.
