@@ -291,7 +291,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         event_loop
             .handle()
             .insert_source(rx, |event, _, state| match event {
-                calloop::channel::Event::Msg(config) => state.reload_config(config),
+                calloop::channel::Event::Msg(config) => {
+                    let failed = config.is_err();
+                    state.reload_config(config);
+                    state.ipc_config_reloaded(failed);
+                }
                 calloop::channel::Event::Closed => (),
             })
             .unwrap();
