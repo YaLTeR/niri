@@ -10,6 +10,8 @@ prefer-no-csd
 
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 
+no-failed-config-reloaded-notification
+
 environment {
     QT_QPA_PLATFORM "wayland"
     DISPLAY null
@@ -105,6 +107,10 @@ You can also set this option to `null` to disable saving screenshots to disk.
 ```kdl
 screenshot-path null
 ```
+
+### `no-failed-config-reloaded-notification`
+
+Prevent Niri from displaying the built-in notification window when it fail to hot reload the configuration.
 
 ### `environment`
 
