@@ -1344,8 +1344,8 @@ pub enum Event {
     /// The configuration is reloaded
     ConfigReloaded {
         /// Whether the operation failed or not
-        failed: bool
-    }
+        failed: bool,
+    },
 }
 
 impl FromStr for WorkspaceReferenceArg {
