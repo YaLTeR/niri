@@ -23,7 +23,7 @@ use crate::handlers::XDG_ACTIVATION_TOKEN_TIMEOUT;
 use crate::layout::{ActivateWindow, AddWindowTarget};
 use crate::niri::{CastTarget, ClientState, LockState, State};
 use crate::utils::transaction::Transaction;
-use crate::utils::{is_mapped, send_scale_transform};
+use crate::utils::{is_mapped, send_scale_transform, with_toplevel_role};
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped};
 
 impl CompositorHandler for State {
@@ -165,10 +165,17 @@ impl CompositorHandler for State {
                         })
                         .map(|(mapped, _)| mapped.window.clone());
 
+                    let foreign_toplevel_handle = with_toplevel_role(toplevel, |role| {
+                        self.niri.foreign_toplevel_list_state.new_toplevel::<State>(
+                            role.title.as_deref().unwrap_or(""),
+                            role.app_id.as_deref().unwrap_or(""),
+                        )
+                    });
+
                     // The mapped pre-commit hook deals with dma-bufs on its own.
                     self.remove_default_dmabuf_pre_commit_hook(toplevel.wl_surface());
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
-                    let mapped = Mapped::new(window, rules, hook);
+                    let mapped = Mapped::new(window, rules, hook, foreign_toplevel_handle);
                     let window = mapped.window.clone();
 
                     let target = if let Some(p) = &parent {
@@ -219,6 +226,7 @@ impl CompositorHandler for State {
             if let Some((mapped, output)) = self.niri.layout.find_window_and_output(surface) {
                 let window = mapped.window.clone();
                 let output = output.cloned();
+                let foreign_toplevel_handle = mapped.foreign_toplevel_handle().clone();
 
                 let id = mapped.id();
 
@@ -244,6 +252,10 @@ impl CompositorHandler for State {
                     // Test client: wleird-unmap.
                     let active_window = self.niri.layout.focus().map(|m| &m.window);
                     let was_active = active_window == Some(&window);
+
+                    self.niri
+                        .foreign_toplevel_list_state
+                        .remove_toplevel(&foreign_toplevel_handle);
 
                     self.niri
                         .stop_casts_for_target(CastTarget::Window { id: id.get() });
