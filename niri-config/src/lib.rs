@@ -213,6 +213,8 @@ pub struct Touchpad {
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
     pub scroll_button: Option<u32>,
+    #[knuffel(child)]
+    pub scroll_button_lock: bool,
     #[knuffel(child, unwrap(argument, str))]
     pub tap_button_map: Option<TapButtonMap>,
     #[knuffel(child)]
@@ -240,6 +242,8 @@ pub struct Mouse {
     #[knuffel(child, unwrap(argument))]
     pub scroll_button: Option<u32>,
     #[knuffel(child)]
+    pub scroll_button_lock: bool,
+    #[knuffel(child)]
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
@@ -262,6 +266,8 @@ pub struct Trackpoint {
     #[knuffel(child, unwrap(argument))]
     pub scroll_button: Option<u32>,
     #[knuffel(child)]
+    pub scroll_button_lock: bool,
+    #[knuffel(child)]
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
@@ -281,6 +287,8 @@ pub struct Trackball {
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
     pub scroll_button: Option<u32>,
+    #[knuffel(child)]
+    pub scroll_button_lock: bool,
     #[knuffel(child)]
     pub left_handed: bool,
     #[knuffel(child)]
@@ -3954,6 +3962,7 @@ mod tests {
                     accel-profile "flat"
                     scroll-method "two-finger"
                     scroll-button 272
+                    scroll-button-lock
                     tap-button-map "left-middle-right"
                     disabled-on-external-mouse
                     scroll-factor 0.9
@@ -3985,6 +3994,7 @@ mod tests {
                     accel-profile "flat"
                     scroll-method "edge"
                     scroll-button 275
+                    scroll-button-lock
                     left-handed
                     middle-emulation
                 }
@@ -4235,6 +4245,7 @@ mod tests {
                     scroll_button: Some(
                         272,
                     ),
+                    scroll_button_lock: true,
                     tap_button_map: Some(
                         LeftMiddleRight,
                     ),
@@ -4262,6 +4273,7 @@ mod tests {
                     scroll_button: Some(
                         273,
                     ),
+                    scroll_button_lock: false,
                     left_handed: false,
                     middle_emulation: true,
                     scroll_factor: Some(
@@ -4285,6 +4297,7 @@ mod tests {
                     scroll_button: Some(
                         274,
                     ),
+                    scroll_button_lock: false,
                     left_handed: false,
                     middle_emulation: false,
                 },
@@ -4303,6 +4316,7 @@ mod tests {
                     scroll_button: Some(
                         275,
                     ),
+                    scroll_button_lock: true,
                     left_handed: true,
                     middle_emulation: true,
                 },
