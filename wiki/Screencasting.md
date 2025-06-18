@@ -76,10 +76,10 @@ All dynamic casts share the same target, but new ones start out empty until the 
 
 <sup>Since: 25.02</sup>
 
-The [`is-window-cast-target=true` window rule](./Configuration:-Window-Rules.md#is-window-cast-target) matches windows targetted by an ongoing window screencast.
+The [`is-window-cast-target=true` window rule](./Configuration:-Window-Rules.md#is-window-cast-target) matches windows targeted by an ongoing window screencast.
 You use it with a special border color to clearly indicate screencasted windows.
 
-This also works for windows targetted by dynamic screencasts.
+This also works for windows targeted by dynamic screencasts.
 However, it will not work for windows that just happen to be visible in a full-monitor screencast.
 
 ```kdl

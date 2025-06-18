@@ -72,7 +72,7 @@ fn windowed_fullscreen() {
     );
 
     let mapped = f.niri().layout.windows().next().unwrap().1;
-    // Not commited yet.
+    // Not committed yet.
     assert!(mapped.is_windowed_fullscreen());
 
     // Commit in response.
