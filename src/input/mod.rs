@@ -4290,6 +4290,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
@@ -4298,6 +4303,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         }
 
@@ -4358,6 +4368,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
@@ -4366,6 +4381,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         }
     }
@@ -4395,6 +4415,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
@@ -4403,6 +4428,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         }
     }
@@ -4432,6 +4462,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
@@ -4440,6 +4475,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         }
     }
