@@ -1,20 +1,32 @@
 #!/usr/bin/env sh
 
+print() {
+    case $(basename $SHELL) in
+        fish|bash|zsh)
+            echo -e $@
+            ;;
+        *)
+            # Remove all \x1B escapes from the text.
+            echo $@ | sed 's@\\x1b\[[0-9;]*m@@gi';
+            ;;
+    esac
+}
+
 if ! [ -z $1 ]; then
     CODE=1
-    if [[ $1 = --* ]]; then
+    if case $1 in --*) true;; *) false;; esac; then
         if [ "$1" = "--help" ]; then
             CODE=0
         else
-            echo -e "\x1b[31;1mError: Unrecognized option $1"
+            print "\x1b[31;1mError: Unrecognized option $1"
         fi
     else
-        echo -e "\x1b[31;1mError: niri-session should be called with no arguments."
+        print "\x1b[31;1mError: niri-session should be called with no arguments."
     fi
 
-    echo -e "\n\x1b[0;1mUsage:\x1b[0m niri-session [--help]\n"
-    echo -e "Runs niri as a session on systemd or dinit. If using OpenRC, runit, or other init systems, run \x1b[1mniri --session\x1b[0m instead.\n"
-    echo -e "\x1b[1mOPTIONS\x1b[0m\n--help\t\tShows this help message\n"
+    print "\n\x1b[0;1mUsage:\x1b[0m niri-session [--help]\n"
+    print "Runs niri as a session on systemd or dinit. If using OpenRC, runit, or other init systems, run \x1b[1mniri --session\x1b[0m instead.\n"
+    print "\x1b[1mOPTIONS\x1b[0m\n--help\t\tShows this help message\n"
     exit $CODE
 fi
 
