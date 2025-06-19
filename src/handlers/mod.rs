@@ -76,8 +76,10 @@ use smithay::{
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
+use crate::layout::workspace::WorkspaceId;
 use crate::layout::ActivateWindow;
 use crate::niri::{DndIcon, NewClient, State};
+use crate::protocols::ext_workspace::{self, ExtWorkspaceHandler, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
 };
@@ -92,8 +94,9 @@ use crate::protocols::virtual_pointer::{
 };
 use crate::utils::{output_size, send_scale_transform, with_toplevel_role};
 use crate::{
-    delegate_foreign_toplevel, delegate_gamma_control, delegate_mutter_x11_interop,
-    delegate_output_management, delegate_screencopy, delegate_virtual_pointer,
+    delegate_ext_workspace, delegate_foreign_toplevel, delegate_gamma_control,
+    delegate_mutter_x11_interop, delegate_output_management, delegate_screencopy,
+    delegate_virtual_pointer,
 };
 
 pub const XDG_ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -414,6 +417,7 @@ delegate_ext_data_control!(State);
 impl OutputHandler for State {
     fn output_bound(&mut self, output: Output, wl_output: WlOutput) {
         foreign_toplevel::on_output_bound(self, &output, &wl_output);
+        ext_workspace::on_output_bound(self, &output, &wl_output);
     }
 }
 delegate_output!(State);
@@ -573,6 +577,42 @@ impl ForeignToplevelHandler for State {
     }
 }
 delegate_foreign_toplevel!(State);
+
+impl ExtWorkspaceHandler for State {
+    fn ext_workspace_manager_state(&mut self) -> &mut ExtWorkspaceManagerState {
+        &mut self.niri.ext_workspace_state
+    }
+
+    fn activate_workspace(&mut self, id: WorkspaceId) {
+        let reference = niri_config::WorkspaceReference::Id(id.get());
+        if let Some((mut output, index)) = self.niri.find_output_and_workspace_index(reference) {
+            if let Some(active) = self.niri.layout.active_output() {
+                if output.as_ref() == Some(active) {
+                    output = None;
+                }
+            }
+
+            if let Some(output) = output {
+                self.niri.layout.focus_output(&output);
+            }
+            self.niri.layout.switch_workspace(index);
+            // No mouse warp: assuming the layer-shell bar workspaces use-case.
+
+            // FIXME: granular
+            self.niri.queue_redraw_all();
+        }
+    }
+
+    fn assign_workspace(&mut self, ws_id: WorkspaceId, output: Output) {
+        let reference = niri_config::WorkspaceReference::Id(ws_id.get());
+        if let Some((old_output, old_idx)) = self.niri.find_output_and_workspace_index(reference) {
+            self.niri
+                .layout
+                .move_workspace_to_output_by_id(old_idx, old_output, output);
+        }
+    }
+}
+delegate_ext_workspace!(State);
 
 impl ScreencopyHandler for State {
     fn frame(&mut self, manager: &ZwlrScreencopyManagerV1, screencopy: Screencopy) {
