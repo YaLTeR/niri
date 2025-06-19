@@ -600,15 +600,17 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn move_down_or_to_workspace_down(&mut self) {
-        if !self.active_workspace().move_down() {
-            self.move_to_workspace_down();
-        }
+		if !self.active_workspace().move_down() {
+			// FIXME: (gibberish) im not sure what to do here, is this important? keeping it as Yes by default for now
+			self.move_to_workspace_down(ActivateWindow::Yes);
+		}
     }
 
     pub fn move_up_or_to_workspace_up(&mut self) {
-        if !self.active_workspace().move_up() {
-            self.move_to_workspace_up();
-        }
+		if !self.active_workspace().move_up() {
+			// FIXME: (gibberish) im not sure what to do here, is this important? keeping it as Yes by default for now
+			self.move_to_workspace_up(ActivateWindow::Yes);
+		}
     }
 
     pub fn focus_window_or_workspace_down(&mut self) {
@@ -623,7 +625,10 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn move_to_workspace_up(&mut self) {
+    pub fn move_to_workspace_up(
+    	&mut self,
+    	activate: ActivateWindow,
+	) {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = source_workspace_idx.saturating_sub(1);
@@ -643,7 +648,7 @@ impl<W: LayoutElement> Monitor<W> {
                 id: new_id,
                 column_idx: None,
             },
-            ActivateWindow::Yes,
+            activate,
             true,
             removed.width,
             removed.is_full_width,
@@ -651,7 +656,10 @@ impl<W: LayoutElement> Monitor<W> {
         );
     }
 
-    pub fn move_to_workspace_down(&mut self) {
+    pub fn move_to_workspace_down(
+    	&mut self,
+    	activate: ActivateWindow,
+	) {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
@@ -671,7 +679,7 @@ impl<W: LayoutElement> Monitor<W> {
                 id: new_id,
                 column_idx: None,
             },
-            ActivateWindow::Yes,
+            activate,
             true,
             removed.width,
             removed.is_full_width,
@@ -748,7 +756,9 @@ impl<W: LayoutElement> Monitor<W> {
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         if workspace.floating_is_active() {
-            self.move_to_workspace_up();
+            self.move_to_workspace_up(
+				if activate { ActivateWindow::Yes } else { ActivateWindow::No }
+			);
             return;
         }
 
@@ -769,7 +779,9 @@ impl<W: LayoutElement> Monitor<W> {
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         if workspace.floating_is_active() {
-            self.move_to_workspace_down();
+            self.move_to_workspace_down(
+            	if activate { ActivateWindow::Yes } else { ActivateWindow::No }
+            );
             return;
         }
 
@@ -790,7 +802,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         if workspace.floating_is_active() {
-            self.move_to_workspace(None, idx, ActivateWindow::Smart);
+            self.move_to_workspace(
+            	None,
+            	idx,
+            	if activate { ActivateWindow::Smart } else { ActivateWindow::No }
+            );
             return;
         }
 
