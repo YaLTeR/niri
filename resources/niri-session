@@ -1,4 +1,23 @@
-#!/bin/sh
+#!/usr/bin/env sh
+
+if ! [ -z $1 ]; then
+    CODE=1
+    if [[ $1 = --* ]]; then
+        if [ "$1" = "--help" ]; then
+            CODE=0
+        else
+            echo -e "\x1b[31;1mError: Unrecognized option $1"
+        fi
+    else
+        echo -e "\x1b[31;1mError: niri-session should be called with no arguments."
+    fi
+
+    echo -e "\n\x1b[0;1mUsage:\x1b[0m niri-session [--help]\n"
+    echo -e "Runs niri as a session on systemd or dinit. On systems using OpenRC, runit, and other init systems,\
+the command \x1b[1mniri --session\x1b[0m should be used instead.\n"
+    echo -e "\x1b[1mOPTIONS\x1b[0m\n--help\t\tShows this help message\n"
+    exit $CODE
+fi
 
 if [ -n "$SHELL" ] &&
    grep -q "$SHELL" /etc/shells &&
