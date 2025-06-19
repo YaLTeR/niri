@@ -174,7 +174,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create the compositor.
     let mut event_loop = EventLoop::try_new().unwrap();
-    let display = Display::new().unwrap();
+    let mut display = Display::new().unwrap();
+    display.backend().set_max_buffer_size(1024 * 1024);
     let mut state = State::new(
         config,
         event_loop.handle(),
