@@ -95,8 +95,8 @@ pub struct Input {
     pub trackball: Trackball,
     #[knuffel(child, default)]
     pub tablet: Tablet,
-    #[knuffel(child, default)]
-    pub touch: Touch,
+    #[knuffel(children(name = "touch"), default)]
+    pub touch_screens: TouchScreens,
     #[knuffel(child)]
     pub disable_power_key_handling: bool,
     #[knuffel(child)]
@@ -371,12 +371,38 @@ pub struct Tablet {
     pub left_handed: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
+pub struct TouchScreens(pub Vec<Touch>);
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct Touch {
+    #[knuffel(argument)]
+    pub name: Option<String>,
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
+}
+
+impl FromIterator<Touch> for TouchScreens {
+    fn from_iter<T: IntoIterator<Item = Touch>>(iter: T) -> Self {
+        Self(Vec::from_iter(iter))
+    }
+}
+
+impl TouchScreens {
+    pub fn find(&self, name: &str) -> Option<&Touch> {
+        if let Some(touch) = self.0.iter().find(|touch| {
+            touch
+                .name
+                .as_ref()
+                .is_some_and(|n| n.eq_ignore_ascii_case(name))
+        }) {
+            Some(touch)
+        } else {
+            self.0.iter().find(|touch| touch.name.is_none())
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -4009,6 +4035,10 @@ mod tests {
                     map-to-output "eDP-1"
                 }
 
+                touch "ELAN9009:00 04F3:2F2A" {
+                    map-to-output "DP-1"
+                }
+
                 disable-power-key-handling
 
                 warp-mouse-to-focus
@@ -4337,12 +4367,26 @@ mod tests {
                     ),
                     left_handed: false,
                 },
-                touch: Touch {
-                    off: false,
-                    map_to_output: Some(
-                        "eDP-1",
-                    ),
-                },
+                touch_screens: TouchScreens(
+                    [
+                        Touch {
+                            name: None,
+                            off: false,
+                            map_to_output: Some(
+                                "eDP-1",
+                            ),
+                        },
+                        Touch {
+                            name: Some(
+                                "ELAN9009:00 04F3:2F2A",
+                            ),
+                            off: false,
+                            map_to_output: Some(
+                                "DP-1",
+                            ),
+                        },
+                    ],
+                ),
                 disable_power_key_handling: true,
                 warp_mouse_to_focus: Some(
                     WarpMouseToFocus {
