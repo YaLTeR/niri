@@ -13,8 +13,7 @@ if ! [ -z $1 ]; then
     fi
 
     echo -e "\n\x1b[0;1mUsage:\x1b[0m niri-session [--help]\n"
-    echo -e "Runs niri as a session on systemd or dinit. On systems using OpenRC, runit, and other init systems,\
-the command \x1b[1mniri --session\x1b[0m should be used instead.\n"
+    echo -e "Runs niri as a session on systemd or dinit. If using OpenRC, runit, or other init systems, run \x1b[1mniri --session\x1b[0m instead.\n"
     echo -e "\x1b[1mOPTIONS\x1b[0m\n--help\t\tShows this help message\n"
     exit $CODE
 fi
