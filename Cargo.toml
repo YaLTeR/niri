@@ -23,7 +23,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 tracing = { version = "0.1.41", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-tracy-client = { version = "0.18.0", default-features = false }
+tracy-client = { version = "0.18.1", default-features = false }
 
 [workspace.dependencies.smithay]
 # version = "0.4.1"
@@ -65,10 +65,10 @@ drm-ffi = "0.9.0"
 fastrand = "2.3.0"
 futures-util = { version = "0.3.31", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
-glam = "0.30.3"
+glam = "0.30.4"
 input = { version = "0.9.1", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.172"
+libc = "0.2.173"
 libdisplay-info = "0.2.2"
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "25.5.1", path = "niri-config" }
