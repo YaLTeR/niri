@@ -99,6 +99,7 @@ input {
     // disable-power-key-handling
     // warp-mouse-to-focus
     // focus-follows-mouse max-scroll-amount="0%"
+    // disable-moving-view-when-focus-clicked
     // workspace-auto-back-and-forth
 
     // mod-key "Super"
@@ -315,6 +316,12 @@ input {
     focus-follows-mouse max-scroll-amount="0%"
 }
 ```
+
+#### `disable-moving-view-when-focus-clicked`
+
+By default, niri will move the view in order to fit the focused window under any circumstances.
+This option allows to disable moving the view only when the user clicks a window. The window will be focused but the view will not change.
+Any other way that focuses a window (e.g. bindings, moving or resizing) is not affected by this option.
 
 #### `workspace-auto-back-and-forth`
 

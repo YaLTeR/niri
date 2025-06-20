@@ -761,6 +761,28 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
+    fn activate_column_without_moving_view(&mut self, idx: usize) {
+        if self.active_column_idx == idx
+            // During a DnD scroll, animate even when activating the same window, for DnD hold.
+            && (self.columns.is_empty() || !self.view_offset.is_dnd_scroll())
+        {
+            return;
+        }
+
+        let new_col_x = self.column_x(idx);
+        let cur_x = self.target_view_pos() + self.working_area.loc.x;
+        self.view_offset = ViewOffset::Static(-(new_col_x - cur_x) - self.working_area.loc.x);
+
+        if self.active_column_idx != idx {
+            self.active_column_idx = idx;
+
+            // A different column was activated; reset the flag.
+            self.activate_prev_column_on_removal = None;
+            self.view_offset_before_fullscreen = None;
+            self.interactive_resize = None;
+        }
+    }
+
     pub(super) fn insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
         if self.columns.is_empty() {
             return InsertPosition::NewColumn(0);
@@ -1307,9 +1329,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 None
             };
 
-            // We might need to move the view to ensure the resized window is still visible. But
-            // only do it when the view isn't frozen by an interactive resize or a view gesture.
-            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
+            // We might need to move the view to ensure the resized window is still visible.
+            // Don't do it when the width hasn't changed, only do it when the view isn't frozen
+            // by an interactive resize or a view gesture.
+            if prev_width != self.data[col_idx].width && self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
                 // Restore the view offset upon unfullscreening if needed.
                 if let Some(prev_offset) = unfullscreen_offset {
                     self.animate_view_offset(col_idx, prev_offset);
@@ -1364,6 +1387,19 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         column.activate_window(window);
         self.activate_column(column_idx);
+
+        true
+    }
+
+    pub fn activate_window_without_moving_view(&mut self, window: &W::Id) -> bool {
+        let column_idx = self.columns.iter().position(|col| col.contains(window));
+        let Some(column_idx) = column_idx else {
+            return false;
+        };
+        let column = &mut self.columns[column_idx];
+
+        column.activate_window(window);
+        self.activate_column_without_moving_view(column_idx);
 
         true
     }

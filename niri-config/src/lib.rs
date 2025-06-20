@@ -104,6 +104,8 @@ pub struct Input {
     #[knuffel(child)]
     pub focus_follows_mouse: Option<FocusFollowsMouse>,
     #[knuffel(child)]
+    pub disable_moving_view_when_focus_clicked: bool,
+    #[knuffel(child)]
     pub workspace_auto_back_and_forth: bool,
     #[knuffel(child, unwrap(argument, str))]
     pub mod_key: Option<ModKey>,
@@ -4014,6 +4016,7 @@ mod tests {
                 warp-mouse-to-focus
                 focus-follows-mouse
                 workspace-auto-back-and-forth
+                disable-moving-view-when-focus-clicked
 
                 mod-key "Mod5"
                 mod-key-nested "Super"
@@ -4354,6 +4357,7 @@ mod tests {
                         max_scroll_amount: None,
                     },
                 ),
+                disable_moving_view_when_focus_clicked: true,
                 workspace_auto_back_and_forth: true,
                 mod_key: Some(
                     IsoLevel3Shift,

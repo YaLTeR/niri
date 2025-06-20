@@ -1631,6 +1631,19 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn activate_window_without_moving_view(&mut self, window: &W::Id) -> bool {
+        // The view stays the same in activate_window when floating
+        if self.floating.activate_window(window) {
+            self.floating_is_active = FloatingActive::Yes;
+            true
+        } else if self.scrolling.activate_window_without_moving_view(window) {
+            self.floating_is_active = FloatingActive::No;
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn activate_window_without_raising(&mut self, window: &W::Id) -> bool {
         if self.floating.activate_window_without_raising(window) {
             self.floating_is_active = FloatingActive::Yes;
