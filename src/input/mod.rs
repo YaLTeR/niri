@@ -2641,7 +2641,11 @@ impl State {
                 }
 
                 if !is_overview_open {
-                    self.niri.layout.activate_window(&window);
+                    if !self.niri.config.borrow().input.disable_moving_view_when_focus_clicked {
+                        self.niri.layout.activate_window(&window);
+                    } else {
+                        self.niri.layout.activate_window_without_moving_view(&window);
+                    }
                 }
 
                 // FIXME: granular.
