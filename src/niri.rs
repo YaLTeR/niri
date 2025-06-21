@@ -3996,6 +3996,7 @@ impl Niri {
         self.layout.advance_animations();
         self.config_error_notification.advance_animations();
         self.screenshot_ui.advance_animations();
+        self.window_mru_ui.advance_animations();
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
@@ -4028,6 +4029,10 @@ impl Niri {
                     };
 
                     mapped.update_render_elements(geo.size.to_f64());
+                }
+
+                if self.window_mru_ui.is_open() && Some(out) == self.layout.active_output() {
+                    self.window_mru_ui.update_render_elements(out);
                 }
             }
         }
@@ -4156,7 +4161,7 @@ impl Niri {
         if self.window_mru_ui.is_open() && Some(output) == self.layout.active_output() {
             elements.extend(
                 self.window_mru_ui
-                    .render_output(self, output, target, renderer.as_gles_renderer())
+                    .render_output(self, output, renderer.as_gles_renderer())
                     .into_iter()
                     .map(OutputRenderElements::from),
             )
@@ -4357,6 +4362,7 @@ impl Niri {
             state.unfinished_animations_remain |=
                 self.config_error_notification.are_animations_ongoing();
             state.unfinished_animations_remain |= self.screenshot_ui.are_animations_ongoing();
+            state.unfinished_animations_remain |= self.window_mru_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= state.screen_transition.is_some();
 
             // Also keep redrawing if the current cursor is animated.

@@ -617,7 +617,7 @@ impl HitType {
 }
 
 impl Options {
-    fn from_config(config: &Config) -> Self {
+    pub(crate) fn from_config(config: &Config) -> Self {
         let layout = &config.layout;
 
         let preset_column_widths = if layout.preset_column_widths.is_empty() {

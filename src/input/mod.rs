@@ -2,6 +2,7 @@ use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
+use std::rc::Rc;
 use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
@@ -43,7 +44,7 @@ use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
 use crate::layout::scrolling::ScrollDirection;
-use crate::layout::{ActivateWindow, LayoutElement as _};
+use crate::layout::{ActivateWindow, LayoutElement as _, Options};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::ui::window_mru_ui::{WindowMru, MRU_UI_BINDINGS, MRU_UI_TRANSITION_DELAY};
@@ -2108,7 +2109,11 @@ impl State {
                     self.niri.mru_commit();
                     let config = self.niri.config.borrow();
                     let wmru = WindowMru::new(&self.niri, dir, scope, filter);
-                    self.niri.window_mru_ui.open(&config, wmru);
+                    self.niri.window_mru_ui.open(
+                        Rc::new(Options::from_config(&config)),
+                        self.niri.clock.clone(),
+                        wmru,
+                    );
                 }
                 // FIXME: granular
                 self.niri.queue_redraw_all();
