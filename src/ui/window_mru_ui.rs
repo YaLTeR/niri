@@ -4,11 +4,11 @@ Todo:
 - Add test cases
 - Animations
   x navigation scrolling
-  - thumbnails appearing/disappearing
+  ~ thumbnails appearing/disappearing
   - reorganization on scope/filter change
-  - animate transition selected thumbnail to the focused window
+  - animate transition from selecting a thumbnail to the focused window
   - Transition when wrapping around during Mru navigation(?)
-  - open/close animation
+  - UI open/close animation
 - shortcut to "summon" a window to the current workspace
 - support clicking on the target thumbnail
 x add title of the current Mru selection under the thumbnail
@@ -88,6 +88,8 @@ struct Thumbnail {
     timestamp: Option<Instant>,
     offset: f64,
     size: Size<f64, Logical>,
+    clock: Clock,
+    move_animation: Option<MoveAnimation>,
 }
 
 impl Thumbnail {
@@ -139,6 +141,30 @@ impl Thumbnail {
         );
         Some(thumb_elem).into_iter().chain(rv)
     }
+
+    /// Animate thumbnail motion from given location.
+    fn animate_move_from_with_config(&mut self, from: f64, config: niri_config::Animation) {
+        let current_offset = self.render_offset();
+
+        // Preserve the previous config if ongoing.
+        let anim = self.move_animation.take().map(|ma| ma.anim);
+        let anim = anim
+            .map(|anim| anim.restarted(1., 0., 0.))
+            .unwrap_or_else(|| Animation::new(self.clock.clone(), 1., 0., 0., config));
+
+        self.move_animation = Some(MoveAnimation {
+            anim,
+            from: from + current_offset,
+        });
+    }
+
+    /// Thumbnail offset in the MRU UI view adjusted for animation.
+    fn render_offset(&self) -> f64 {
+        self.move_animation
+            .as_ref()
+            .map(|ma| ma.from * ma.anim.value())
+            .unwrap_or_default()
+    }
 }
 
 /// Window MRU traversal context.
@@ -166,6 +192,7 @@ impl WindowMru {
         direction: MruDirection,
         scope: Option<MruScope>,
         filter: Option<MruFilter>,
+        clock: Clock,
     ) -> Self {
         let scope = scope.unwrap_or_default();
         let filter = filter.unwrap_or_default();
@@ -187,6 +214,8 @@ impl WindowMru {
                 timestamp: w.get_focus_timestamp(),
                 offset: 0.,
                 size: w.window.geometry().to_f64().downscale(THUMBNAIL_SCALE).size,
+                clock: clock.clone(),
+                move_animation: None,
             })
             .collect();
         thumbnails.sort_by(
@@ -250,7 +279,7 @@ impl WindowMru {
         self.current = self
             .current
             .checked_sub(1)
-            .unwrap_or(self.thumbnails.len() - 1)
+            .unwrap_or(self.thumbnails.len().saturating_sub(1))
     }
 
     fn get_id(&self, index: usize) -> MappedId {
@@ -297,6 +326,10 @@ pub struct Inner {
 
     /// Animation of the view offset while traversing the MRU list
     move_animation: Option<MoveAnimation>,
+
+    /// Thumbnails linked to windows that were just closed, or to windows
+    /// that no longer match the current MRU filter or scope.
+    closing_thumbnails: Vec<ClosingThumbnail>,
 
     /// Configurable properties of the layout.
     options: Rc<Options>,
@@ -398,6 +431,7 @@ impl WindowMruUi {
             focus_ring: FocusRing::new(options.focus_ring),
             options,
             view_offset: None,
+            closing_thumbnails: vec![],
             move_animation: None,
             clock,
         }));
@@ -433,7 +467,13 @@ impl WindowMruUi {
         if scope.is_some_and(|s| s != inner.wmru.scope)
             || filter.is_some_and(|f| f != inner.wmru.filter)
         {
-            Some(WindowMru::new(niri, inner.wmru.direction, scope, filter))
+            Some(WindowMru::new(
+                niri,
+                inner.wmru.direction,
+                scope,
+                filter,
+                inner.clock.clone(),
+            ))
         } else {
             None
         }
@@ -536,11 +576,34 @@ impl WindowMruUi {
         };
         let wmru = &mut inner.wmru;
         if let Some(idx) = wmru.thumbnails.iter().position(|t| t.id == id) {
-            wmru.thumbnails.remove(idx);
+            // Remove the thumbnail and the cached texture.
+            let thumb = wmru.thumbnails.remove(idx);
             if wmru.current >= wmru.thumbnails.len() {
                 wmru.current = wmru.current.saturating_sub(1);
             }
-            inner.textures.borrow_mut().0.remove(idx);
+            // Update the offset of all thumbnails that follow the removed
+            // thumbnail.
+            wmru.thumbnails.iter_mut().skip(idx).for_each(|t| {
+                let offset_delta = thumb.size.w + SPACING;
+                t.animate_move_from_with_config(
+                    offset_delta,
+                    inner.options.animations.window_movement.0,
+                );
+                t.offset -= offset_delta;
+            });
+            // If there is a cached texture, the thumbnail may be visible
+            // so schedule a closing animation.
+            if let Some(texture) = inner.textures.borrow_mut().0.remove(idx).thumbnail.take() {
+                let anim = Animation::new(
+                    inner.clock.clone(),
+                    0.,
+                    1.,
+                    0.,
+                    inner.options.animations.window_close.anim,
+                );
+                let closing = ClosingThumbnail::new(thumb, texture, anim);
+                inner.closing_thumbnails.push(closing);
+            }
         }
     }
 
@@ -635,6 +698,23 @@ impl WindowMruUi {
             .unwrap_or(0.)
             + view_offset;
 
+        // As with tiles, render thumbnails for closing windows on top of
+        // others.
+        for closing in inner.closing_thumbnails.iter().rev() {
+            if closing.offset + closing.size.w >= view_offset {
+                if closing.offset <= view_offset + output_size.w {
+                    let loc = Point::from((
+                        closing.offset - view_offset,
+                        (output_size.h - closing.texture.logical_size().h) / 2.,
+                    ));
+                    let elem = closing.render(loc);
+                    rv.push(elem.into());
+                } else {
+                    break;
+                }
+            }
+        }
+
         // Add all visible thumbnails
         let wmru = &inner.wmru;
         for (i, t) in wmru.thumbnails.iter().enumerate() {
@@ -659,7 +739,7 @@ impl WindowMruUi {
                             })
                             .flatten();
                         let loc = Point::from((
-                            t.offset - view_offset,
+                            t.offset + t.render_offset() - view_offset,
                             (output_size.h - thumb_texture.logical_size().h) / 2.,
                         ));
                         rv.extend(t.render(
@@ -697,7 +777,7 @@ impl WindowMruUi {
         let Self::Open(inner) = self else {
             return false;
         };
-        inner.move_animation.is_some()
+        inner.move_animation.is_some() || !inner.closing_thumbnails.is_empty()
     }
 
     pub fn advance_animations(&mut self) {
@@ -705,6 +785,9 @@ impl WindowMruUi {
             return;
         };
         inner.move_animation.take_if(|ma| ma.anim.is_done());
+        inner
+            .closing_thumbnails
+            .retain_mut(|closing| closing.are_animations_ongoing());
     }
 }
 
@@ -735,7 +818,7 @@ impl Inner {
 
     // Adapted from tile.rs.
     pub fn render_offset(&self) -> Point<f64, Logical> {
-        let mut offset = Point::from((0., 0.));
+        let mut offset = Point::default();
 
         if let Some(ref ma) = self.move_animation {
             offset.x += ma.from * ma.anim.value();
@@ -925,6 +1008,47 @@ fn generate_title_texture(
         Vec::new(),
     )?;
     Ok(buffer)
+}
+
+/// A visible Thumbnail that is in the process of being dismissed.
+/// This can happen if the corresponding window was closed or if the
+/// window ceases to match the current MRU filter or scope.
+struct ClosingThumbnail {
+    texture: MruTexture,
+    size: Size<f64, Logical>,
+    offset: f64,
+    anim: Animation,
+}
+
+impl ClosingThumbnail {
+    fn new(thumb: Thumbnail, texture: MruTexture, anim: Animation) -> Self {
+        Self {
+            texture,
+            offset: thumb.offset,
+            size: thumb.size,
+            anim,
+        }
+    }
+
+    pub fn render(&self, location: Point<f64, Logical>) -> PrimaryGpuTextureRenderElement {
+        let bb = BakedBuffer {
+            buffer: self.texture.clone(),
+            location: Point::default(),
+            src: None,
+            dst: None,
+        };
+
+        bb.to_render_element(
+            location,
+            Scale::from(1.0),
+            (1. - self.anim.value()) as f32,
+            Kind::Unspecified,
+        )
+    }
+
+    fn are_animations_ongoing(&self) -> bool {
+        !self.anim.is_done()
+    }
 }
 
 /// Key bindings available when the MRU UI is open.
