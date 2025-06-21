@@ -127,7 +127,7 @@ use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
-    mods_with_wheel_binds, TabletData,
+    mods_with_wheel_binds, TabletData, TouchData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -249,7 +249,7 @@ pub struct Niri {
 
     pub devices: HashSet<input::Device>,
     pub tablets: HashMap<input::Device, TabletData>,
-    pub touch: HashSet<input::Device>,
+    pub touch: HashMap<input::Device, TouchData>,
 
     // Smithay state.
     pub compositor_state: CompositorState,
@@ -2510,7 +2510,7 @@ impl Niri {
 
             devices: HashSet::new(),
             tablets: HashMap::new(),
-            touch: HashSet::new(),
+            touch: HashMap::new(),
 
             compositor_state,
             xdg_shell_state,
@@ -3533,15 +3533,23 @@ impl Niri {
         Some((target_output.cloned(), target_workspace_index))
     }
 
-    pub fn output_for_tablet(&self) -> Option<&Output> {
+    pub fn output_for_tablet(&self, name: &str) -> Option<&Output> {
         let config = self.config.borrow();
-        let map_to_output = config.input.tablet.map_to_output.as_ref();
+        let map_to_output = config
+            .input
+            .tablets
+            .find(name)
+            .and_then(|tablet| tablet.map_to_output.as_ref());
         map_to_output.and_then(|name| self.output_by_name_match(name))
     }
 
-    pub fn output_for_touch(&self) -> Option<&Output> {
+    pub fn output_for_touch(&self, name: &str) -> Option<&Output> {
         let config = self.config.borrow();
-        let map_to_output = config.input.touch.map_to_output.as_ref();
+        let map_to_output = config
+            .input
+            .touch_screens
+            .find(name)
+            .and_then(|touch| touch.map_to_output.as_ref());
         map_to_output
             .and_then(|name| self.output_by_name_match(name))
             .or_else(|| self.global_space.outputs().next())
