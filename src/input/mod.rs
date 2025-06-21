@@ -70,6 +70,11 @@ pub struct TabletData {
     pub aspect_ratio: f64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct TouchData {
+    pub name: String,
+}
+
 pub enum PointerOrTouchStartData<D: SeatHandler> {
     Pointer(PointerGrabStartData<D>),
     Touch(TouchGrabStartData<D>),
@@ -200,7 +205,9 @@ impl State {
                 }
 
                 if device.has_capability(input::DeviceCapability::Touch) {
-                    self.niri.touch.insert(device.clone());
+                    let name = device.name().to_string();
+                    let data = TouchData { name };
+                    self.niri.touch.insert(device.clone(), data);
                 }
 
                 apply_libinput_settings(&self.niri.config.borrow().input, device);
@@ -3654,11 +3661,23 @@ impl State {
     fn compute_touch_location<I: InputBackend>(
         &self,
         evt: &impl AbsolutePositionEvent<I>,
-    ) -> Option<Point<f64, Logical>> {
-        self.compute_absolute_location(evt, self.niri.output_for_touch(&evt.device().name()))
+    ) -> Option<Point<f64, Logical>>
+    where
+        I::Device: 'static,
+    {
+        let data = (&evt.device() as &dyn Any)
+            .downcast_ref::<input::Device>()
+            .and_then(|device| self.niri.tablets.get(device));
+        self.compute_absolute_location(
+            evt,
+            data.and_then(|data| self.niri.output_for_touch(&data.name)),
+        )
     }
 
-    fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent) {
+    fn on_touch_down<I: InputBackend>(&mut self, evt: I::TouchDownEvent)
+    where
+        I::Device: 'static,
+    {
         let Some(handle) = self.niri.seat.get_touch() else {
             return;
         };
@@ -3806,7 +3825,10 @@ impl State {
             },
         )
     }
-    fn on_touch_motion<I: InputBackend>(&mut self, evt: I::TouchMotionEvent) {
+    fn on_touch_motion<I: InputBackend>(&mut self, evt: I::TouchMotionEvent)
+    where
+        I::Device: 'static,
+    {
         let Some(handle) = self.niri.seat.get_touch() else {
             return;
         };

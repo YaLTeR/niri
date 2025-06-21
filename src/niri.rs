@@ -127,7 +127,7 @@ use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
     apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
-    mods_with_wheel_binds, TabletData,
+    mods_with_wheel_binds, TabletData, TouchData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -249,7 +249,7 @@ pub struct Niri {
 
     pub devices: HashSet<input::Device>,
     pub tablets: HashMap<input::Device, TabletData>,
-    pub touch: HashSet<input::Device>,
+    pub touch: HashMap<input::Device, TouchData>,
 
     // Smithay state.
     pub compositor_state: CompositorState,
@@ -2510,7 +2510,7 @@ impl Niri {
 
             devices: HashSet::new(),
             tablets: HashMap::new(),
-            touch: HashSet::new(),
+            touch: HashMap::new(),
 
             compositor_state,
             xdg_shell_state,
