@@ -233,12 +233,16 @@ pub struct FocusRing {
     pub inactive_color: Color,
     #[knuffel(child, default = Self::default().urgent_color)]
     pub urgent_color: Color,
+    #[knuffel(child, default = Self::default().view_lock_color)]
+    pub view_lock_color: Color,
     #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub urgent_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub view_lock_gradient: Option<Gradient>,
 }
 
 impl Default for FocusRing {
@@ -249,9 +253,11 @@ impl Default for FocusRing {
             active_color: Color::from_rgba8_unpremul(127, 200, 255, 255),
             inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
             urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
+            view_lock_color: Color::from_rgba8_unpremul(255, 255, 127, 255),
             active_gradient: None,
             inactive_gradient: None,
             urgent_gradient: None,
+            view_lock_gradient: None,
         }
     }
 }
@@ -268,12 +274,16 @@ pub struct Border {
     pub inactive_color: Color,
     #[knuffel(child, default = Self::default().urgent_color)]
     pub urgent_color: Color,
+    #[knuffel(child, default = Self::default().view_lock_color)]
+    pub view_lock_color: Color,
     #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub urgent_gradient: Option<Gradient>,
+    #[knuffel(child)]
+    pub view_lock_gradient: Option<Gradient>,
 }
 
 impl Default for Border {
@@ -284,9 +294,11 @@ impl Default for Border {
             active_color: Color::from_rgba8_unpremul(255, 200, 127, 255),
             inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
             urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
+            view_lock_color: Color::from_rgba8_unpremul(255, 255, 127, 255),
             active_gradient: None,
             inactive_gradient: None,
             urgent_gradient: None,
+            view_lock_gradient: None,
         }
     }
 }
@@ -299,9 +311,11 @@ impl From<Border> for FocusRing {
             active_color: value.active_color,
             inactive_color: value.inactive_color,
             urgent_color: value.urgent_color,
+            view_lock_color: value.view_lock_color,
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
             urgent_gradient: value.urgent_gradient,
+            view_lock_gradient: value.view_lock_gradient,
         }
     }
 }
@@ -314,9 +328,11 @@ impl From<FocusRing> for Border {
             active_color: value.active_color,
             inactive_color: value.inactive_color,
             urgent_color: value.urgent_color,
+            view_lock_color: value.view_lock_color,
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
             urgent_gradient: value.urgent_gradient,
+            view_lock_gradient: value.view_lock_gradient,
         }
     }
 }
