@@ -226,7 +226,7 @@ pub fn render_and_download(
 
     let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
     // FIXME: would be nice to avoid binding the second time here (after render_to_texture()), but
-    // borrowing makes this invonvenient.
+    // borrowing makes this inconvenient.
     let target = renderer
         .bind(&mut texture)
         .context("error binding texture")?;

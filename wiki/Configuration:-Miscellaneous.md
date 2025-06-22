@@ -36,12 +36,18 @@ overview {
     }
 }
 
+xwayland-satellite {
+    // off
+    path "xwayland-satellite"
+}
+
 clipboard {
     disable-primary
 }
 
 hotkey-overlay {
     skip-at-startup
+    hide-not-bound
 }
 ```
 
@@ -206,6 +212,28 @@ overview {
 }
 ```
 
+### `xwayland-satellite`
+
+<sup>Since: next release</sup>
+
+Settings for integration with [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite).
+
+When a recent enough xwayland-satellite is detected, niri will create the X11 sockets and set `DISPLAY`, then automatically spawn `xwayland-satellite` when an X11 client tries to connect.
+If Xwayland dies, niri will keep watching the X11 socket and restart `xwayland-satellite` as needed.
+This is very similar to how built-in Xwayland works in other compositors.
+
+`off` disables the integration: niri won't create an X11 socket and won't set the `DISPLAY` environment variable.
+
+`path` sets the path to the `xwayland-satellite` binary.
+By default, it's just `xwayland-satellite`, so it's looked up like any other non-absolute program name.
+
+```kdl
+// Use a custom build of xwayland-satellite.
+xwayland-satellite {
+    path "~/source/rs/xwayland-satellite/target/release/xwayland-satellite"
+}
+```
+
 ### `clipboard`
 
 <sup>Since: 25.02</sup>
@@ -225,11 +253,26 @@ clipboard {
 
 Settings for the "Important Hotkeys" overlay.
 
+#### `skip-at-startup`
+
 Set the `skip-at-startup` flag if you don't want to see the hotkey help at niri startup.
 
 ```kdl
 hotkey-overlay {
     skip-at-startup
+}
+```
+
+#### `hide-not-bound`
+
+<sup>Since: next release</sup>
+
+By default, niri will show the most important actions even if they aren't bound to any key, to prevent confusion.
+Set the `hide-not-bound` flag if you want to hide all actions not bound to any key.
+
+```kdl
+hotkey-overlay {
+    hide-not-bound
 }
 ```
 
