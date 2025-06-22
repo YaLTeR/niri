@@ -65,14 +65,13 @@ use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TabletData {
+pub struct DeviceData {
     pub name: String,
-    pub aspect_ratio: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TouchData {
-    pub name: String,
+pub struct TabletData {
+    pub aspect_ratio: f64,
 }
 
 pub enum PointerOrTouchStartData<D: SeatHandler> {
@@ -177,14 +176,15 @@ impl State {
 
         match event {
             InputEvent::DeviceAdded { device } => {
-                self.niri.devices.insert(device.clone());
+                let name = device.name().to_string();
+                let data = DeviceData { name };
+                self.niri.devices.insert(device.clone(), data);
 
                 if device.has_capability(input::DeviceCapability::TabletTool) {
                     match device.size() {
                         Some((w, h)) => {
-                            let name = device.name().to_string();
                             let aspect_ratio = w / h;
-                            let data = TabletData { name, aspect_ratio };
+                            let data = TabletData { aspect_ratio };
                             self.niri.tablets.insert(device.clone(), data);
                         }
                         None => {
@@ -205,9 +205,7 @@ impl State {
                 }
 
                 if device.has_capability(input::DeviceCapability::Touch) {
-                    let name = device.name().to_string();
-                    let data = TouchData { name };
-                    self.niri.touch.insert(device.clone(), data);
+                    self.niri.touch.insert(device.clone());
                 }
 
                 apply_libinput_settings(&self.niri.config.borrow().input, device);
@@ -278,13 +276,14 @@ impl State {
         let device_output = device.output(self);
         let device_output = device_output.as_ref();
 
-        let data = (&device as &dyn Any)
-            .downcast_ref::<input::Device>()
-            .and_then(|device| self.niri.tablets.get(device));
+        let device = (&device as &dyn Any).downcast_ref::<input::Device>();
 
         let (target_geo, keep_ratio, px, transform) = if let Some(output) =
-            device_output.or_else(|| data.and_then(|data| self.niri.output_for_tablet(&data.name)))
-        {
+            device_output.or_else(|| {
+                device
+                    .and_then(|device| self.niri.devices.get(device))
+                    .and_then(|data| self.niri.output_for_tablet(&data.name))
+            }) {
             (
                 self.niri.global_space.output_geometry(output).unwrap(),
                 true,
@@ -312,16 +311,18 @@ impl State {
             pos.x /= target_geo.size.w as f64;
             pos.y /= target_geo.size.h as f64;
 
-            if let Some(data) = data {
-                // This code does the same thing as mutter with "keep aspect ratio" enabled.
-                let size = transform.invert().transform_size(target_geo.size);
-                let output_aspect_ratio = size.w as f64 / size.h as f64;
-                let ratio = data.aspect_ratio / output_aspect_ratio;
+            if let Some(device) = device {
+                if let Some(data) = self.niri.tablets.get(device) {
+                    // This code does the same thing as mutter with "keep aspect ratio" enabled.
+                    let size = transform.invert().transform_size(target_geo.size);
+                    let output_aspect_ratio = size.w as f64 / size.h as f64;
+                    let ratio = data.aspect_ratio / output_aspect_ratio;
 
-                if ratio > 1. {
-                    pos.x *= ratio;
-                } else {
-                    pos.y /= ratio;
+                    if ratio > 1. {
+                        pos.x *= ratio;
+                    } else {
+                        pos.y /= ratio;
+                    }
                 }
             }
 
@@ -3667,7 +3668,7 @@ impl State {
     {
         let data = (&evt.device() as &dyn Any)
             .downcast_ref::<input::Device>()
-            .and_then(|device| self.niri.tablets.get(device));
+            .and_then(|device| self.niri.devices.get(device));
         self.compute_absolute_location(
             evt,
             data.and_then(|data| self.niri.output_for_touch(&data.name)),
