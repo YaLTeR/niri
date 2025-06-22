@@ -1090,7 +1090,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.interactive_resize = None;
     }
 
-    pub fn refresh(&mut self, is_active: bool) {
+    pub fn refresh(&mut self, is_active: bool, is_focused: bool) {
         let active = self.active_window_id.clone();
         for tile in &mut self.tiles {
             tile.prefer_expected_size = false;
@@ -1099,7 +1099,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
             win.set_active_in_column(true);
             win.set_floating(true);
 
-            let is_active = is_active && Some(win.id()) == active.as_ref();
+            let mut is_active = is_active && Some(win.id()) == active.as_ref();
+            if self.options.deactivate_unfocused_windows {
+                is_active &= is_focused;
+            }
             win.set_activated(is_active);
 
             let resize_data = self

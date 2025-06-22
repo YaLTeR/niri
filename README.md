@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/YaLTeR/niri/wiki/Getting-Started">Getting Started</a> | <a href="https://github.com/YaLTeR/niri/wiki/Configuration:-Overview">Configuration</a> | <a href="https://github.com/YaLTeR/niri/discussions/325">Setup&nbsp;Showcase</a>
+    <a href="https://github.com/YaLTeR/niri/wiki/Getting-Started">Getting Started</a> | <a href="https://github.com/YaLTeR/niri/wiki/Configuration:-Introduction">Configuration</a> | <a href="https://github.com/YaLTeR/niri/discussions/325">Setup&nbsp;Showcase</a>
 </p>
 
 ![niri with a few windows open](https://github.com/user-attachments/assets/535e6530-2f44-4b84-a883-1240a3eee6e9)
@@ -45,6 +45,8 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 ## Video Demo
 
 https://github.com/YaLTeR/niri/assets/1794388/bce834b0-f205-434e-a027-b373495f9729
+
+Also check out this video from Brodie Robertson that showcases a lot of the niri functionality: [Niri Is My New Favorite Wayland Compositor](https://youtu.be/DeYx2exm04M)
 
 ## Status
 
@@ -100,6 +102,11 @@ Here are some other projects which implement a similar workflow:
 
 My talk from the 2024 Moscow RustCon about niri, and how I do randomized property testing and profiling, and measure input latency.
 The talk is in Russian, but I prepared full English subtitles that you can find in YouTube's subtitle language selector.
+
+[An interview with Ivan, the developer behind Niri](https://www.trommelspeicher.de/podcast/special_the_developer_behind_niri)
+
+A June 2025 interview by a German tech podcast Das Triumvirat (in English).
+We talk about niri development and history, and my experience building and maintaining niri.
 
 ## Contact
 

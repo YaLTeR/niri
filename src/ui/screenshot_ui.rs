@@ -66,12 +66,22 @@ pub enum ScreenshotUi {
     },
 }
 
+/// State for moving the selection (as opposed to just drawing).
+pub struct MoveState {
+    // Cursor offset from selection.1 when starting the move.
+    pointer_offset: Point<i32, Physical>,
+    // If the move is initiated by a touch, this is the slot. If `None`, the move was initiated by
+    // holding Space.
+    touch_slot: Option<TouchSlot>,
+}
+
 pub enum Button {
     Up,
     Down {
         touch_slot: Option<TouchSlot>,
         on_capture_button: bool,
         last_pos: (Output, Point<i32, Physical>),
+        move_state: Option<MoveState>,
     },
 }
 
@@ -267,6 +277,37 @@ impl ScreenshotUi {
         matches!(self, ScreenshotUi::Open { .. })
     }
 
+    pub fn set_space_down(&mut self, down: bool) {
+        if let Self::Open {
+            selection,
+            button:
+                Button::Down {
+                    move_state,
+                    last_pos,
+                    ..
+                },
+            ..
+        } = self
+        {
+            if down {
+                if move_state.is_none() {
+                    *move_state = Some(MoveState {
+                        pointer_offset: last_pos.1 - selection.1,
+                        touch_slot: None,
+                    });
+                }
+            } else {
+                // Only clear if moving with Space.
+                if let Some(MoveState {
+                    touch_slot: None, ..
+                }) = move_state
+                {
+                    *move_state = None;
+                }
+            }
+        }
+    }
+
     pub fn move_left(&mut self) {
         let Self::Open {
             selection: (output, a, b),
@@ -343,6 +384,75 @@ impl ScreenshotUi {
         let delta = min(delta, data.size.h - max(a.y, b.y) - 1);
         a.y += delta;
         b.y += delta;
+
+        self.update_buffers();
+    }
+
+    /// Moves the screenshot selection to a different output.
+    ///
+    /// This preserves the relative position while keeping logical size. It is (intentionally) very
+    /// similar to how floating windows move across monitors, but with one difference: floating
+    /// windows can go partially outside the view, while the screenshot selection cannot. So, we
+    /// clamp it to new output bounds, trying to preserve the size if possible.
+    pub fn move_to_output(&mut self, new_output: Output) {
+        let Self::Open {
+            selection,
+            output_data,
+            ..
+        } = self
+        else {
+            return;
+        };
+
+        let (current_output, current_a, current_b) = selection;
+
+        if current_output == &new_output {
+            return;
+        }
+
+        let Some(target_data) = output_data.get(&new_output) else {
+            return;
+        };
+
+        let current_data = &output_data[current_output];
+
+        let current_rect: Rectangle<_, Physical> = Rectangle::new(
+            Point::from((current_a.x.min(current_b.x), current_a.y.min(current_b.y))),
+            Size::from((
+                (current_a.x.max(current_b.x) - current_a.x.min(current_b.x) + 1),
+                (current_a.y.max(current_b.y) - current_a.y.min(current_b.y) + 1),
+            )),
+        );
+        let current_rect = current_rect.to_f64();
+
+        let rel_x = current_rect.loc.x / current_data.size.w as f64;
+        let rel_y = current_rect.loc.y / current_data.size.h as f64;
+
+        let factor = target_data.scale / current_data.scale;
+        let mut new_width = (current_rect.size.w * factor).round() as i32;
+        let mut new_height = (current_rect.size.h * factor).round() as i32;
+
+        new_width = new_width.clamp(1, target_data.size.w);
+        new_height = new_height.clamp(1, target_data.size.h);
+
+        let new_x = (rel_x * target_data.size.w as f64).round() as i32;
+        let new_y = (rel_y * target_data.size.h as f64).round() as i32;
+
+        let max_x = target_data.size.w - new_width;
+        let max_y = target_data.size.h - new_height;
+        let new_x = new_x.clamp(0, max_x);
+        let new_y = new_y.clamp(0, max_y);
+
+        let new_rect = Rectangle::new(
+            Point::from((new_x, new_y)),
+            Size::from((new_width, new_height)),
+        );
+
+        *selection = (
+            new_output,
+            new_rect.loc,
+            new_rect.loc + new_rect.size - Size::from((1, 1)),
+        );
 
         self.update_buffers();
     }
@@ -656,7 +766,12 @@ impl ScreenshotUi {
     }
 
     pub fn action(&self, raw: Keysym, mods: ModifiersState) -> Option<Action> {
-        if !matches!(self, Self::Open { .. }) {
+        let Self::Open { button, .. } = self else {
+            return None;
+        };
+
+        // Pressing Space while the button is down goes into origin moving rather than capture.
+        if matches!(button, Button::Down { .. }) && raw == Keysym::space {
             return None;
         }
 
@@ -688,11 +803,13 @@ impl ScreenshotUi {
     pub fn pointer_motion(&mut self, point: Point<i32, Physical>, slot: Option<TouchSlot>) {
         let Self::Open {
             selection,
+            output_data,
             button:
                 Button::Down {
                     touch_slot,
                     on_capture_button,
                     last_pos,
+                    move_state,
                 },
             ..
         } = self
@@ -710,7 +827,21 @@ impl ScreenshotUi {
             return;
         }
 
-        selection.2 = point;
+        if let Some(move_state) = move_state {
+            // The cursor offset is relative to selection.1.
+            let delta = point - (selection.1 + move_state.pointer_offset);
+
+            let desired = rect_from_corner_points(selection.1 + delta, selection.2 + delta);
+            let bounds = Rectangle::from_size(output_data[&selection.0].size - desired.size);
+            let clamped_loc = desired.loc.constrain(bounds);
+
+            let delta = clamped_loc - rect_from_corner_points(selection.1, selection.2).loc;
+            selection.1 += delta;
+            selection.2 += delta;
+        } else {
+            selection.2 = point;
+        }
+
         self.update_buffers();
     }
 
@@ -731,6 +862,24 @@ impl ScreenshotUi {
             return false;
         };
 
+        // Check if this is a second touch (different slot) while already dragging.
+        if let Some(new_slot) = slot {
+            if let Button::Down {
+                on_capture_button: false,
+                move_state,
+                last_pos,
+                ..
+            } = button
+            {
+                if move_state.is_none() {
+                    *move_state = Some(MoveState {
+                        pointer_offset: last_pos.1 - selection.1,
+                        touch_slot: Some(new_slot),
+                    });
+                }
+            }
+        }
+
         if button.is_down() {
             return false;
         }
@@ -749,6 +898,7 @@ impl ScreenshotUi {
                     touch_slot: slot,
                     on_capture_button: true,
                     last_pos: (output, point),
+                    move_state: None,
                 };
                 return false;
             }
@@ -758,6 +908,7 @@ impl ScreenshotUi {
             touch_slot: slot,
             on_capture_button: false,
             last_pos: (output.clone(), point),
+            move_state: None,
         };
         *selection = (output, point, point);
 
@@ -782,9 +933,19 @@ impl ScreenshotUi {
             touch_slot,
             on_capture_button,
             ref last_pos,
+            ref mut move_state,
+            ..
         } = *button
         else {
             return None;
+        };
+
+        // Check if this is a move touch and if so, stop the move.
+        if let Some(state) = move_state {
+            if state.touch_slot.is_some_and(|m_slot| Some(m_slot) == slot) {
+                *move_state = None;
+                return None;
+            }
         };
 
         if touch_slot != slot {

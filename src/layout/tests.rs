@@ -3471,6 +3471,69 @@ fn interactive_move_unfullscreen_to_floating_stops_dnd_scroll() {
     check_ops(&ops);
 }
 
+#[test]
+fn unfullscreen_view_offset_not_reset_during_dnd_gesture() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
+        Op::DndUpdate {
+            output_idx: 1,
+            px: 0.0,
+            py: 0.0,
+        },
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn unfullscreen_view_offset_not_reset_during_gesture() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
+        Op::ViewOffsetGestureBegin {
+            output_idx: 1,
+            workspace_idx: None,
+            is_touchpad: false,
+        },
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn unfullscreen_view_offset_not_reset_during_ongoing_gesture() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::ViewOffsetGestureBegin {
+            output_idx: 1,
+            workspace_idx: None,
+            is_touchpad: false,
+        },
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
+    ];
+
+    check_ops(&ops);
+}
+
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
     if parent_id == id {
         return true;

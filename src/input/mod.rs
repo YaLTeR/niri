@@ -396,6 +396,10 @@ impl State {
                     return FilterResult::Intercept(None);
                 }
 
+                if let Some(Keysym::space) = raw {
+                    this.niri.screenshot_ui.set_space_down(pressed);
+                }
+
                 let bindings = &this.niri.config.borrow().binds;
                 let res = should_intercept_key(
                     &mut this.niri.suppressed_keys,
@@ -774,7 +778,9 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveColumnLeftOrToMonitorLeft => {
-                if let Some(output) = self.niri.output_left() {
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_left();
+                } else if let Some(output) = self.niri.output_left() {
                     if self.niri.layout.move_column_left_or_to_output(&output)
                         && !self.maybe_warp_cursor_to_focus_centered()
                     {
@@ -791,7 +797,9 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveColumnRightOrToMonitorRight => {
-                if let Some(output) = self.niri.output_right() {
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_right();
+                } else if let Some(output) = self.niri.output_right() {
                     if self.niri.layout.move_column_right_or_to_output(&output)
                         && !self.maybe_warp_cursor_to_focus_centered()
                     {
@@ -830,14 +838,22 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowDownOrToWorkspaceDown => {
-                self.niri.layout.move_down_or_to_workspace_down();
-                self.maybe_warp_cursor_to_focus();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_down();
+                } else {
+                    self.niri.layout.move_down_or_to_workspace_down();
+                    self.maybe_warp_cursor_to_focus();
+                }
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowUpOrToWorkspaceUp => {
-                self.niri.layout.move_up_or_to_workspace_up();
-                self.maybe_warp_cursor_to_focus();
+                if self.niri.screenshot_ui.is_open() {
+                    self.niri.screenshot_ui.move_up();
+                } else {
+                    self.niri.layout.move_up_or_to_workspace_up();
+                    self.maybe_warp_cursor_to_focus();
+                }
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
@@ -1523,7 +1539,12 @@ impl State {
                 }
             }
             Action::MoveWindowToMonitorLeft => {
-                if let Some(output) = self.niri.output_left() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_left_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_left() {
                     self.niri
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
@@ -1534,7 +1555,12 @@ impl State {
                 }
             }
             Action::MoveWindowToMonitorRight => {
-                if let Some(output) = self.niri.output_right() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_right_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_right() {
                     self.niri
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
@@ -1545,7 +1571,12 @@ impl State {
                 }
             }
             Action::MoveWindowToMonitorDown => {
-                if let Some(output) = self.niri.output_down() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_down_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_down() {
                     self.niri
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
@@ -1556,7 +1587,12 @@ impl State {
                 }
             }
             Action::MoveWindowToMonitorUp => {
-                if let Some(output) = self.niri.output_up() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_up_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_up() {
                     self.niri
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
@@ -1567,7 +1603,12 @@ impl State {
                 }
             }
             Action::MoveWindowToMonitorPrevious => {
-                if let Some(output) = self.niri.output_previous() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_previous_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_previous() {
                     self.niri
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
@@ -1578,7 +1619,12 @@ impl State {
                 }
             }
             Action::MoveWindowToMonitorNext => {
-                if let Some(output) = self.niri.output_next() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_next_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_next() {
                     self.niri
                         .layout
                         .move_to_output(None, &output, None, ActivateWindow::Smart);
@@ -1590,12 +1636,17 @@ impl State {
             }
             Action::MoveWindowToMonitor(output) => {
                 if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
-                    self.niri
-                        .layout
-                        .move_to_output(None, &output, None, ActivateWindow::Smart);
-                    self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if self.niri.screenshot_ui.is_open() {
                         self.move_cursor_to_output(&output);
+                        self.niri.screenshot_ui.move_to_output(output);
+                    } else {
+                        self.niri
+                            .layout
+                            .move_to_output(None, &output, None, ActivateWindow::Smart);
+                        self.niri.layout.focus_output(&output);
+                        if !self.maybe_warp_cursor_to_focus_centered() {
+                            self.move_cursor_to_output(&output);
+                        }
                     }
                 }
             }
@@ -1629,7 +1680,12 @@ impl State {
                 }
             }
             Action::MoveColumnToMonitorLeft => {
-                if let Some(output) = self.niri.output_left() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_left_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_left() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1638,7 +1694,12 @@ impl State {
                 }
             }
             Action::MoveColumnToMonitorRight => {
-                if let Some(output) = self.niri.output_right() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_right_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_right() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1647,7 +1708,12 @@ impl State {
                 }
             }
             Action::MoveColumnToMonitorDown => {
-                if let Some(output) = self.niri.output_down() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_down_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_down() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1656,7 +1722,12 @@ impl State {
                 }
             }
             Action::MoveColumnToMonitorUp => {
-                if let Some(output) = self.niri.output_up() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_up_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_up() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1665,7 +1736,12 @@ impl State {
                 }
             }
             Action::MoveColumnToMonitorPrevious => {
-                if let Some(output) = self.niri.output_previous() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_previous_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_previous() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1674,7 +1750,12 @@ impl State {
                 }
             }
             Action::MoveColumnToMonitorNext => {
-                if let Some(output) = self.niri.output_next() {
+                if let Some(current_output) = self.niri.screenshot_ui.selection_output() {
+                    if let Some(target_output) = self.niri.output_next_of(current_output) {
+                        self.move_cursor_to_output(&target_output);
+                        self.niri.screenshot_ui.move_to_output(target_output);
+                    }
+                } else if let Some(output) = self.niri.output_next() {
                     self.niri.layout.move_column_to_output(&output, None, true);
                     self.niri.layout.focus_output(&output);
                     if !self.maybe_warp_cursor_to_focus_centered() {
@@ -1684,10 +1765,15 @@ impl State {
             }
             Action::MoveColumnToMonitor(output) => {
                 if let Some(output) = self.niri.output_by_name_match(&output).cloned() {
-                    self.niri.layout.move_column_to_output(&output, None, true);
-                    self.niri.layout.focus_output(&output);
-                    if !self.maybe_warp_cursor_to_focus_centered() {
+                    if self.niri.screenshot_ui.is_open() {
                         self.move_cursor_to_output(&output);
+                        self.niri.screenshot_ui.move_to_output(output);
+                    } else {
+                        self.niri.layout.move_column_to_output(&output, None, true);
+                        self.niri.layout.focus_output(&output);
+                        if !self.maybe_warp_cursor_to_focus_centered() {
+                            self.move_cursor_to_output(&output);
+                        }
                     }
                 }
             }
@@ -4101,9 +4187,27 @@ fn allowed_during_screenshot(action: &Action) -> bool {
             | Action::PowerOnMonitors
             // The screenshot UI can handle these.
             | Action::MoveColumnLeft
+            | Action::MoveColumnLeftOrToMonitorLeft
             | Action::MoveColumnRight
+            | Action::MoveColumnRightOrToMonitorRight
             | Action::MoveWindowUp
+            | Action::MoveWindowUpOrToWorkspaceUp
             | Action::MoveWindowDown
+            | Action::MoveWindowDownOrToWorkspaceDown
+            | Action::MoveColumnToMonitorLeft
+            | Action::MoveColumnToMonitorRight
+            | Action::MoveColumnToMonitorUp
+            | Action::MoveColumnToMonitorDown
+            | Action::MoveColumnToMonitorPrevious
+            | Action::MoveColumnToMonitorNext
+            | Action::MoveColumnToMonitor(_)
+            | Action::MoveWindowToMonitorLeft
+            | Action::MoveWindowToMonitorRight
+            | Action::MoveWindowToMonitorUp
+            | Action::MoveWindowToMonitorDown
+            | Action::MoveWindowToMonitorPrevious
+            | Action::MoveWindowToMonitorNext
+            | Action::MoveWindowToMonitor(_)
             | Action::SetWindowWidth(_)
             | Action::SetWindowHeight(_)
             | Action::SetColumnWidth(_)
@@ -4162,7 +4266,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         let _ = device.config_dwtp_set_enabled(c.dwtp);
         let _ = device.config_tap_set_drag_lock_enabled(c.drag_lock);
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-        let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
@@ -4186,6 +4290,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
@@ -4194,6 +4303,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         }
 
@@ -4237,7 +4351,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             input::SendEventsMode::ENABLED
         });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-        let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
@@ -4254,6 +4368,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
@@ -4262,6 +4381,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         }
     }
@@ -4274,7 +4398,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             input::SendEventsMode::ENABLED
         });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-        let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
         let _ = device.config_left_handed_set(c.left_handed);
 
@@ -4291,6 +4415,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
@@ -4299,6 +4428,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         }
     }
@@ -4311,7 +4445,7 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
             input::SendEventsMode::ENABLED
         });
         let _ = device.config_scroll_set_natural_scroll_enabled(c.natural_scroll);
-        let _ = device.config_accel_set_speed(c.accel_speed);
+        let _ = device.config_accel_set_speed(c.accel_speed.0);
         let _ = device.config_left_handed_set(c.left_handed);
         let _ = device.config_middle_emulation_set_enabled(c.middle_emulation);
 
@@ -4328,6 +4462,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         } else if let Some(default) = device.config_scroll_default_method() {
             let _ = device.config_scroll_set_method(default);
@@ -4336,6 +4475,11 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
                 if let Some(button) = c.scroll_button {
                     let _ = device.config_scroll_set_button(button);
                 }
+                let _ = device.config_scroll_set_button_lock(if c.scroll_button_lock {
+                    input::ScrollButtonLockState::Enabled
+                } else {
+                    input::ScrollButtonLockState::Disabled
+                });
             }
         }
     }
