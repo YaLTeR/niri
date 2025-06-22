@@ -250,22 +250,29 @@ Valid output names are the same as the ones used for output configuration.
 >
 > <sup>Since: next release</sup>
 >
-> It is possible to configure specific `tablet` and `touch` devices by name. Any non‑device‑specific settings will apply as a fallback when no matching device‑specific block exists:
+> It is possible to configure specific `tablet` and `touch` devices by name.
+>
+> Any non‑device‑specific settings will apply as a fallback when no matching device‑specific block exists:
 > ```kdl
 > input {
 >     tablet {
 >         map-to-output "eDP-1";
 >     }
+>
+>     // Map this specific tablet to a different output.
 >     tablet "ELAN9009:00 04F3:2F2A Stylus" {
 >         map-to-output "DP-1";
 >     }
 > 
+>     // Map this specific touchscreen to DP-1.
 >     touch "ELAN9009:00 04F3:2F2A" {
 >         map-to-output "DP-1";
 >     }
 > }
 > ```
-> The device name is case-insensitive. Device names are taken from libinput and can be found in `libinput list-devices` or `libinput debug-events`.
+>
+> The device name is case-insensitive.
+> Device names are taken from libinput; you can find them by running `sudo libinput list-devices` or `sudo libinput debug-events`.
 
 ### General Settings
 
