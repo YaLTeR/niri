@@ -8,7 +8,7 @@ Todo:
   x reorganization on scope/filter change
   - animate transition from selecting a thumbnail to the focused window
   - Transition when wrapping around during Mru navigation(?)
-  - UI open/close animation
+  x UI open/close animation
 - shortcut to "summon" a window to the current workspace
 - support clicking on the target thumbnail
 x add title of the current Mru selection under the thumbnail
@@ -70,14 +70,12 @@ const SPACING: f64 = 50.;
 
 // Corner radius on focus ring
 const RADIUS: f32 = 6.;
+
 // Alpha value for the focus ring
 const FOCUS_RING_ALPHA: f32 = 0.9;
 
 // Background color for the UI
 const BACKGROUND: Color32F = Color32F::new(0., 0., 0., 0.7);
-
-// Transition delay in ms for MRU UI open/close and wrap-arounds
-pub const MRU_UI_TRANSITION_DELAY: u16 = 20;
 
 // Font used to render window titles
 const FONT: &str = "sans 14px";
@@ -323,7 +321,7 @@ impl WindowMru {
 type MruTexture = TextureBuffer<GlesTexture>;
 
 pub enum WindowMruUi {
-    Closed {},
+    Closed { close_animation: Option<Animation> },
     Open(Box<Inner>),
 }
 
@@ -344,6 +342,9 @@ pub struct Inner {
 
     /// Animation clock
     clock: Clock,
+
+    /// Opening Animation for the MruUi itself
+    open_animation: Animation,
 
     /// Animation of the view offset while traversing the MRU list
     move_animation: Option<MoveAnimation>,
@@ -436,7 +437,9 @@ niri_render_elements! {
 
 impl WindowMruUi {
     pub fn new() -> Self {
-        Self::Closed {}
+        Self::Closed {
+            close_animation: None,
+        }
     }
 
     pub fn is_open(&self) -> bool {
@@ -444,7 +447,7 @@ impl WindowMruUi {
     }
 
     pub fn open(&mut self, options: Rc<Options>, clock: Clock, mut wmru: WindowMru) {
-        let Self::Closed {} = self else { return };
+        let Self::Closed { .. } = self else { return };
 
         // Each thumbnail is started with an open_animaiton
         wmru.thumbnails.iter_mut().for_each(|t| {
@@ -458,6 +461,13 @@ impl WindowMruUi {
         });
 
         let nids = wmru.thumbnails.len();
+        let open_anim = Animation::new(
+            clock.clone(),
+            0.,
+            1.,
+            0.,
+            options.animations.window_mru_ui_open_close.0,
+        );
         let inner = Inner {
             wmru,
             textures: RefCell::new(TextureCache::with_capacity(nids)),
@@ -465,6 +475,7 @@ impl WindowMruUi {
             options,
             view_offset: None,
             closing_thumbnails: vec![],
+            open_animation: open_anim,
             move_animation: None,
             clock,
         };
@@ -473,10 +484,18 @@ impl WindowMruUi {
     }
 
     pub fn close(&mut self) {
-        let Self::Open(_) = self else {
+        let Self::Open(inner) = self else {
             return;
         };
-        *self = Self::Closed {};
+        *self = Self::Closed {
+            close_animation: Some(Animation::new(
+                inner.clock.clone(),
+                1.,
+                0.,
+                0.,
+                inner.options.animations.window_mru_ui_open_close.0,
+            )),
+        };
     }
 
     pub fn advance(&mut self, dir: MruDirection) {
@@ -762,90 +781,33 @@ impl WindowMruUi {
         output: &Output,
         renderer: &mut GlesRenderer,
     ) -> Vec<WindowMruUiRenderElement> {
-        let Self::Open(inner) = self else {
-            panic!("render_output on a closed WindowMruUi");
-        };
-
         let mut rv = Vec::new();
         let output_size = output_size(output);
-        let Some(view_offset) = inner.view_offset else {
-            return vec![];
+
+        let progress = match self {
+            Self::Closed {
+                close_animation: None,
+            } => return vec![],
+            Self::Closed {
+                close_animation: Some(close_animation),
+            } => close_animation.clamped_value(),
+            Self::Open(inner) => {
+                rv.extend(inner.render(niri, renderer, output_size));
+                inner.open_animation.clamped_value()
+            }
         };
 
-        let view_offset = inner
-            .move_animation
-            .as_ref()
-            .map(|ma| ma.from * ma.anim.value())
-            .unwrap_or(0.)
-            + view_offset;
+        let progress = progress.clamp(0., 1.) as f32;
 
-        // As with tiles, render thumbnails for closing windows on top of
-        // others.
-        for closing in inner.closing_thumbnails.iter().rev() {
-            if closing.offset + closing.size.w >= view_offset {
-                if closing.offset <= view_offset + output_size.w {
-                    let loc = Point::from((
-                        closing.offset - view_offset,
-                        (output_size.h - closing.texture.logical_size().h) / 2.,
-                    ));
-                    let elem = closing.render(loc);
-                    rv.push(elem.into());
-                } else {
-                    break;
-                }
-            }
-        }
-
-        // Add all visible thumbnails
-        let wmru = &inner.wmru;
-        for (i, t) in wmru.thumbnails.iter().enumerate() {
-            if t.offset + t.size.w >= view_offset {
-                if t.offset <= view_offset + output_size.w {
-                    let mut tcache = inner.textures.borrow_mut();
-                    let textures = tcache.get_mut(i);
-                    let id = wmru.get_id(i);
-                    if let Some(thumb_texture) = textures.get_thumbnail(niri, renderer, id) {
-                        let title_texture = (i == wmru.current)
-                            .then(|| {
-                                textures.get_title(
-                                    niri,
-                                    renderer,
-                                    id,
-                                    thumb_texture
-                                        .logical_size()
-                                        .to_physical(1.)
-                                        .to_i32_round()
-                                        .w,
-                                )
-                            })
-                            .flatten();
-                        let loc = Point::from((
-                            t.offset + t.render_offset() - view_offset,
-                            (output_size.h - thumb_texture.logical_size().h) / 2.,
-                        ));
-                        rv.extend(t.render(
-                            renderer,
-                            loc,
-                            thumb_texture,
-                            title_texture,
-                            (i == wmru.current).then_some(&inner.focus_ring),
-                        ));
-                    }
-                } else {
-                    break;
-                }
-            }
-        }
-
-        // Put a panel above the current View to contrast the thumbnails
-        let size = Size::from((output_size.w, output_size.h / 16. * 14.));
-        let buffer = SolidColorBuffer::new(size, BACKGROUND);
+        // Put a panel above the current desktop view to contrast the thumbnails
+        let buffer = SolidColorBuffer::new(output_size, BACKGROUND);
 
         rv.push(
             SolidColorRenderElement::from_buffer(
                 &buffer,
-                Point::from((0., output_size.h / 16.)),
-                1.0,
+                // Point::from((0., output_size.h / 16.)),
+                Point::default(),
+                progress,
                 Kind::Unspecified,
             )
             .into(),
@@ -855,26 +817,32 @@ impl WindowMruUi {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        let Self::Open(inner) = self else {
-            return false;
-        };
-        inner.are_animations_ongoing()
+        match self {
+            Self::Open(inner) => inner.are_animations_ongoing(),
+            Self::Closed { close_animation } => close_animation.is_some(),
+        }
     }
 
     pub fn advance_animations(&mut self) {
-        let Self::Open(inner) = self else {
-            return;
-        };
-        inner.advance_animations();
+        match *self {
+            Self::Open(ref mut inner) => inner.advance_animations(),
+            Self::Closed {
+                ref mut close_animation,
+            } => {
+                close_animation.take_if(|a| a.is_done());
+            }
+        }
     }
 }
 
 impl Inner {
     fn are_animations_ongoing(&self) -> bool {
-        self.wmru
-            .thumbnails
-            .iter()
-            .any(|t| t.are_animations_ongoing())
+        (!self.open_animation.is_done())
+            || self
+                .wmru
+                .thumbnails
+                .iter()
+                .any(|t| t.are_animations_ongoing())
             || self.move_animation.is_some()
             || !self.closing_thumbnails.is_empty()
     }
@@ -918,6 +886,86 @@ impl Inner {
         }
 
         offset
+    }
+
+    fn render(
+        &self,
+        niri: &Niri,
+        renderer: &mut GlesRenderer,
+        output_size: Size<f64, Logical>,
+    ) -> impl Iterator<Item = WindowMruUiRenderElement> {
+        let mut rv = Vec::new();
+
+        let Some(view_offset) = self.view_offset else {
+            return rv.into_iter();
+        };
+
+        let view_offset = self
+            .move_animation
+            .as_ref()
+            .map(|ma| ma.from * ma.anim.value())
+            .unwrap_or(0.)
+            + view_offset;
+
+        // As with tiles, render thumbnails for closing windows on top of
+        // others.
+        for closing in self.closing_thumbnails.iter().rev() {
+            if closing.offset + closing.size.w >= view_offset {
+                if closing.offset <= view_offset + output_size.w {
+                    let loc = Point::from((
+                        closing.offset - view_offset,
+                        (output_size.h - closing.texture.logical_size().h) / 2.,
+                    ));
+                    let elem = closing.render(loc);
+                    rv.push(elem.into());
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Add all visible thumbnails
+        let wmru = &self.wmru;
+        for (i, t) in wmru.thumbnails.iter().enumerate() {
+            if t.offset + t.size.w >= view_offset {
+                if t.offset <= view_offset + output_size.w {
+                    let mut tcache = self.textures.borrow_mut();
+                    let textures = tcache.get_mut(i);
+                    let id = wmru.get_id(i);
+                    if let Some(thumb_texture) = textures.get_thumbnail(niri, renderer, id) {
+                        let title_texture = (i == wmru.current)
+                            .then(|| {
+                                textures.get_title(
+                                    niri,
+                                    renderer,
+                                    id,
+                                    thumb_texture
+                                        .logical_size()
+                                        .to_physical(1.)
+                                        .to_i32_round()
+                                        .w,
+                                )
+                            })
+                            .flatten();
+                        let loc = Point::from((
+                            t.offset + t.render_offset() - view_offset,
+                            (output_size.h - thumb_texture.logical_size().h) / 2.,
+                        ));
+                        rv.extend(t.render(
+                            renderer,
+                            loc,
+                            thumb_texture,
+                            title_texture,
+                            (i == wmru.current).then_some(&self.focus_ring),
+                        ));
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+
+        rv.into_iter()
     }
 }
 

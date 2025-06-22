@@ -47,7 +47,7 @@ use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _, Options};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
-use crate::ui::window_mru_ui::{WindowMru, MRU_UI_BINDINGS, MRU_UI_TRANSITION_DELAY};
+use crate::ui::window_mru_ui::{WindowMru, MRU_UI_BINDINGS};
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
@@ -2069,10 +2069,6 @@ impl State {
                             self.focus_window(&window)
                         }
                     }
-                    self.backend.with_primary_renderer(|renderer| {
-                        self.niri
-                            .do_screen_transition(renderer, Some(MRU_UI_TRANSITION_DELAY));
-                    });
                     self.niri.window_mru_ui.close();
                     // FIXME: granular
                     self.niri.queue_redraw_all();
@@ -2080,10 +2076,6 @@ impl State {
             }
             Action::MruCancel => {
                 if self.niri.window_mru_ui.is_open() {
-                    self.backend.with_primary_renderer(|renderer| {
-                        self.niri
-                            .do_screen_transition(renderer, Some(MRU_UI_TRANSITION_DELAY));
-                    });
                     self.niri.window_mru_ui.close();
                     // FIXME: granular
                     self.niri.queue_redraw_all();

@@ -4158,7 +4158,7 @@ impl Niri {
             return elements;
         }
 
-        if self.window_mru_ui.is_open() && Some(output) == self.layout.active_output() {
+        if Some(output) == self.layout.active_output() {
             elements.extend(
                 self.window_mru_ui
                     .render_output(self, output, renderer.as_gles_renderer())
