@@ -70,6 +70,9 @@ pub struct ScrollingSpace<W: LayoutElement> {
     /// View size for this space.
     view_size: Size<f64, Logical>,
 
+    /// Whether the view is locked
+    view_lock: bool,
+
     /// Working area for this space.
     ///
     /// Takes into account layer-shell exclusive zones and niri struts.
@@ -280,6 +283,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             view_offset_before_fullscreen: None,
             closing_windows: Vec::new(),
             view_size,
+            view_lock: false,
             working_area,
             parent_area,
             scale,
@@ -749,13 +753,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         {
             return;
         }
-
-        self.animate_view_offset_to_column_with_config(
-            None,
-            idx,
-            Some(self.active_column_idx),
-            config,
-        );
+        // Don't play horizonal moving animation when we are view locked. Other animations are fine.
+        if config == self.options.animations.horizontal_view_movement.0 && self.view_lock {
+            self.activate_column_without_moving_view(idx);
+        } else {
+            self.animate_view_offset_to_column_with_config(
+                None,
+                idx,
+                Some(self.active_column_idx),
+                config,
+            );
+        }
 
         if self.active_column_idx != idx {
             self.active_column_idx = idx;
@@ -765,6 +773,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.view_offset_before_fullscreen = None;
             self.interactive_resize = None;
         }
+    }
+
+    fn activate_column_without_moving_view(&mut self, idx: usize) {
+        let new_col_x = self.column_x(idx);
+        let cur_x = self.target_view_pos() + self.working_area.loc.x;
+        self.view_offset = ViewOffset::Static(-(new_col_x - cur_x) - self.working_area.loc.x);
     }
 
     pub(super) fn insert_position(&self, pos: Point<f64, Logical>) -> InsertPosition {
@@ -963,7 +977,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.data.insert(idx, ColumnData::new(&column));
         self.columns.insert(idx, column);
 
-        if activate {
+        if activate && !self.view_lock {
             // If this is the first window on an empty workspace, remove the effect of whatever
             // view_offset was left over and skip the animation.
             if was_empty {
@@ -1196,17 +1210,19 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
                 // Restore the view offset but make sure to scroll the view in case the
                 // previous window had resized.
-                self.animate_view_offset_with_config(
-                    self.active_column_idx,
-                    prev_offset,
-                    view_config,
-                );
-                self.animate_view_offset_to_column_with_config(
-                    None,
-                    self.active_column_idx,
-                    None,
-                    view_config,
-                );
+                if !self.view_lock {
+                    self.animate_view_offset_with_config(
+                        self.active_column_idx,
+                        prev_offset,
+                        view_config,
+                    );
+                    self.animate_view_offset_to_column_with_config(
+                        None,
+                        self.active_column_idx,
+                        None,
+                        view_config,
+                    );
+                }
             }
         } else {
             self.activate_column_with_anim_config(
@@ -1338,9 +1354,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 None
             };
 
-            // We might need to move the view to ensure the resized window is still visible. But
-            // only do it when the view isn't frozen by an interactive resize or a view gesture.
-            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
+            // We might need to move the view to ensure the resized window is still visible.
+            // Only do it when the view isn't locked or frozen by an interactive resize or a view gesture.
+            if !self.view_lock && self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
                 // Restore the view offset upon unfullscreening if needed.
                 if let Some(prev_offset) = unfullscreen_offset {
                     self.animate_view_offset(col_idx, prev_offset);
@@ -2989,7 +3005,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             dnd_last_event_time: Some(self.clock.now_unadjusted()),
             dnd_nonzero_start_time: None,
         };
-        self.view_offset = ViewOffset::Gesture(gesture);
+        if !self.view_lock {
+            self.view_offset = ViewOffset::Gesture(gesture);
+        };
 
         self.interactive_resize = None;
     }
@@ -3031,6 +3049,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // Not a DnD scroll.
             return false;
         };
+
+        if self.view_lock {
+            return false;
+        }
 
         let config = &self.options.gestures.dnd_edge_view_scroll;
 
@@ -3595,6 +3617,29 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 win.refresh();
             }
         }
+    }
+
+    pub fn toggle_view_lock(&mut self)
+    {
+        self.view_lock = !self.view_lock;
+    }
+
+    pub fn lock_view_lock(&mut self) -> bool {
+        if self.view_lock {
+            return false;
+        }
+
+        self.toggle_view_lock();
+        true
+    }
+
+    pub fn unlock_view_lock(&mut self) -> bool {
+        if !self.view_lock {
+            return false;
+        }
+
+        self.toggle_view_lock();
+        true
     }
 
     #[cfg(test)]
