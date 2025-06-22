@@ -93,6 +93,7 @@ pub struct Tty {
     // Whether the debug tinting is enabled.
     debug_tint: bool,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
+    seat_assigned: bool,
 }
 
 pub type TtyRenderer<'render> = MultiRenderer<
@@ -271,10 +272,7 @@ impl Tty {
             .register_dispatcher(udev_dispatcher.clone())
             .unwrap();
 
-        let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
-        libinput
-            .udev_assign_seat(&seat_name)
-            .map_err(|()| anyhow!("error assigning the seat to libinput"))?;
+        let libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
 
         let input_backend = LibinputInputBackend::new(libinput.clone());
         event_loop
@@ -335,15 +333,12 @@ impl Tty {
             update_output_config_on_resume: false,
             debug_tint: false,
             ipc_outputs: Arc::new(Mutex::new(HashMap::new())),
+            seat_assigned: false,
         })
     }
 
-    pub fn init(&mut self, niri: &mut Niri) {
-        for (device_id, path) in self.udev_dispatcher.clone().as_source_ref().device_list() {
-            if let Err(err) = self.device_added(device_id, path, niri) {
-                warn!("error adding device: {err:?}");
-            }
-        }
+    pub fn init(&mut self, _niri: &mut Niri) {
+        debug!("Tty::init(): do nothing");
     }
 
     fn on_udev_event(&mut self, niri: &mut Niri, event: UdevEvent) {
@@ -398,6 +393,30 @@ impl Tty {
             }
             SessionEvent::ActivateSession => {
                 debug!("resuming session");
+
+                if !self.seat_assigned {
+                    debug!("Assigning seat '{}' to libinput.", self.seat_name());
+                    if let Err(()) = self.libinput.udev_assign_seat(&self.seat_name()) {
+                        error!("Failed to assign seat to libinput");
+                    }
+
+                    debug!("Dispatching libinput to process initial events...");
+                    if let Err(e) = self.libinput.dispatch() {
+                        error!("Error during initial libinput dispatch: {}", e);
+                    }
+
+                    debug!("Scanning for pre-existing DRM devices.");
+                    for (device_id, path) in
+                        self.udev_dispatcher.clone().as_source_ref().device_list()
+                    {
+                        if let Err(err) = self.device_added(device_id, path, niri) {
+                            warn!("Error adding initial device: {err:?}");
+                        }
+                    }
+
+                    self.seat_assigned = true;
+                    info!("Deferred hardware initialization complete.");
+                }
 
                 if self.libinput.resume().is_err() {
                     warn!("error resuming libinput");
