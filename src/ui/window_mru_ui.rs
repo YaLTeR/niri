@@ -4,8 +4,8 @@ Todo:
 - Add test cases
 - Animations
   x navigation scrolling
-  ~ thumbnails appearing/disappearing
-  - reorganization on scope/filter change
+  x thumbnails appearing/disappearing
+  x reorganization on scope/filter change
   - animate transition from selecting a thumbnail to the focused window
   - Transition when wrapping around during Mru navigation(?)
   - UI open/close animation
@@ -89,57 +89,18 @@ struct Thumbnail {
     offset: f64,
     size: Size<f64, Logical>,
     clock: Clock,
+    open_animation: Option<Animation>,
     move_animation: Option<MoveAnimation>,
 }
 
 impl Thumbnail {
-    fn render(
-        &self,
-        renderer: &mut GlesRenderer,
-        location: Point<f64, Logical>,
-        thumb_texture: MruTexture,
-        title_texture: Option<MruTexture>,
-        focus_ring: Option<&FocusRing>,
-    ) -> impl Iterator<Item = WindowMruUiRenderElement> {
-        let thumb_size = thumb_texture.logical_size();
-        let thumb_elem: WindowMruUiRenderElement = {
-            let bb = BakedBuffer {
-                buffer: thumb_texture,
-                location: Point::default(),
-                src: None,
-                dst: None,
-            };
+    fn are_animations_ongoing(&self) -> bool {
+        self.open_animation.is_some() || self.move_animation.is_some()
+    }
 
-            bb.to_render_element(location, Scale::from(1.0), 1.0, Kind::Unspecified)
-                .into()
-        };
-        let mut rv: Vec<WindowMruUiRenderElement> = Vec::new();
-        rv.extend(
-            focus_ring
-                .map(|fr| fr.render(renderer, location).map(Into::into))
-                .into_iter()
-                .flatten(),
-        );
-
-        rv.extend(
-            title_texture
-                .map(|t| {
-                    let location = location
-                        + Point::from((
-                            thumb_size.w.saturating_sub(t.logical_size().w) / 2.,
-                            (SPACING + thumb_size.h) / 2.,
-                        ));
-                    let bb = BakedBuffer {
-                        buffer: t,
-                        location: Point::default(),
-                        src: None,
-                        dst: None,
-                    };
-                    bb.to_render_element(location, 1.0.into(), 1.0, Kind::Unspecified)
-                })
-                .map(Into::into),
-        );
-        Some(thumb_elem).into_iter().chain(rv)
+    fn advance_animations(&mut self) {
+        self.open_animation.take_if(|a| a.is_done());
+        self.move_animation.take_if(|a| a.anim.is_done());
     }
 
     /// Animate thumbnail motion from given location.
@@ -164,6 +125,65 @@ impl Thumbnail {
             .as_ref()
             .map(|ma| ma.from * ma.anim.value())
             .unwrap_or_default()
+    }
+
+    fn render(
+        &self,
+        renderer: &mut GlesRenderer,
+        location: Point<f64, Logical>,
+        thumb_texture: MruTexture,
+        title_texture: Option<MruTexture>,
+        focus_ring: Option<&FocusRing>,
+    ) -> impl Iterator<Item = WindowMruUiRenderElement> {
+        let _span = tracy_client::span!("Thumbnail::render");
+
+        let thumb_alpha = self
+            .open_animation
+            .as_ref()
+            .map(|a| a.clamped_value() as f32)
+            .unwrap_or(1.);
+        let thumb_size = thumb_texture.logical_size();
+        let thumb_elem: WindowMruUiRenderElement = {
+            let bb = BakedBuffer {
+                buffer: thumb_texture,
+                location: Point::default(),
+                src: None,
+                dst: None,
+            };
+
+            bb.to_render_element(location, Scale::from(1.0), thumb_alpha, Kind::Unspecified)
+                .into()
+        };
+        let mut rv: Vec<WindowMruUiRenderElement> = Vec::new();
+
+        // if self.open_animation.is_none() {
+        rv.extend(
+            focus_ring
+                .map(|fr| fr.render(renderer, location).map(Into::into))
+                .into_iter()
+                .flatten(),
+        );
+        // }
+
+        rv.extend(
+            title_texture
+                .map(|t| {
+                    let location = location
+                        + Point::from((
+                            thumb_size.w.saturating_sub(t.logical_size().w) / 2.,
+                            SPACING / 2. + thumb_size.h,
+                        ));
+                    let bb = BakedBuffer {
+                        buffer: t,
+                        location: Point::default(),
+                        src: None,
+                        dst: None,
+                    };
+                    bb.to_render_element(location, 1.0.into(), thumb_alpha, Kind::Unspecified)
+                })
+                .map(Into::into),
+        );
+        Some(thumb_elem).into_iter().chain(rv)
     }
 }
 
@@ -215,6 +235,7 @@ impl WindowMru {
                 offset: 0.,
                 size: w.window.geometry().to_f64().downscale(THUMBNAIL_SCALE).size,
                 clock: clock.clone(),
+                open_animation: None,
                 move_animation: None,
             })
             .collect();
@@ -422,10 +443,22 @@ impl WindowMruUi {
         matches!(self, WindowMruUi::Open { .. })
     }
 
-    pub fn open(&mut self, options: Rc<Options>, clock: Clock, wmru: WindowMru) {
+    pub fn open(&mut self, options: Rc<Options>, clock: Clock, mut wmru: WindowMru) {
         let Self::Closed {} = self else { return };
+
+        // Each thumbnail is started with an open_animaiton
+        wmru.thumbnails.iter_mut().for_each(|t| {
+            t.open_animation = Some(Animation::new(
+                clock.clone(),
+                0.,
+                1.,
+                0.,
+                options.animations.window_open.anim,
+            ))
+        });
+
         let nids = wmru.thumbnails.len();
-        *self = Self::Open(Box::new(Inner {
+        let inner = Inner {
             wmru,
             textures: RefCell::new(TextureCache::with_capacity(nids)),
             focus_ring: FocusRing::new(options.focus_ring),
@@ -434,7 +467,9 @@ impl WindowMruUi {
             closing_thumbnails: vec![],
             move_animation: None,
             clock,
-        }));
+        };
+
+        *self = Self::Open(Box::new(inner));
     }
 
     pub fn close(&mut self) {
@@ -479,6 +514,7 @@ impl WindowMruUi {
         }
     }
 
+    /// Replace the current MRU list.
     pub fn update_mru_list(&mut self, dir: Option<MruDirection>, mut wmru: WindowMru) {
         let Self::Open(inner) = self else {
             return;
@@ -486,7 +522,7 @@ impl WindowMruUi {
         let prev_wmru = &mut inner.wmru;
         // Try to set the `current` field in the new wmru to match the one
         // from the previous mru.
-        if let Some(current_selection) = wmru.thumbnails.get(wmru.current) {
+        if let Some(current_selection) = prev_wmru.thumbnails.get(prev_wmru.current) {
             if let Some(current_in_new) = wmru.thumbnails.iter().position(
                 |Thumbnail {
                      id: i,
@@ -500,41 +536,86 @@ impl WindowMruUi {
 
         // If the current Mru selection is present in both the previous Mru list
         // and in the replacement list, then we should advance in the requested
-        // direction to avoid current staying unchanged after a user action.
+        // direction to avoid current staying unchanged despite the user
+        // having performed an action.
         let should_advance = wmru.get_id(wmru.current) == prev_wmru.get_id(prev_wmru.current);
 
-        // Retain textures from the TextureCache that match window Ids from
-        // the updated MruList.
-        inner.textures.replace_with(|v| {
+        // - Swap the MRU Ui's WindowMru with the new one,
+        // - create a new texture cache initialized with textures that can be reused from the
+        //   previous cache
+        // - animate thumbnails:
+        //   - thumbnails that were in both WindowMru (previous and replacement) change positions
+        //     with a move animation
+        //   - thumbnails that are no longer present in the replacement WindowMru disappear with a
+        //     close animation
+        //   - thumbnails that are only in the replacement WindowMru get an open animation
+        {
             let mut start_pos = 0;
-            let textures = wmru
-                .thumbnails
-                .iter()
-                .map(
-                    |Thumbnail {
-                         id, timestamp: t, ..
-                     }| {
-                        let mut tile_texture = Default::default();
-                        if let Some(index) = prev_wmru
-                            .thumbnails
-                            .iter()
-                            .skip(start_pos)
-                            .take_while(|Thumbnail { timestamp: pt, .. }| t >= pt)
-                            .position(|Thumbnail { id: pid, .. }| id == pid)
-                        {
-                            let adjusted_idx = index + start_pos;
-                            start_pos = adjusted_idx;
-                            mem::swap(&mut tile_texture, &mut v.0[adjusted_idx]);
-                        }
-                        tile_texture
-                    },
-                )
-                .collect();
-            TextureCache(textures)
-        });
+            let len = wmru.thumbnails.len();
 
-        // Replace the UI's WindowMru.
-        std::mem::swap(&mut wmru, prev_wmru);
+            // Create new empty texture cache
+            let mut textures = Vec::with_capacity(len);
+            textures.resize_with(len, Default::default);
+
+            // Replace the previous texture cache
+            let mut ptextures = inner.textures.replace(TextureCache(textures)).0;
+            let textures = &mut inner.textures.borrow_mut().0;
+
+            wmru.thumbnails.iter_mut().enumerate().for_each(|(idx, t)| {
+                if let Some(pidx) = prev_wmru
+                    .thumbnails
+                    .iter()
+                    .skip(start_pos)
+                    .take_while(|Thumbnail { timestamp: pt, .. }| t.timestamp >= *pt)
+                    .position(|pt| pt.id == t.id)
+                {
+                    // id from the new thumbnail was present in the previous list, animate motion
+                    // from the previous position.
+                    let pidx = start_pos + pidx;
+                    start_pos = pidx;
+                    let pt = &prev_wmru.thumbnails[pidx];
+                    t.animate_move_from_with_config(
+                        pt.offset - t.offset,
+                        inner.options.animations.window_movement.0,
+                    );
+                    // retain the previous thumbnail's textures
+                    mem::swap(&mut ptextures[pidx], &mut textures[idx]);
+                } else {
+                    // id from the new thumbnail was not in the previous list, start an open
+                    // animation for it.
+                    t.open_animation = Some(Animation::new(
+                        t.clock.clone(),
+                        0.,
+                        1.,
+                        0.,
+                        inner.options.animations.window_open.anim,
+                    ))
+                }
+            });
+
+            // Replace the UI's WindowMru.
+            let prev_wmru = std::mem::replace(prev_wmru, wmru);
+
+            // Whatever textures remain in the previous texture cache should be
+            // used to trigger close animations for the corresponding thumbnails.
+            prev_wmru
+                .thumbnails
+                .into_iter()
+                .enumerate()
+                .for_each(|(idx, thumb)| {
+                    if let Some(texture) = ptextures[idx].thumbnail.take() {
+                        let anim = Animation::new(
+                            inner.clock.clone(),
+                            0.,
+                            1.,
+                            0.,
+                            inner.options.animations.window_close.anim,
+                        );
+                        let closing = ClosingThumbnail::new(thumb, texture, anim);
+                        inner.closing_thumbnails.push(closing);
+                    }
+                });
+        }
 
         // And (possibly) advance in the requested direction.
         if should_advance {
@@ -777,30 +858,42 @@ impl WindowMruUi {
         let Self::Open(inner) = self else {
             return false;
         };
-        inner.move_animation.is_some() || !inner.closing_thumbnails.is_empty()
+        inner.are_animations_ongoing()
     }
 
     pub fn advance_animations(&mut self) {
         let Self::Open(inner) = self else {
             return;
         };
-        inner.move_animation.take_if(|ma| ma.anim.is_done());
-        inner
-            .closing_thumbnails
-            .retain_mut(|closing| closing.are_animations_ongoing());
+        inner.advance_animations();
     }
 }
 
 impl Inner {
-    pub fn animate_view_offset_from(&mut self, from: f64) {
+    fn are_animations_ongoing(&self) -> bool {
+        self.wmru
+            .thumbnails
+            .iter()
+            .any(|t| t.are_animations_ongoing())
+            || self.move_animation.is_some()
+            || !self.closing_thumbnails.is_empty()
+    }
+
+    fn advance_animations(&mut self) {
+        self.move_animation.take_if(|ma| ma.anim.is_done());
+        self.closing_thumbnails
+            .retain_mut(|closing| closing.are_animations_ongoing());
+        self.wmru
+            .thumbnails
+            .iter_mut()
+            .for_each(|t| t.advance_animations());
+    }
+
+    fn animate_view_offset_from(&mut self, from: f64) {
         self.animate_view_offset_from_with_config(from, self.options.animations.window_movement.0)
     }
 
-    pub fn animate_view_offset_from_with_config(
-        &mut self,
-        from: f64,
-        config: niri_config::Animation,
-    ) {
+    fn animate_view_offset_from_with_config(&mut self, from: f64, config: niri_config::Animation) {
         let current_offset = self.render_offset().x;
 
         let anim = self
@@ -817,7 +910,7 @@ impl Inner {
     }
 
     // Adapted from tile.rs.
-    pub fn render_offset(&self) -> Point<f64, Logical> {
+    fn render_offset(&self) -> Point<f64, Logical> {
         let mut offset = Point::default();
 
         if let Some(ref ma) = self.move_animation {
