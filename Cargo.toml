@@ -23,7 +23,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 tracing = { version = "0.1.41", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-tracy-client = { version = "0.18.0", default-features = false }
+tracy-client = { version = "0.18.1", default-features = false }
 
 [workspace.dependencies.smithay]
 # version = "0.4.1"
@@ -54,7 +54,7 @@ anyhow.workspace = true
 arrayvec = "0.7.6"
 async-channel = "2.3.1"
 async-io = { version = "2.4.1", optional = true }
-atomic = "0.6.0"
+atomic = "0.6.1"
 bitflags.workspace = true
 bytemuck = { version = "1.23.1", features = ["derive"] }
 calloop = { version = "0.14.2", features = ["executor", "futures-io"] }
@@ -65,21 +65,21 @@ drm-ffi = "0.9.0"
 fastrand = "2.3.0"
 futures-util = { version = "0.3.31", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
-glam = "0.30.3"
+glam = "0.30.4"
 input = { version = "0.9.1", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.172"
+libc = "0.2.174"
 libdisplay-info = "0.2.2"
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "25.5.1", path = "niri-config" }
 niri-ipc = { version = "25.5.1", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.0.0"
-pango = { version = "0.20.10", features = ["v1_44"] }
+pango = { version = "0.20.12", features = ["v1_44"] }
 pangocairo = "0.20.10"
 pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", optional = true, features = ["v0_3_33"] }
 png = "0.17.16"
 portable-atomic = { version = "1.11.1", default-features = false, features = ["float"] }
-profiling = "1.0.16"
+profiling = "1.0.17"
 sd-notify = "0.4.5"
 serde.workspace = true
 serde_json.workspace = true
@@ -90,7 +90,7 @@ tracy-client.workspace = true
 url = { version = "2.5.4", optional = true }
 wayland-backend = "0.3.10"
 wayland-scanner = "0.31.6"
-xcursor = "0.3.8"
+xcursor = "0.3.9"
 zbus = { version = "5.7.1", optional = true }
 
 [dependencies.smithay]
