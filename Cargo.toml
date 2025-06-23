@@ -3,6 +3,7 @@ members = [
     "niri-config",
     "niri-ipc",
     "niri-visual-tests",
+    "wiki",
 ]
 
 [workspace.package]
@@ -175,3 +176,4 @@ assets = [
     ["resources/niri.service", "/usr/lib/systemd/user/", "644"],
     ["resources/niri-shutdown.target", "/usr/lib/systemd/user/", "644"],
 ]
+

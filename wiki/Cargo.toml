@@ -1,0 +1,12 @@
+[package]
+name = "wiki"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mdbook = "0.4"
+mdbook-alerts = "0.7.0"
+ 
+[[bin]]
+name = "wiki"
+path = "wiki.rs"
