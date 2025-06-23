@@ -671,6 +671,7 @@ impl State {
             let Some(ipc_win) = state.windows.get(&id) else {
                 let window = make_ipc_window(mapped, ws_id);
                 events.push(Event::WindowOpenedOrChanged { window });
+                events.push(Event::WindowFocusChanged { id: Some(id) });
                 return;
             };
 
