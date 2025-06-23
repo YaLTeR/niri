@@ -3535,21 +3535,13 @@ impl Niri {
 
     pub fn output_for_tablet(&self, name: &str) -> Option<&Output> {
         let config = self.config.borrow();
-        let map_to_output = config
-            .input
-            .tablets
-            .find(name)
-            .and_then(|tablet| tablet.map_to_output.as_ref());
+        let map_to_output = config.input.tablets.find(name).map_to_output.as_ref();
         map_to_output.and_then(|name| self.output_by_name_match(name))
     }
 
     pub fn output_for_touch(&self, name: &str) -> Option<&Output> {
         let config = self.config.borrow();
-        let map_to_output = config
-            .input
-            .touch_screens
-            .find(name)
-            .and_then(|touch| touch.map_to_output.as_ref());
+        let map_to_output = config.input.touch_screens.find(name).map_to_output.as_ref();
         map_to_output
             .and_then(|name| self.output_by_name_match(name))
             .or_else(|| self.global_space.outputs().next())

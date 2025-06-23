@@ -6,6 +6,7 @@ use std::ffi::OsStr;
 use std::ops::{Mul, MulAssign};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use bitflags::bitflags;
@@ -376,24 +377,27 @@ pub struct Tablet {
     pub left_handed: bool,
 }
 
+static DEFAULT_TABLET: LazyLock<Tablet> = LazyLock::new(Tablet::default);
+
 impl FromIterator<Tablet> for Tablets {
     fn from_iter<T: IntoIterator<Item = Tablet>>(iter: T) -> Self {
-        Self(Vec::from_iter(iter))
+        Self(Vec::from_iter(
+            iter.into_iter().filter(|t| *t != *DEFAULT_TABLET),
+        ))
     }
 }
 
 impl Tablets {
-    pub fn find(&self, name: &str) -> Option<&Tablet> {
-        if let Some(tablet) = self.0.iter().find(|tablet| {
-            tablet
-                .name
-                .as_ref()
-                .is_some_and(|n| n.eq_ignore_ascii_case(name))
-        }) {
-            Some(tablet)
-        } else {
-            self.0.iter().find(|tablet| tablet.name.is_none())
-        }
+    pub fn find<'a>(&'a self, name: &str) -> &'a Tablet {
+        self.0
+            .iter()
+            .find(|t| {
+                t.name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+            .or_else(|| self.0.iter().find(|t| t.name.is_none()))
+            .unwrap_or(&DEFAULT_TABLET)
     }
 }
 
@@ -410,24 +414,27 @@ pub struct Touch {
     pub map_to_output: Option<String>,
 }
 
+static DEFAULT_TOUCH: LazyLock<Touch> = LazyLock::new(Touch::default);
+
 impl FromIterator<Touch> for TouchScreens {
     fn from_iter<T: IntoIterator<Item = Touch>>(iter: T) -> Self {
-        Self(Vec::from_iter(iter))
+        Self(Vec::from_iter(
+            iter.into_iter().filter(|t| *t != *DEFAULT_TOUCH),
+        ))
     }
 }
 
 impl TouchScreens {
-    pub fn find(&self, name: &str) -> Option<&Touch> {
-        if let Some(touch) = self.0.iter().find(|touch| {
-            touch
-                .name
-                .as_ref()
-                .is_some_and(|n| n.eq_ignore_ascii_case(name))
-        }) {
-            Some(touch)
-        } else {
-            self.0.iter().find(|touch| touch.name.is_none())
-        }
+    pub fn find<'a>(&'a self, name: &str) -> &'a Touch {
+        self.0
+            .iter()
+            .find(|t| {
+                t.name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+            .or_else(|| self.0.iter().find(|t| t.name.is_none()))
+            .unwrap_or(&DEFAULT_TOUCH)
     }
 }
 
