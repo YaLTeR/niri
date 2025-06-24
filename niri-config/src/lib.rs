@@ -42,6 +42,8 @@ pub struct Config {
     #[knuffel(child, default)]
     pub layout: Layout,
     #[knuffel(child, default)]
+    pub no_failed_config_reloaded_notification: bool,
+    #[knuffel(child, default)]
     pub prefer_no_csd: bool,
     #[knuffel(child, default)]
     pub cursor: Cursor,
