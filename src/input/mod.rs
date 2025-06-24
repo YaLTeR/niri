@@ -1123,13 +1123,13 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowToWorkspaceDown => {
-                self.niri.layout.move_to_workspace_down();
+                self.niri.layout.move_to_workspace_down(ActivateWindow::Smart);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
             Action::MoveWindowToWorkspaceUp => {
-                self.niri.layout.move_to_workspace_up();
+                self.niri.layout.move_to_workspace_up(ActivateWindow::Smart);
                 self.maybe_warp_cursor_to_focus();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
