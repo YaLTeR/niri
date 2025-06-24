@@ -18,5 +18,3 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    ignore:
-      - dependency-name: "Andrew-Chen-Wang/github-wiki-action"

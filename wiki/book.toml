@@ -1,0 +1,11 @@
+[book]
+title = "Niri"
+src = "src"
+language = "en"
+multilingual = false
+no-section-label = true
+
+[build]
+create-missing = true
+
+[preprocessor.alerts]
