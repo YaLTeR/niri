@@ -54,6 +54,8 @@ pub struct Config {
     ]
     pub screenshot_path: Option<String>,
     #[knuffel(child, default)]
+    pub screenshot_notification_disable: bool,
+    #[knuffel(child, default)]
     pub clipboard: Clipboard,
     #[knuffel(child, default)]
     pub hotkey_overlay: HotkeyOverlay,
@@ -4097,6 +4099,7 @@ mod tests {
             }
 
             screenshot-path "~/Screenshots/screenshot.png"
+            screenshot-notification-disable
 
             clipboard {
                 disable-primary
@@ -4653,6 +4656,7 @@ mod tests {
             screenshot_path: Some(
                 "~/Screenshots/screenshot.png",
             ),
+            screenshot_notification_disable: true,
             clipboard: Clipboard {
                 disable_primary: true,
             },
