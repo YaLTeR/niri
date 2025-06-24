@@ -1426,26 +1426,51 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::SwitchPresetColumnWidth => {
-                self.niri.layout.toggle_width();
+                self.niri.layout.toggle_width::<true>();
+            }
+            Action::SwitchPresetColumnWidthBack => {
+                self.niri.layout.toggle_width::<false>();
             }
             Action::SwitchPresetWindowWidth => {
-                self.niri.layout.toggle_window_width(None);
+                self.niri.layout.toggle_window_width::<true>(None);
+            }
+            Action::SwitchPresetWindowWidthBack => {
+                self.niri.layout.toggle_window_width::<false>(None);
             }
             Action::SwitchPresetWindowWidthById(id) => {
                 let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
                 let window = window.map(|(_, m)| m.window.clone());
                 if let Some(window) = window {
-                    self.niri.layout.toggle_window_width(Some(&window));
+                    self.niri.layout.toggle_window_width::<true>(Some(&window));
+                }
+            }
+            Action::SwitchPresetWindowWidthByIdBack(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_window_width::<false>(Some(&window));
                 }
             }
             Action::SwitchPresetWindowHeight => {
-                self.niri.layout.toggle_window_height(None);
+                self.niri.layout.toggle_window_height::<true>(None);
+            }
+            Action::SwitchPresetWindowHeightBack => {
+                self.niri.layout.toggle_window_height::<false>(None);
             }
             Action::SwitchPresetWindowHeightById(id) => {
                 let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
                 let window = window.map(|(_, m)| m.window.clone());
                 if let Some(window) = window {
-                    self.niri.layout.toggle_window_height(Some(&window));
+                    self.niri.layout.toggle_window_height::<true>(Some(&window));
+                }
+            }
+            Action::SwitchPresetWindowHeightByIdBack(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri
+                        .layout
+                        .toggle_window_height::<false>(Some(&window));
                 }
             }
             Action::CenterColumn => {
