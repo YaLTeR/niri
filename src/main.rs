@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::os::fd::FromRawFd;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::{env, mem};
 
@@ -25,7 +25,7 @@ use niri::utils::spawning::{
 };
 use niri::utils::watcher::Watcher;
 use niri::utils::{cause_panic, version, xwayland, IS_SYSTEMD_SERVICE};
-use niri_config::Config;
+use niri_config::ConfigPath;
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
@@ -99,8 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Sub::Validate { config } => {
                 tracy_client::Client::start();
 
-                let (path, _, _) = config_path(config);
-                Config::load(&path)?;
+                config_path(config).load()?;
                 info!("config is valid");
                 return Ok(());
             }
@@ -144,11 +143,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("starting version {}", &version());
 
     // Load the config.
-    let mut config_created = false;
-    let (path, watch_path, create_default) = config_path(cli.config);
+    let mut config_created_at = None;
+    let config_path = config_path(cli.config);
     env::remove_var("NIRI_CONFIG");
-    if create_default {
-        let default_parent = path.parent().unwrap();
+
+    let config_load_result = config_path.load_or_create_with(|user_path, _| {
+        let default_parent = user_path.parent().unwrap();
 
         match fs::create_dir_all(default_parent) {
             Ok(()) => {
@@ -157,22 +157,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .read(true)
                     .write(true)
                     .create_new(true)
-                    .open(&path);
+                    .open(user_path);
                 match new_file {
                     Ok(mut new_file) => {
                         let default = include_bytes!("../resources/default-config.kdl");
                         match new_file.write_all(default) {
                             Ok(()) => {
-                                config_created = true;
-                                info!("wrote default config to {:?}", &path);
+                                config_created_at = Some(user_path);
+                                info!("wrote default config to {:?}", &user_path);
                             }
                             Err(err) => {
-                                warn!("error writing config file at {:?}: {err:?}", &path)
+                                warn!("error writing config file at {:?}: {err:?}", &user_path)
                             }
                         }
                     }
                     Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
-                    Err(err) => warn!("error creating config file at {:?}: {err:?}", &path),
+                    Err(err) => warn!("error creating config file at {:?}: {err:?}", &user_path),
                 }
             }
             Err(err) => {
@@ -182,9 +182,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
         }
-    }
 
-    let config_load_result = Config::load(&path);
+        Ok(user_path)
+    });
+
     let config_errored = config_load_result.is_err();
     let mut config = config_load_result
         .map_err(|err| warn!("{err:?}"))
@@ -273,14 +274,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _watcher = {
         // Parsing the config actually takes > 20 ms on my beefy machine, so let's do it on the
         // watcher thread.
-        let process = |path: &Path| {
-            Config::load(path).map_err(|err| {
-                warn!("{:?}", err.context("error loading config"));
+        let process = |path: &ConfigPath| {
+            path.load().map_err(|err| {
+                warn!("{err:?}");
             })
         };
 
         let (tx, rx) = calloop::channel::sync_channel(1);
-        let watcher = Watcher::new(watch_path.clone(), process, tx);
+        let watcher = Watcher::new(config_path.clone(), process, tx);
         event_loop
             .handle()
             .insert_source(rx, |event, _, state| match event {
@@ -301,7 +302,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Show the config error notification right away if needed.
     if config_errored {
         state.niri.config_error_notification.show();
-    } else if config_created {
+    } else if let Some(path) = config_created_at {
         state.niri.config_error_notification.show_created(path);
     }
 
@@ -385,26 +386,21 @@ fn system_config_path() -> PathBuf {
     PathBuf::from("/etc/niri/config.kdl")
 }
 
-/// Resolves and returns the config path to load, the config path to watch, and whether to create
-/// the default config at the path to load.
-fn config_path(cli_path: Option<PathBuf>) -> (PathBuf, PathBuf, bool) {
+fn config_path(cli_path: Option<PathBuf>) -> ConfigPath {
     if let Some(explicit) = cli_path.or_else(env_config_path) {
-        return (explicit.clone(), explicit, false);
+        return ConfigPath::Explicit(explicit);
     }
 
     let system_path = system_config_path();
-    if let Some(path) = default_config_path() {
-        if path.exists() {
-            return (path.clone(), path, false);
-        }
 
-        if system_path.exists() {
-            (system_path, path, false)
-        } else {
-            (path.clone(), path, true)
+    if let Some(user_path) = default_config_path() {
+        ConfigPath::Regular {
+            user_path,
+            system_path,
         }
     } else {
-        (system_path.clone(), system_path, false)
+        // Couldn't find the home directory, or whatever.
+        ConfigPath::Explicit(system_path)
     }
 }
 

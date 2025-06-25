@@ -2368,6 +2368,67 @@ pub enum PreviewRender {
     ScreenCapture,
 }
 
+#[derive(Debug, Clone)]
+pub enum ConfigPath {
+    /// Load the config only from this path, never create it.
+    Explicit(PathBuf),
+    /// Normal operation: Prioritize the user path, fallback to the system path,
+    /// else maybe create the user path if we're starting (but not reloading).
+    Regular {
+        /// User config path, usually `$XDG_CONFIG_HOME/niri/config.kdl`
+        user_path: PathBuf,
+        /// System config path, usually `/etc/niri/config.kdl`
+        system_path: PathBuf,
+    },
+}
+
+impl ConfigPath {
+    pub fn load(&self) -> miette::Result<Config> {
+        let _span = tracy_client::span!("ConfigPath::load");
+
+        self.load_inner(|user_path, system_path| {
+            Err(miette::miette!(
+                "No config file found. Create one at {user_path} or {system_path}",
+                user_path = user_path.display(),
+                system_path = system_path.display(),
+            ))
+        })
+        .context("error loading config")
+    }
+
+    // Those lifetimes are really not flexible at all, but it's all we need for niri.
+    pub fn load_or_create_with<'a>(
+        &'a self,
+        maybe_create: impl FnOnce(&'a Path, &'a Path) -> miette::Result<&'a Path>,
+    ) -> miette::Result<Config> {
+        let _span = tracy_client::span!("ConfigPath::load_or_create_with");
+
+        self.load_inner(maybe_create)
+            .context("error loading config")
+    }
+
+    fn load_inner<'a>(
+        &'a self,
+        maybe_create: impl FnOnce(&'a Path, &'a Path) -> miette::Result<&'a Path>,
+    ) -> miette::Result<Config> {
+        Config::load_internal(match self {
+            ConfigPath::Explicit(path) => path.as_path(),
+            ConfigPath::Regular {
+                user_path,
+                system_path,
+            } => {
+                if user_path.exists() {
+                    user_path.as_path()
+                } else if system_path.exists() {
+                    system_path.as_path()
+                } else {
+                    maybe_create(user_path.as_path(), system_path.as_path())?
+                }
+            }
+        })
+    }
+}
+
 impl Config {
     pub fn load(path: &Path) -> miette::Result<Self> {
         let _span = tracy_client::span!("Config::load");

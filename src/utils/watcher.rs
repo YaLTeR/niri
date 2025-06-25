@@ -3,9 +3,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
-use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
+use std::{io, thread};
 
+use niri_config::ConfigPath;
 use smithay::reexports::calloop::channel::SyncSender;
 
 pub struct Watcher {
@@ -20,16 +21,16 @@ impl Drop for Watcher {
 
 impl Watcher {
     pub fn new<T: Send + 'static>(
-        path: PathBuf,
-        process: impl FnMut(&Path) -> T + Send + 'static,
+        path: ConfigPath,
+        process: impl FnMut(&ConfigPath) -> T + Send + 'static,
         changed: SyncSender<T>,
     ) -> Self {
         Self::with_start_notification(path, process, changed, None)
     }
 
     pub fn with_start_notification<T: Send + 'static>(
-        path: PathBuf,
-        mut process: impl FnMut(&Path) -> T + Send + 'static,
+        config_path: ConfigPath,
+        mut process: impl FnMut(&ConfigPath) -> T + Send + 'static,
         changed: SyncSender<T>,
         started: Option<mpsc::SyncSender<()>>,
     ) -> Self {
@@ -38,20 +39,39 @@ impl Watcher {
         {
             let should_stop = should_stop.clone();
             thread::Builder::new()
-                .name(format!("Filesystem Watcher for {}", path.to_string_lossy()))
+                .name(format!("Filesystem Watcher for {config_path:?}"))
                 .spawn(move || {
-                    // this "should" be as simple as mtime, but it does not quite work in practice;
-                    // it doesn't work if the config is a symlink, and its target changes but the
-                    // new target and old target have identical mtimes.
+                    // this "should" be as simple as storing the last seen mtime,
+                    // and if the contents change without updating mtime, we ignore it.
                     //
-                    // in practice, this does not occur on any systems other than nix.
-                    // because, on nix practically everything is a symlink to /nix/store
-                    // and due to reproducibility, /nix/store keeps no mtime (= 1970-01-01)
+                    // but that breaks if the config is a symlink, and its target
+                    // changes but the new target and old target have identical mtimes.
+                    // in which case we should *not* ignore it; this is an entirely different file.
+                    //
+                    // in practice, this edge case does not occur on systems other than nix.
+                    // because, on nix, everything is a symlink to /nix/store
+                    // and /nix/store keeps no mtime (= 1970-01-01)
                     // so, symlink targets change frequently when mtime doesn't.
-                    let mut last_props = path
-                        .canonicalize()
-                        .and_then(|canon| Ok((canon.metadata()?.modified()?, canon)))
-                        .ok();
+                    //
+                    // therefore, we must also store the canonical path, along with its mtime
+
+                    fn see_path(path: &Path) -> io::Result<(SystemTime, PathBuf)> {
+                        let canon = path.canonicalize()?;
+                        let mtime = canon.metadata()?.modified()?;
+                        Ok((mtime, canon))
+                    }
+
+                    fn see(config_path: &ConfigPath) -> io::Result<(SystemTime, PathBuf)> {
+                        match config_path {
+                            ConfigPath::Explicit(path) => see_path(path),
+                            ConfigPath::Regular {
+                                user_path,
+                                system_path,
+                            } => see_path(user_path).or_else(|_| see_path(system_path)),
+                        }
+                    }
+
+                    let mut last_props = see(&config_path).ok();
 
                     if let Some(started) = started {
                         let _ = started.send(());
@@ -64,14 +84,11 @@ impl Watcher {
                             break;
                         }
 
-                        if let Ok(new_props) = path
-                            .canonicalize()
-                            .and_then(|canon| Ok((canon.metadata()?.modified()?, canon)))
-                        {
+                        if let Ok(new_props) = see(&config_path) {
                             if last_props.as_ref() != Some(&new_props) {
-                                trace!("file changed: {}", path.to_string_lossy());
+                                trace!("config file changed.");
 
-                                let rv = process(&path);
+                                let rv = process(&config_path);
 
                                 if let Err(err) = changed.send(rv) {
                                     warn!("error sending change notification: {err:?}");
@@ -83,7 +100,7 @@ impl Watcher {
                         }
                     }
 
-                    debug!("exiting watcher thread for {}", path.to_string_lossy());
+                    debug!("exiting watcher thread for {config_path:?}");
                 })
                 .unwrap();
         }
@@ -130,8 +147,12 @@ mod tests {
 
         let (tx, rx) = sync_channel(1);
         let (started_tx, started_rx) = mpsc::sync_channel(1);
-        let _watcher =
-            Watcher::with_start_notification(config_path.clone(), |_| (), tx, Some(started_tx));
+        let _watcher = Watcher::with_start_notification(
+            ConfigPath::Explicit(config_path.clone()),
+            |_| (),
+            tx,
+            Some(started_tx),
+        );
         loop_handle
             .insert_source(rx, |_, _, _| {
                 changed.fetch_add(1, Ordering::SeqCst);
