@@ -68,10 +68,9 @@ impl ConfigErrorNotification {
         )
     }
 
-    pub fn show_created(&mut self, created_path: PathBuf) {
-        let created_path = Some(created_path);
-        if self.created_path != created_path {
-            self.created_path = created_path;
+    pub fn show_created(&mut self, created_path: &Path) {
+        if self.created_path.as_deref() != Some(created_path) {
+            self.created_path = Some(created_path.to_owned());
             self.buffers.borrow_mut().clear();
         }
 
