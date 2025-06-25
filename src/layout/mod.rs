@@ -42,7 +42,7 @@ use niri_config::{
     CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
     Workspace as WorkspaceConfig, WorkspaceReference,
 };
-use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
+use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use scrolling::{Column, ColumnWidth};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
@@ -1742,25 +1742,53 @@ impl<W: LayoutElement> Layout<W> {
         moving_window.chain(mon_windows)
     }
 
-    pub fn with_windows(&self, mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>)) {
+    pub fn current_interactive_move_tile(&self) -> Option<&Tile<W>> {
+        match &self.interactive_move {
+            Some(InteractiveMoveState::Moving(move_)) => Some(&move_.tile),
+            _ => None,
+        }
+    }
+
+    pub fn with_windows(
+        &self,
+        mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>, WindowLayout),
+    ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            f(move_.tile.window(), Some(&move_.output), None);
+            f(
+                move_.tile.window(),
+                Some(&move_.output),
+                None,
+                WindowLayout {
+                    tile_pos_in_scrolling_layout: None,
+                    tile_size: move_.tile.tile_size().into(),
+                    window_size: move_.tile.window().size().into(),
+                    tile_pos_in_workspace_view: None,
+                    window_pos_in_workspace_view: None,
+                },
+            );
         }
 
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mon.workspaces {
-                        for win in ws.windows() {
-                            f(win, Some(&mon.output), Some(ws.id()));
+                        // for (tile, cell) in ws.tiles_with_workspace_positions() {
+                        for (tile, window_layout) in ws.tiles_with_window_layouts() {
+                            f(
+                                tile.window(),
+                                Some(&mon.output),
+                                Some(ws.id()),
+                                window_layout,
+                            );
                         }
                     }
                 }
             }
             MonitorSet::NoOutputs { workspaces } => {
                 for ws in workspaces {
-                    for win in ws.windows() {
-                        f(win, None, Some(ws.id()));
+                    // for (tile, cell) in ws.tiles_with_workspace_positions() {
+                    for (tile, window_layout) in ws.tiles_with_window_layouts() {
+                        f(tile.window(), None, Some(ws.id()), window_layout);
                     }
                 }
             }

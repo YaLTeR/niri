@@ -1155,6 +1155,35 @@ pub struct Window {
     pub is_floating: bool,
     /// Whether this window requests your attention.
     pub is_urgent: bool,
+    /// Position- and size-related properties of the window.
+    pub location: WindowLayout,
+}
+
+/// Position- and size-related properties of a [`Window`].
+///
+/// Optional properties will be unset for some windows, do not rely on them always being present.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct WindowLayout {
+    /// Location of a tiled window within a workspace in terms of (column index, tile index in
+    /// column).
+    pub pos_in_scrolling_layout: Option<(usize, usize)>,
+    /// Size of the tile this window is in, including decorations like borders.
+    pub tile_size: (f64, f64),
+    /// Size of the window itself.
+    ///
+    /// Note that Wayland windows can only be integer sized.
+    pub window_size: (i32, i32),
+    /// Tile position within the current view of the workspace.
+    ///
+    /// This is the same "workspace view" as in gradients' `relative-to` in the niri config.
+    pub tile_pos_in_workspace_view: Option<(f64, f64)>,
+    /// Window position within the current view of the workspace.
+    ///
+    /// Unlike `tile_pos_in_workspace_view`, this is the position of the window contents, excluding
+    /// borders and other decorations. You probably want to use `tile_pos_in_workspace_view`
+    /// instead, since borders are a part of the window, as far as the user is concerned.
+    pub window_pos_in_workspace_view: Option<(f64, f64)>,
 }
 
 /// Output configuration change result.
@@ -1330,6 +1359,11 @@ pub enum Event {
         id: u64,
         /// The new urgency state of the window.
         urgent: bool,
+    },
+    /// The layout of one or more windows has changed.
+    WindowLayoutsChanged {
+        /// Pairs consisting of a window id and new layout information for the window.
+        changes: Vec<(u64, WindowLayout)>,
     },
     /// The configured keyboard layouts have changed.
     KeyboardLayoutsChanged {

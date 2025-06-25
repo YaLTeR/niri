@@ -17,7 +17,8 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response, Workspace,
+    Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response, WindowLayout,
+    Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -477,7 +478,11 @@ async fn handle_event_stream_client(client: EventStreamClient) -> anyhow::Result
     Ok(())
 }
 
-fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_ipc::Window {
+fn make_ipc_window(
+    mapped: &Mapped,
+    workspace_id: Option<WorkspaceId>,
+    location: WindowLayout,
+) -> niri_ipc::Window {
     with_toplevel_role(mapped.toplevel(), |role| niri_ipc::Window {
         id: mapped.id().get(),
         title: role.title.clone(),
@@ -487,6 +492,7 @@ fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_i
         is_focused: mapped.is_focused(),
         is_floating: mapped.is_floating(),
         is_urgent: mapped.is_urgent(),
+        location,
     })
 }
 
@@ -657,10 +663,12 @@ impl State {
         let mut events = Vec::new();
         let layout = &self.niri.layout;
 
+        let mut batch_change_locations: Vec<(u64, WindowLayout)> = Vec::new();
+
         // Check for window changes.
         let mut seen = HashSet::new();
         let mut focused_id = None;
-        layout.with_windows(|mapped, _, ws_id| {
+        layout.with_windows(|mapped, _, ws_id, window_layout| {
             let id = mapped.id().get();
             seen.insert(id);
 
@@ -669,7 +677,7 @@ impl State {
             }
 
             let Some(ipc_win) = state.windows.get(&id) else {
-                let window = make_ipc_window(mapped, ws_id);
+                let window = make_ipc_window(mapped, ws_id, window_layout);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
             };
@@ -683,9 +691,13 @@ impl State {
             });
 
             if changed {
-                let window = make_ipc_window(mapped, ws_id);
+                let window = make_ipc_window(mapped, ws_id, window_layout);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
+            }
+
+            if ipc_win.location != window_layout {
+                batch_change_locations.push((id, window_layout));
             }
 
             if mapped.is_focused() && !ipc_win.is_focused {
@@ -697,6 +709,12 @@ impl State {
                 events.push(Event::WindowUrgencyChanged { id, urgent })
             }
         });
+
+        if !batch_change_locations.is_empty() {
+            events.push(Event::WindowLayoutsChanged {
+                changes: batch_change_locations,
+            });
+        }
 
         // Check for closed windows.
         let mut ipc_focused_id = None;
