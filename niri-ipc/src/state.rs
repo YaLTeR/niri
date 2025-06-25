@@ -137,7 +137,7 @@ impl EventStreamStatePart for WindowsState {
                     let w = self
                         .windows
                         .get_mut(&id)
-                        .expect("altered window missing from map");
+                        .expect("changed window was missing from the map");
                     w.location = update;
                 }
             }
