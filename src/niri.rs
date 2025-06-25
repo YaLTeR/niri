@@ -314,8 +314,11 @@ pub struct Niri {
     pub single_pixel_buffer_state: SinglePixelBufferState,
 
     pub seat: Seat<State>,
-    /// Scancodes of the keys to suppress.
-    pub suppressed_keys: HashSet<Keycode>,
+    /// Scancodes and whether a release keybind is valid of the keys to suppress.
+    /// Release bindings only execute when no other binds are handled between press and release.
+    /// Therefore, we set the remaining scancodes to false when handling another keybind so we
+    /// don't handle multiple release binds in a single interaction.
+    pub suppressed_keys: HashMap<Keycode, bool>,
     /// Button codes of the mouse buttons to suppress.
     pub suppressed_buttons: HashSet<u32>,
     pub bind_cooldown_timers: HashMap<Key, RegistrationToken>,
@@ -2624,7 +2627,7 @@ impl Niri {
             ext_data_control_state,
             popups: PopupManager::default(),
             popup_grab: None,
-            suppressed_keys: HashSet::new(),
+            suppressed_keys: HashMap::new(),
             suppressed_buttons: HashSet::new(),
             bind_cooldown_timers: HashMap::new(),
             bind_repeat_timer: Option::default(),
