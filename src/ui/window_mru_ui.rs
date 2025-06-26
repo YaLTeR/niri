@@ -302,8 +302,8 @@ impl WindowMru {
             .unwrap_or(self.thumbnails.len().saturating_sub(1))
     }
 
-    fn get_id(&self, index: usize) -> MappedId {
-        self.thumbnails[index].id
+    fn get_id(&self, index: usize) -> Option<MappedId> {
+        Some(self.thumbnails.get(index)?.id)
     }
 
     fn current(&self) -> Option<&Thumbnail> {
@@ -952,33 +952,34 @@ impl Inner {
                 if t.offset <= view_offset + output_size.w {
                     let mut tcache = self.textures.borrow_mut();
                     let textures = tcache.get_mut(i);
-                    let id = wmru.get_id(i);
-                    if let Some(thumb_texture) = textures.get_thumbnail(niri, renderer, id) {
-                        let title_texture = (i == wmru.current)
-                            .then(|| {
-                                textures.get_title(
-                                    niri,
-                                    renderer,
-                                    id,
-                                    thumb_texture
-                                        .logical_size()
-                                        .to_physical(1.)
-                                        .to_i32_round()
-                                        .w,
-                                )
-                            })
-                            .flatten();
-                        let loc = Point::from((
-                            t.offset + t.render_offset() - view_offset,
-                            (output_size.h - thumb_texture.logical_size().h) / 2.,
-                        ));
-                        rv.extend(t.render(
-                            renderer,
-                            loc,
-                            thumb_texture,
-                            title_texture,
-                            (i == wmru.current).then_some(&self.focus_ring),
-                        ));
+                    if let Some(id) = wmru.get_id(i) {
+                        if let Some(thumb_texture) = textures.get_thumbnail(niri, renderer, id) {
+                            let title_texture = (i == wmru.current)
+                                .then(|| {
+                                    textures.get_title(
+                                        niri,
+                                        renderer,
+                                        id,
+                                        thumb_texture
+                                            .logical_size()
+                                            .to_physical(1.)
+                                            .to_i32_round()
+                                            .w,
+                                    )
+                                })
+                                .flatten();
+                            let loc = Point::from((
+                                t.offset + t.render_offset() - view_offset,
+                                (output_size.h - thumb_texture.logical_size().h) / 2.,
+                            ));
+                            rv.extend(t.render(
+                                renderer,
+                                loc,
+                                thumb_texture,
+                                title_texture,
+                                (i == wmru.current).then_some(&self.focus_ring),
+                            ));
+                        }
                     }
                 } else {
                     break;
