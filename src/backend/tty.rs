@@ -972,7 +972,7 @@ impl Tty {
             surface,
             None,
             allocator.clone(),
-            GbmFramebufferExporter::new(device.gbm.clone()),
+            GbmFramebufferExporter::new(device.gbm.clone(), Some(device.render_node)),
             SUPPORTED_COLOR_FORMATS,
             // This is only used to pick a good internal format, so it can use the surface's render
             // formats, even though we only ever render on the primary GPU.
@@ -1002,7 +1002,7 @@ impl Tty {
                     surface,
                     None,
                     allocator,
-                    GbmFramebufferExporter::new(device.gbm.clone()),
+                    GbmFramebufferExporter::new(device.gbm.clone(), Some(device.render_node)),
                     SUPPORTED_COLOR_FORMATS,
                     render_formats,
                     device.drm.cursor_size(),
