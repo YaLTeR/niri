@@ -1086,6 +1086,8 @@ impl TextureCache {
         Self(textures)
     }
 
+    /// Returns the texture at given cache index
+    /// Panics if the index points beyond the end of the cache.
     fn get_mut(&mut self, index: usize) -> &mut MruUiTileTextures {
         &mut self.0[index]
     }
