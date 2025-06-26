@@ -30,6 +30,7 @@ x Transition when opening/closing MruUI
 
 */
 use std::cell::RefCell;
+use std::ops::ControlFlow;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::time::Instant;
@@ -569,7 +570,6 @@ impl WindowMruUi {
         //     close animation
         //   - thumbnails that are only in the replacement WindowMru get an open animation
         {
-            let mut start_pos = 0;
             let len = wmru.thumbnails.len();
 
             // Create new empty texture cache
@@ -580,35 +580,56 @@ impl WindowMruUi {
             let mut ptextures = inner.textures.replace(TextureCache(textures)).0;
             let textures = &mut inner.textures.borrow_mut().0;
 
+            //
+            let mut start_idx = 0;
+
             wmru.thumbnails.iter_mut().enumerate().for_each(|(idx, t)| {
-                if let Some(pidx) = prev_wmru
+                match prev_wmru
                     .thumbnails
                     .iter()
-                    .skip(start_pos)
-                    .take_while(|Thumbnail { timestamp: pt, .. }| t.timestamp >= *pt)
-                    .position(|pt| pt.id == t.id)
-                {
-                    // id from the new thumbnail was present in the previous list, animate motion
-                    // from the previous position.
-                    let pidx = start_pos + pidx;
-                    start_pos = pidx;
-                    let pt = &prev_wmru.thumbnails[pidx];
-                    t.animate_move_from_with_config(
-                        pt.offset - t.offset,
-                        inner.options.animations.window_movement.0,
-                    );
-                    // retain the previous thumbnail's textures
-                    mem::swap(&mut ptextures[pidx], &mut textures[idx]);
-                } else {
-                    // id from the new thumbnail was not in the previous list, start an open
-                    // animation for it.
-                    t.open_animation = Some(Animation::new(
-                        t.clock.clone(),
-                        0.,
-                        1.,
-                        0.,
-                        inner.options.animations.window_open.anim,
-                    ))
+                    .enumerate()
+                    .skip(start_idx)
+                    .try_for_each(|(pidx, pt)| {
+                        if prev_wmru.direction == MruDirection::Forward
+                            && pt.timestamp < t.timestamp
+                        {
+                            return ControlFlow::Break(None);
+                        }
+                        start_idx = pidx + 1;
+                        if t.id == pt.id {
+                            ControlFlow::Break(Some(pidx))
+                        } else {
+                            ControlFlow::Continue(())
+                        }
+                    }) {
+                    ControlFlow::Break(Some(pidx)) => {
+                        // The thumbnail is present in the previous and
+                        // replacement Mru list.
+
+                        // Animate the new thumbnail so that it appears to move
+                        // from the corresponding one's previous position.
+                        let pt = &prev_wmru.thumbnails[pidx];
+                        t.animate_move_from_with_config(
+                            pt.offset - t.offset,
+                            inner.options.animations.window_movement.0,
+                        );
+
+                        // Retain the previous thumbnail's textures by
+                        // transfering it to the new texture cache.
+                        mem::swap(&mut ptextures[pidx], &mut textures[idx]);
+                    }
+                    _ => {
+                        // The new thumbnail wasn't in the previous Mru list.
+
+                        // Schedule an open animation for it.
+                        t.open_animation = Some(Animation::new(
+                            t.clock.clone(),
+                            0.,
+                            1.,
+                            0.,
+                            inner.options.animations.window_open.anim,
+                        ))
+                    }
                 }
             });
 
