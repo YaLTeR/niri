@@ -19,7 +19,7 @@ use niri_ipc::{
 };
 use smithay::backend::renderer::Color32F;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
-use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
+use smithay::input::keyboard::xkb::{LayoutIndex, keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::{Keysym, XkbConfig};
 use smithay::reexports::input;
 
@@ -152,6 +152,8 @@ pub struct Xkb {
     pub options: Option<String>,
     #[knuffel(child, unwrap(argument))]
     pub file: Option<String>,
+    #[knuffel(child, unwrap(argument))]
+    pub resolve_keycode_with_layout: Option<LayoutIndex>
 }
 
 impl Xkb {
