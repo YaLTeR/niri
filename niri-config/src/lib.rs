@@ -14,8 +14,8 @@ use knuffel::Decode as _;
 use layer_rule::LayerRule;
 use miette::{miette, Context, IntoDiagnostic};
 use niri_ipc::{
-    ColumnDisplay, ConfiguredMode, LayoutSwitchTarget, PositionChange, SizeChange, Transform,
-    WorkspaceReferenceArg,
+    ColumnDisplay, ConfiguredMode, LayoutSwitchTarget, Point, PositionChange, SizeChange,
+    Transform, WorkspaceReferenceArg,
 };
 use smithay::backend::renderer::Color32F;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
@@ -1922,6 +1922,8 @@ pub enum Action {
     SetWindowUrgent(u64),
     #[knuffel(skip)]
     UnsetWindowUrgent(u64),
+    #[knuffel(skip)]
+    SetPointerLocation(Point),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -2197,6 +2199,9 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
+            niri_ipc::Action::SetPointerLocation { x, y } => {
+                Self::SetPointerLocation(Point { x, y })
+            }
         }
     }
 }
