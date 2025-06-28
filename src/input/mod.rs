@@ -83,6 +83,7 @@ impl<D: SeatHandler> PointerOrTouchStartData<D> {
     }
 }
 
+#[derive(Debug)]
 enum ShouldInterceptResult {
     Forward,
     ForwardAndHandle(Bind),
@@ -4722,17 +4723,91 @@ pub fn mods_with_finger_scroll_binds(mod_key: ModKey, binds: &Binds) -> HashSet<
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
-
     use super::*;
     use crate::animation::Clock;
 
+    const CLOSE_KEYSYM: Keysym = Keysym::q;
+    const OTHER_KEYSYM: Keysym = Keysym::l;
+    const MOD_KEYSYM: Keysym = Keysym::Super_L;
+    const CLOSE_KEY_CODE: Keycode = Keycode::new(CLOSE_KEYSYM.raw());
+    const OTHER_KEY_CODE: Keycode = Keycode::new(OTHER_KEYSYM.raw());
+    const MOD_KEY_CODE: Keycode = Keycode::new(MOD_KEYSYM.raw());
+    struct TestState {
+        screenshot_ui: ScreenshotUi,
+        disable_power_key_handling: bool,
+        is_inhibiting: bool,
+    }
+
+    fn create_test_state() -> TestState {
+        TestState {
+            screenshot_ui: ScreenshotUi::new(Clock::default(), Default::default()),
+            disable_power_key_handling: false,
+            is_inhibiting: false,
+        }
+    }
+
+    fn process_close_key(
+        suppressed_keys: &mut HashMap<Keycode, bool>,
+        bindings: &Binds,
+        state: &TestState,
+        mods: ModifiersState,
+        pressed: bool,
+    ) -> ShouldInterceptResult {
+        should_intercept_key(
+            suppressed_keys,
+            bindings,
+            ModKey::Super,
+            CLOSE_KEY_CODE,
+            CLOSE_KEYSYM,
+            Some(CLOSE_KEYSYM),
+            pressed,
+            mods,
+            &state.screenshot_ui,
+            state.disable_power_key_handling,
+            state.is_inhibiting,
+        )
+    }
+
+    fn process_other_key(
+        suppressed_keys: &mut HashMap<Keycode, bool>,
+        bindings: &Binds,
+        state: &TestState,
+        mods: ModifiersState,
+        pressed: bool,
+    ) -> ShouldInterceptResult {
+        should_intercept_key(
+            suppressed_keys,
+            bindings,
+            ModKey::Super,
+            OTHER_KEY_CODE,
+            OTHER_KEYSYM,
+            Some(OTHER_KEYSYM),
+            pressed,
+            mods,
+            &state.screenshot_ui,
+            state.disable_power_key_handling,
+            state.is_inhibiting,
+        )
+    }
+
+    // Helper macro for assertion
+    macro_rules! assert_matches {
+        ($expression:expr, $pattern:pat) => {
+            let value = $expression;
+            assert!(
+                matches!(value, $pattern),
+                "Expected {:?} to match {}",
+                value,
+                stringify!($pattern)
+            );
+        };
+    }
+
     #[test]
-    fn bindings_suppress_keys() {
-        let close_keysym = Keysym::q;
+    fn test_press_bindings() {
         let bindings = Binds(vec![Bind {
             key: Key {
-                trigger: Trigger::Keysym(close_keysym),
+                trigger: Trigger::Keysym(CLOSE_KEYSYM),
                 modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
             },
             action: Action::CloseWindow,
@@ -4743,126 +4818,79 @@ mod tests {
             allow_inhibiting: true,
             hotkey_overlay_title: None,
         }]);
-
-        let comp_mod = ModKey::Super;
         let mut suppressed_keys = HashMap::new();
-
-        let screenshot_ui = ScreenshotUi::new(Clock::default(), Default::default());
-        let disable_power_key_handling = false;
-        let is_inhibiting_shortcuts = Cell::new(false);
-
-        // The key_code we pick is arbitrary, the only thing
-        // that matters is that they are different between cases.
-
-        let close_key_code = Keycode::from(close_keysym.raw() + 8u32);
-        let close_key_event =
-            |suppr: &mut HashMap<Keycode, bool>, mods: ModifiersState, pressed| {
-                should_intercept_key(
-                    suppr,
-                    &bindings,
-                    comp_mod,
-                    close_key_code,
-                    close_keysym,
-                    Some(close_keysym),
-                    pressed,
-                    mods,
-                    &screenshot_ui,
-                    disable_power_key_handling,
-                    is_inhibiting_shortcuts.get(),
-                )
-            };
-
-        // Key event with the code which can't trigger any action.
-        let none_key_event = |suppr: &mut HashMap<Keycode, bool>, mods: ModifiersState, pressed| {
-            should_intercept_key(
-                suppr,
-                &bindings,
-                comp_mod,
-                Keycode::from(Keysym::l.raw() + 8),
-                Keysym::l,
-                Some(Keysym::l),
-                pressed,
-                mods,
-                &screenshot_ui,
-                disable_power_key_handling,
-                is_inhibiting_shortcuts.get(),
-            )
-        };
-
-        let mut mods = ModifiersState {
-            logo: true,
-            ctrl: true,
-            ..Default::default()
-        };
+        let common_state = create_test_state();
+        let mut mods: ModifiersState = Default::default();
 
         // Action press/release.
-
-        let filter = close_key_event(&mut suppressed_keys, mods, true);
-        assert!(matches!(
+        mods.logo = true;
+        mods.ctrl = true;
+        let filter = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, true);
+        assert_matches!(
             filter,
             ShouldInterceptResult::InterceptAndHandle(Bind {
                 action: Action::CloseWindow,
                 ..
             })
-        ));
-        assert!(suppressed_keys.contains_key(&close_key_code));
+        );
+        assert!(suppressed_keys.contains_key(&CLOSE_KEY_CODE));
 
-        let filter = close_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(filter, ShouldInterceptResult::InterceptOnly));
+        let filter = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
+        assert_matches!(filter, ShouldInterceptResult::InterceptOnly);
         assert!(suppressed_keys.is_empty());
 
-        // Remove mod to make it for a binding.
+        // The binding with shift included shouldn't trigger
 
         mods.shift = true;
-        let filter = close_key_event(&mut suppressed_keys, mods, true);
-        assert!(matches!(filter, ShouldInterceptResult::Forward));
+        let filter = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, true);
+        assert_matches!(filter, ShouldInterceptResult::Forward);
 
         mods.shift = false;
-        let filter = close_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(filter, ShouldInterceptResult::Forward));
+        let filter = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
+        assert_matches!(filter, ShouldInterceptResult::Forward);
 
-        // Just none press/release.
+        // Random unused binding press/release
 
-        let filter = none_key_event(&mut suppressed_keys, mods, true);
-        assert!(matches!(filter, ShouldInterceptResult::Forward));
+        let filter = process_other_key(&mut suppressed_keys, &bindings, &common_state, mods, true);
+        assert_matches!(filter, ShouldInterceptResult::Forward);
 
-        let filter = none_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(filter, ShouldInterceptResult::Forward));
+        let filter = process_other_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
+        assert_matches!(filter, ShouldInterceptResult::Forward);
 
         // Press action, press arbitrary, release action, release arbitrary.
 
-        let filter = close_key_event(&mut suppressed_keys, mods, true);
-        assert!(matches!(
+        let filter = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, true);
+        assert_matches!(
             filter,
             ShouldInterceptResult::InterceptAndHandle(Bind {
                 action: Action::CloseWindow,
                 ..
             })
-        ));
+        );
 
-        let filter = none_key_event(&mut suppressed_keys, mods, true);
-        assert!(matches!(filter, ShouldInterceptResult::Forward));
+        let filter = process_other_key(&mut suppressed_keys, &bindings, &common_state, mods, true);
+        assert_matches!(filter, ShouldInterceptResult::Forward);
 
-        let filter = close_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(filter, ShouldInterceptResult::InterceptOnly));
+        let filter = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
+        assert_matches!(filter, ShouldInterceptResult::InterceptOnly);
 
-        let filter = none_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(filter, ShouldInterceptResult::Forward));
+        let filter = process_other_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
+        assert_matches!(filter, ShouldInterceptResult::Forward);
 
         // Trigger and remove all mods.
 
-        let filter = close_key_event(&mut suppressed_keys, mods, true);
-        assert!(matches!(
+        let filter = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, true);
+        assert_matches!(
             filter,
             ShouldInterceptResult::InterceptAndHandle(Bind {
                 action: Action::CloseWindow,
                 ..
             })
-        ));
+        );
 
         mods = Default::default();
-        let filter = close_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(filter, ShouldInterceptResult::InterceptOnly));
+        let filter = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
+        assert_matches!(filter, ShouldInterceptResult::InterceptOnly);
 
         // Ensure that no keys are being suppressed.
         assert!(suppressed_keys.is_empty());
@@ -4870,7 +4898,10 @@ mod tests {
         // Now test shortcut inhibiting.
 
         // With inhibited shortcuts, we don't intercept our shortcut.
-        is_inhibiting_shortcuts.set(true);
+        let inhibited_state = TestState {
+            is_inhibiting: true,
+            ..create_test_state()
+        };
 
         mods = ModifiersState {
             logo: true,
@@ -4878,40 +4909,347 @@ mod tests {
             ..Default::default()
         };
 
-        let filter = close_key_event(&mut suppressed_keys, mods, true);
-        assert!(matches!(filter, ShouldInterceptResult::Forward));
+        let filter = process_close_key(
+            &mut suppressed_keys,
+            &bindings,
+            &inhibited_state,
+            mods,
+            true,
+        );
+        assert_matches!(filter, ShouldInterceptResult::Forward);
         assert!(suppressed_keys.is_empty());
 
-        let filter = close_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(filter, ShouldInterceptResult::Forward));
+        let filter = process_close_key(
+            &mut suppressed_keys,
+            &bindings,
+            &inhibited_state,
+            mods,
+            false,
+        );
+        assert_matches!(filter, ShouldInterceptResult::Forward);
         assert!(suppressed_keys.is_empty());
 
         // Toggle it off after pressing the shortcut.
-        let filter = close_key_event(&mut suppressed_keys, mods, true);
-        assert!(matches!(filter, ShouldInterceptResult::Forward));
+        let filter = process_close_key(
+            &mut suppressed_keys,
+            &bindings,
+            &inhibited_state,
+            mods,
+            true,
+        );
+        assert_matches!(filter, ShouldInterceptResult::Forward);
         assert!(suppressed_keys.is_empty());
 
-        is_inhibiting_shortcuts.set(false);
-
-        let filter = close_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(filter, ShouldInterceptResult::Forward));
+        let filter = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
+        assert_matches!(filter, ShouldInterceptResult::Forward);
         assert!(suppressed_keys.is_empty());
 
         // Toggle it on after pressing the shortcut.
-        let filter = close_key_event(&mut suppressed_keys, mods, true);
-        assert!(matches!(
+        let filter = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, true);
+        assert_matches!(
             filter,
             ShouldInterceptResult::InterceptAndHandle(Bind {
                 action: Action::CloseWindow,
                 ..
             })
-        ));
-        assert!(suppressed_keys.contains_key(&close_key_code));
+        );
+        assert!(suppressed_keys.contains_key(&CLOSE_KEY_CODE));
 
-        is_inhibiting_shortcuts.set(true);
+        let filter = process_close_key(
+            &mut suppressed_keys,
+            &bindings,
+            &inhibited_state,
+            mods,
+            false,
+        );
+        assert_matches!(filter, ShouldInterceptResult::InterceptOnly);
+        assert!(suppressed_keys.is_empty());
+    }
 
-        let filter = close_key_event(&mut suppressed_keys, mods, false);
-        assert!(matches!(filter, ShouldInterceptResult::InterceptOnly));
+    fn process_mod_key(
+        suppressed_keys: &mut HashMap<Keycode, bool>,
+        bindings: &Binds,
+        state: &TestState,
+        mods: &mut ModifiersState,
+        pressed: bool,
+    ) -> ShouldInterceptResult {
+        let filter = should_intercept_key(
+            suppressed_keys,
+            bindings,
+            ModKey::Super,
+            MOD_KEY_CODE,
+            MOD_KEYSYM,
+            Some(MOD_KEYSYM),
+            pressed,
+            *mods,
+            &state.screenshot_ui,
+            state.disable_power_key_handling,
+            state.is_inhibiting,
+        );
+        mods.logo = pressed;
+        filter
+    }
+
+    #[test]
+    fn test_release_bindings() {
+        let bindings = Binds(vec![
+            // A compositor-only release binding which toggles the overview
+            Bind {
+                key: Key {
+                    trigger: Trigger::Compositor,
+                    modifiers: Modifiers::COMPOSITOR,
+                },
+                action: Action::ToggleOverview,
+                repeat: true,
+                release: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                hotkey_overlay_title: None,
+            },
+            // Another release binding on the close key
+            Bind {
+                key: Key {
+                    trigger: Trigger::Keysym(CLOSE_KEYSYM),
+                    modifiers: Modifiers::COMPOSITOR,
+                },
+                action: Action::CloseWindow,
+                repeat: true,
+                release: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                hotkey_overlay_title: None,
+            },
+            // A normal binding for centering the column on the other key
+            Bind {
+                key: Key {
+                    trigger: Trigger::Keysym(OTHER_KEYSYM),
+                    modifiers: Modifiers::COMPOSITOR,
+                },
+                action: Action::CenterColumn,
+                repeat: true,
+                release: false,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                hotkey_overlay_title: None,
+            },
+        ]);
+
+        let mut suppressed_keys = HashMap::new();
+        let common_state = create_test_state();
+        let mut mods: ModifiersState = Default::default();
+
+        // Test mod-only keybind
+        let result = process_mod_key(
+            &mut suppressed_keys,
+            &bindings,
+            &common_state,
+            &mut mods,
+            true,
+        );
+        assert_matches!(result, ShouldInterceptResult::Forward);
+        assert!(suppressed_keys.contains_key(&MOD_KEY_CODE));
+
+        let result = process_mod_key(
+            &mut suppressed_keys,
+            &bindings,
+            &common_state,
+            &mut mods,
+            false,
+        );
+        assert_matches!(
+            result,
+            ShouldInterceptResult::ForwardAndHandle(Bind {
+                action: Action::ToggleOverview,
+                ..
+            })
+        );
+        assert!(suppressed_keys.is_empty());
+        assert!(mods.logo == false);
+
+        // Test case: press release binding, press another binding, release first key
+        // The release action shouldn't trigger because another binding was activated
+
+        mods.logo = true;
+
+        // Press first key (close; release binding)
+        let result = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, true);
+        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        assert!(suppressed_keys.contains_key(&CLOSE_KEY_CODE));
+
+        // Press second key (center column; non-release binding)
+        let result = process_other_key(&mut suppressed_keys, &bindings, &common_state, mods, true);
+        assert_matches!(
+            result,
+            ShouldInterceptResult::InterceptAndHandle(Bind {
+                action: Action::CenterColumn,
+                ..
+            })
+        );
+
+        assert!(suppressed_keys.contains_key(&OTHER_KEY_CODE));
+        // Check that close key is still in suppressed_keys but marked as invalid (value=false)
+        assert!(suppressed_keys.contains_key(&CLOSE_KEY_CODE));
+        assert_eq!(suppressed_keys[&CLOSE_KEY_CODE], false);
+
+        // Release first key - should be intercepted but not trigger action
+        let result = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
+        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+
+        // Release second key - should be intercepted but not trigger action
+        let result = process_other_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
+        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        assert!(suppressed_keys.is_empty());
+
+        // Test case: The same thing, but with two release bindings.
+        // The first action should run since the second didn't run in-between.
+        mods.logo = false;
+
+        // Press first key (toggle overview; release binding)
+        let result = process_mod_key(
+            &mut suppressed_keys,
+            &bindings,
+            &common_state,
+            &mut mods,
+            true,
+        );
+        assert_matches!(result, ShouldInterceptResult::Forward);
+        assert!(suppressed_keys.contains_key(&MOD_KEY_CODE));
+
+        // Press second key (close; release binding)
+        let result = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, true);
+        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        assert!(suppressed_keys.contains_key(&MOD_KEY_CODE));
+        assert!(suppressed_keys.contains_key(&CLOSE_KEY_CODE));
+
+        // Release first key - should trigger action
+        let result = process_mod_key(
+            &mut suppressed_keys,
+            &bindings,
+            &common_state,
+            &mut mods,
+            false,
+        );
+        assert_matches!(
+            result,
+            ShouldInterceptResult::ForwardAndHandle(Bind {
+                action: Action::ToggleOverview,
+                ..
+            })
+        );
+        assert!(suppressed_keys.contains_key(&CLOSE_KEY_CODE));
+
+        // Release second key - should be intercepted but not trigger action
+        let result = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
+        assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        assert!(suppressed_keys.is_empty());
+
+        // Test case: inhibited release bindings
+        let inhibited_state = TestState {
+            is_inhibiting: true,
+            ..create_test_state()
+        };
+
+        mods.logo = false;
+
+        // Press mod key with inhibiting active - should be forwarded
+        let result = process_mod_key(
+            &mut suppressed_keys,
+            &bindings,
+            &inhibited_state,
+            &mut mods,
+            true,
+        );
+        assert_matches!(result, ShouldInterceptResult::Forward);
+        assert!(suppressed_keys.is_empty()); // No key should be suppressed
+
+        // Release mod key - should also be forwarded
+        let result = process_mod_key(
+            &mut suppressed_keys,
+            &bindings,
+            &inhibited_state,
+            &mut mods,
+            false,
+        );
+        assert_matches!(result, ShouldInterceptResult::Forward);
+        assert!(suppressed_keys.is_empty());
+
+        // Test with close key and turning off inhibition midway through
+        mods.logo = true;
+
+        // Press close key with inhibiting active - should be forwarded
+        let result = process_close_key(
+            &mut suppressed_keys,
+            &bindings,
+            &inhibited_state,
+            mods,
+            true,
+        );
+        assert_matches!(result, ShouldInterceptResult::Forward);
+        assert!(suppressed_keys.is_empty());
+
+        // Release close key - should also be forwarded
+        let result = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
+        assert_matches!(result, ShouldInterceptResult::Forward);
+        assert!(suppressed_keys.is_empty());
+    }
+
+    #[test]
+    fn test_non_inhibitable_bindings() {
+        let bindings = Binds(vec![Bind {
+            key: Key {
+                trigger: Trigger::Keysym(CLOSE_KEYSYM),
+                modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
+            },
+            action: Action::CloseWindow,
+            repeat: true,
+            release: false,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: false, // This binding cannot be inhibited
+            hotkey_overlay_title: None,
+        }]);
+
+        let mut suppressed_keys = HashMap::new();
+        let inhibited_state = TestState {
+            is_inhibiting: true,
+            ..create_test_state()
+        };
+
+        let mods = ModifiersState {
+            logo: true,
+            ctrl: true,
+            ..Default::default()
+        };
+
+        // Even with inhibiting active, the binding should still be intercepted
+        // because allow_inhibiting is false
+        let filter = process_close_key(
+            &mut suppressed_keys,
+            &bindings,
+            &inhibited_state,
+            mods,
+            true,
+        );
+        assert_matches!(
+            filter,
+            ShouldInterceptResult::InterceptAndHandle(Bind {
+                action: Action::CloseWindow,
+                ..
+            })
+        );
+        assert!(suppressed_keys.contains_key(&CLOSE_KEY_CODE));
+
+        let filter = process_close_key(
+            &mut suppressed_keys,
+            &bindings,
+            &inhibited_state,
+            mods,
+            false,
+        );
+        assert_matches!(filter, ShouldInterceptResult::InterceptOnly);
         assert!(suppressed_keys.is_empty());
     }
 
@@ -4925,7 +5263,8 @@ mod tests {
                 },
                 action: Action::CloseWindow,
                 repeat: true,
-                release: false,
+                // Both press and release bindings should be found
+                release: true,
                 cooldown: None,
                 allow_when_locked: false,
                 allow_inhibiting: true,
