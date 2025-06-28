@@ -178,6 +178,15 @@ pub struct PickedColor {
     pub rgb: [f64; 3],
 }
 
+/// Location coordinates.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+pub struct Point {
+    /// x coordinate
+    pub x: f64,
+    /// y coordinate
+    pub y: f64,
+}
+
 /// Actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most, but not all,
 // variants from niri-config should be present here.
@@ -839,6 +848,13 @@ pub enum Action {
         /// Id of the window to unset urgent.
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
+    },
+    /// Set pointer location
+    SetPointerLocation {
+        /// Desired x coordinate
+        x: f64,
+        /// Desired y coordinate
+        y: f64,
     },
 }
 
