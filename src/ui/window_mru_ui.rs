@@ -34,7 +34,7 @@ use std::ops::ControlFlow;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::time::Instant;
-use std::{cmp, iter, mem};
+use std::{iter, mem};
 
 use niri_config::{
     Action, Bind, Key, Match, Modifiers, MruDirection, MruFilter, MruScope, RegexEq, Trigger,
@@ -238,14 +238,6 @@ impl WindowMru {
                 move_animation: None,
             })
             .collect();
-        thumbnails.sort_by(
-            |Thumbnail { timestamp: t1, .. }, Thumbnail { timestamp: t2, .. }| match (t1, t2) {
-                (None, None) => cmp::Ordering::Equal,
-                (Some(_), None) => cmp::Ordering::Less,
-                (None, Some(_)) => cmp::Ordering::Greater,
-                (Some(t1), Some(t2)) => t1.cmp(t2).reverse(),
-            },
-        );
 
         if direction == MruDirection::Backward && !thumbnails.is_empty() {
             // If moving backwards through the list, the first element is moved to the end of the
