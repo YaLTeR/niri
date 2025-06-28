@@ -2118,6 +2118,10 @@ impl State {
                     watcher.load_config();
                 }
             }
+            Action::SetPointerLocation(niri_ipc::Point { x, y }) => {
+                let pointer = &self.niri.seat.get_pointer().unwrap();
+                pointer.set_location(Point::new(x, y));
+            }
         }
     }
 
