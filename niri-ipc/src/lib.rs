@@ -80,6 +80,8 @@ pub enum Request {
     FocusedOutput,
     /// Request information about the focused window.
     FocusedWindow,
+    /// Request information about the pointer.
+    Pointer,
     /// Request picking a window and get its information.
     PickWindow,
     /// Request picking a color from the screen.
@@ -156,6 +158,8 @@ pub enum Response {
     PickedWindow(Option<Window>),
     /// Information about the picked color.
     PickedColor(Option<PickedColor>),
+    /// Information about the pointer.
+    Pointer(Option<Pointer>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
     /// Information about the overview.
@@ -185,6 +189,14 @@ pub struct Point {
     pub x: f64,
     /// y coordinate
     pub y: f64,
+}
+
+/// Pointer information.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Pointer {
+    /// Location of the pointer in the global space.
+    pub location: Point,
 }
 
 /// Actions that niri can perform.
