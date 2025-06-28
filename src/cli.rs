@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
-use niri_ipc::{Action, OutputAction};
+use niri_ipc::{Action, OutputAction, LayerAction};
 
 use crate::utils::version;
 
@@ -98,6 +98,19 @@ pub enum Msg {
         /// Configuration to apply.
         #[command(subcommand)]
         action: OutputAction,
+    },
+    /// Change layer configuration temporarily.
+    ///
+    /// The configuration is changed temporarily and not saved into the config file. If the layer
+    /// configuration subsequently changes in the config file, these temporary changes will be
+    /// forgotten.
+    Layer {
+        /// Layer name.
+        #[arg()]
+        layer: String,
+        /// Configuration to apply.
+        #[command(subcommand)]
+        action: LayerAction,
     },
     /// Start continuously receiving events from the compositor.
     EventStream,

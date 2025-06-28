@@ -17,7 +17,7 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response, Workspace,
+    Event, KeyboardLayouts, OutputConfigChanged, LayerConfigChanged, Overview, Reply, Request, Response, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -394,6 +394,21 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             // contents were sampled into the texture.
             let _ = rx.recv().await;
             Response::Handled
+        }
+        Request::Layer { layer, action } => {
+            match action {
+                niri_ipc::LayerAction::Opacity { opacity } => {
+                    ctx.event_loop.insert_idle(move |state: &mut State| {
+                        for (layer_surface, mapped_layer) in &mut state.niri.mapped_layer_surfaces {
+                            if layer_surface.namespace() == layer {
+                                mapped_layer.rules_mut().opacity = Some(opacity);
+                            }
+                        }
+                    });
+                }
+            }
+
+            Response::LayerConfigChanged(LayerConfigChanged::Applied)
         }
         Request::Output { output, action } => {
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap();
