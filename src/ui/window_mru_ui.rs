@@ -352,7 +352,7 @@ impl ToMatch for MruFilter {
                 };
 
                 Some(Match {
-                    app_id: Some(RegexEq::from_str(&format!("^{}$", app_id)).ok()?),
+                    app_id: Some(RegexEq::from_str(&format!("^{app_id}$")).ok()?),
                     ..Default::default()
                 })
             }
@@ -1179,7 +1179,7 @@ impl ClosingThumbnail {
     fn new(thumb: Thumbnail, texture: MruTexture, offset: f64, anim: Animation) -> Self {
         Self {
             texture,
-            offset: offset,
+            offset,
             size: thumb.size,
             anim,
         }
