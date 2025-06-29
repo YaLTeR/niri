@@ -2336,6 +2336,44 @@ impl<W: LayoutElement> Layout<W> {
         workspace.center_window(id);
     }
 
+    pub fn left_align_window(&mut self, id: Option<&W::Id>) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            if id.is_none() || id == Some(move_.tile.window().id()) {
+                return;
+            }
+        }
+
+        let workspace = if let Some(id) = id {
+            Some(self.workspaces_mut().find(|ws| ws.has_window(id)).unwrap())
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
+            return;
+        };
+        workspace.left_align_window(id);
+    }
+
+    pub fn right_align_window(&mut self, id: Option<&W::Id>) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            if id.is_none() || id == Some(move_.tile.window().id()) {
+                return;
+            }
+        }
+
+        let workspace = if let Some(id) = id {
+            Some(self.workspaces_mut().find(|ws| ws.has_window(id)).unwrap())
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
+            return;
+        };
+        workspace.right_align_window(id);
+    }
+
     pub fn center_visible_columns(&mut self) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;

@@ -426,6 +426,42 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Align a window to the left edge of the screen.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Align the focused window to the left edge of the screen")
+    )]
+    AlignWindowLeft {
+        /// Id of the window to align.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Align a window to the center of the screen.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Align the focused window to the center of the screen")
+    )]
+    AlignWindowCenter {
+        /// Id of the window to align.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Align a window to the right edge of the screen.
+    #[cfg_attr(
+        feature = "clap",
+        clap(about = "Align the focused window to the right edge of the screen")
+    )]
+    AlignWindowRight {
+        /// Id of the window to align.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Center all fully visible columns on the screen.
     CenterVisibleColumns {},
     /// Focus the workspace below.
