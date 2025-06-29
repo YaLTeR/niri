@@ -200,15 +200,11 @@ pub struct WindowMru {
 
     /// Filter used to generte the window list.
     filter: MruFilter,
-
-    /// Traversal direction when the WindowMru was created.
-    direction: MruDirection,
 }
 
 impl WindowMru {
     pub fn new(
         niri: &Niri,
-        direction: MruDirection,
         scope: Option<MruScope>,
         filter: Option<MruFilter>,
         clock: Clock,
@@ -238,13 +234,8 @@ impl WindowMru {
                 move_animation: None,
             })
             .collect();
-
-        if direction == MruDirection::Backward && !thumbnails.is_empty() {
-            // If moving backwards through the list, the first element is moved to the end of the
-            // list
-            let first = thumbnails.remove(0);
-            thumbnails.push(first);
-        }
+        thumbnails
+            .sort_by(|Thumbnail { timestamp: t1, .. }, Thumbnail { timestamp: t2, .. }| t2.cmp(t1));
 
         let mut offset = SPACING;
         thumbnails.iter_mut().for_each(|t| {
@@ -252,30 +243,11 @@ impl WindowMru {
             offset += t.size.w + SPACING
         });
 
-        match direction {
-            MruDirection::Forward => {
-                let mut res = Self {
-                    thumbnails,
-                    current: 0,
-                    scope,
-                    filter,
-                    direction,
-                };
-                res.forward();
-                res
-            }
-            MruDirection::Backward => {
-                let current = thumbnails.len().saturating_sub(1);
-                let mut res = Self {
-                    thumbnails,
-                    current,
-                    scope,
-                    filter,
-                    direction,
-                };
-                res.backward();
-                res
-            }
+        Self {
+            thumbnails,
+            current: 0,
+            scope,
+            filter,
         }
     }
 
@@ -439,7 +411,13 @@ impl WindowMruUi {
         matches!(self, WindowMruUi::Open { .. })
     }
 
-    pub fn open(&mut self, options: Rc<Options>, clock: Clock, mut wmru: WindowMru) {
+    pub fn open(
+        &mut self,
+        options: Rc<Options>,
+        clock: Clock,
+        mut wmru: WindowMru,
+        dir: MruDirection,
+    ) {
         let Self::Closed { .. } = self else { return };
 
         // Each thumbnail is started with an open_animaiton
@@ -474,6 +452,7 @@ impl WindowMruUi {
         };
 
         *self = Self::Open(Box::new(inner));
+        self.advance(dir);
     }
 
     pub fn close(&mut self) {
@@ -514,13 +493,7 @@ impl WindowMruUi {
         if scope.is_some_and(|s| s != inner.wmru.scope)
             || filter.is_some_and(|f| f != inner.wmru.filter)
         {
-            Some(WindowMru::new(
-                niri,
-                inner.wmru.direction,
-                scope,
-                filter,
-                inner.clock.clone(),
-            ))
+            Some(WindowMru::new(niri, scope, filter, inner.clock.clone()))
         } else {
             None
         }
@@ -572,8 +545,14 @@ impl WindowMruUi {
             let mut ptextures = inner.textures.replace(TextureCache(textures)).0;
             let textures = &mut inner.textures.borrow_mut().0;
 
-            //
+            // Index in the previous Mru list at which to start looking
+            // for thumbnail Ids to match with those from the new Mru list.
+            // This just avoids having to go through the entire list each
+            // time.
             let mut start_idx = 0;
+
+            // View offset after the update.
+            let mut view_offset = None;
 
             wmru.thumbnails.iter_mut().enumerate().for_each(|(idx, t)| {
                 match prev_wmru
@@ -582,9 +561,7 @@ impl WindowMruUi {
                     .enumerate()
                     .skip(start_idx)
                     .try_for_each(|(pidx, pt)| {
-                        if prev_wmru.direction == MruDirection::Forward
-                            && pt.timestamp < t.timestamp
-                        {
+                        if pt.timestamp < t.timestamp {
                             return ControlFlow::Break(None);
                         }
                         start_idx = pidx + 1;
@@ -597,14 +574,27 @@ impl WindowMruUi {
                     ControlFlow::Break(Some(pidx)) => {
                         // The thumbnail is present in the previous and
                         // replacement Mru list.
+                        let pt = &prev_wmru.thumbnails[pidx];
+
+                        // If the new view_offset hasn't yet been determined,
+                        // derive it from the offset of the first thumbnail
+                        // present in both Mru lists to calculate it.
+                        if view_offset.is_none() && inner.view_offset.is_some() {
+                            view_offset.replace(t.offset - pt.offset + inner.view_offset.unwrap());
+                        };
 
                         // Animate the new thumbnail so that it appears to move
-                        // from the corresponding one's previous position.
-                        let pt = &prev_wmru.thumbnails[pidx];
-                        t.animate_move_from_with_config(
-                            pt.offset - t.offset,
-                            inner.options.animations.window_movement.0,
-                        );
+                        // from the corresponding one's former position.
+                        // The previous position needs to be projected into the
+                        // updated view's referential.
+                        if let Some(view_offset) = view_offset {
+                            if let Some(prev_view_offset) = inner.view_offset {
+                                t.animate_move_from_with_config(
+                                    (pt.offset - prev_view_offset) - (t.offset - view_offset),
+                                    inner.options.animations.window_movement.0,
+                                );
+                            }
+                        }
 
                         // Retain the previous thumbnail's textures by
                         // transfering it to the new texture cache.
@@ -630,23 +620,31 @@ impl WindowMruUi {
 
             // Whatever textures remain in the previous texture cache should be
             // used to trigger close animations for the corresponding thumbnails.
-            prev_wmru
-                .thumbnails
-                .into_iter()
-                .enumerate()
-                .for_each(|(idx, thumb)| {
-                    if let Some(texture) = ptextures[idx].thumbnail.take() {
-                        let anim = Animation::new(
-                            inner.clock.clone(),
-                            0.,
-                            1.,
-                            0.,
-                            inner.options.animations.window_close.anim,
-                        );
-                        let closing = ClosingThumbnail::new(thumb, texture, anim);
-                        inner.closing_thumbnails.push(closing);
-                    }
-                });
+            //
+            // TODO: the offset of the closing thumbnails needs to be adjusted
+            // to accout for the view size having potentially changed.
+            if let Some(prev_view_offset) = inner.view_offset {
+                prev_wmru
+                    .thumbnails
+                    .into_iter()
+                    .enumerate()
+                    .for_each(|(idx, thumb)| {
+                        if let Some(texture) = ptextures[idx].thumbnail.take() {
+                            let anim = Animation::new(
+                                inner.clock.clone(),
+                                0.,
+                                1.,
+                                0.,
+                                inner.options.animations.window_close.anim,
+                            );
+                            let offset = thumb.offset - prev_view_offset;
+                            let closing = ClosingThumbnail::new(thumb, texture, offset, anim);
+                            inner.closing_thumbnails.push(closing);
+                        }
+                    });
+            }
+
+            inner.view_offset = view_offset;
         }
 
         // And (possibly) advance in the requested direction.
@@ -714,8 +712,11 @@ impl WindowMruUi {
                     0.,
                     inner.options.animations.window_close.anim,
                 );
-                let closing = ClosingThumbnail::new(thumb, texture, anim);
-                inner.closing_thumbnails.push(closing);
+                if let Some(view_offset) = inner.view_offset {
+                    let offset = thumb.offset - view_offset;
+                    let closing = ClosingThumbnail::new(thumb, texture, offset, anim);
+                    inner.closing_thumbnails.push(closing);
+                }
             }
         }
     }
@@ -923,17 +924,13 @@ impl Inner {
         // As with tiles, render thumbnails for closing windows on top of
         // others.
         for closing in self.closing_thumbnails.iter().rev() {
-            if closing.offset + closing.size.w >= view_offset {
-                if closing.offset <= view_offset + output_size.w {
-                    let loc = Point::from((
-                        closing.offset - view_offset,
-                        (output_size.h - closing.texture.logical_size().h) / 2.,
-                    ));
-                    let elem = closing.render(loc);
-                    rv.push(elem.into());
-                } else {
-                    break;
-                }
+            if closing.offset < output_size.w && closing.offset + closing.size.w > 0. {
+                let loc = Point::from((
+                    closing.offset,
+                    (output_size.h - closing.texture.logical_size().h) / 2.,
+                ));
+                let elem = closing.render(loc);
+                rv.push(elem.into());
             }
         }
 
@@ -1173,15 +1170,16 @@ fn generate_title_texture(
 struct ClosingThumbnail {
     texture: MruTexture,
     size: Size<f64, Logical>,
+    /// Offset relative to output (and not the view).
     offset: f64,
     anim: Animation,
 }
 
 impl ClosingThumbnail {
-    fn new(thumb: Thumbnail, texture: MruTexture, anim: Animation) -> Self {
+    fn new(thumb: Thumbnail, texture: MruTexture, offset: f64, anim: Animation) -> Self {
         Self {
             texture,
-            offset: thumb.offset,
+            offset: offset,
             size: thumb.size,
             anim,
         }
