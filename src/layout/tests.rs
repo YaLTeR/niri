@@ -261,6 +261,10 @@ impl LayoutElement for TestWindow {
     fn interactive_resize_data(&self) -> Option<InteractiveResizeData> {
         None
     }
+
+    fn is_urgent(&self) -> bool {
+        false
+    }
 }
 
 fn arbitrary_bbox() -> impl Strategy<Value = Rectangle<i32, Logical>> {
@@ -460,6 +464,7 @@ enum Op {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         id: Option<usize>,
     },
+    CenterVisibleColumns,
     FocusWorkspaceDown,
     FocusWorkspaceUp,
     FocusWorkspace(#[proptest(strategy = "0..=4usize")] usize),
@@ -473,9 +478,9 @@ enum Op {
         #[proptest(strategy = "0..=4usize")]
         workspace_idx: usize,
     },
-    MoveColumnToWorkspaceDown,
-    MoveColumnToWorkspaceUp,
-    MoveColumnToWorkspace(#[proptest(strategy = "0..=4usize")] usize),
+    MoveColumnToWorkspaceDown(bool),
+    MoveColumnToWorkspaceUp(bool),
+    MoveColumnToWorkspace(#[proptest(strategy = "0..=4usize")] usize, bool),
     MoveWorkspaceDown,
     MoveWorkspaceUp,
     MoveWorkspaceToIndex {
@@ -508,7 +513,13 @@ enum Op {
         #[proptest(strategy = "proptest::option::of(0..=4usize)")]
         target_ws_idx: Option<usize>,
     },
-    MoveColumnToOutput(#[proptest(strategy = "1..=5usize")] usize),
+    MoveColumnToOutput {
+        #[proptest(strategy = "1..=5usize")]
+        output_id: usize,
+        #[proptest(strategy = "proptest::option::of(0..=4usize)")]
+        target_ws_idx: Option<usize>,
+        activate: bool,
+    },
     SwitchPresetColumnWidth,
     SwitchPresetWindowWidth {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
@@ -1058,6 +1069,7 @@ impl Op {
                 let id = id.filter(|id| layout.has_window(id));
                 layout.center_window(id.as_ref());
             }
+            Op::CenterVisibleColumns => layout.center_visible_columns(),
             Op::FocusWorkspaceDown => layout.switch_workspace_down(),
             Op::FocusWorkspaceUp => layout.switch_workspace_up(),
             Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
@@ -1074,9 +1086,9 @@ impl Op {
                 let window_id = window_id.filter(|id| layout.has_window(id));
                 layout.move_to_workspace(window_id.as_ref(), workspace_idx, ActivateWindow::Smart);
             }
-            Op::MoveColumnToWorkspaceDown => layout.move_column_to_workspace_down(),
-            Op::MoveColumnToWorkspaceUp => layout.move_column_to_workspace_up(),
-            Op::MoveColumnToWorkspace(idx) => layout.move_column_to_workspace(idx),
+            Op::MoveColumnToWorkspaceDown(focus) => layout.move_column_to_workspace_down(focus),
+            Op::MoveColumnToWorkspaceUp(focus) => layout.move_column_to_workspace_up(focus),
+            Op::MoveColumnToWorkspace(idx, focus) => layout.move_column_to_workspace(idx, focus),
             Op::MoveWindowToOutput {
                 window_id,
                 output_id: id,
@@ -1097,13 +1109,17 @@ impl Op {
                     ActivateWindow::Smart,
                 );
             }
-            Op::MoveColumnToOutput(id) => {
+            Op::MoveColumnToOutput {
+                output_id: id,
+                target_ws_idx,
+                activate,
+            } => {
                 let name = format!("output{id}");
                 let Some(output) = layout.outputs().find(|o| o.name() == name).cloned() else {
                     return;
                 };
 
-                layout.move_column_to_output(&output);
+                layout.move_column_to_output(&output, target_ws_idx, activate);
             }
             Op::MoveWorkspaceDown => layout.move_workspace_down(),
             Op::MoveWorkspaceUp => layout.move_workspace_up(),
@@ -1560,10 +1576,10 @@ fn operations_dont_panic() {
             window_id: None,
             workspace_idx: 2,
         },
-        Op::MoveColumnToWorkspaceDown,
-        Op::MoveColumnToWorkspaceUp,
-        Op::MoveColumnToWorkspace(1),
-        Op::MoveColumnToWorkspace(2),
+        Op::MoveColumnToWorkspaceDown(true),
+        Op::MoveColumnToWorkspaceUp(true),
+        Op::MoveColumnToWorkspace(1, true),
+        Op::MoveColumnToWorkspace(2, true),
         Op::MoveWindowDown,
         Op::MoveWindowDownOrToWorkspaceDown,
         Op::MoveWindowUp,
@@ -1735,11 +1751,11 @@ fn operations_from_starting_state_dont_panic() {
             window_id: None,
             workspace_idx: 3,
         },
-        Op::MoveColumnToWorkspaceDown,
-        Op::MoveColumnToWorkspaceUp,
-        Op::MoveColumnToWorkspace(1),
-        Op::MoveColumnToWorkspace(2),
-        Op::MoveColumnToWorkspace(3),
+        Op::MoveColumnToWorkspaceDown(true),
+        Op::MoveColumnToWorkspaceUp(true),
+        Op::MoveColumnToWorkspace(1, true),
+        Op::MoveColumnToWorkspace(2, true),
+        Op::MoveColumnToWorkspace(3, true),
         Op::MoveWindowDown,
         Op::MoveWindowDownOrToWorkspaceDown,
         Op::MoveWindowUp,
@@ -2058,8 +2074,8 @@ fn workspace_transfer_during_switch_gets_cleaned_up() {
         },
         Op::RemoveOutput(1),
         Op::AddOutput(2),
-        Op::MoveColumnToWorkspaceDown,
-        Op::MoveColumnToWorkspaceDown,
+        Op::MoveColumnToWorkspaceDown(true),
+        Op::MoveColumnToWorkspaceDown(true),
         Op::AddOutput(1),
     ];
 
@@ -3349,6 +3365,170 @@ fn interactive_resize_on_pending_unfullscreen_column() {
             edges: ResizeEdge::RIGHT,
         },
         Op::Communicate(2),
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn move_column_to_workspace_unfocused_with_multiple_monitors() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::SetWorkspaceName {
+            new_ws_name: 101,
+            ws_name: None,
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FocusWorkspaceDown,
+        Op::SetWorkspaceName {
+            new_ws_name: 102,
+            ws_name: None,
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddOutput(2),
+        Op::FocusOutput(2),
+        Op::SetWorkspaceName {
+            new_ws_name: 201,
+            ws_name: None,
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(4),
+        },
+        Op::MoveColumnToOutput {
+            output_id: 1,
+            target_ws_idx: Some(0),
+            activate: false,
+        },
+        Op::FocusOutput(1),
+    ];
+
+    let layout = check_ops(&ops);
+
+    assert_eq!(layout.active_workspace().unwrap().name().unwrap(), "ws102");
+
+    for (mon, win) in layout.windows() {
+        let mon = mon.unwrap();
+        let ws = mon
+            .workspaces
+            .iter()
+            .find(|w| w.has_window(win.id()))
+            .unwrap();
+
+        assert_eq!(
+            ws.name().unwrap(),
+            match win.id() {
+                1 | 4 => "ws101",
+                2 => "ws102",
+                3 => "ws201",
+                _ => unreachable!(),
+            }
+        );
+    }
+}
+
+#[test]
+fn interactive_move_unfullscreen_to_floating_stops_dnd_scroll() {
+    let ops = [
+        Op::AddOutput(3),
+        Op::AddWindow {
+            params: TestWindowParams {
+                is_floating: true,
+                ..TestWindowParams::new(4)
+            },
+        },
+        // This moves the window to tiling.
+        Op::SetFullscreenWindow {
+            window: 4,
+            is_fullscreen: true,
+        },
+        // This starts a DnD scroll since we're dragging a tiled window.
+        Op::InteractiveMoveBegin {
+            window: 4,
+            output_idx: 3,
+            px: 0.0,
+            py: 0.0,
+        },
+        // This will cause the window to unfullscreen to floating, and should stop the DnD scroll
+        // since we're no longer dragging a tiled window, but rather a floating one.
+        Op::InteractiveMoveUpdate {
+            window: 4,
+            dx: 0.0,
+            dy: 15035.31210741684,
+            output_idx: 3,
+            px: 0.0,
+            py: 0.0,
+        },
+        Op::InteractiveMoveEnd { window: 4 },
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn unfullscreen_view_offset_not_reset_during_dnd_gesture() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
+        Op::DndUpdate {
+            output_idx: 1,
+            px: 0.0,
+            py: 0.0,
+        },
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn unfullscreen_view_offset_not_reset_during_gesture() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
+        Op::ViewOffsetGestureBegin {
+            output_idx: 1,
+            workspace_idx: None,
+            is_touchpad: false,
+        },
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
+fn unfullscreen_view_offset_not_reset_during_ongoing_gesture() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::ViewOffsetGestureBegin {
+            output_idx: 1,
+            workspace_idx: None,
+            is_touchpad: false,
+        },
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
     ];
 
     check_ops(&ops);

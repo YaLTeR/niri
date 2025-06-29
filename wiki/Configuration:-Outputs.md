@@ -168,7 +168,7 @@ output "HDMI-A-1" {
 
 ### `focus-at-startup`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Focus this output by default when niri starts.
 
@@ -195,7 +195,7 @@ output "DP-2" {
 Set the background color that niri draws for workspaces on this output.
 This is visible when you're not using any background tools like swaybg.
 
-The alpha channel for this color will be ignored.
+<sup>Until: 25.05</sup> The alpha channel for this color will be ignored.
 
 ```kdl
 output "HDMI-A-1" {
@@ -205,7 +205,7 @@ output "HDMI-A-1" {
 
 ### `backdrop-color`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Set the backdrop color that niri draws for this output.
 This is visible between workspaces or in the overview.

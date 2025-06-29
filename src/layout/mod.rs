@@ -210,6 +210,8 @@ pub trait LayoutElement {
     fn set_bounds(&self, bounds: Size<i32, Logical>);
     fn is_ignoring_opacity_window_rule(&self) -> bool;
 
+    fn is_urgent(&self) -> bool;
+
     fn configure_intent(&self) -> ConfigureIntent;
     fn send_pending_configure(&mut self);
 
@@ -359,6 +361,7 @@ pub struct Options {
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
+    pub deactivate_unfocused_windows: bool,
 }
 
 impl Default for Options {
@@ -391,10 +394,12 @@ impl Default for Options {
                 PresetSize::Proportion(0.5),
                 PresetSize::Proportion(2. / 3.),
             ],
+            deactivate_unfocused_windows: false,
         }
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 enum InteractiveMoveState<W: LayoutElement> {
     /// Initial rubberbanding; the window remains in the layout.
@@ -655,6 +660,7 @@ impl Options {
             overview: config.overview,
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
+            deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
             preset_window_heights,
         }
     }
@@ -1888,7 +1894,7 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        self.move_column_to_output(output);
+        self.move_column_to_output(output, None, true);
         true
     }
 
@@ -1899,7 +1905,7 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        self.move_column_to_output(output);
+        self.move_column_to_output(output, None, true);
         true
     }
 
@@ -2267,31 +2273,25 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn move_column_to_workspace_up(&mut self) {
+    pub fn move_column_to_workspace_up(&mut self, activate: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_column_to_workspace_up();
+        monitor.move_column_to_workspace_up(activate);
     }
 
-    pub fn move_column_to_workspace_down(&mut self) {
+    pub fn move_column_to_workspace_down(&mut self, activate: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_column_to_workspace_down();
+        monitor.move_column_to_workspace_down(activate);
     }
 
-    pub fn move_column_to_workspace(&mut self, idx: usize) {
+    pub fn move_column_to_workspace(&mut self, idx: usize, activate: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_column_to_workspace(idx);
-    }
-
-    pub fn move_column_to_workspace_on_output(&mut self, output: &Output, idx: usize) {
-        self.move_column_to_output(output);
-        self.focus_output(output);
-        self.move_column_to_workspace(idx);
+        monitor.move_column_to_workspace(idx, activate);
     }
 
     pub fn switch_workspace_up(&mut self) {
@@ -2388,6 +2388,13 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         workspace.center_window(id);
+    }
+
+    pub fn center_visible_columns(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.center_visible_columns();
     }
 
     pub fn focus(&self) -> Option<&W> {
@@ -3597,6 +3604,7 @@ impl<W: LayoutElement> Layout<W> {
                     column_idx: None,
                 },
                 activate,
+                true,
                 removed.width,
                 removed.is_full_width,
                 removed.is_floating,
@@ -3612,7 +3620,12 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn move_column_to_output(&mut self, output: &Output) {
+    pub fn move_column_to_output(
+        &mut self,
+        output: &Output,
+        target_ws_idx: Option<usize>,
+        activate: bool,
+    ) {
         if let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -3636,8 +3649,10 @@ impl<W: LayoutElement> Layout<W> {
                 return;
             };
 
-            let workspace_idx = monitors[new_idx].active_workspace_idx;
-            self.add_column_by_idx(new_idx, workspace_idx, column, true);
+            let workspace_idx = target_ws_idx
+                .unwrap_or(monitors[new_idx].active_workspace_idx)
+                .min(monitors[new_idx].workspaces.len() - 1);
+            self.add_column_by_idx(new_idx, workspace_idx, column, activate);
         }
     }
 
@@ -4278,8 +4293,14 @@ impl<W: LayoutElement> Layout<W> {
                     is_floating = unfullscreen_to_floating;
                 }
 
-                // Animate to semitransparent.
-                if !is_floating {
+                if is_floating {
+                    // Unlock the view in case we locked it moving a fullscreen window that is
+                    // going to unfullscreen to floating.
+                    for ws in self.workspaces_mut() {
+                        ws.dnd_scroll_gesture_end();
+                    }
+                } else {
+                    // Animate to semitransparent.
                     tile.animate_alpha(
                         1.,
                         INTERACTIVE_MOVE_ALPHA,
@@ -4446,11 +4467,7 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         // Dragging in the overview shouldn't switch the workspace and so on.
-        let activate = if self.overview_open {
-            ActivateWindow::No
-        } else {
-            ActivateWindow::Yes
-        };
+        let allow_to_activate_workspace = !self.overview_open;
 
         match &mut self.monitor_set {
             MonitorSet::Normal {
@@ -4543,7 +4560,8 @@ impl<W: LayoutElement> Layout<W> {
                                 id: ws_id,
                                 column_idx: Some(column_idx),
                             },
-                            activate,
+                            ActivateWindow::Yes,
+                            allow_to_activate_workspace,
                             move_.width,
                             move_.is_full_width,
                             false,
@@ -4555,7 +4573,8 @@ impl<W: LayoutElement> Layout<W> {
                             column_idx,
                             Some(tile_idx),
                             move_.tile,
-                            activate == ActivateWindow::Yes,
+                            true,
+                            allow_to_activate_workspace,
                         );
                     }
                     InsertPosition::Floating => {
@@ -4597,7 +4616,8 @@ impl<W: LayoutElement> Layout<W> {
                                 id: ws_id,
                                 column_idx: None,
                             },
-                            activate,
+                            ActivateWindow::Yes,
+                            allow_to_activate_workspace,
                             move_.width,
                             move_.is_full_width,
                             true,
@@ -4632,7 +4652,7 @@ impl<W: LayoutElement> Layout<W> {
                 ws.add_tile(
                     move_.tile,
                     WorkspaceAddWindowTarget::Auto,
-                    activate,
+                    ActivateWindow::Yes,
                     move_.width,
                     move_.is_full_width,
                     move_.is_floating,
@@ -5161,7 +5181,8 @@ impl<W: LayoutElement> Layout<W> {
                     }
 
                     for (ws_idx, ws) in mon.workspaces.iter_mut().enumerate() {
-                        ws.refresh(is_active);
+                        let is_focused = is_active && ws_idx == mon.active_workspace_idx;
+                        ws.refresh(is_active, is_focused);
 
                         if let Some(is_scrolling) = ongoing_scrolling_dnd {
                             // Lock or unlock the view for scrolling interactive move.
@@ -5181,7 +5202,7 @@ impl<W: LayoutElement> Layout<W> {
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 for ws in workspaces {
-                    ws.refresh(false);
+                    ws.refresh(false, false);
                     ws.view_offset_gesture_end(None);
                 }
             }

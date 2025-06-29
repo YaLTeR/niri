@@ -25,8 +25,8 @@ use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::RenderTarget;
-use crate::utils::round_logical_in_physical;
 use crate::utils::transaction::Transaction;
+use crate::utils::{baba_is_float_offset, round_logical_in_physical};
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -366,6 +366,7 @@ impl<W: LayoutElement> Tile<W> {
             self.animated_window_size(),
             is_active,
             !draw_border_with_background,
+            self.window.is_urgent(),
             Rectangle::new(
                 view_rect.loc - Point::from((border_width, border_width)),
                 view_rect.size,
@@ -400,6 +401,7 @@ impl<W: LayoutElement> Tile<W> {
             self.animated_tile_size(),
             is_active,
             !draw_focus_ring_with_background,
+            self.window.is_urgent(),
             view_rect,
             radius,
             self.scale,
@@ -798,9 +800,7 @@ impl<W: LayoutElement> Tile<W> {
             return Point::from((0., 0.));
         }
 
-        let now = self.clock.now().as_secs_f64();
-        let amplitude = self.view_size.h / 96.;
-        let y = amplitude * ((f64::consts::TAU * now / 3.6).sin() - 1.);
+        let y = baba_is_float_offset(self.clock.now(), self.view_size.h);
         let y = round_logical_in_physical(self.scale, y);
         Point::from((0., y))
     }

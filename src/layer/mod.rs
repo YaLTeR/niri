@@ -19,6 +19,12 @@ pub struct ResolvedLayerRules {
 
     /// Corner radius to assume this layer surface has.
     pub geometry_corner_radius: Option<CornerRadius>,
+
+    /// Whether to place this layer surface within the overview backdrop.
+    pub place_within_backdrop: bool,
+
+    /// Whether to bob this window up and down.
+    pub baba_is_float: bool,
 }
 
 impl ResolvedLayerRules {
@@ -37,6 +43,8 @@ impl ResolvedLayerRules {
                 inactive_color: None,
             },
             geometry_corner_radius: None,
+            place_within_backdrop: false,
+            baba_is_float: false,
         }
     }
 
@@ -72,6 +80,12 @@ impl ResolvedLayerRules {
             }
             if let Some(x) = rule.geometry_corner_radius {
                 resolved.geometry_corner_radius = Some(x);
+            }
+            if let Some(x) = rule.place_within_backdrop {
+                resolved.place_within_backdrop = x;
+            }
+            if let Some(x) = rule.baba_is_float {
+                resolved.baba_is_float = x;
             }
 
             resolved.shadow.merge_with(&rule.shadow);

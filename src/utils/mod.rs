@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use std::f64;
 use std::ffi::{CString, OsStr};
 use std::io::Write;
 use std::os::unix::prelude::OsStrExt;
@@ -36,6 +37,7 @@ pub mod scale;
 pub mod spawning;
 pub mod transaction;
 pub mod watcher;
+pub mod xwayland;
 
 pub static IS_SYSTEMD_SERVICE: AtomicBool = AtomicBool::new(false);
 
@@ -292,7 +294,7 @@ pub fn update_tiled_state(
         // global and never reset to None).
         //
         // If the client bound a decoration global, use the mode that we negotiated. This way,
-        // changing the decoration mode on the client at runtime will synchonize with the
+        // changing the decoration mode on the client at runtime will synchronize with the
         // default tiled state.
         if let Some(mode) = toplevel.with_pending_state(|state| state.decoration_mode) {
             mode == zxdg_toplevel_decoration_v1::Mode::ServerSide
@@ -394,6 +396,12 @@ pub fn center_preferring_top_left_in_area(
     offset.x = f64::max(offset.x, 0.);
     offset.y = f64::max(offset.y, 0.);
     area.loc + offset
+}
+
+pub fn baba_is_float_offset(now: Duration, view_height: f64) -> f64 {
+    let now = now.as_secs_f64();
+    let amplitude = view_height / 96.;
+    amplitude * ((f64::consts::TAU * now / 3.6).sin() - 1.)
 }
 
 #[cfg(feature = "dbus")]

@@ -163,7 +163,7 @@ animations {
 
 ##### `custom-shader`
 
-<sup>Since: 0.1.6, experimental</sup>
+<sup>Since: 0.1.6</sup>
 
 You can write a custom shader for drawing the window during an open animation.
 
@@ -223,7 +223,7 @@ animations {
 
 ##### `custom-shader`
 
-<sup>Since: 0.1.6, experimental</sup>
+<sup>Since: 0.1.6</sup>
 
 You can write a custom shader for drawing the window during a close animation.
 
@@ -319,7 +319,7 @@ animations {
 
 ##### `custom-shader`
 
-<sup>Since: 0.1.6, experimental</sup>
+<sup>Since: 0.1.6</sup>
 
 You can write a custom shader for drawing the window during a resize animation.
 
@@ -380,7 +380,7 @@ animations {
 
 #### `overview-open-close`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 The open/close zoom animation of the [Overview](./Overview.md).
 

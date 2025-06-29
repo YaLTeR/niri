@@ -75,6 +75,12 @@ pub struct ScrollingSpace<W: LayoutElement> {
     /// Takes into account layer-shell exclusive zones and niri struts.
     working_area: Rectangle<f64, Logical>,
 
+    /// Working area for this space excluding struts.
+    ///
+    /// Used for popup unconstraining. Popups can go over struts, but they shouldn't go over
+    /// the layer-shell top layer (which renders on top of popups).
+    parent_area: Rectangle<f64, Logical>,
+
     /// Scale of the output the space is on (and rounds its sizes to).
     scale: f64,
 
@@ -251,12 +257,12 @@ pub enum ScrollDirection {
 impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn new(
         view_size: Size<f64, Logical>,
-        working_area: Rectangle<f64, Logical>,
+        parent_area: Rectangle<f64, Logical>,
         scale: f64,
         clock: Clock,
         options: Rc<Options>,
     ) -> Self {
-        let working_area = compute_working_area(working_area, scale, options.struts);
+        let working_area = compute_working_area(parent_area, scale, options.struts);
 
         Self {
             columns: Vec::new(),
@@ -269,6 +275,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             closing_windows: Vec::new(),
             view_size,
             working_area,
+            parent_area,
             scale,
             clock,
             options,
@@ -278,11 +285,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn update_config(
         &mut self,
         view_size: Size<f64, Logical>,
-        working_area: Rectangle<f64, Logical>,
+        parent_area: Rectangle<f64, Logical>,
         scale: f64,
         options: Rc<Options>,
     ) {
-        let working_area = compute_working_area(working_area, scale, options.struts);
+        let working_area = compute_working_area(parent_area, scale, options.struts);
 
         for (column, data) in zip(&mut self.columns, &mut self.data) {
             column.update_config(view_size, working_area, scale, options.clone());
@@ -291,8 +298,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         self.view_size = view_size;
         self.working_area = working_area;
+        self.parent_area = parent_area;
         self.scale = scale;
         self.options = options;
+
+        // Apply always-center and such right away.
+        if !self.columns.is_empty() && !self.view_offset.is_gesture() {
+            self.animate_view_offset_to_column(None, self.active_column_idx, None);
+        }
     }
 
     pub fn update_shaders(&mut self) {
@@ -1278,20 +1291,28 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 self.view_offset.offset(offset);
             }
 
-            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
-                // We might need to move the view to ensure the resized window is still visible.
+            // Upon unfullscreening, restore the view offset.
+            //
+            // In tabbed display mode, there can be multiple tiles in a fullscreen column. They
+            // will unfullscreen one by one, and the column width will shrink only when the
+            // last tile unfullscreens. This is when we want to restore the view offset,
+            // otherwise it will immediately reset back by the animate_view_offset below.
+            let is_fullscreen = self.columns[col_idx].tiles.iter().any(Tile::is_fullscreen);
+            let unfullscreen_offset = if was_fullscreen && !is_fullscreen {
+                // Take the value unconditionally, even if the view is currently frozen by
+                // a view gesture. It shouldn't linger around because it's only valid for this
+                // particular unfullscreen.
+                self.view_offset_before_fullscreen.take()
+            } else {
+                None
+            };
 
-                // Upon unfullscreening, restore the view offset.
-                //
-                // In tabbed display mode, there can be multiple tiles in a fullscreen column. They
-                // will unfullscreen one by one, and the column width will shrink only when the
-                // last tile unfullscreens. This is when we want to restore the view offset,
-                // otherwise it will immediately reset back by the animate_view_offset below.
-                let is_fullscreen = self.columns[col_idx].tiles.iter().any(Tile::is_fullscreen);
-                if was_fullscreen && !is_fullscreen {
-                    if let Some(prev_offset) = self.view_offset_before_fullscreen.take() {
-                        self.animate_view_offset(col_idx, prev_offset);
-                    }
+            // We might need to move the view to ensure the resized window is still visible. But
+            // only do it when the view isn't frozen by an interactive resize or a view gesture.
+            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
+                // Restore the view offset upon unfullscreening if needed.
+                if let Some(prev_offset) = unfullscreen_offset {
+                    self.animate_view_offset(col_idx, prev_offset);
                 }
 
                 // Synchronize the horizontal view movement with the resize so that it looks nice.
@@ -2134,6 +2155,64 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.center_column();
     }
 
+    pub fn center_visible_columns(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        if self.is_centering_focused_column() {
+            return;
+        }
+
+        // Consider the end of an ongoing animation because that's what compute to fit does too.
+        let view_x = self.target_view_pos();
+        let working_x = self.working_area.loc.x;
+        let working_w = self.working_area.size.w;
+
+        // Count all columns that are fully visible inside the working area.
+        let mut width_taken = 0.;
+        let mut leftmost_col_x = None;
+        let mut active_col_x = None;
+
+        let gap = self.options.gaps;
+        let col_xs = self.column_xs(self.data.iter().copied());
+        for (idx, col_x) in col_xs.take(self.columns.len()).enumerate() {
+            if col_x < view_x + working_x + gap {
+                // Column goes off-screen to the left.
+                continue;
+            }
+
+            leftmost_col_x.get_or_insert(col_x);
+
+            let width = self.data[idx].width;
+            if view_x + working_x + working_w < col_x + width + gap {
+                // Column goes off-screen to the right. We can stop here.
+                break;
+            }
+
+            if idx == self.active_column_idx {
+                active_col_x = Some(col_x);
+            }
+
+            width_taken += width + gap;
+        }
+
+        if active_col_x.is_none() {
+            // The active column wasn't fully on screen, so we can't meaningfully do anything.
+            return;
+        }
+
+        let col = &mut self.columns[self.active_column_idx];
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+
+        let free_space = working_w - width_taken + gap;
+        let new_view_x = leftmost_col_x.unwrap() - free_space / 2. - working_x;
+
+        self.animate_view_offset(self.active_column_idx, new_view_x - active_col_x.unwrap());
+        // Just in case.
+        self.animate_view_offset_to_column(None, self.active_column_idx, None);
+    }
+
     pub fn view_pos(&self) -> f64 {
         self.column_x(self.active_column_idx) + self.view_offset.current()
     }
@@ -2374,9 +2453,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
-        self.columns
-            .iter()
-            .find_map(|col| col.popup_target_rect(id))
+        for col in &self.columns {
+            for (tile, pos) in col.tiles() {
+                if tile.window().id() == id {
+                    // In the scrolling layout, we try to position popups horizontally within the
+                    // window geometry (so they remain visible even if the window scrolls flush with
+                    // the left/right edge of the screen), and vertically wihin the whole parent
+                    // working area.
+                    let width = tile.window_size().w;
+                    let height = self.parent_area.size.h;
+
+                    let mut target = Rectangle::from_size(Size::from((width, height)));
+                    target.loc.y += self.parent_area.loc.y;
+                    target.loc.y -= pos.y;
+                    target.loc.y -= tile.window_loc().y;
+
+                    return Some(target);
+                }
+            }
+        }
+        None
     }
 
     pub fn toggle_width(&mut self) {
@@ -3370,7 +3466,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.interactive_resize = None;
     }
 
-    pub fn refresh(&mut self, is_active: bool) {
+    pub fn refresh(&mut self, is_active: bool, is_focused: bool) {
         for (col_idx, col) in self.columns.iter_mut().enumerate() {
             let mut col_resize_data = None;
             if let Some(resize) = &self.interactive_resize {
@@ -3415,11 +3511,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 win.set_active_in_column(active_in_column);
                 win.set_floating(false);
 
-                let active = is_active
-                    && self.active_column_idx == col_idx
+                let mut active = is_active && self.active_column_idx == col_idx;
+                if self.options.deactivate_unfocused_windows {
+                    active &= active_in_column && is_focused;
+                } else {
                     // In tabbed mode, all tabs have activated state to reduce unnecessary
                     // animations when switching tabs.
-                    && (active_in_column || is_tabbed);
+                    active &= active_in_column || is_tabbed;
+                }
                 win.set_activated(active);
 
                 win.set_interactive_resize(col_resize_data);
@@ -3457,6 +3556,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     #[cfg(test)]
+    pub fn parent_area(&self) -> Rectangle<f64, Logical> {
+        self.parent_area
+    }
+
+    #[cfg(test)]
     pub fn clock(&self) -> &Clock {
         &self.clock
     }
@@ -3477,7 +3581,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     #[cfg(test)]
-    pub fn verify_invariants(&self, working_area: Rectangle<f64, Logical>) {
+    pub fn verify_invariants(&self) {
         assert!(self.view_size.w > 0.);
         assert!(self.view_size.h > 0.);
         assert!(self.scale > 0.);
@@ -3485,7 +3589,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         assert_eq!(self.columns.len(), self.data.len());
         assert_eq!(
             self.working_area,
-            compute_working_area(working_area, self.scale, self.options.struts)
+            compute_working_area(self.parent_area, self.scale, self.options.struts)
         );
 
         if !self.columns.is_empty() {
@@ -3815,8 +3919,9 @@ impl<W: LayoutElement> Column<W> {
             .enumerate()
             .map(|(tile_idx, (tile, tile_off))| {
                 let is_active = tile_idx == active_idx;
+                let is_urgent = tile.window().is_urgent();
                 let tile_pos = tile_off + tile.render_offset();
-                TabInfo::from_tile(tile, tile_pos, is_active, &config)
+                TabInfo::from_tile(tile, tile_pos, is_active, is_urgent, &config)
             });
 
         // Hide the tab indicator in fullscreen. If you have it configured to overlap the window,
@@ -4690,25 +4795,6 @@ impl<W: LayoutElement> Column<W> {
         // Now switch the display mode for real.
         self.display_mode = display;
         self.update_tile_sizes(true);
-    }
-
-    fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
-        for (tile, pos) in self.tiles() {
-            if tile.window().id() == id {
-                // In the scrolling layout, we try to position popups horizontally within the
-                // window geometry (so they remain visible even if the window scrolls flush with
-                // the left/right edge of the screen), and vertically wihin the whole view size.
-                let width = tile.window_size().w;
-                let height = self.view_size.h;
-
-                let mut target = Rectangle::from_size(Size::from((width, height)));
-                target.loc.y -= pos.y;
-                target.loc.y -= tile.window_loc().y;
-
-                return Some(target);
-            }
-        }
-        None
     }
 
     fn tiles_origin(&self) -> Point<f64, Logical> {

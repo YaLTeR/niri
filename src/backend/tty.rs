@@ -19,6 +19,7 @@ use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags, PrimaryPlaneElement};
+use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::{
     DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType, VrrSupport,
 };
@@ -114,7 +115,7 @@ pub type TtyRendererError<'render> = <TtyRenderer<'render> as RendererSuper>::Er
 
 type GbmDrmCompositor = DrmCompositor<
     GbmAllocator<DrmDeviceFd>,
-    GbmDevice<DrmDeviceFd>,
+    GbmFramebufferExporter<DrmDeviceFd>,
     (OutputPresentationFeedback, Duration),
     DrmDeviceFd,
 >;
@@ -971,7 +972,7 @@ impl Tty {
             surface,
             None,
             allocator.clone(),
-            device.gbm.clone(),
+            GbmFramebufferExporter::new(device.gbm.clone(), Some(device.render_node)),
             SUPPORTED_COLOR_FORMATS,
             // This is only used to pick a good internal format, so it can use the surface's render
             // formats, even though we only ever render on the primary GPU.
@@ -1001,7 +1002,7 @@ impl Tty {
                     surface,
                     None,
                     allocator,
-                    device.gbm.clone(),
+                    GbmFramebufferExporter::new(device.gbm.clone(), Some(device.render_node)),
                     SUPPORTED_COLOR_FORMATS,
                     render_formats,
                     device.drm.cursor_size(),
@@ -1420,6 +1421,12 @@ impl Tty {
             }
             if debug.disable_cursor_plane {
                 flags.remove(FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT);
+            }
+            if debug.skip_cursor_only_updates_during_vrr {
+                let output_state = niri.output_state.get(output).unwrap();
+                if output_state.frame_clock.vrr() {
+                    flags.insert(FrameFlags::SKIP_CURSOR_ONLY_UPDATES);
+                }
             }
 
             flags

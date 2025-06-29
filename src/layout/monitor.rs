@@ -439,7 +439,15 @@ impl<W: LayoutElement> Monitor<W> {
         // monitor. So we can use any workspace, not necessarily the exact target workspace.
         let tile = self.workspaces[0].make_tile(window);
 
-        self.add_tile(tile, target, activate, width, is_full_width, is_floating);
+        self.add_tile(
+            tile,
+            target,
+            activate,
+            true,
+            width,
+            is_full_width,
+            is_floating,
+        );
     }
 
     pub fn add_column(&mut self, mut workspace_idx: usize, column: Column<W>, activate: bool) {
@@ -465,11 +473,14 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_tile(
         &mut self,
         tile: Tile<W>,
         target: MonitorAddWindowTarget<W>,
         activate: ActivateWindow,
+        // FIXME: Refactor ActivateWindow enum to make this better.
+        allow_to_activate_workspace: bool,
         width: ColumnWidth,
         is_full_width: bool,
         is_floating: bool,
@@ -516,7 +527,7 @@ impl<W: LayoutElement> Monitor<W> {
             workspace_idx += 1;
         }
 
-        if activate.map_smart(|| false) {
+        if allow_to_activate_workspace && activate.map_smart(|| false) {
             self.activate_workspace(workspace_idx);
         }
     }
@@ -528,6 +539,8 @@ impl<W: LayoutElement> Monitor<W> {
         tile_idx: Option<usize>,
         tile: Tile<W>,
         activate: bool,
+        // FIXME: Refactor ActivateWindow enum to make this better.
+        allow_to_activate_workspace: bool,
     ) {
         let workspace = &mut self.workspaces[workspace_idx];
 
@@ -541,7 +554,7 @@ impl<W: LayoutElement> Monitor<W> {
         // Since we're adding window to an existing column, the workspace isn't empty, and
         // therefore cannot be the last one, so we never need to insert a new empty workspace.
 
-        if activate {
+        if allow_to_activate_workspace && activate {
             self.activate_workspace(workspace_idx);
         }
     }
@@ -640,6 +653,7 @@ impl<W: LayoutElement> Monitor<W> {
                 column_idx: None,
             },
             ActivateWindow::Yes,
+            true,
             removed.width,
             removed.is_full_width,
             removed.is_floating,
@@ -668,6 +682,7 @@ impl<W: LayoutElement> Monitor<W> {
                 column_idx: None,
             },
             ActivateWindow::Yes,
+            true,
             removed.width,
             removed.is_full_width,
             removed.is_floating,
@@ -723,6 +738,7 @@ impl<W: LayoutElement> Monitor<W> {
             } else {
                 ActivateWindow::No
             },
+            true,
             removed.width,
             removed.is_full_width,
             removed.is_floating,
@@ -733,7 +749,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn move_column_to_workspace_up(&mut self) {
+    pub fn move_column_to_workspace_up(&mut self, activate: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = source_workspace_idx.saturating_sub(1);
@@ -751,10 +767,10 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_column(new_idx, column, true);
+        self.add_column(new_idx, column, activate);
     }
 
-    pub fn move_column_to_workspace_down(&mut self) {
+    pub fn move_column_to_workspace_down(&mut self, activate: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
@@ -772,10 +788,10 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_column(new_idx, column, true);
+        self.add_column(new_idx, column, activate);
     }
 
-    pub fn move_column_to_workspace(&mut self, idx: usize) {
+    pub fn move_column_to_workspace(&mut self, idx: usize, activate: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = min(idx, self.workspaces.len() - 1);
@@ -793,7 +809,7 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
-        self.add_column(new_idx, column, true);
+        self.add_column(new_idx, column, activate);
     }
 
     pub fn switch_workspace_up(&mut self) {
@@ -1500,7 +1516,6 @@ impl<W: LayoutElement> Monitor<W> {
         };
 
         let zoom = self.overview_zoom();
-        let overview_clamped_progress = self.overview_progress.as_ref().map(|p| p.clamped_value());
 
         // Draw the insert hint.
         let mut insert_hint = None;
@@ -1527,13 +1542,6 @@ impl<W: LayoutElement> Monitor<W> {
             let floating = floating.filter_map(map_ws_contents);
             let scrolling = scrolling.filter_map(map_ws_contents);
 
-            let shadow = overview_clamped_progress.map(|value| {
-                ws.render_shadow(renderer)
-                    .map(move |elem| elem.with_alpha(value.clamp(0., 1.) as f32))
-                    .map(MonitorInnerRenderElement::Shadow)
-            });
-            let shadow = shadow.into_iter().flatten();
-
             let hint = if matches!(insert_hint, Some((hint_ws_id, _)) if hint_ws_id == ws.id()) {
                 let iter = insert_hint.take().unwrap().1;
                 let iter = iter.filter_map(move |elem| {
@@ -1547,7 +1555,7 @@ impl<W: LayoutElement> Monitor<W> {
             };
             let hint = hint.into_iter().flatten();
 
-            let iter = floating.chain(hint).chain(scrolling).chain(shadow);
+            let iter = floating.chain(hint).chain(scrolling);
 
             let iter = iter.map(move |elem| {
                 let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
@@ -1563,6 +1571,36 @@ impl<W: LayoutElement> Monitor<W> {
 
             (geo, iter)
         })
+    }
+
+    pub fn render_workspace_shadows<'a, R: NiriRenderer>(
+        &'a self,
+        renderer: &'a mut R,
+    ) -> impl Iterator<Item = MonitorRenderElement<R>> + 'a {
+        let _span = tracy_client::span!("Monitor::render_workspace_shadows");
+
+        let scale = self.scale.fractional_scale();
+        let zoom = self.overview_zoom();
+        let overview_clamped_progress = self.overview_progress.as_ref().map(|p| p.clamped_value());
+
+        self.workspaces_with_render_geo()
+            .flat_map(move |(ws, geo)| {
+                let shadow = overview_clamped_progress.map(|value| {
+                    ws.render_shadow(renderer)
+                        .map(move |elem| elem.with_alpha(value.clamp(0., 1.) as f32))
+                        .map(MonitorInnerRenderElement::Shadow)
+                });
+                let iter = shadow.into_iter().flatten();
+
+                iter.map(move |elem| {
+                    let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
+                    RelocateRenderElement::from_element(
+                        elem,
+                        geo.loc.to_physical_precise_round(scale),
+                        Relocate::Relative,
+                    )
+                })
+            })
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, is_touchpad: bool) {
@@ -1793,7 +1831,9 @@ impl<W: LayoutElement> Monitor<W> {
 
         velocity *= rubber_band.clamp_derivative(min, max, gesture.start_idx + current_pos);
 
-        self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
+        if self.active_workspace_idx != new_idx {
+            self.previous_workspace_id = Some(self.workspaces[self.active_workspace_idx].id());
+        }
 
         self.active_workspace_idx = new_idx;
         self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(

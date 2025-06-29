@@ -4,7 +4,7 @@ Niri has several options that are only useful for debugging, or are experimental
 They are not meant for normal use.
 
 > [!CAUTION]
-> These options are **not** covered by the [config breaking change policy](./Configuration:-Overview.md#breaking-change-policy).
+> These options are **not** covered by the [config breaking change policy](./Configuration:-Introduction.md#breaking-change-policy).
 > They can change or stop working at any point with little notice.
 
 Here are all the options at a glance:
@@ -28,7 +28,9 @@ debug {
     keep-laptop-panel-on-when-lid-is-closed
     disable-monitor-names
     strict-new-window-focus-policy
-    honor-xdg-activation-with-invalid-serial 
+    honor-xdg-activation-with-invalid-serial
+    skip-cursor-only-updates-during-vrr
+    deactivate-unfocused-windows
 }
 
 binds {
@@ -155,7 +157,7 @@ debug {
 
 ### `wait-for-frame-completion-in-pipewire`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Wait until every screencast frame is done rendering before handing it over to PipeWire.
 
@@ -258,7 +260,7 @@ debug {
 
 ### `honor-xdg-activation-with-invalid-serial`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.05</sup>
 
 Widely-used clients such as Discord and Telegram make fresh xdg-activation tokens upon clicking on their tray icon or on their notification.
 Most of the time, these fresh tokens will have invalid serials, because the app needs to be focused to get a valid serial, and if the user clicks on a tray icon or a notification, it is usually because the app *isn't* focused, and the user wants to focus it.
@@ -272,6 +274,38 @@ Maybe in the future these apps/toolkits (Electron, Qt) are fixed, making this de
 ```kdl
 debug {
     honor-xdg-activation-with-invalid-serial
+}
+```
+
+### `skip-cursor-only-updates-during-vrr`
+
+<sup>Since: next release</sup>
+
+Skips redrawing the screen from cursor input while variable refresh rate is active.
+
+Useful for games where the cursor isn't drawn internally to prevent erratic VRR shifts in response to cursor movement.
+
+Note that the current implementation has some issues, for example when there's nothing redrawing the screen (like a game), the rendering will appear to completely freeze (since cursor movements won't cause redraws).
+
+```kdl
+debug {
+    skip-cursor-only-updates-during-vrr
+}
+```
+
+### `deactivate-unfocused-windows`
+
+<sup>Since: next release</sup>
+
+Some clients (notably, Chromium- and Electron-based, like Teams or Slack) erroneously use the Activated xdg window state instead of keyboard focus for things like deciding whether to send notifications for new messages, or for picking where to show an IME popup.
+Niri keeps the Activated state on unfocused workspaces and invisible tabbed windows (to reduce unwanted animations), surfacing bugs in these applications.
+
+Set this debug flag to work around these problems.
+It will cause niri to drop the Activated state for all unfocused windows.
+
+```kdl
+debug {
+    deactivate-unfocused-windows
 }
 ```
 

@@ -32,6 +32,8 @@ layer-rule {
     }
 
     geometry-corner-radius 12
+    place-within-backdrop true
+    baba-is-float true
 }
 ```
 
@@ -129,7 +131,7 @@ That is, enabling shadows in the layout config section won't automatically enabl
 // Add a shadow for fuzzel.
 layer-rule {
     match namespace="^launcher$"
-    
+
     shadow {
         on
     }
@@ -149,6 +151,43 @@ This setting will only affect the shadow—it will round its corners to match th
 
 ```kdl
 layer-rule {
+    match namespace="^launcher$"
+
     geometry-corner-radius 12
+}
+```
+
+#### `place-within-backdrop`
+
+<sup>Since: 25.05</sup>
+
+Set to `true` to place the surface into the backdrop visible in the [Overview](./Overview.md) and between workspaces.
+
+This will only work for *background* layer surfaces that ignore exclusive zones (typical for wallpaper tools).
+Layers within the backdrop will ignore all input.
+
+```kdl
+// Put swaybg inside the overview backdrop.
+layer-rule {
+    match namespace="^wallpaper$"
+
+    place-within-backdrop true
+}
+```
+
+#### `baba-is-float`
+
+<sup>Since: 25.05</sup>
+
+Make your layer surfaces FLOAT up and down.
+
+This is a natural extension of the [April Fools' 2025 feature](./Configuration:-Window-Rules.md#baba-is-float).
+
+```kdl
+// Make fuzzel FLOAT.
+layer-rule {
+    match namespace="^launcher$"
+
+    baba-is-float true
 }
 ```

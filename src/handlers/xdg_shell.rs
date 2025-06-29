@@ -319,17 +319,25 @@ impl XdgShellHandler for State {
             // FIXME: somewhere here we probably need to check is_overview_open to match the logic
             // in update_keyboard_focus().
 
-            if layers
-                .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)
-                .is_none()
-            {
+            if let Some(layer) = layers.layer_for_surface(&root, WindowSurfaceType::TOPLEVEL) {
+                // This is a grab for a layer surface.
+
+                if let Some(mapped) = self.niri.mapped_layer_surfaces.get(layer) {
+                    if mapped.place_within_backdrop() {
+                        trace!("ignoring popup grab for a layer surface within overview backdrop");
+                        let _ = PopupManager::dismiss_popup(&root, &popup);
+                        return;
+                    }
+                }
+            } else {
                 // This is a grab for a regular window; check that there's no layer surface with a
                 // higher input priority.
 
                 if layers.layers_on(Layer::Overlay).any(|l| {
-                    l.cached_state().keyboard_interactivity
+                    (l.cached_state().keyboard_interactivity
                         == wlr_layer::KeyboardInteractivity::Exclusive
-                        || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref()
+                        || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref())
+                        && self.niri.mapped_layer_surfaces.contains_key(l)
                 }) {
                     trace!("ignoring toplevel popup grab because the overlay layer has focus");
                     let _ = PopupManager::dismiss_popup(&root, &popup);
@@ -339,9 +347,10 @@ impl XdgShellHandler for State {
                 let mon = self.niri.layout.monitor_for_output(output).unwrap();
                 if !mon.render_above_top_layer()
                     && layers.layers_on(Layer::Top).any(|l| {
-                        l.cached_state().keyboard_interactivity
+                        (l.cached_state().keyboard_interactivity
                             == wlr_layer::KeyboardInteractivity::Exclusive
-                            || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref()
+                            || Some(l) == self.niri.layer_shell_on_demand_focus.as_ref())
+                            && self.niri.mapped_layer_surfaces.contains_key(l)
                     })
                 {
                     trace!("ignoring toplevel popup grab because the top layer has focus");

@@ -93,6 +93,8 @@ impl Transaction {
                     let _span = trace_span!("deadline timer", transaction = ?Weak::as_ptr(&inner))
                         .entered();
 
+                    // FIXME: come up with some way to control the deadline timer from tests.
+                    #[cfg(not(test))]
                     if let Some(inner) = inner.upgrade() {
                         trace!("deadline reached, completing transaction");
                         inner.complete();
