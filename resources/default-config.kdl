@@ -397,6 +397,11 @@ binds {
     // or do a four-finger swipe up on a touchpad.
     Mod+O repeat=false { toggle-overview; }
 
+    // If you would like to bind only Mod, you must set release=true,
+    // which makes binds run on release instead of press and avoids
+    // Mod conflicting with every other bind.
+    // Mod release=true { toggle-overview; }
+
     Mod+Q repeat=false { close-window; }
 
     Mod+Left  { focus-column-left; }

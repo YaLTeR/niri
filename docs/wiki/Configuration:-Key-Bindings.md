@@ -81,6 +81,16 @@ binds {
 
 This is mostly useful for the scroll bindings.
 
+Binds can be set to trigger on release instead of on the initial key press. These will only trigger if no other binds were triggered between the press and release.
+
+This should be set if you want to bind `Mod` to an action.
+
+```kdl
+binds {
+    Mod release=true { toggle-overview; }
+}
+```
+
 ### Scroll Bindings
 
 You can bind mouse wheel scroll ticks using the following syntax.
