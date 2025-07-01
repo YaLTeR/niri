@@ -13,6 +13,7 @@ use zbus::{interface, Task};
 
 use super::Start;
 
+#[derive(Clone)]
 pub struct ScreenSaver {
     is_inhibited: Arc<AtomicBool>,
     is_broken: Arc<AtomicBool>,
@@ -138,8 +139,15 @@ impl Start for ScreenSaver {
             | RequestNameFlags::ReplaceExisting
             | RequestNameFlags::DoNotQueue;
 
-        conn.object_server()
-            .at("/org/freedesktop/ScreenSaver", self)?;
+        let org_fd_ss_registered = conn
+            .object_server()
+            .at("/org/freedesktop/ScreenSaver", self.clone())?;
+        let ss_registered = conn.object_server().at("/ScreenSaver", self)?;
+
+        if !org_fd_ss_registered && !ss_registered {
+            anyhow::bail!("failed to register any org.freedesktop.ScreenSaver interface")
+        }
+
         conn.request_name_with_flags("org.freedesktop.ScreenSaver", flags)?;
 
         let async_conn = conn.inner();
