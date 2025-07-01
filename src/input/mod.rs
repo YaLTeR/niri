@@ -2292,7 +2292,7 @@ impl State {
             && pointer.current_focus().is_none()
             && !self.niri.screenshot_ui.is_open()
         {
-            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
+            let hot_corner = Rectangle::from_size(Size::from((hot_corners.x.0, hot_corners.y.0)));
             if let Some((_, pos_within_output)) = self.niri.output_under(pos) {
                 let inside_hot_corner = hot_corner.contains(pos_within_output);
                 if inside_hot_corner && !was_inside_hot_corner {
@@ -2381,7 +2381,7 @@ impl State {
             && pointer.current_focus().is_none()
             && !self.niri.screenshot_ui.is_open()
         {
-            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
+            let hot_corner = Rectangle::from_size(Size::from((hot_corners.x.0, hot_corners.y.0)));
             if let Some((_, pos_within_output)) = self.niri.output_under(pos) {
                 let inside_hot_corner = hot_corner.contains(pos_within_output);
                 if inside_hot_corner && !was_inside_hot_corner {
