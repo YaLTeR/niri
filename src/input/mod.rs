@@ -4952,6 +4952,7 @@ mod tests {
             ..
         }));
         assert!(suppressed_keys.is_empty());
+        assert!(mods.logo == false);
         
         // Test case: press release binding, press another binding, release first key
         // The release action shouldn't trigger because another binding was activated
@@ -5010,6 +5011,37 @@ mod tests {
         // Release second key - should be intercepted but not trigger action
         let result = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
         assert_matches!(result, ShouldInterceptResult::InterceptOnly);
+        assert!(suppressed_keys.is_empty());
+
+        // Test case: inhibited release bindings
+        let inhibited_state = TestState {
+            is_inhibiting: true,
+            ..create_test_state()
+        };
+
+        mods.logo = false;
+
+        // Press mod key with inhibiting active - should be forwarded
+        let result = process_mod_key(&mut suppressed_keys, &bindings, &inhibited_state, &mut mods, true);
+        assert_matches!(result, ShouldInterceptResult::Forward);
+        assert!(suppressed_keys.is_empty()); // No key should be suppressed
+
+        // Release mod key - should also be forwarded
+        let result = process_mod_key(&mut suppressed_keys, &bindings, &inhibited_state, &mut mods, false);
+        assert_matches!(result, ShouldInterceptResult::Forward);
+        assert!(suppressed_keys.is_empty());
+
+        // Test with close key and turning off inhibition midway through
+        mods.logo = true;
+
+        // Press close key with inhibiting active - should be forwarded
+        let result = process_close_key(&mut suppressed_keys, &bindings, &inhibited_state, mods, true);
+        assert_matches!(result, ShouldInterceptResult::Forward);
+        assert!(suppressed_keys.is_empty());
+
+        // Release close key - should also be forwarded
+        let result = process_close_key(&mut suppressed_keys, &bindings, &common_state, mods, false);
+        assert_matches!(result, ShouldInterceptResult::Forward);
         assert!(suppressed_keys.is_empty());
     }
 
