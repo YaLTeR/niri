@@ -1341,6 +1341,10 @@ impl Default for DndEdgeWorkspaceSwitch {
 pub struct HotCorners {
     #[knuffel(child)]
     pub off: bool,
+    #[knuffel(child,unwrap(argument), default = FloatOrInt(1.))]
+    pub x: FloatOrInt<0, 1_000_000>,
+    #[knuffel(child,unwrap(argument), default = FloatOrInt(1.))]
+    pub y: FloatOrInt<0, 1_000_000>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
