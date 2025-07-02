@@ -2024,9 +2024,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Swap only the tiles themselves and not the data for the tiles,
         // that way the `height` (Auto, Fixed, etc) is preserved
-        // in the column. As for the actual size, it will get updated
-        // when TileData.update is called explicitly.
+        // in the column.
         std::mem::swap(source_tile, target_tile);
+
+        // Swap the cached values for actual tile sizes.
+        std::mem::swap(
+            &mut source_col.data[source_tile_idx].size,
+            &mut target_col.data[target_tile_idx].size,
+        );
 
         // Animations
         source_tile.animate_move_from(source_pt - target_pt);
@@ -2044,8 +2049,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         source_col.tiles[source_tile_idx].prefer_expected_size = true;
         target_col.tiles[target_tile_idx].prefer_expected_size = true;
 
-        self.columns[source_column_idx].tiles[source_tile_idx].ensure_alpha_animates_to_1();
-        self.columns[target_column_idx].tiles[target_tile_idx].ensure_alpha_animates_to_1();
+        // Update column cached data.
+        self.data[source_column_idx].update(source_col);
+        self.data[target_column_idx].update(target_col);
 
         self.activate_column(target_column_idx);
     }
@@ -4369,15 +4375,14 @@ impl<W: LayoutElement> Column<W> {
 
     fn width(&self) -> f64 {
         let mut tiles_width = zip(&self.tiles, &self.data)
-            // .map(|(tile, data)| {
-            //     NotNan::new(if tile.prefer_expected_size {
-            //         tile.tile_expected_or_current_size().w
-            //     } else {
-            //         data.size.w
-            //     })
-            //     .unwrap()
-            // })
-            .map(|(_, data)| NotNan::new(data.size.w).unwrap())
+            .map(|(tile, data)| {
+                NotNan::new(if tile.prefer_expected_size {
+                    tile.tile_expected_or_current_size().w
+                } else {
+                    data.size.w
+                })
+                .unwrap()
+            })
             .max()
             .map(NotNan::into_inner)
             .unwrap();
