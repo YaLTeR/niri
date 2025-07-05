@@ -2291,6 +2291,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rayon",
+ "reis",
  "sd-notify",
  "serde",
  "serde_json",
@@ -3237,6 +3238,16 @@ name = "regex-syntax"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
+
+[[package]]
+name = "reis"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00939c5c526a1b4054ef8d9d96b3f92227f08ca355965e986741b556eda6d289"
+dependencies = [
+ "calloop 0.14.2",
+ "rustix 0.38.44",
+]
 
 [[package]]
 name = "rustc-hash"

@@ -113,6 +113,7 @@ impl ScreenCast {
         properties: HashMap<&str, Value<'_>>,
     ) -> fdo::Result<OwnedObjectPath> {
         if properties.contains_key("remote-desktop-session-id") {
+            // TODO: integrate with RemoteDesktop API
             return Err(fdo::Error::Failed(
                 "there are no remote desktop sessions".to_owned(),
             ));
