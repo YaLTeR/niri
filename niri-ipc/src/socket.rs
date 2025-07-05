@@ -1,10 +1,13 @@
 //! Helper for blocking communication over the niri socket.
 
 use std::env;
+use std::ffi::OsString;
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::Shutdown;
-use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::os::unix::{ffi::OsStrExt, net::UnixStream};
+use std::path::{Path, PathBuf};
+
+use directories::BaseDirs;
 
 use crate::{Event, Reply, Request};
 
@@ -19,18 +22,55 @@ pub struct Socket {
     stream: BufReader<UnixStream>,
 }
 
+/// Helper for finding the directory in which the niri
+/// socket will appear.
+pub fn socket_dir() -> PathBuf {
+    BaseDirs::new()
+        .as_ref()
+        .and_then(|x| x.runtime_dir())
+        .map(|x| x.to_owned())
+        .unwrap_or_else(env::temp_dir)
+}
+
 impl Socket {
     /// Connects to the default niri IPC socket.
+    ///
+    /// If [`SOCKET_PATH_ENV`] is not defined, this method will attempt to find
+    /// a valid niri IPC socket by walking the [`socket_dir`] and optionally
+    /// filtering by the current `WAYLAND_DISPLAY` if present. If there are
+    /// multiple options for what the niri IPC socket could be, this method
+    /// returns an error.
     ///
     /// This is equivalent to calling [`Self::connect_to`] with the path taken from the
     /// [`SOCKET_PATH_ENV`] environment variable.
     pub fn connect() -> io::Result<Self> {
-        let socket_path = env::var_os(SOCKET_PATH_ENV).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                format!("{SOCKET_PATH_ENV} is not set, are you running this within niri?"),
-            )
-        })?;
+        let socket_path = env::var_os(SOCKET_PATH_ENV)
+            .or_else(|| {
+                let mut niri_socket_pattern = OsString::from("niri.");
+                if let Some(wayland_display) = std::env::var_os("WAYLAND_DISPLAY") {
+                    niri_socket_pattern.push(&wayland_display);
+                    niri_socket_pattern.push(".");
+                }
+                let mut socket_dir_iter =
+                    std::fs::read_dir(socket_dir()).ok()?.flatten().filter(|d| {
+                        d.path()
+                            .file_name()
+                            .map(|n| n.as_bytes().starts_with(niri_socket_pattern.as_bytes()))
+                            .unwrap_or_default()
+                    });
+                let socket_dir_result = socket_dir_iter.next()?;
+                if socket_dir_iter.next().is_some() {
+                    None
+                } else {
+                    Some(socket_dir_result.path().into_os_string())
+                }
+            })
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("{SOCKET_PATH_ENV} is not set, are you running this within niri?"),
+                )
+            })?;
         Self::connect_to(socket_path)
     }
 
