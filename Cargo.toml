@@ -27,7 +27,9 @@ tracy-client = { version = "0.18.2", default-features = false }
 
 [workspace.dependencies.smithay]
 # version = "0.4.1"
-git = "https://github.com/Smithay/smithay.git"
+# See https://github.com/Smithay/smithay/pull/1786
+git = "https://github.com/axelkar/smithay.git"
+branch = "advertise-modifier-state"
 # path = "../smithay"
 default-features = false
 
@@ -58,6 +60,7 @@ async-channel = "2.5.0"
 async-io = { version = "2.6.0", optional = true }
 atomic = "0.6.1"
 bitflags.workspace = true
+enumflags2 = { version = "0.7.12", features = ["serde"] }
 bytemuck = { version = "1.23.2", features = ["derive"] }
 calloop = { version = "0.14.3", features = ["executor", "futures-io", "signals"] }
 clap = { workspace = true, features = ["string"] }
@@ -95,6 +98,7 @@ wayland-backend = "0.3.11"
 wayland-scanner = "0.31.7"
 xcursor = "0.3.10"
 zbus = { version = "5.11.0", optional = true }
+reis = { git = "https://github.com/ids1024/reis", features = ["calloop"], optional = true }
 
 [dependencies.smithay]
 workspace = true
@@ -125,13 +129,17 @@ wayland-client = "0.31.11"
 xshell = "0.2.7"
 
 [features]
-default = ["dbus", "systemd", "xdp-gnome-screencast"]
+default = ["dbus", "systemd", "xdp-gnome-screencast", "xdp-gnome-remote-desktop", "xdp-gnome-input-capture"]
 # Enables D-Bus support (serve various freedesktop and GNOME interfaces, accessibility tree, power button handling).
 dbus = ["dep:zbus", "dep:async-io", "dep:url", "dep:accesskit", "dep:accesskit_unix"]
 # Enables systemd integration (global environment, apps in transient scopes).
 systemd = ["dbus"]
 # Enables screencasting support through xdg-desktop-portal-gnome.
 xdp-gnome-screencast = ["dbus", "pipewire"]
+# Enables Remote Desktop portal support through xdg-desktop-portal-gnome.
+xdp-gnome-remote-desktop = ["dbus", "reis"]
+# Enables Input Capture portal support through xdg-desktop-portal-gnome.
+xdp-gnome-input-capture = ["dbus", "reis"]
 # Enables the Tracy profiler instrumentation.
 profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]
 # Enables the on-demand Tracy profiler instrumentation.

@@ -16,6 +16,11 @@ pub mod mutter_screen_cast;
 #[cfg(feature = "xdp-gnome-screencast")]
 use mutter_screen_cast::ScreenCast;
 
+#[cfg(feature = "xdp-gnome-remote-desktop")]
+pub mod mutter_remote_desktop;
+#[cfg(feature = "xdp-gnome-remote-desktop")]
+use mutter_remote_desktop::RemoteDesktop;
+
 use self::freedesktop_a11y::KeyboardMonitor;
 use self::freedesktop_screensaver::ScreenSaver;
 use self::gnome_shell_introspect::Introspect;
@@ -37,6 +42,8 @@ pub struct DBusServers {
     pub conn_screen_cast: Option<Connection>,
     pub conn_locale1: Option<Connection>,
     pub conn_keyboard_monitor: Option<Connection>,
+    #[cfg(feature = "xdp-gnome-remote-desktop")]
+    pub conn_remote_desktop: Option<Connection>,
 }
 
 impl DBusServers {
@@ -134,6 +141,25 @@ impl DBusServers {
                 dbus.conn_keyboard_monitor = Some(x);
                 niri.a11y_keyboard_monitor = Some(keyboard_monitor);
             }
+
+            #[cfg(feature = "xdp-gnome-remote-desktop")]
+            {
+                let (to_niri, from_remote_desktop) = calloop::channel::channel();
+                niri.event_loop
+                    .insert_source(from_remote_desktop, {
+                        move |event, _, state| match event {
+                            calloop::channel::Event::Msg(msg) => {
+                                state.on_remote_desktop_msg_from_dbus(msg)
+                            }
+                            calloop::channel::Event::Closed => (),
+                        }
+                    })
+                    .unwrap();
+                let remote_desktop = RemoteDesktop::new(to_niri);
+                dbus.conn_remote_desktop = try_start(remote_desktop);
+            }
+
+            // TODO: Input capture portal also requires EIS integration
         }
 
         let (to_niri, from_locale1) = calloop::channel::channel();

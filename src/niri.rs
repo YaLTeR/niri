@@ -151,6 +151,8 @@ use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::pw_utils::{Cast, PipeWire};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::pw_utils::{CastSizeChange, PwToNiri};
+#[cfg(feature = "xdp-gnome-remote-desktop")]
+use crate::remote_desktop::RemoteDesktopState;
 use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -415,6 +417,9 @@ pub struct Niri {
     /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
     #[cfg(feature = "xdp-gnome-screencast")]
     pub dynamic_cast_id_for_portal: MappedId,
+
+    #[cfg(feature = "xdp-gnome-remote-desktop")]
+    pub remote_desktop: RemoteDesktopState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -2718,6 +2723,8 @@ impl Niri {
 
             #[cfg(feature = "xdp-gnome-screencast")]
             dynamic_cast_id_for_portal: MappedId::next(),
+            #[cfg(feature = "xdp-gnome-remote-desktop")]
+            remote_desktop: RemoteDesktopState::default(),
         };
 
         niri.reset_pointer_inactivity_timer();
