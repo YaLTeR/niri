@@ -3891,7 +3891,17 @@ impl<W: LayoutElement> Column<W> {
         }
 
         let config = self.tab_indicator.config();
-        let offsets = self.tile_offsets_iter(self.data.iter().copied());
+        let offsets = self.tile_offsets_iter(
+            self.data.iter().copied(),
+            // this is the same as tile_preferred_sizes(), it is included
+            // here because the iterator returned from that function holds an
+            // immutable ref to self and the call to update_render_elements
+            // further in this function needs an `&mut self`.
+            self.tiles.iter().map(|tile| {
+                tile.prefer_expected_size
+                    .then_some(tile.tile_expected_or_current_size())
+            }),
+        );
         let tabs = zip(&self.tiles, offsets)
             .enumerate()
             .map(|(tile_idx, (tile, tile_off))| {
@@ -4805,6 +4815,7 @@ impl<W: LayoutElement> Column<W> {
     fn tile_offsets_iter(
         &self,
         data: impl Iterator<Item = TileData>,
+        preferred_size: impl Iterator<Item = Option<Size<f64, Logical>>>,
     ) -> impl Iterator<Item = Point<f64, Logical>> {
         // FIXME: this should take into account always-center-single-column, which means that
         // Column should somehow know when it is being centered due to being the single column on
@@ -4831,18 +4842,20 @@ impl<W: LayoutElement> Column<W> {
             interactively_resizing_by_left_edge: false,
         };
         let data = data.chain(iter::once(dummy));
+        let preferred_size = preferred_size.chain(iter::once(None));
 
-        data.map(move |data| {
+        zip(data, preferred_size).map(move |(data, preferred_size)| {
             let mut pos = origin;
+            let size = preferred_size.unwrap_or(data.size);
 
             if center {
-                pos.x += (tiles_width - data.size.w) / 2.;
+                pos.x += (tiles_width - size.w) / 2.;
             } else if data.interactively_resizing_by_left_edge {
-                pos.x += tiles_width - data.size.w;
+                pos.x += tiles_width - size.w;
             }
 
             if !tabbed {
-                origin.y += data.size.h + gaps;
+                origin.y += size.h + gaps;
             }
 
             pos
@@ -4850,7 +4863,7 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn tile_offsets(&self) -> impl Iterator<Item = Point<f64, Logical>> + '_ {
-        self.tile_offsets_iter(self.data.iter().copied())
+        self.tile_offsets_iter(self.data.iter().copied(), self.tile_preferred_sizes())
     }
 
     fn tile_offset(&self, tile_idx: usize) -> Point<f64, Logical> {
@@ -4860,30 +4873,35 @@ impl<W: LayoutElement> Column<W> {
     fn tile_offsets_in_render_order(
         &self,
         data: impl Iterator<Item = TileData>,
+        preferred_size: impl Iterator<Item = Option<Size<f64, Logical>>>,
     ) -> impl Iterator<Item = Point<f64, Logical>> {
         let active_idx = self.active_tile_idx;
         let active_pos = self.tile_offset(active_idx);
         let offsets = self
-            .tile_offsets_iter(data)
+            .tile_offsets_iter(data, preferred_size)
             .enumerate()
             .filter_map(move |(idx, pos)| (idx != active_idx).then_some(pos));
         iter::once(active_pos).chain(offsets)
     }
 
     pub fn tiles(&self) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>)> + '_ {
-        let offsets = self.tile_offsets_iter(self.data.iter().copied());
+        let offsets =
+            self.tile_offsets_iter(self.data.iter().copied(), self.tile_preferred_sizes());
         zip(&self.tiles, offsets)
     }
 
     fn tiles_mut(&mut self) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> + '_ {
-        let offsets = self.tile_offsets_iter(self.data.iter().copied());
+        let preferred_sizes = self.tile_preferred_sizes().collect::<Vec<_>>();
+        let offsets =
+            self.tile_offsets_iter(self.data.iter().copied(), preferred_sizes.into_iter());
         zip(&mut self.tiles, offsets)
     }
 
     fn tiles_in_render_order(
         &self,
     ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>, bool)> + '_ {
-        let offsets = self.tile_offsets_in_render_order(self.data.iter().copied());
+        let offsets = self
+            .tile_offsets_in_render_order(self.data.iter().copied(), self.tile_preferred_sizes());
 
         let (first, rest) = self.tiles.split_at(self.active_tile_idx);
         let (active, rest) = rest.split_at(1);
@@ -4901,7 +4919,9 @@ impl<W: LayoutElement> Column<W> {
     fn tiles_in_render_order_mut(
         &mut self,
     ) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> + '_ {
-        let offsets = self.tile_offsets_in_render_order(self.data.iter().copied());
+        let preferred_sizes = self.tile_preferred_sizes().collect::<Vec<_>>();
+        let offsets = self
+            .tile_offsets_in_render_order(self.data.iter().copied(), preferred_sizes.into_iter());
 
         let (first, rest) = self.tiles.split_at_mut(self.active_tile_idx);
         let (active, rest) = rest.split_at_mut(1);
@@ -5058,6 +5078,15 @@ impl<W: LayoutElement> Column<W> {
                  (total height {total_height} > max height {max_height})"
             );
         }
+    }
+
+    fn tile_preferred_sizes(
+        &self,
+    ) -> impl Iterator<Item = Option<Size<f64, Logical>>> + use<'_, W> {
+        self.tiles.iter().map(|tile| {
+            tile.prefer_expected_size
+                .then_some(tile.tile_expected_or_current_size())
+        })
     }
 }
 
