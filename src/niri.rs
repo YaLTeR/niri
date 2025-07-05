@@ -119,6 +119,8 @@ use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospe
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
+use crate::dbus::mutter_remote_desktop::RemoteDesktopToNiri;
+#[cfg(feature = "xdp-gnome-screencast")]
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
@@ -2107,6 +2109,100 @@ impl State {
             }
             ScreenCastToNiri::StopCast { session_id } => self.niri.stop_cast(session_id),
         }
+    }
+
+    #[cfg(feature = "xdp-gnome-remote-desktop")]
+    pub fn on_remote_desktop_msg(&mut self, msg: RemoteDesktopToNiri) {
+        match msg {
+            RemoteDesktopToNiri::StartCast { .. } => {}
+            RemoteDesktopToNiri::StopSession { session_id } => {}
+            RemoteDesktopToNiri::NewEisContext {
+                ctx,
+                exposed_device_types,
+            } => {
+                use reis::calloop::{EisRequestSource, EisRequestSourceEvent};
+                use reis::eis;
+
+                // TODO: put the RegistrationToken somewhere so D-Bus handlers can stop it
+                self.niri
+                    .event_loop
+                    .insert_source(EisRequestSource::new(ctx, 1), |event, connection, state| {
+                        Ok(match event {
+                            Ok(event) => match event {
+                                EisRequestSourceEvent::Connected => {
+                                    if !connection.has_interface("ei_seat")
+                                        || !connection.has_interface("ei_device")
+                                    {
+                                        connection.disconnected(
+                                            eis::connection::DisconnectReason::Protocol,
+                                            "Need `ei_seat` and `ei_device`",
+                                        );
+                                        connection.flush();
+                                        return Ok(calloop::PostAction::Remove);
+                                    }
+
+                                    let seat = connection.add_seat(
+                                        Some("default"),
+                                        &exposed_device_types.to_reis_capabilities(),
+                                    );
+
+                                    context_state.seat = Some(seat);
+
+                                    connection.flush();
+                                    calloop::PostAction::Continue
+                                }
+                                EisRequestSourceEvent::Request(request) => {
+                                    let res = state.handle_eis_request(request, &connection);
+                                    connection.flush();
+                                    res
+                                }
+                                EisRequestSourceEvent::InvalidObject(object_id) => {
+                                    // Only send if object ID is in range?
+                                    connection
+                                        .connection()
+                                        .invalid_object(connection.last_serial(), object_id);
+                                    connection.flush();
+                                    calloop::PostAction::Continue
+                                }
+                            },
+                            Err(err) => {
+                                warn!("EIS protocol error: {err}");
+                                connection.disconnected(
+                                    eis::connection::DisconnectReason::Protocol,
+                                    &err.to_string(),
+                                );
+                                connection.flush();
+                                calloop::PostAction::Remove
+                            }
+                        })
+                    })
+                    .unwrap();
+            }
+        }
+    }
+
+    #[cfg(feature = "xdp-gnome-remote-desktop")]
+    pub fn handle_eis_request(&mut self, request: reis::request::EisRequest, connection: &reis::eis::Connection) -> calloop::PostAction {
+        use reis::request::EisRequest;
+        use smithay::backend::input::InputEvent;
+
+        use crate::input::eis_backend::EisInputBackend;
+
+        match request {
+            EisRequest::Bind(reis::request::Bind { seat, capabilities }) => {
+                // May be called multiple times
+                // Remember to filter this for MutterXdpDeviceTypes
+                // Oh and remember to disable input capture
+            },
+
+            EisRequest::KeyboardKey(reis::request::KeyboardKey { device, time, key, state }) => {
+                self.process_input_event(InputEvent::<EisInputBackend>::Keyboard { event: () });
+            },
+            _ => {}
+        }
+
+
+        calloop::PostAction::Continue
     }
 
     #[cfg(feature = "dbus")]
