@@ -5,16 +5,16 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use std::{env, io, process};
+use std::{io, process};
 
 use anyhow::Context;
 use async_channel::{Receiver, Sender, TrySendError};
 use calloop::futures::Scheduler;
 use calloop::io::Async;
-use directories::BaseDirs;
 use futures_util::io::{AsyncReadExt, BufReader};
 use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, FutureExt as _};
 use niri_config::OutputName;
+use niri_ipc::socket::socket_dir;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
     Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response, Workspace,
@@ -141,14 +141,6 @@ impl Drop for IpcServer {
             let _ = unlink(socket_path);
         }
     }
-}
-
-fn socket_dir() -> PathBuf {
-    BaseDirs::new()
-        .as_ref()
-        .and_then(|x| x.runtime_dir())
-        .map(|x| x.to_owned())
-        .unwrap_or_else(env::temp_dir)
 }
 
 fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
