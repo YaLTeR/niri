@@ -110,7 +110,7 @@ impl PointerGrab<State> for MoveGrab {
                     &self.window,
                     event_delta,
                     output,
-                    dbg!(pos_within_output),
+                    pos_within_output,
                 );
                 if ongoing {
                     // FIXME: only redraw the previous and the new output.

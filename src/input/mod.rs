@@ -3512,7 +3512,19 @@ impl State {
                                 })
                         };
                         if let Some((output, active_window)) = window {
-                            let location = pos_within_output.loc + (pos_within_output.size / 2.0);
+                            let pos_within_global_space = Rectangle::new(
+                                pos_within_output.loc
+                                    + self
+                                        .niri
+                                        .global_space
+                                        .output_geometry(&output)
+                                        .unwrap()
+                                        .loc
+                                        .to_f64(),
+                                pos_within_output.size,
+                            );
+                            let location =
+                                pos_within_global_space.loc + (pos_within_global_space.size / 2.0);
                             if self.niri.layout.interactive_move_begin(
                                 active_window.clone(),
                                 &output,
@@ -3603,8 +3615,10 @@ impl State {
     }
 
     fn on_gesture_swipe_end<I: InputBackend>(&mut self, event: I::GestureSwipeEndEvent) {
+        self.niri.gesture_swipe_3f_decider = SwipeDirectionDecider::decided();
+        self.niri.gesture_swipe_4f_decider = SwipeDirectionDecider::decided();
+
         let mut handled = false;
-        let serial = SERIAL_COUNTER.next_serial();
         let res = self.niri.layout.workspace_switch_gesture_end(Some(true));
         if let Some(output) = res {
             self.niri.queue_redraw(&output);
@@ -3634,14 +3648,12 @@ impl State {
             handled = true;
         }
 
-        self.niri.gesture_swipe_3f_decider = SwipeDirectionDecider::decided();
-        self.niri.gesture_swipe_4f_decider = SwipeDirectionDecider::decided();
-
         if handled {
             // We handled this event.
             return;
         }
 
+        let serial = SERIAL_COUNTER.next_serial();
         let pointer = self.niri.seat.get_pointer().unwrap();
 
         if self.update_pointer_contents() {
