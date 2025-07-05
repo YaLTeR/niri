@@ -153,7 +153,7 @@ impl XdgShellHandler for State {
 
         match start_data {
             PointerOrTouchStartData::Pointer(start_data) => {
-                let grab = MoveGrab::new(start_data, window, false);
+                let grab = MoveGrab::new(start_data, window, false, false);
                 pointer.set_grab(self, grab, serial, Focus::Clear);
             }
             PointerOrTouchStartData::Touch(start_data) => {

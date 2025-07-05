@@ -8,15 +8,17 @@ use smithay::input::pointer::{
     RelativeMotionEvent,
 };
 use smithay::input::SeatHandler;
-use smithay::utils::{IsAlive, Logical, Point};
+use smithay::utils::{IsAlive, Logical, Point, Serial, Size, SERIAL_COUNTER};
 
 use crate::niri::State;
 
 pub struct MoveGrab {
     start_data: PointerGrabStartData<State>,
     last_location: Point<f64, Logical>,
+    swipe_location: Point<f64, Logical>,
     window: Window,
     gesture: GestureState,
+    is_swipe_pinch: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +32,7 @@ impl MoveGrab {
         start_data: PointerGrabStartData<State>,
         window: Window,
         use_threshold: bool,
+        is_swipe_pinch: bool,
     ) -> Self {
         let gesture = if use_threshold {
             GestureState::Recognizing
@@ -39,9 +42,11 @@ impl MoveGrab {
 
         Self {
             last_location: start_data.location,
+            swipe_location: start_data.location,
             start_data,
             window,
             gesture,
+            is_swipe_pinch,
         }
     }
 
@@ -49,10 +54,12 @@ impl MoveGrab {
         state.niri.layout.interactive_move_end(&self.window);
         // FIXME: only redraw the window output.
         state.niri.queue_redraw_all();
-        state
-            .niri
-            .cursor_manager
-            .set_cursor_image(CursorImageStatus::default_named());
+        if !self.is_swipe_pinch {
+            state
+                .niri
+                .cursor_manager
+                .set_cursor_image(CursorImageStatus::default_named());
+        }
     }
 }
 
@@ -64,8 +71,15 @@ impl PointerGrab<State> for MoveGrab {
         _focus: Option<(<State as SeatHandler>::PointerFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
-        // While the grab is active, no client has pointer focus.
-        handle.motion(data, None, event);
+        // The pointer should not be moved by swipe and pinch gestures
+        if !self.is_swipe_pinch {
+            // While the grab is active, no client has pointer focus.
+            handle.motion(data, None, event);
+        } else if event.serial != Serial::from(0) {
+            // Ignore normal pointer motion events if we're in a swipe/pinch
+            // gesture
+            return;
+        }
 
         if self.window.alive() {
             if let Some((output, pos_within_output)) = data.niri.output_under(event.location) {
@@ -80,9 +94,11 @@ impl PointerGrab<State> for MoveGrab {
                     if c.x * c.x + c.y * c.y >= 8. * 8. {
                         self.gesture = GestureState::Move;
 
-                        data.niri
-                            .cursor_manager
-                            .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
+                        if !self.is_swipe_pinch {
+                            data.niri
+                                .cursor_manager
+                                .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
+                        }
                     }
                 }
 
@@ -94,7 +110,7 @@ impl PointerGrab<State> for MoveGrab {
                     &self.window,
                     event_delta,
                     output,
-                    pos_within_output,
+                    dbg!(pos_within_output),
                 );
                 if ongoing {
                     // FIXME: only redraw the previous and the new output.
@@ -106,8 +122,15 @@ impl PointerGrab<State> for MoveGrab {
             }
         }
 
+        // We asserted `event.serial == Serial::from(0)` above
+        // if `is_swipe_pinch` is true. This is not a valid serial.
+        let serial = if self.is_swipe_pinch {
+            SERIAL_COUNTER.next_serial()
+        } else {
+            event.serial
+        };
         // The move is no longer ongoing.
-        handle.unset_grab(self, data, event.serial, event.time, true);
+        handle.unset_grab(self, data, serial, event.time, true);
     }
 
     fn relative_motion(
@@ -160,11 +183,11 @@ impl PointerGrab<State> for MoveGrab {
 
     fn gesture_swipe_begin(
         &mut self,
-        data: &mut State,
-        handle: &mut PointerInnerHandle<'_, State>,
-        event: &GestureSwipeBeginEvent,
+        _data: &mut State,
+        _handle: &mut PointerInnerHandle<'_, State>,
+        _event: &GestureSwipeBeginEvent,
     ) {
-        handle.gesture_swipe_begin(data, event);
+        // handle.gesture_swipe_begin(data, event);
     }
 
     fn gesture_swipe_update(
@@ -173,7 +196,24 @@ impl PointerGrab<State> for MoveGrab {
         handle: &mut PointerInnerHandle<'_, State>,
         event: &GestureSwipeUpdateEvent,
     ) {
-        handle.gesture_swipe_update(data, event);
+        self.swipe_location += event.delta;
+        if let Some(mut global_rect) = data.global_bounding_rectangle() {
+            // Shrink by 1 logical pixel, retaining center
+            global_rect.loc = global_rect.loc + Point::new(1, 1);
+            global_rect.size = global_rect.size - Size::new(2, 2);
+            self.swipe_location = self.swipe_location.constrain(global_rect.to_f64());
+        }
+        self.motion(
+            data,
+            handle,
+            None,
+            &MotionEvent {
+                location: self.swipe_location,
+                serial: Serial::from(0),
+                time: event.time,
+            },
+        );
+        // handle.gesture_swipe_update(data, event);
     }
 
     fn gesture_swipe_end(
@@ -182,7 +222,8 @@ impl PointerGrab<State> for MoveGrab {
         handle: &mut PointerInnerHandle<'_, State>,
         event: &GestureSwipeEndEvent,
     ) {
-        handle.gesture_swipe_end(data, event);
+        // handle.gesture_swipe_end(data, event);
+        handle.unset_grab(self, data, event.serial, event.time, true);
     }
 
     fn gesture_pinch_begin(
