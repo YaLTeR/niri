@@ -675,19 +675,23 @@ impl State {
                     mapped.toplevel().send_close();
                 }
             }
-            Action::FullscreenWindow => {
+            Action::FullscreenWindow(fullscreen_action) => {
                 let focus = self.niri.layout.focus().map(|m| m.window.clone());
                 if let Some(window) = focus {
-                    self.niri.layout.toggle_fullscreen(&window);
+                    self.niri
+                        .layout
+                        .set_fullscreen_by_action(&window, fullscreen_action);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
                 }
             }
-            Action::FullscreenWindowById(id) => {
+            Action::FullscreenWindowById(id, fullscreen_action) => {
                 let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
                 let window = window.map(|(_, m)| m.window.clone());
                 if let Some(window) = window {
-                    self.niri.layout.toggle_fullscreen(&window);
+                    self.niri
+                        .layout
+                        .set_fullscreen_by_action(&window, fullscreen_action);
                     // FIXME: granular
                     self.niri.queue_redraw_all();
                 }
