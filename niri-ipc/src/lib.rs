@@ -53,6 +53,7 @@
 #![warn(missing_docs)]
 
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
@@ -263,6 +264,9 @@ pub enum Action {
         /// If `None`, uses the focused window.
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
+        /// Action to perform on that window
+        #[cfg_attr(feature = "clap", arg(long, default_value_t = FullscreenSetAction::default()))]
+        action: FullscreenSetAction,
     },
     /// Toggle windowed (fake) fullscreen on a window.
     #[cfg_attr(
@@ -1253,6 +1257,20 @@ pub struct LayerSurface {
     pub keyboard_interactivity: LayerSurfaceKeyboardInteractivity,
 }
 
+/// The action to perform when fullscreening
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+pub enum FullscreenSetAction {
+    /// Toggling between fullscreen and normal
+    #[default]
+    Toggle,
+    /// Fullscreening it - independent of the current state
+    Fullscreen,
+    /// Unfullscreening it - independent of the current state
+    Normal,
+}
+
 /// A compositor event.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1519,5 +1537,28 @@ impl FromStr for ScaleToSet {
 
         let scale = s.parse().map_err(|_| "error parsing scale")?;
         Ok(Self::Specific(scale))
+    }
+}
+
+impl FromStr for FullscreenSetAction {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "toggle" => Ok(Self::Toggle),
+            "fullscreen" => Ok(Self::Fullscreen),
+            "normal" => Ok(Self::Normal),
+            _ => Err(r#"invalid fullscreen action, can be "toggle", "fullscreen", "normal""#),
+        }
+    }
+}
+
+impl Display for FullscreenSetAction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Toggle => write!(f, "toggle"),
+            Self::Fullscreen => write!(f, "fullscreen"),
+            Self::Normal => write!(f, "normal"),
+        }
     }
 }
