@@ -266,6 +266,10 @@ layout {
 // This line starts waybar, a commonly used bar for Wayland compositors.
 spawn-at-startup "waybar"
 
+// This line starts mpris-proxy in order to handle bluetooth media controls if
+// 1) bluetooth is available, 2) mpris-proxy is installed, and 3) mpris-proxy is not already running.
+spawn-at-startup "bash" "-c" "which systemctl && systemctl -q is-active bluetooth && which mpris-proxy && ps -d | grep -q mpris-proxy || mpris-proxy"
+
 // Uncomment this line to ask the clients to omit their client-side decorations if possible.
 // If the client will specifically ask for CSD, the request will be honored.
 // Additionally, clients will be informed that they are tiled, removing some client-side rounded corners.
