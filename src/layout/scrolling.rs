@@ -292,8 +292,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let working_area = compute_working_area(parent_area, scale, options.struts);
 
         for (column, data) in zip(&mut self.columns, &mut self.data) {
-            column.update_config(view_size, working_area, scale, options.clone());
-            data.update(column);
+            column.update_config(view_size, working_area, scale, options.clone(), Some(data));
         }
 
         self.view_size = view_size;
@@ -864,8 +863,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let mut prev_active_tile_idx = target_column.active_tile_idx;
         let was_fullscreen = target_column.tiles[prev_active_tile_idx].is_fullscreen();
 
-        target_column.add_tile_at(tile_idx, tile, true);
-        self.data[col_idx].update(target_column);
+        target_column.add_tile_at(tile_idx, tile, true, Some(&mut self.data[col_idx]));
 
         // If the target column is the active column and its window was requested to, but hasn't
         // gone into fullscreen yet, then clear the stored view offset, if we just asked it to
@@ -948,13 +946,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         });
 
+        self.data.insert(idx, ColumnData::new(&column));
         column.update_config(
             self.view_size,
             self.working_area,
             self.scale,
             self.options.clone(),
+            Some(&mut self.data[idx]),
         );
-        self.data.insert(idx, ColumnData::new(&column));
         self.columns.insert(idx, column);
 
         if activate {
@@ -1100,8 +1099,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         }
 
-        column.update_tile_sizes_with_transaction(true, transaction);
-        self.data[column_idx].update(column);
+        column.update_tile_sizes_with_transaction(
+            true,
+            transaction,
+            Some(&mut self.data[column_idx]),
+        );
         let offset = prev_width - column.width();
 
         // Animate movement of the other columns.
@@ -1237,8 +1239,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let prev_width = self.data[col_idx].width;
 
         column.update_window(window);
-        self.data[col_idx].update(column);
-        column.update_tile_sizes(false);
+        column.update_tile_sizes(false, Some(&mut self.data[col_idx]));
 
         let offset = prev_width - self.data[col_idx].width;
 
@@ -2040,8 +2041,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // Recalculate sizes of *all* tiles in both columns
         // (other tiles may need to have their size adjusted if the
         // constraints on the inbound tile differ from the outbound's)
-        source_col.update_tile_sizes(true);
-        target_col.update_tile_sizes(true);
+        source_col.update_tile_sizes(true, None);
+        target_col.update_tile_sizes(true, None);
 
         // Mark swapped tiles so that sibling tiles and columns compute
         // their position using the expected_size instead of the current
@@ -2081,11 +2082,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
-        col.set_column_display(display);
+        col.set_column_display(display, None);
 
         // With place_within_column, the tab indicator changes the column size immediately.
-        self.data[self.active_column_idx].update(col);
-        col.update_tile_sizes(true);
+        col.update_tile_sizes(true, Some(&mut self.data[self.active_column_idx]));
 
         // Disable fullscreen if needed.
         if col.display_mode != ColumnDisplay::Tabbed && col.tiles.len() > 1 {
@@ -2457,7 +2457,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let col = &mut self.columns[self.active_column_idx];
-        col.toggle_width(None);
+        col.toggle_width(None, Some(&mut self.data[self.active_column_idx]));
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2468,7 +2468,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let col = &mut self.columns[self.active_column_idx];
-        col.toggle_full_width();
+        col.toggle_full_width(Some(&mut self.data[self.active_column_idx]));
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2478,21 +2478,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        let (col, tile_idx) = if let Some(window) = window {
+        let (col, col_idx, tile_idx) = if let Some(window) = window {
             self.columns
                 .iter_mut()
-                .find_map(|col| {
+                .enumerate()
+                .find_map(|(col_idx, col)| {
                     col.tiles
                         .iter()
                         .position(|tile| tile.window().id() == window)
-                        .map(|tile_idx| (col, Some(tile_idx)))
+                        .map(|tile_idx| (col, col_idx, Some(tile_idx)))
                 })
                 .unwrap()
         } else {
-            (&mut self.columns[self.active_column_idx], None)
+            (
+                &mut self.columns[self.active_column_idx],
+                self.active_column_idx,
+                None,
+            )
         };
 
-        col.set_column_width(change, tile_idx, true);
+        col.set_column_width(change, tile_idx, true, Some(&mut self.data[col_idx]));
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2502,21 +2507,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        let (col, tile_idx) = if let Some(window) = window {
+        let (col, col_idx, tile_idx) = if let Some(window) = window {
             self.columns
                 .iter_mut()
-                .find_map(|col| {
+                .enumerate()
+                .find_map(|(col_idx, col)| {
                     col.tiles
                         .iter()
                         .position(|tile| tile.window().id() == window)
-                        .map(|tile_idx| (col, Some(tile_idx)))
+                        .map(|tile_idx| (col, col_idx, Some(tile_idx)))
                 })
                 .unwrap()
         } else {
-            (&mut self.columns[self.active_column_idx], None)
+            (
+                &mut self.columns[self.active_column_idx],
+                self.active_column_idx,
+                None,
+            )
         };
 
-        col.set_window_height(change, tile_idx, true);
+        col.set_window_height(change, tile_idx, true, Some(&mut self.data[col_idx]));
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2526,21 +2536,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        let (col, tile_idx) = if let Some(window) = window {
+        let (col, col_idx, tile_idx) = if let Some(window) = window {
             self.columns
                 .iter_mut()
-                .find_map(|col| {
+                .enumerate()
+                .find_map(|(col_idx, col)| {
                     col.tiles
                         .iter()
                         .position(|tile| tile.window().id() == window)
-                        .map(|tile_idx| (col, Some(tile_idx)))
+                        .map(|tile_idx| (col, col_idx, Some(tile_idx)))
                 })
                 .unwrap()
         } else {
-            (&mut self.columns[self.active_column_idx], None)
+            (
+                &mut self.columns[self.active_column_idx],
+                self.active_column_idx,
+                None,
+            )
         };
 
-        col.reset_window_height(tile_idx, true);
+        col.reset_window_height(tile_idx, true, Some(&mut self.data[col_idx]));
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2550,21 +2565,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        let (col, tile_idx) = if let Some(window) = window {
+        let (col, col_idx, tile_idx) = if let Some(window) = window {
             self.columns
                 .iter_mut()
-                .find_map(|col| {
+                .enumerate()
+                .find_map(|(col_idx, col)| {
                     col.tiles
                         .iter()
                         .position(|tile| tile.window().id() == window)
-                        .map(|tile_idx| (col, Some(tile_idx)))
+                        .map(|tile_idx| (col, col_idx, Some(tile_idx)))
                 })
                 .unwrap()
         } else {
-            (&mut self.columns[self.active_column_idx], None)
+            (
+                &mut self.columns[self.active_column_idx],
+                self.active_column_idx,
+                None,
+            )
         };
 
-        col.toggle_width(tile_idx);
+        col.toggle_width(tile_idx, Some(&mut self.data[col_idx]));
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2574,21 +2594,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        let (col, tile_idx) = if let Some(window) = window {
+        let (col, col_idx, tile_idx) = if let Some(window) = window {
             self.columns
                 .iter_mut()
-                .find_map(|col| {
+                .enumerate()
+                .find_map(|(col_idx, col)| {
                     col.tiles
                         .iter()
                         .position(|tile| tile.window().id() == window)
-                        .map(|tile_idx| (col, Some(tile_idx)))
+                        .map(|tile_idx| (col, col_idx, Some(tile_idx)))
                 })
                 .unwrap()
         } else {
-            (&mut self.columns[self.active_column_idx], None)
+            (
+                &mut self.columns[self.active_column_idx],
+                self.active_column_idx,
+                None,
+            )
         };
 
-        col.toggle_window_height(tile_idx, true);
+        col.toggle_window_height(tile_idx, true, Some(&mut self.data[col_idx]));
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2610,7 +2635,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // on screen while taking into account that the active column will remain centered
             // after resizing. But I'm not sure it's that useful? So let's do the simple thing.
             let col = &mut self.columns[self.active_column_idx];
-            col.toggle_full_width();
+            col.toggle_full_width(Some(&mut self.data[self.active_column_idx]));
             cancel_resize_for_column(&mut self.interactive_resize, col);
             return;
         }
@@ -2670,7 +2695,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // Only the active column was fully on-screen (maybe it's the only column), so we're
             // about to set its width to 100% of the working area. Let's do it via
             // toggle_full_width() as it lets you back out of it more intuitively.
-            col.toggle_full_width();
+            col.toggle_full_width(Some(&mut self.data[self.active_column_idx]));
             return;
         }
 
@@ -2678,7 +2703,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         col.width = ColumnWidth::Fixed(active_width + available_width);
         col.preset_width_idx = None;
         col.is_full_width = false;
-        col.update_tile_sizes(true);
+        col.update_tile_sizes(true, Some(&mut self.data[self.active_column_idx]));
 
         // Put the leftmost window into the view.
         let new_view_x = leftmost_col_x.unwrap() - gap - working_x;
@@ -2730,10 +2755,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             col = &mut self.columns[col_idx];
         }
 
-        col.set_fullscreen(is_fullscreen);
-
         // With place_within_column, the tab indicator changes the column size immediately.
-        self.data[col_idx].update(col);
+        col.set_fullscreen(is_fullscreen, Some(&mut self.data[col_idx]));
 
         // If we quickly fullscreen and unfullscreen before any window has a chance to receive the
         // request, we need to reset the offset.
@@ -3378,10 +3401,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let is_centering = self.is_centering_focused_column();
 
-        let col = self
+        let (col_idx, col) = self
             .columns
             .iter_mut()
-            .find(|col| col.contains(window))
+            .enumerate()
+            .find(|(_, col)| col.contains(window))
             .unwrap();
 
         let tile_idx = col
@@ -3401,7 +3425,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
 
             let window_width = (resize.original_window_size.w + dx).round() as i32;
-            col.set_column_width(SizeChange::SetFixed(window_width), Some(tile_idx), false);
+            col.set_column_width(
+                SizeChange::SetFixed(window_width),
+                Some(tile_idx),
+                false,
+                Some(&mut self.data[col_idx]),
+            );
         }
 
         if resize.data.edges.intersects(ResizeEdge::TOP_BOTTOM) {
@@ -3417,7 +3446,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 // resizes work as expected in more cases.
 
                 let window_height = (resize.original_window_size.h + dy).round() as i32;
-                col.set_window_height(SizeChange::SetFixed(window_height), Some(tile_idx), false);
+                col.set_window_height(
+                    SizeChange::SetFixed(window_height),
+                    Some(tile_idx),
+                    false,
+                    Some(&mut self.data[col_idx]),
+                );
             }
         }
 
@@ -3780,10 +3814,12 @@ impl<W: LayoutElement> Column<W> {
 
         let is_pending_fullscreen = tile.window().is_pending_fullscreen();
 
-        rv.add_tile_at(0, tile, animate_resize);
+        // Because the column is new, it doesn't yet have an associated cache
+        // but we need one to keep add_tile_at happy.
+        rv.add_tile_at(0, tile, animate_resize, None);
 
         if is_pending_fullscreen {
-            rv.set_fullscreen(true);
+            rv.set_fullscreen(true, None);
         }
 
         // Animate the tab indicator for new columns.
@@ -3806,6 +3842,7 @@ impl<W: LayoutElement> Column<W> {
         working_area: Rectangle<f64, Logical>,
         scale: f64,
         options: Rc<Options>,
+        data: Option<&mut ColumnData>,
     ) {
         let mut update_sizes = false;
 
@@ -3850,7 +3887,7 @@ impl<W: LayoutElement> Column<W> {
         self.options = options;
 
         if update_sizes {
-            self.update_tile_sizes(false);
+            self.update_tile_sizes(false, data);
         }
     }
 
@@ -3897,10 +3934,11 @@ impl<W: LayoutElement> Column<W> {
             // an immutable ref to self and the call to update_render_elements
             // further in this function needs an `&mut self`.
             zip(self.tiles.iter(), self.data.iter().copied()).map(|(tile, mut data)| {
-                data.size = tile
-                    .prefer_expected_size
-                    .then_some(tile.tile_expected_or_current_size())
-                    .unwrap_or(data.size);
+                data.size = if tile.prefer_expected_size {
+                    tile.tile_expected_or_current_size()
+                } else {
+                    data.size
+                };
                 data
             }),
         );
@@ -3994,7 +4032,13 @@ impl<W: LayoutElement> Column<W> {
         self.activate_idx(idx);
     }
 
-    fn add_tile_at(&mut self, idx: usize, mut tile: Tile<W>, animate: bool) {
+    fn add_tile_at(
+        &mut self,
+        idx: usize,
+        mut tile: Tile<W>,
+        animate: bool,
+        data: Option<&mut ColumnData>,
+    ) {
         tile.update_config(self.view_size, self.scale, self.options.clone());
 
         // Inserting a tile pushes down all tiles below it, but also in always-centering mode it
@@ -4009,7 +4053,7 @@ impl<W: LayoutElement> Column<W> {
         self.data
             .insert(idx, TileData::new(&tile, WindowHeight::auto_1()));
         self.tiles.insert(idx, tile);
-        self.update_tile_sizes(animate);
+        self.update_tile_sizes(animate, data);
 
         // Animate tiles according to the offset changes.
         prev_offsets.insert(idx, Point::default());
@@ -4092,11 +4136,16 @@ impl<W: LayoutElement> Column<W> {
         }
     }
 
-    fn update_tile_sizes(&mut self, animate: bool) {
-        self.update_tile_sizes_with_transaction(animate, Transaction::new());
+    fn update_tile_sizes(&mut self, animate: bool, data: Option<&mut ColumnData>) {
+        self.update_tile_sizes_with_transaction(animate, Transaction::new(), data);
     }
 
-    fn update_tile_sizes_with_transaction(&mut self, animate: bool, transaction: Transaction) {
+    fn update_tile_sizes_with_transaction(
+        &mut self,
+        animate: bool,
+        transaction: Transaction,
+        data: Option<&mut ColumnData>,
+    ) {
         if self.is_fullscreen {
             for (tile_idx, tile) in self.tiles.iter_mut().enumerate() {
                 // In tabbed mode, only the visible window participates in the transaction.
@@ -4108,6 +4157,10 @@ impl<W: LayoutElement> Column<W> {
                 };
 
                 tile.request_fullscreen(animate, transaction);
+            }
+            // Tile size updates require the cache to be refreshed.
+            if let Some(data) = data {
+                data.update(self);
             }
             return;
         }
@@ -4383,6 +4436,11 @@ impl<W: LayoutElement> Column<W> {
 
             tile.request_tile_size(size, animate, transaction);
         }
+
+        // Tile size updates require the cache to be refreshed.
+        if let Some(data) = data {
+            data.update(self);
+        }
     }
 
     fn width(&self) -> f64 {
@@ -4474,7 +4532,7 @@ impl<W: LayoutElement> Column<W> {
         true
     }
 
-    fn toggle_width(&mut self, tile_idx: Option<usize>) {
+    fn toggle_width(&mut self, tile_idx: Option<usize>, data: Option<&mut ColumnData>) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         let preset_idx = if self.is_full_width {
@@ -4504,17 +4562,23 @@ impl<W: LayoutElement> Column<W> {
         };
 
         let preset = self.options.preset_column_widths[preset_idx];
-        self.set_column_width(SizeChange::from(preset), Some(tile_idx), true);
+        self.set_column_width(SizeChange::from(preset), Some(tile_idx), true, data);
 
         self.preset_width_idx = Some(preset_idx);
     }
 
-    fn toggle_full_width(&mut self) {
+    fn toggle_full_width(&mut self, data: Option<&mut ColumnData>) {
         self.is_full_width = !self.is_full_width;
-        self.update_tile_sizes(true);
+        self.update_tile_sizes(true, data);
     }
 
-    fn set_column_width(&mut self, change: SizeChange, tile_idx: Option<usize>, animate: bool) {
+    fn set_column_width(
+        &mut self,
+        change: SizeChange,
+        tile_idx: Option<usize>,
+        animate: bool,
+        data: Option<&mut ColumnData>,
+    ) {
         let current = if self.is_full_width {
             ColumnWidth::Proportion(1.)
         } else {
@@ -4565,10 +4629,16 @@ impl<W: LayoutElement> Column<W> {
         self.width = width;
         self.preset_width_idx = None;
         self.is_full_width = false;
-        self.update_tile_sizes(animate);
+        self.update_tile_sizes(animate, data);
     }
 
-    fn set_window_height(&mut self, change: SizeChange, tile_idx: Option<usize>, animate: bool) {
+    fn set_window_height(
+        &mut self,
+        change: SizeChange,
+        tile_idx: Option<usize>,
+        animate: bool,
+        data: Option<&mut ColumnData>,
+    ) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         // Start by converting all heights to automatic, since only one window in the column can be
@@ -4643,10 +4713,15 @@ impl<W: LayoutElement> Column<W> {
         }
 
         self.data[tile_idx].height = WindowHeight::Fixed(window_height.clamp(1., MAX_PX));
-        self.update_tile_sizes(animate);
+        self.update_tile_sizes(animate, data);
     }
 
-    fn reset_window_height(&mut self, tile_idx: Option<usize>, animate: bool) {
+    fn reset_window_height(
+        &mut self,
+        tile_idx: Option<usize>,
+        animate: bool,
+        data: Option<&mut ColumnData>,
+    ) {
         if self.display_mode == ColumnDisplay::Tabbed {
             // When tabbed, reset window height should work on any window, not just the fixed-size
             // one.
@@ -4658,10 +4733,15 @@ impl<W: LayoutElement> Column<W> {
             self.data[tile_idx].height = WindowHeight::auto_1();
         }
 
-        self.update_tile_sizes(animate);
+        self.update_tile_sizes(animate, data);
     }
 
-    fn toggle_window_height(&mut self, tile_idx: Option<usize>, animate: bool) {
+    fn toggle_window_height(
+        &mut self,
+        tile_idx: Option<usize>,
+        animate: bool,
+        data: Option<&mut ColumnData>,
+    ) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         // Start by converting all heights to automatic, since only one window in the column can be
@@ -4698,7 +4778,7 @@ impl<W: LayoutElement> Column<W> {
             }
         };
         self.data[tile_idx].height = WindowHeight::Preset(preset_idx);
-        self.update_tile_sizes(animate);
+        self.update_tile_sizes(animate, data);
     }
 
     /// Converts all heights in the column to automatic, preserving the apparent heights.
@@ -4723,7 +4803,7 @@ impl<W: LayoutElement> Column<W> {
         }
     }
 
-    fn set_fullscreen(&mut self, is_fullscreen: bool) {
+    fn set_fullscreen(&mut self, is_fullscreen: bool, data: Option<&mut ColumnData>) {
         if self.is_fullscreen == is_fullscreen {
             return;
         }
@@ -4733,10 +4813,10 @@ impl<W: LayoutElement> Column<W> {
         }
 
         self.is_fullscreen = is_fullscreen;
-        self.update_tile_sizes(false);
+        self.update_tile_sizes(false, data);
     }
 
-    fn set_column_display(&mut self, display: ColumnDisplay) {
+    fn set_column_display(&mut self, display: ColumnDisplay, data: Option<&mut ColumnData>) {
         if self.display_mode == display {
             return;
         }
@@ -4791,7 +4871,7 @@ impl<W: LayoutElement> Column<W> {
 
         // Now switch the display mode for real.
         self.display_mode = display;
-        self.update_tile_sizes(true);
+        self.update_tile_sizes(true, data);
     }
 
     fn tiles_origin(&self) -> Point<f64, Logical> {
@@ -5076,10 +5156,11 @@ impl<W: LayoutElement> Column<W> {
 
     fn tile_preferred_sizes(&self) -> impl Iterator<Item = TileData> + '_ {
         zip(self.tiles.iter(), self.data.iter().copied()).map(|(tile, mut data)| {
-            data.size = tile
-                .prefer_expected_size
-                .then_some(tile.tile_expected_or_current_size())
-                .unwrap_or(data.size);
+            data.size = if tile.prefer_expected_size {
+                tile.tile_expected_or_current_size()
+            } else {
+                data.size
+            };
             data
         })
     }
