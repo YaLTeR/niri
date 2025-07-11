@@ -644,6 +644,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete_nushell"
+version = "4.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a0c951694691e65bf9d421d597d68416c22de9632e884c28412cb8cd8b73dce"
+dependencies = [
+ "clap",
+ "clap_complete",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.5.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2267,6 +2277,7 @@ dependencies = [
  "calloop-wayland-source 0.4.0",
  "clap",
  "clap_complete",
+ "clap_complete_nushell",
  "directories",
  "drm-ffi",
  "fastrand",
