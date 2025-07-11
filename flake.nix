@@ -122,6 +122,7 @@
               installShellCompletion --cmd niri \
                 --bash <($out/bin/niri completions bash) \
                 --fish <($out/bin/niri completions fish) \
+                --nushell <($out/bin/niri completions nushell) \
                 --zsh <($out/bin/niri completions zsh)
 
               install -Dm644 resources/niri.desktop -t $out/share/wayland-sessions
