@@ -10,8 +10,10 @@ use std::process::Command;
 use std::{env, mem};
 
 use clap::{CommandFactory, Parser};
+use clap_complete::Shell;
+use clap_complete_nushell::Nushell;
 use directories::ProjectDirs;
-use niri::cli::{Cli, Sub};
+use niri::cli::{Cli, CompletionShell, Sub};
 #[cfg(feature = "dbus")]
 use niri::dbus;
 use niri::ipc::client::handle_msg;
@@ -108,7 +110,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Sub::Panic => cause_panic(),
             Sub::Completions { shell } => {
-                clap_complete::generate(shell, &mut Cli::command(), "niri", &mut io::stdout());
+                match shell {
+                    CompletionShell::Nushell => {
+                        clap_complete::generate(
+                            Nushell,
+                            &mut Cli::command(),
+                            "niri",
+                            &mut io::stdout(),
+                        );
+                    }
+                    other => {
+                        clap_complete::generate(
+                            Shell::from(other),
+                            &mut Cli::command(),
+                            "niri",
+                            &mut io::stdout(),
+                        );
+                    }
+                }
                 return Ok(());
             }
         }

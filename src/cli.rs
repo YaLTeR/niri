@@ -7,6 +7,29 @@ use niri_ipc::{Action, OutputAction};
 
 use crate::utils::version;
 
+#[derive(Clone, Debug, clap::ValueEnum)]
+pub enum CompletionShell {
+    Bash,
+    Elvish,
+    Fish,
+    PowerShell,
+    Zsh,
+    Nushell,
+}
+
+impl From<CompletionShell> for Shell {
+    fn from(shell: CompletionShell) -> Self {
+        match shell {
+            CompletionShell::Bash => Shell::Bash,
+            CompletionShell::Elvish => Shell::Elvish,
+            CompletionShell::Fish => Shell::Fish,
+            CompletionShell::PowerShell => Shell::PowerShell,
+            CompletionShell::Zsh => Shell::Zsh,
+            CompletionShell::Nushell => panic!("Nushell should be handled separately"),
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(author, version = version(), about, long_about = None)]
 #[command(args_conflicts_with_subcommands = true)]
@@ -56,7 +79,9 @@ pub enum Sub {
     /// Cause a panic to check if the backtraces are good.
     Panic,
     /// Generate shell completions.
-    Completions { shell: Shell },
+    Completions {
+        shell: CompletionShell, // Changed from Shell to CompletionShell
+    },
 }
 
 #[derive(Subcommand)]
