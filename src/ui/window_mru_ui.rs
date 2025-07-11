@@ -493,7 +493,12 @@ impl WindowMruUi {
         if scope.is_some_and(|s| s != inner.wmru.scope)
             || filter.is_some_and(|f| f != inner.wmru.filter)
         {
-            Some(WindowMru::new(niri, scope, filter, inner.clock.clone()))
+            Some(WindowMru::new(
+                niri,
+                scope.or(Some(inner.wmru.scope)),
+                filter.or(Some(inner.wmru.filter)),
+                inner.clock.clone(),
+            ))
         } else {
             None
         }
