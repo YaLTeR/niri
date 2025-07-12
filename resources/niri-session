@@ -1,5 +1,15 @@
 #!/bin/sh
 
+# Detect if being run as a user service, which implies external session management,
+# exec compositor directly
+if [ -n "${MANAGERPID:-}" ] && [ "${SYSTEMD_EXEC_PID:-}" = "$$" ]; then
+    case "$(ps -p "$MANAGERPID" -o cmd=)" in
+    *systemd*--user*)
+        exec niri --session
+        ;;
+    esac
+fi
+
 if [ -n "$SHELL" ] &&
    grep -q "$SHELL" /etc/shells &&
    ! (echo "$SHELL" | grep -q "false") &&
