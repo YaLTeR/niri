@@ -14,8 +14,8 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
-    WarpMouseToFocusMode, WorkspaceReference,
+    AccelProfile, ClickMethod, Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender,
+    TapButtonMap, TrackLayout, WarpMouseToFocusMode, WorkspaceReference,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -187,6 +187,8 @@ pub struct Niri {
     /// reloading the config from disk to determine if the output configuration should be reloaded
     /// (and transient changes dropped).
     pub config_file_output_config: niri_config::Outputs,
+
+    pub config_file_input_config: niri_config::Input,
 
     pub event_loop: LoopHandle<'static, State>,
     pub scheduler: Scheduler<()>,
@@ -1634,6 +1636,14 @@ impl State {
         self.niri.output_management_state.on_config_changed(config);
     }
 
+    pub fn modify_input_config<F>(&mut self, fun: F)
+    where
+        F: FnOnce(&mut niri_config::Input),
+    {
+        let mut config = self.niri.config.borrow_mut();
+        fun(&mut config.input);
+    }
+
     pub fn modify_output_config<F>(&mut self, name: &str, fun: F)
     where
         F: FnOnce(&mut niri_config::Output),
@@ -1675,6 +1685,219 @@ impl State {
         };
 
         fun(config);
+    }
+
+    fn apply_transient_keyboard_config(&mut self, keyboard: niri_ipc::Keyboard) {
+        use niri_ipc::Keyboard;
+        self.modify_input_config(move |config| match keyboard {
+            Keyboard::Xkb {
+                xkb:
+                    niri_ipc::XkbToSet {
+                        rules,
+                        model,
+                        layout,
+                        variant,
+                        options,
+                        file,
+                    },
+            } => {
+                if let Some(rules) = rules {
+                    config.keyboard.xkb.rules = rules;
+                }
+                if let Some(model) = model {
+                    config.keyboard.xkb.model = model;
+                }
+                if let Some(layout) = layout {
+                    config.keyboard.xkb.layout = layout;
+                }
+                if let Some(variant) = variant {
+                    config.keyboard.xkb.variant = variant;
+                }
+                if let Some(options) = options {
+                    config.keyboard.xkb.options = if options.is_empty() {
+                        None
+                    } else {
+                        Some(options)
+                    };
+                }
+                if let Some(file) = file {
+                    config.keyboard.xkb.file = if file.is_empty() { None } else { Some(file) };
+                }
+            }
+            Keyboard::RepeatDelay { repeat_delay } => {
+                config.keyboard.repeat_delay = repeat_delay;
+            }
+            Keyboard::RepeatRate { repeat_rate } => {
+                config.keyboard.repeat_rate = repeat_rate;
+            }
+            Keyboard::TrackLayout(track_layout) => {
+                config.keyboard.track_layout = match track_layout {
+                    niri_ipc::TrackLayoutToSet::Global => TrackLayout::Global,
+                    niri_ipc::TrackLayoutToSet::Window => TrackLayout::Window,
+                };
+            }
+            Keyboard::Numlock { numlock } => {
+                config.keyboard.numlock = numlock;
+            }
+        });
+    }
+
+    fn apply_transient_touchpad_config(&mut self, touchpad: niri_ipc::Touchpad) {
+        use niri_ipc::Touchpad;
+        self.modify_input_config(move |config| match touchpad {
+            Touchpad::On => {
+                config.touchpad.off = false;
+            }
+            Touchpad::Off => {
+                config.touchpad.off = true;
+            }
+            Touchpad::Tap { tap } => {
+                config.touchpad.tap = tap;
+            }
+            Touchpad::Dwt { dwt } => {
+                config.touchpad.dwt = dwt;
+            }
+            Touchpad::Dwtp { dwtp } => {
+                config.touchpad.dwtp = dwtp;
+            }
+            Touchpad::Drag { drag } => {
+                config.touchpad.drag = drag;
+            }
+            Touchpad::DragLock { drag_lock } => {
+                config.touchpad.drag_lock = drag_lock;
+            }
+            Touchpad::NaturalScroll { natural_scroll } => {
+                config.touchpad.natural_scroll = natural_scroll;
+            }
+            Touchpad::ClickMethod(click_method_to_set) => {
+                config.touchpad.click_method = Some(match click_method_to_set {
+                    niri_ipc::ClickMethodToSet::Clickfinger => ClickMethod::Clickfinger,
+                    niri_ipc::ClickMethodToSet::ButtonAreas => ClickMethod::ButtonAreas,
+                });
+            }
+            Touchpad::AccelSpeed { accel_speed } => {
+                config.touchpad.accel_speed = niri_config::FloatOrInt(accel_speed);
+            }
+            Touchpad::AccelProfile(accel_profile_to_set) => {
+                config.touchpad.accel_profile = Some(match accel_profile_to_set {
+                    niri_ipc::AccelProfileToSet::Adaptive => AccelProfile::Adaptive,
+                    niri_ipc::AccelProfileToSet::Flat => AccelProfile::Flat,
+                });
+            }
+            Touchpad::ScrollButton { scroll_button } => {
+                config.touchpad.scroll_button = scroll_button;
+            }
+            Touchpad::ScrollButtonLock { scroll_button_lock } => {
+                config.touchpad.scroll_button_lock = scroll_button_lock;
+            }
+            Touchpad::TapButtonMap(tap_button_map_to_set) => {
+                config.touchpad.tap_button_map = Some(match tap_button_map_to_set {
+                    niri_ipc::TapButtonMapToSet::LeftRightMiddle => TapButtonMap::LeftRightMiddle,
+                    niri_ipc::TapButtonMapToSet::LeftMiddleRight => TapButtonMap::LeftMiddleRight,
+                });
+            }
+            Touchpad::LeftHanded { left_handed } => {
+                config.touchpad.left_handed = left_handed;
+            }
+            Touchpad::DisabledOnExternalMouse {
+                disabled_on_external_mouse,
+            } => {
+                config.touchpad.disabled_on_external_mouse = disabled_on_external_mouse;
+            }
+            Touchpad::MiddleEmulation { middle_emulation } => {
+                config.touchpad.middle_emulation = middle_emulation;
+            }
+        })
+    }
+
+    fn apply_transient_mouse_config(&mut self, mouse: niri_ipc::Mouse) {
+        use niri_ipc::Mouse;
+        self.modify_input_config(move |config| match mouse {
+            Mouse::On => {
+                config.mouse.off = false;
+            }
+            Mouse::Off => {
+                config.mouse.off = true;
+            }
+            Mouse::NaturalScroll { natural_scroll } => {
+                config.mouse.natural_scroll = natural_scroll;
+            }
+            Mouse::AccelSpeed { accel_speed } => {
+                config.mouse.accel_speed = niri_config::FloatOrInt(accel_speed);
+            }
+            Mouse::AccelProfile(accel_profile_to_set) => {
+                config.mouse.accel_profile = Some(match accel_profile_to_set {
+                    niri_ipc::AccelProfileToSet::Adaptive => AccelProfile::Adaptive,
+                    niri_ipc::AccelProfileToSet::Flat => AccelProfile::Flat,
+                });
+            }
+            Mouse::ScrollButton { scroll_button } => {
+                config.mouse.scroll_button = scroll_button;
+            }
+            Mouse::ScrollButtonLock { scroll_button_lock } => {
+                config.mouse.scroll_button_lock = scroll_button_lock;
+            }
+            Mouse::LeftHanded { left_handed } => {
+                config.mouse.left_handed = left_handed;
+            }
+            Mouse::MddleEmulation { middle_emulation } => {
+                config.mouse.middle_emulation = middle_emulation;
+            }
+            Mouse::ScrollFactor { scroll_factor } => {
+                config.mouse.scroll_factor = Some(FloatOrInt(scroll_factor));
+            }
+        })
+    }
+
+    fn apply_transient_trackpoint_config(&mut self, trackpoint: niri_ipc::Trackpoint) {
+        use niri_ipc::Trackpoint;
+        self.modify_input_config(move |config| match trackpoint {
+            Trackpoint::On => {
+                config.trackpoint.off = false;
+            }
+            Trackpoint::Off => {
+                config.trackpoint.off = true;
+            }
+            Trackpoint::NaturalScroll { natural_scroll } => {
+                config.trackpoint.natural_scroll = natural_scroll;
+            }
+            Trackpoint::AccelSpeed { accel_speed } => {
+                config.trackpoint.accel_speed = FloatOrInt(accel_speed);
+            }
+            Trackpoint::AccelProfile(accel_profile_to_set) => {
+                config.trackpoint.accel_profile = Some(match accel_profile_to_set {
+                    niri_ipc::AccelProfileToSet::Adaptive => AccelProfile::Adaptive,
+                    niri_ipc::AccelProfileToSet::Flat => AccelProfile::Flat,
+                });
+            }
+            Trackpoint::ScrollButton { scroll_button } => {
+                config.trackpoint.scroll_button = scroll_button;
+            }
+            Trackpoint::ScrollButtonLock { scroll_button_lock } => {
+                config.trackpoint.scroll_button_lock = scroll_button_lock;
+            }
+            Trackpoint::LeftHanded { left_handed } => {
+                config.trackpoint.left_handed = left_handed;
+            }
+            Trackpoint::MddleEmulation { middle_emulation } => {
+                config.trackpoint.middle_emulation = middle_emulation;
+            }
+        })
+    }
+
+    pub fn apply_transient_input_config(&mut self, input: niri_ipc::InputAction) {
+        match input {
+            niri_ipc::InputAction::Keyboard(keyboard) => {
+                self.apply_transient_keyboard_config(keyboard)
+            }
+            niri_ipc::InputAction::Touchpad(touchpad) => {
+                self.apply_transient_touchpad_config(touchpad)
+            }
+            niri_ipc::InputAction::Mouse(mouse) => self.apply_transient_mouse_config(mouse),
+            niri_ipc::InputAction::Trackpoint(trackpoint) => {
+                self.apply_transient_trackpoint_config(trackpoint)
+            }
+        }
     }
 
     pub fn apply_transient_output_config(&mut self, name: &str, action: niri_ipc::OutputAction) {
@@ -2234,6 +2457,7 @@ impl Niri {
         let display_handle = display.handle();
         let config_ = config.borrow();
         let config_file_output_config = config_.outputs.clone();
+        let config_file_input_config = config_.input.clone();
 
         let mut animation_clock = Clock::default();
 
@@ -2489,6 +2713,7 @@ impl Niri {
         let mut niri = Self {
             config,
             config_file_output_config,
+            config_file_input_config,
 
             event_loop,
             scheduler,

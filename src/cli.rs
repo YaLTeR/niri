@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
-use niri_ipc::{Action, OutputAction};
+use niri_ipc::{Action, InputAction, OutputAction};
 
 use crate::utils::version;
 
@@ -99,6 +99,9 @@ pub enum Msg {
         #[command(subcommand)]
         action: OutputAction,
     },
+    /// Change input configuration temporarily.
+    #[command(subcommand)]
+    Input(InputAction),
     /// Start continuously receiving events from the compositor.
     EventStream,
     /// Print the version of the running niri instance.

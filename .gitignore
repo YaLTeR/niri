@@ -1,2 +1,4 @@
 /target
 /result
+.direnv
+.envrc
