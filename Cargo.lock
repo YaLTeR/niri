@@ -494,6 +494,7 @@ dependencies = [
  "async-task",
  "bitflags 2.9.1",
  "futures-io",
+ "nix 0.29.0",
  "polling",
  "rustix 0.38.44",
  "slab",

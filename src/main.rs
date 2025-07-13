@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, mem};
 
+use calloop::signals::{Signal, Signals};
 use calloop::EventLoop;
 use clap::{CommandFactory, Parser};
 use directories::ProjectDirs;
@@ -172,8 +173,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     store_and_increase_nofile_rlimit();
 
+    // Create the main event loop.
+    let mut event_loop = EventLoop::<State>::try_new().unwrap();
+
+    // Handle Ctrl+C and other signals.
+    event_loop
+        .handle()
+        .insert_source(
+            Signals::new(&[Signal::SIGINT, Signal::SIGTERM, Signal::SIGHUP]).unwrap(),
+            |_, _, state| {
+                state.niri.stop_signal.stop();
+            },
+        )
+        .unwrap();
+
     // Create the compositor.
-    let mut event_loop = EventLoop::try_new().unwrap();
     let display = Display::new().unwrap();
     let mut state = State::new(
         config,
