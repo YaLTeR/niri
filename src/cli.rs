@@ -2,8 +2,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use clap_complete::{Generator, Shell};
-use clap_complete_nushell::Nushell;
+use clap_complete::Shell;
 use niri_ipc::{Action, OutputAction};
 
 use crate::utils::version;
