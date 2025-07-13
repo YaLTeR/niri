@@ -92,6 +92,7 @@ wayland-backend = "0.3.10"
 wayland-scanner = "0.31.6"
 xcursor = "0.3.10"
 zbus = { version = "5.7.1", optional = true }
+reis = { version = "0.5.0", features = ["calloop"], optional = true }
 
 [dependencies.smithay]
 workspace = true
@@ -122,13 +123,17 @@ wayland-client = "0.31.10"
 xshell = "0.2.7"
 
 [features]
-default = ["dbus", "systemd", "xdp-gnome-screencast"]
+default = ["dbus", "systemd", "xdp-gnome-screencast", "xdp-gnome-remote-desktop", "xdp-gnome-input-capture"]
 # Enables D-Bus support (serve various freedesktop and GNOME interfaces, power button handling).
 dbus = ["dep:zbus", "dep:async-io", "dep:url"]
 # Enables systemd integration (global environment, apps in transient scopes).
 systemd = ["dbus"]
 # Enables screencasting support through xdg-desktop-portal-gnome.
 xdp-gnome-screencast = ["dbus", "pipewire"]
+# Enables Remote Desktop portal support through xdg-desktop-portal-gnome.
+xdp-gnome-remote-desktop = ["dbus", "reis"]
+# Enables Input Capture portal support through xdg-desktop-portal-gnome.
+xdp-gnome-input-capture = ["dbus", "reis"]
 # Enables the Tracy profiler instrumentation.
 profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]
 # Enables the on-demand Tracy profiler instrumentation.
