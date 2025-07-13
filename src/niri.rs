@@ -5242,7 +5242,7 @@ impl Niri {
 
         let dbus = &self.dbus.as_ref().unwrap();
         let server = dbus.conn_screen_cast.as_ref().unwrap().object_server();
-        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{}", session_id);
+        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{session_id}");
         if let Ok(iface) = server.interface::<_, mutter_screen_cast::Session>(path) {
             let _span = tracy_client::span!("invoking Session::stop");
 

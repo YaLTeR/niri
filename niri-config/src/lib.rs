@@ -3079,7 +3079,7 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceName {
                     ctx.emit_error(DecodeError::unexpected(
                         val,
                         "named workspace",
-                        format!("duplicate named workspace: {}", s),
+                        format!("duplicate named workspace: {s}"),
                     ));
                     return Ok(Self(String::new()));
                 }

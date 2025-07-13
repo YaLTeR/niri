@@ -316,11 +316,11 @@ impl Tty {
 
         let mut node_path = String::new();
         if let Some(path) = primary_render_node.dev_path() {
-            write!(node_path, "{:?}", path).unwrap();
+            write!(node_path, "{path:?}").unwrap();
         } else {
-            write!(node_path, "{}", primary_render_node).unwrap();
+            write!(node_path, "{primary_render_node}").unwrap();
         }
-        info!("using as the render node: {}", node_path);
+        info!("using as the render node: {node_path}");
 
         Ok(Self {
             config,
