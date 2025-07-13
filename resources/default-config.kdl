@@ -266,9 +266,9 @@ layout {
 // This line starts waybar, a commonly used bar for Wayland compositors.
 spawn-at-startup "waybar"
 
-// Uncomment the following to disable "Important Hotkeys" pop-up at startup
-/-hotkey-overlay {
-    skip-at-startup
+hotkey-overlay {
+    // Uncomment this line to disable the "Important Hotkeys" pop-up at startup.
+    // skip-at-startup
 }
 
 // Uncomment this line to ask the clients to omit their client-side decorations if possible.
