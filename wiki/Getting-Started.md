@@ -23,6 +23,8 @@ Finally, the [Xwayland](./Xwayland.md) page explains how to run X11 applications
 
 ### NVIDIA
 
+The NVIDIA drivers currently have an issue with high VRAM usage due to a Heap reuse quirk. There is a manual fix documented [here](./Nvidia.md) that you _SHOULD_ apply to your system if you use an NVIDIA gpu and niri.
+
 NVIDIA GPUs can have problems running niri (for example, the screen remains black upon starting from a TTY).
 Sometimes, the problems can be fixed.
 You can try the following:
