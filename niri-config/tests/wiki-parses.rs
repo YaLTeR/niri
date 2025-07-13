@@ -95,8 +95,7 @@ fn wiki_docs_parses() {
             }
         } else if must_fail {
             errors.push(format!(
-                "Expected error parsing wiki KDL code block at {}:{}",
-                filename, line_number
+                "Expected error parsing wiki KDL code block at {filename}:{line_number}",
             ));
         }
     }
