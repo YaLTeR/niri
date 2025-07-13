@@ -236,10 +236,10 @@ jobs:
           show-progress: false
       - uses: lycheeverse/lychee-action@v2.0.2 # later versions break fragment checks. don't bump until this is fixed: https://github.com/lycheeverse/lychee/issues/1574
         with:
-          args: --offline --include-fragments 'wiki/*.md'
+          args: --offline --include-fragments 'wiki/**/*.md'
 
-  publish-wiki:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  build-wiki:
+    # if: github.event_name == 'push' && github.ref == 'refs/heads/main' # TODO: uncomment this
     needs:
       - build
       - check-links
@@ -251,7 +251,16 @@ jobs:
         with:
           lfs: true
           show-progress: false
-      - uses: Andrew-Chen-Wang/github-wiki-action@b7e552d7cb0fa7f83e459012ffc6840fd87bcb83
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build wiki
+        run: cd wiki && cargo run --bin wiki
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiki
+          path: ./wiki/book
+      
 
   rustdoc:
     needs: build
@@ -270,10 +279,35 @@ jobs:
 
       - run: cp ./resources/rustdoc-index.html ./target/doc/index.html
 
-      - name: Deploy documentation
-        if: github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/doc
-          force_orphan: true
+          name: rustdoc
+          path: ./target/doc
+
+  deploy-website:
+    needs:
+      - rustdoc 
+      - build-wiki
+    permissions:
+        contents: write
+        pages: write      # Required to deploy to Pages
+        id-token: write   # Required to verify the deployment originates from an appropriate source
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Download wiki artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: wiki
+        path: ./wiki
+    - name: Download rustdoc artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: rustdoc
+        path: ./rustdoc
+    - name: Upload website artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: .
+    - name: Deploy website
+      uses: actions/deploy-pages@v4 
