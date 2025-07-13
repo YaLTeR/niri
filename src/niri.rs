@@ -5769,18 +5769,16 @@ impl Niri {
     ///
     /// Make sure the pointer location and contents are up to date before calling this.
     pub fn maybe_activate_pointer_constraint(&self) {
-        let pointer = self.seat.get_pointer().unwrap();
-        let pointer_pos = pointer.current_location();
-
         let Some((surface, surface_loc)) = &self.pointer_contents.surface else {
             return;
         };
+
+        let pointer = self.seat.get_pointer().unwrap();
         if Some(surface) != pointer.current_focus().as_ref() {
             return;
         }
 
-        let pointer = &self.seat.get_pointer().unwrap();
-        with_pointer_constraint(surface, pointer, |constraint| {
+        with_pointer_constraint(surface, &pointer, |constraint| {
             let Some(constraint) = constraint else { return };
 
             if constraint.is_active() {
@@ -5789,6 +5787,7 @@ impl Niri {
 
             // Constraint does not apply if not within region.
             if let Some(region) = constraint.region() {
+                let pointer_pos = pointer.current_location();
                 let pos_within_surface = pointer_pos - *surface_loc;
                 if !region.contains(pos_within_surface.to_i32_round()) {
                     return;
