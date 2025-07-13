@@ -2,7 +2,8 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use clap_complete::Shell;
+use clap_complete::{Generator, Shell};
+use clap_complete_nushell::Nushell;
 use niri_ipc::{Action, OutputAction};
 
 use crate::utils::version;
@@ -17,15 +18,17 @@ pub enum CompletionShell {
     Nushell,
 }
 
-impl From<CompletionShell> for Shell {
-    fn from(shell: CompletionShell) -> Self {
+impl TryFrom<CompletionShell> for Shell {
+    type Error = &'static str;
+
+    fn try_from(shell: CompletionShell) -> Result<Self, Self::Error> {
         match shell {
-            CompletionShell::Bash => Shell::Bash,
-            CompletionShell::Elvish => Shell::Elvish,
-            CompletionShell::Fish => Shell::Fish,
-            CompletionShell::PowerShell => Shell::PowerShell,
-            CompletionShell::Zsh => Shell::Zsh,
-            CompletionShell::Nushell => panic!("Nushell should be handled separately"),
+            CompletionShell::Bash => Ok(Shell::Bash),
+            CompletionShell::Elvish => Ok(Shell::Elvish),
+            CompletionShell::Fish => Ok(Shell::Fish),
+            CompletionShell::PowerShell => Ok(Shell::PowerShell),
+            CompletionShell::Zsh => Ok(Shell::Zsh),
+            CompletionShell::Nushell => Err("Nushell should be handled separately"),
         }
     }
 }
@@ -79,9 +82,7 @@ pub enum Sub {
     /// Cause a panic to check if the backtraces are good.
     Panic,
     /// Generate shell completions.
-    Completions {
-        shell: CompletionShell, // Changed from Shell to CompletionShell
-    },
+    Completions { shell: CompletionShell },
 }
 
 #[derive(Subcommand)]

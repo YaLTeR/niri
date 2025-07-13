@@ -120,8 +120,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                     }
                     other => {
+                        let generator = Shell::try_from(other).unwrap();
                         clap_complete::generate(
-                            Shell::from(other),
+                            generator,
                             &mut Cli::command(),
                             "niri",
                             &mut io::stdout(),
