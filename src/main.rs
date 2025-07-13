@@ -2,7 +2,7 @@
 extern crate tracing;
 
 use std::fmt::Write as _;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{self, Write};
 use std::os::fd::FromRawFd;
 use std::path::PathBuf;
@@ -143,52 +143,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("starting version {}", &version());
 
     // Load the config.
-    let mut config_created_at = None;
     let config_path = config_path(cli.config);
     env::remove_var("NIRI_CONFIG");
-
-    let config_load_result = config_path.load_or_create_with(|user_path, _| {
-        let default_parent = user_path.parent().unwrap();
-
-        match fs::create_dir_all(default_parent) {
-            Ok(()) => {
-                // Create the config and fill it with the default config if it doesn't exist.
-                let new_file = File::options()
-                    .read(true)
-                    .write(true)
-                    .create_new(true)
-                    .open(user_path);
-                match new_file {
-                    Ok(mut new_file) => {
-                        let default = include_bytes!("../resources/default-config.kdl");
-                        match new_file.write_all(default) {
-                            Ok(()) => {
-                                config_created_at = Some(user_path);
-                                info!("wrote default config to {:?}", &user_path);
-                            }
-                            Err(err) => {
-                                warn!("error writing config file at {:?}: {err:?}", &user_path)
-                            }
-                        }
-                    }
-                    Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
-                    Err(err) => warn!("error creating config file at {:?}: {err:?}", &user_path),
-                }
-            }
-            Err(err) => {
-                warn!(
-                    "error creating config directories {:?}: {err:?}",
-                    default_parent
-                );
-            }
-        }
-
-        Ok(user_path)
-    });
-
+    let (config_created_at, config_load_result) = config_path.load_or_create();
     let config_errored = config_load_result.is_err();
     let mut config = config_load_result
-        .map_err(|err| warn!("{err:?}"))
+        .map_err(|err| error!("{err:?}"))
         .unwrap_or_default();
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);

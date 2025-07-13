@@ -86,7 +86,7 @@ impl Watcher {
 
                         if let Ok(new_props) = see(&config_path) {
                             if last_props.as_ref() != Some(&new_props) {
-                                trace!("config file changed.");
+                                trace!("config file changed");
 
                                 let rv = process(&config_path);
 
