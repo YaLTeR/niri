@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, mem};
 
+use calloop::EventLoop;
 use clap::{CommandFactory, Parser};
 use directories::ProjectDirs;
 use niri::cli::{Cli, Sub};
@@ -26,7 +27,6 @@ use niri_config::Config;
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
-use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
 
