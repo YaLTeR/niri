@@ -362,6 +362,8 @@ pub struct Niri {
     pub mods_with_finger_scroll_binds: HashSet<Modifiers>,
 
     pub lock_state: LockState,
+
+    // State that we last sent to the logind LockedHint.
     pub locked_hint: Option<bool>,
 
     pub screenshot_ui: ScreenshotUi,
@@ -5776,8 +5778,8 @@ impl Niri {
         };
 
         fn call(session_id: &str, locked: bool) -> anyhow::Result<()> {
-            let conn =
-                zbus::blocking::Connection::system().context("failed to get session path")?;
+            let conn = zbus::blocking::Connection::system()
+                .context("error connecting to the system bus")?;
 
             let message = conn
                 .call_method(
@@ -5806,15 +5808,18 @@ impl Niri {
             Ok(())
         }
 
-        let locked = matches!(self.lock_state, LockState::Locked(_));
+        let locked = self.is_locked();
         if self.locked_hint.is_some_and(|h| h == locked) {
             return;
         }
 
         self.locked_hint = Some(locked);
+
         let res = thread::Builder::new()
-            .name("logind LockedHint updater".to_owned())
+            .name("Logind LockedHint Updater".to_owned())
             .spawn(move || {
+                let _span = tracy_client::span!("LockedHint");
+
                 if let Err(err) = call(session_id, locked) {
                     warn!("failed to set logind LockedHint: {err:?}");
                 }
