@@ -86,6 +86,7 @@ When creating pull requests, please keep the following in mind.
 - When you address a review comment, mark it as resolved.
 - Remember to [run tests](https://github.com/YaLTeR/niri/wiki/Developing-niri#tests) and format the code with `cargo +nightly fmt --all`.
 - For new layout actions, remember to add them to the randomized tests. For weird Wayland handling, adding client-server tests in `src/tests/` could be very useful.
+- Test your changes by hand thoroughly, including for edge cases and weird interactions. See the Testing section above for some tips.
 - Remember to document new config options on the wiki.
 - When opening a pull request, ensure "Allow edits from maintainers" is enabled, so I can make final tweaks before merging.
 
