@@ -60,6 +60,7 @@ bytemuck = { version = "1.23.1", features = ["derive"] }
 calloop = { version = "0.14.2", features = ["executor", "futures-io"] }
 clap = { workspace = true, features = ["string"] }
 clap_complete = "4.5.55"
+clap_complete_nushell = "4.5.8"
 directories = "6.0.0"
 drm-ffi = "0.9.0"
 fastrand = "2.3.0"
