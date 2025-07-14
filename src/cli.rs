@@ -7,31 +7,6 @@ use niri_ipc::{Action, OutputAction};
 
 use crate::utils::version;
 
-#[derive(Clone, Debug, clap::ValueEnum)]
-pub enum CompletionShell {
-    Bash,
-    Elvish,
-    Fish,
-    PowerShell,
-    Zsh,
-    Nushell,
-}
-
-impl TryFrom<CompletionShell> for Shell {
-    type Error = &'static str;
-
-    fn try_from(shell: CompletionShell) -> Result<Self, Self::Error> {
-        match shell {
-            CompletionShell::Bash => Ok(Shell::Bash),
-            CompletionShell::Elvish => Ok(Shell::Elvish),
-            CompletionShell::Fish => Ok(Shell::Fish),
-            CompletionShell::PowerShell => Ok(Shell::PowerShell),
-            CompletionShell::Zsh => Ok(Shell::Zsh),
-            CompletionShell::Nushell => Err("Nushell should be handled separately"),
-        }
-    }
-}
-
 #[derive(Parser)]
 #[command(author, version = version(), about, long_about = None)]
 #[command(args_conflicts_with_subcommands = true)]
@@ -132,4 +107,29 @@ pub enum Msg {
     RequestError,
     /// Print the overview state.
     OverviewState,
+}
+
+#[derive(Clone, Debug, clap::ValueEnum)]
+pub enum CompletionShell {
+    Bash,
+    Elvish,
+    Fish,
+    PowerShell,
+    Zsh,
+    Nushell,
+}
+
+impl TryFrom<CompletionShell> for Shell {
+    type Error = &'static str;
+
+    fn try_from(shell: CompletionShell) -> Result<Self, Self::Error> {
+        match shell {
+            CompletionShell::Bash => Ok(Shell::Bash),
+            CompletionShell::Elvish => Ok(Shell::Elvish),
+            CompletionShell::Fish => Ok(Shell::Fish),
+            CompletionShell::PowerShell => Ok(Shell::PowerShell),
+            CompletionShell::Zsh => Ok(Shell::Zsh),
+            CompletionShell::Nushell => Err("Nushell should be handled separately"),
+        }
+    }
 }
