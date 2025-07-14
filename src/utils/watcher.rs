@@ -112,266 +112,480 @@ impl Watcher {
 #[cfg(test)]
 mod tests {
     use std::error::Error;
-    use std::fs::File;
+    use std::fs::{self, File, FileTimes};
     use std::io::Write;
-    use std::sync::atomic::AtomicU8;
 
-    use calloop::channel::sync_channel;
+    use calloop::channel::{sync_channel, Event};
     use calloop::EventLoop;
-    use smithay::reexports::rustix::fs::{futimens, Timestamps};
-    use smithay::reexports::rustix::time::Timespec;
-    use xshell::{cmd, Shell};
+    use xshell::{cmd, Shell, TempDir};
 
     use super::*;
 
-    fn check(
-        setup: impl FnOnce(&Shell) -> Result<(), Box<dyn Error>>,
-        change: impl FnOnce(&Shell) -> Result<(), Box<dyn Error>>,
-    ) {
-        let sh = Shell::new().unwrap();
-        let temp_dir = sh.create_temp_dir().unwrap();
-        sh.change_dir(temp_dir.path());
-        // let dir = sh.create_dir("xshell").unwrap();
-        // sh.change_dir(dir);
+    type Result<T = (), E = Box<dyn Error>> = std::result::Result<T, E>;
 
-        let mut config_path = sh.current_dir();
-        config_path.push("niri");
-        config_path.push("config.kdl");
+    fn canon(config_path: &ConfigPath) -> &PathBuf {
+        match config_path {
+            ConfigPath::Explicit(path) => path,
+            ConfigPath::Regular {
+                user_path,
+                system_path,
+            } => {
+                if user_path.exists() {
+                    user_path
+                } else {
+                    system_path
+                }
+            }
+        }
+    }
 
-        setup(&sh).unwrap();
+    enum TestPath<P> {
+        Explicit(P),
+        Regular { user_path: P, system_path: P },
+    }
 
-        let changed = AtomicU8::new(0);
-
-        let mut event_loop = EventLoop::try_new().unwrap();
-        let loop_handle = event_loop.handle();
-
-        let (tx, rx) = sync_channel(1);
-        let (started_tx, started_rx) = mpsc::sync_channel(1);
-        let _watcher = Watcher::with_start_notification(
-            ConfigPath::Explicit(config_path.clone()),
-            |_| (),
-            tx,
-            Some(started_tx),
-        );
-        loop_handle
-            .insert_source(rx, |_, _, _| {
-                changed.fetch_add(1, Ordering::SeqCst);
+    impl<P: AsRef<Path>> TestPath<P> {
+        fn setup<Discard>(
+            self,
+            setup: impl FnOnce(&Shell) -> xshell::Result<Discard>,
+        ) -> TestSetup {
+            self.setup_any(|sh| {
+                _ = setup(sh)?;
+                Ok(())
             })
-            .unwrap();
-        started_rx.recv().unwrap();
+        }
 
-        // HACK: if we don't sleep, files might have the same mtime.
-        thread::sleep(Duration::from_millis(100));
+        fn without_setup(self) -> TestSetup {
+            self.setup_any(|_| Ok(())).assert_initial_not_exists()
+        }
 
-        change(&sh).unwrap();
+        fn setup_any(self, setup: impl FnOnce(&Shell) -> Result) -> TestSetup {
+            TestSetup(self._setup_any(setup))
+        }
 
-        event_loop
-            .dispatch(Duration::from_millis(750), &mut ())
-            .unwrap();
+        fn _setup_any(
+            self,
+            setup: impl FnOnce(&Shell) -> Result,
+        ) -> Result<(Shell, TempDir, ConfigPath)> {
+            let sh = Shell::new()?;
+            let temp_dir = sh.create_temp_dir()?;
+            sh.change_dir(temp_dir.path());
 
-        assert_eq!(changed.load(Ordering::SeqCst), 1);
+            let config_path = match self {
+                TestPath::Explicit(path) => ConfigPath::Explicit(sh.current_dir().join(path)),
+                TestPath::Regular {
+                    user_path,
+                    system_path,
+                } => ConfigPath::Regular {
+                    user_path: sh.current_dir().join(user_path),
+                    system_path: sh.current_dir().join(system_path),
+                },
+            };
 
-        // Verify that the watcher didn't break.
-        sh.write_file(&config_path, "c").unwrap();
+            setup(&sh)?;
 
-        event_loop
-            .dispatch(Duration::from_millis(750), &mut ())
-            .unwrap();
+            Ok((sh, temp_dir, config_path))
+        }
+    }
 
-        assert_eq!(changed.load(Ordering::SeqCst), 2);
+    struct TestSetup(Result<(Shell, TempDir, ConfigPath)>);
+
+    impl TestSetup {
+        fn assert_initial_not_exists(self) -> Self {
+            Self(self.0.inspect(|(_, _, config_path)| {
+                let canon = canon(&config_path);
+                assert!(!canon.exists(), "initial should not exist");
+            }))
+        }
+        fn assert_initial(self, expected: &str) -> Self {
+            Self(self.0.inspect(|(_, _, config_path)| {
+                let canon = canon(&config_path);
+                assert!(canon.exists(), "initial should exist at {canon:?}");
+                let actual = fs::read_to_string(canon).unwrap();
+                assert_eq!(actual, expected, "initial file contents do not match");
+            }))
+        }
+
+        fn run(self, body: impl FnOnce(&Shell, &mut TestUtil) -> Result) -> Result {
+            let (sh, _temp_dir, config_path) = self.0?;
+
+            let (tx, rx) = sync_channel(1);
+            let (started_tx, started_rx) = mpsc::sync_channel(1);
+
+            let _watcher = Watcher::with_start_notification(
+                config_path,
+                |config_path| canon(config_path).clone(),
+                tx,
+                Some(started_tx),
+            );
+
+            started_rx.recv()?;
+
+            let event_loop = EventLoop::try_new()?;
+            event_loop
+                .handle()
+                .insert_source(rx, |event, (), latest_path| {
+                    if let Event::Msg(path) = event {
+                        *latest_path = Some(path);
+                    }
+                })?;
+
+            let mut test = TestUtil { event_loop };
+
+            test.assert_unchanged(); // don't trigger before we start
+            test.pass_time(); // ensure mtimes aren't the same as the initial state
+            body(&sh, &mut test)?;
+            test.assert_unchanged(); // nothing should trigger after the test runs
+            Ok(())
+        }
+
+        fn change<Body, Discard>(self, body: Body) -> SimpleChange<impl FnOnce(&Shell) -> Result>
+        where
+            Body: FnOnce(&Shell) -> xshell::Result<Discard>,
+        {
+            self.change_any(|sh| {
+                _ = body(sh)?;
+                Ok(())
+            })
+        }
+
+        fn change_any<Body>(self, body: Body) -> SimpleChange<impl FnOnce(&Shell) -> Result>
+        where
+            Body: FnOnce(&Shell) -> Result,
+        {
+            SimpleChange { setup: self, body }
+        }
+    }
+
+    struct SimpleChange<Body> {
+        setup: TestSetup,
+        body: Body,
+    }
+
+    impl<Body> SimpleChange<Body>
+    where
+        Body: FnOnce(&Shell) -> Result,
+    {
+        fn assert_unchanged(self) -> Result {
+            self.run_with_assertion(|test| test.assert_unchanged())
+        }
+
+        fn assert_changed_to(self, expected: &str) -> Result {
+            self.run_with_assertion(|test| test.assert_changed_to(expected))
+        }
+
+        fn run_with_assertion(self, assertion: impl FnOnce(&mut TestUtil)) -> Result {
+            let Self { setup, body } = self;
+            setup.run(|sh, test| {
+                test.pass_time();
+                body(sh)?;
+                assertion(test);
+                Ok(())
+            })
+        }
+    }
+
+    struct TestUtil<'a> {
+        event_loop: EventLoop<'a, Option<PathBuf>>,
+    }
+
+    impl<'a> TestUtil<'a> {
+        fn pass_time(&self) {
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        fn assert_unchanged(&mut self) {
+            let mut new_path = None;
+            self.event_loop
+                .dispatch(Duration::from_millis(750), &mut new_path)
+                .unwrap();
+            assert_eq!(
+                new_path, None,
+                "watcher should not have noticed any changes"
+            );
+
+            self.pass_time();
+        }
+
+        fn assert_changed_to(&mut self, expected: &str) {
+            let mut new_path = None;
+            self.event_loop
+                .dispatch(Duration::from_millis(750), &mut new_path)
+                .unwrap();
+            let Some(new_path) = new_path else {
+                panic!("watcher should have noticed a change, but it didn't");
+            };
+            let actual = fs::read_to_string(&new_path).unwrap();
+            assert_eq!(actual, expected, "watcher gave the wrong file");
+
+            self.pass_time();
+        }
     }
 
     #[test]
-    fn change_file() {
-        check(
-            |sh| {
+    fn change_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| sh.write_file("niri/config.kdl", "a"))
+            .assert_initial("a")
+            .change(|sh| sh.write_file("niri/config.kdl", "b"))
+            .assert_changed_to("b")
+    }
+
+    #[test]
+    fn overwrite_but_dont_change_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| sh.write_file("niri/config.kdl", "a"))
+            .assert_initial("a")
+            .change(|sh| sh.write_file("niri/config.kdl", "a"))
+            .assert_changed_to("a")
+    }
+
+    #[test]
+    fn touch_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| sh.write_file("niri/config.kdl", "a"))
+            .assert_initial("a")
+            .change(|sh| cmd!(sh, "touch niri/config.kdl").run())
+            .assert_changed_to("a")
+    }
+
+    #[test]
+    fn create_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| sh.create_dir("niri"))
+            .assert_initial_not_exists()
+            .change(|sh| sh.write_file("niri/config.kdl", "a"))
+            .assert_changed_to("a")
+    }
+
+    #[test]
+    fn create_dir_and_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .without_setup()
+            .run(|sh, test| {
                 sh.write_file("niri/config.kdl", "a")?;
+                test.assert_changed_to("a");
+
                 Ok(())
-            },
-            |sh| {
-                sh.write_file("niri/config.kdl", "b")?;
-                Ok(())
-            },
-        );
+            })
     }
 
     #[test]
-    fn create_file() {
-        check(
-            |sh| {
-                sh.create_dir("niri")?;
-                Ok(())
-            },
-            |sh| {
-                sh.write_file("niri/config.kdl", "a")?;
-                Ok(())
-            },
-        );
-    }
-
-    #[test]
-    fn create_dir_and_file() {
-        check(
-            |_sh| Ok(()),
-            |sh| {
-                sh.write_file("niri/config.kdl", "a")?;
-                Ok(())
-            },
-        );
-    }
-
-    #[test]
-    fn change_linked_file() {
-        check(
-            |sh| {
+    fn change_linked_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
                 sh.write_file("niri/config2.kdl", "a")?;
-                cmd!(sh, "ln -s config2.kdl niri/config.kdl").run()?;
-                Ok(())
-            },
-            |sh| {
-                sh.write_file("niri/config2.kdl", "b")?;
-                Ok(())
-            },
-        );
+                cmd!(sh, "ln -sf config2.kdl niri/config.kdl").run()
+            })
+            .assert_initial("a")
+            .change(|sh| sh.write_file("niri/config2.kdl", "b"))
+            .assert_changed_to("b")
     }
 
     #[test]
-    fn change_file_in_linked_dir() {
-        check(
-            |sh| {
+    fn change_file_in_linked_dir() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
                 sh.write_file("niri2/config.kdl", "a")?;
-                cmd!(sh, "ln -s niri2 niri").run()?;
-                Ok(())
-            },
-            |sh| {
-                sh.write_file("niri2/config.kdl", "b")?;
-                Ok(())
-            },
-        );
+                cmd!(sh, "ln -s niri2 niri").run()
+            })
+            .assert_initial("a")
+            .change(|sh| sh.write_file("niri2/config.kdl", "b"))
+            .assert_changed_to("b")
     }
 
     #[test]
-    fn recreate_file() {
-        check(
-            |sh| {
-                sh.write_file("niri/config.kdl", "a")?;
-                Ok(())
-            },
-            |sh| {
+    fn remove_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| sh.write_file("niri/config.kdl", "a"))
+            .assert_initial("a")
+            .change(|sh| sh.remove_path("niri/config.kdl"))
+            .assert_unchanged()
+    }
+
+    #[test]
+    fn remove_dir() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| sh.write_file("niri/config.kdl", "a"))
+            .assert_initial("a")
+            .change(|sh| sh.remove_path("niri"))
+            .assert_unchanged()
+    }
+
+    #[test]
+    fn recreate_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| sh.write_file("niri/config.kdl", "a"))
+            .assert_initial("a")
+            .change(|sh| {
                 sh.remove_path("niri/config.kdl")?;
-                sh.write_file("niri/config.kdl", "b")?;
-                Ok(())
-            },
-        );
+                sh.write_file("niri/config.kdl", "b")
+            })
+            .assert_changed_to("b")
     }
 
     #[test]
-    fn recreate_dir() {
-        check(
-            |sh| {
+    fn recreate_dir() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
                 sh.write_file("niri/config.kdl", "a")?;
                 Ok(())
-            },
-            |sh| {
+            })
+            .assert_initial("a")
+            .change(|sh| {
                 sh.remove_path("niri")?;
-                sh.write_file("niri/config.kdl", "b")?;
-                Ok(())
-            },
-        );
+                sh.write_file("niri/config.kdl", "b")
+            })
+            .assert_changed_to("b")
     }
 
     #[test]
-    fn swap_dir() {
-        check(
-            |sh| {
-                sh.write_file("niri/config.kdl", "a")?;
-                Ok(())
-            },
-            |sh| {
+    fn swap_dir() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| sh.write_file("niri/config.kdl", "a"))
+            .assert_initial("a")
+            .change(|sh| {
                 sh.write_file("niri2/config.kdl", "b")?;
                 sh.remove_path("niri")?;
-                cmd!(sh, "mv niri2 niri").run()?;
-                Ok(())
-            },
-        );
+                cmd!(sh, "mv niri2 niri").run()
+            })
+            .assert_changed_to("b")
     }
 
     #[test]
-    fn swap_just_link() {
-        // NixOS setup: link path changes, mtime stays constant.
-        check(
-            |sh| {
-                let mut dir = sh.current_dir();
-                dir.push("niri");
+    fn swap_dir_link() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                sh.write_file("niri2/config.kdl", "a")?;
+                cmd!(sh, "ln -s niri2 niri").run()
+            })
+            .assert_initial("a")
+            .change(|sh| {
+                sh.write_file("niri3/config.kdl", "b")?;
+                sh.remove_path("niri")?;
+                cmd!(sh, "ln -s niri3 niri").run()
+            })
+            .assert_changed_to("b")
+    }
+
+    // Important: On systems like NixOS, mtime is not kept for config files.
+    // So, this is testing that the watcher handles that correctly.
+    fn create_epoch(path: impl AsRef<Path>, content: &str) -> Result {
+        let mut file = File::create(path)?;
+        file.write_all(content.as_bytes())?;
+        file.set_times(
+            FileTimes::new()
+                .set_accessed(SystemTime::UNIX_EPOCH)
+                .set_modified(SystemTime::UNIX_EPOCH),
+        )?;
+        file.sync_all()?;
+        Ok(())
+    }
+
+    #[test]
+    fn swap_just_link() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup_any(|sh| {
+                let dir = sh.current_dir().join("niri");
+
                 sh.create_dir(&dir)?;
 
-                let mut d2 = dir.clone();
-                d2.push("config2.kdl");
-                let mut c2 = File::create(d2).unwrap();
-                write!(c2, "a")?;
-                c2.flush()?;
-                futimens(
-                    &c2,
-                    &Timestamps {
-                        last_access: Timespec {
-                            tv_sec: 0,
-                            tv_nsec: 0,
-                        },
-                        last_modification: Timespec {
-                            tv_sec: 0,
-                            tv_nsec: 0,
-                        },
-                    },
-                )?;
-                c2.sync_all()?;
-                drop(c2);
-
-                let mut d3 = dir.clone();
-                d3.push("config3.kdl");
-                let mut c3 = File::create(d3).unwrap();
-                write!(c3, "b")?;
-                c3.flush()?;
-                futimens(
-                    &c3,
-                    &Timestamps {
-                        last_access: Timespec {
-                            tv_sec: 0,
-                            tv_nsec: 0,
-                        },
-                        last_modification: Timespec {
-                            tv_sec: 0,
-                            tv_nsec: 0,
-                        },
-                    },
-                )?;
-                c3.sync_all()?;
-                drop(c3);
+                create_epoch(dir.join("config2.kdl"), "a")?;
+                create_epoch(dir.join("config3.kdl"), "b")?;
 
                 cmd!(sh, "ln -s config2.kdl niri/config.kdl").run()?;
+
                 Ok(())
-            },
-            |sh| {
-                cmd!(sh, "unlink niri/config.kdl").run()?;
-                cmd!(sh, "ln -s config3.kdl niri/config.kdl").run()?;
-                Ok(())
-            },
-        );
+            })
+            .assert_initial("a")
+            .change(|sh| cmd!(sh, "ln -sf config3.kdl niri/config.kdl").run())
+            .assert_changed_to("b")
     }
 
     #[test]
-    fn swap_dir_link() {
-        check(
-            |sh| {
-                sh.write_file("niri2/config.kdl", "a")?;
-                cmd!(sh, "ln -s niri2 niri").run()?;
-                Ok(())
-            },
-            |sh| {
-                sh.write_file("niri3/config.kdl", "b")?;
-                cmd!(sh, "unlink niri").run()?;
-                cmd!(sh, "ln -s niri3 niri").run()?;
-                Ok(())
-            },
-        );
+    fn swap_many_regular() -> Result {
+        TestPath::Regular {
+            user_path: "user-niri/config.kdl",
+            system_path: "system-niri/config.kdl",
+        }
+        .setup(|sh| sh.write_file("system-niri/config.kdl", "system config"))
+        .assert_initial("system config")
+        .run(|sh, test| {
+            sh.write_file("user-niri/config.kdl", "user config")?;
+            test.assert_changed_to("user config");
+
+            cmd!(sh, "touch system-niri/config.kdl").run()?;
+            test.assert_unchanged();
+
+            sh.remove_path("system-niri")?;
+            test.assert_unchanged();
+
+            sh.write_file("system-niri/config.kdl", "new system config")?;
+            test.assert_unchanged();
+
+            sh.remove_path("user-niri")?;
+            test.assert_changed_to("new system config");
+
+            sh.write_file("system-niri/config.kdl", "updated system config")?;
+            test.assert_changed_to("updated system config");
+
+            sh.write_file("user-niri/config.kdl", "new user config")?;
+            test.assert_changed_to("new user config");
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn swap_many_links_regular_like_nix() -> Result {
+        TestPath::Regular {
+            user_path: "user-niri/config.kdl",
+            system_path: "system-niri/config.kdl",
+        }
+        .setup_any(|sh| {
+            let store = sh.current_dir().join("store");
+
+            sh.create_dir(&store)?;
+
+            create_epoch(store.join("gen1"), "gen 1")?;
+            create_epoch(store.join("gen2"), "gen 2")?;
+            create_epoch(store.join("gen3"), "gen 3")?;
+
+            sh.create_dir("user-niri")?;
+            sh.create_dir("system-niri")?;
+
+            Ok(())
+        })
+        .assert_initial_not_exists()
+        .run(|sh, test| {
+            let store = sh.current_dir().join("store");
+            test.assert_unchanged();
+
+            cmd!(sh, "ln -s {store}/gen1 user-niri/config.kdl").run()?;
+            test.assert_changed_to("gen 1");
+
+            cmd!(sh, "ln -s {store}/gen2 system-niri/config.kdl").run()?;
+            test.assert_unchanged();
+
+            cmd!(sh, "unlink user-niri/config.kdl").run()?;
+            test.assert_changed_to("gen 2");
+
+            cmd!(sh, "ln -s {store}/gen3 user-niri/config.kdl").run()?;
+            test.assert_changed_to("gen 3");
+
+            cmd!(sh, "ln -sf {store}/gen1 system-niri/config.kdl").run()?;
+            test.assert_unchanged();
+
+            cmd!(sh, "unlink system-niri/config.kdl").run()?;
+            test.assert_unchanged();
+
+            cmd!(sh, "ln -s {store}/gen1 system-niri/config.kdl").run()?;
+            test.assert_unchanged();
+
+            cmd!(sh, "unlink user-niri/config.kdl").run()?;
+            test.assert_changed_to("gen 1");
+
+            Ok(())
+        })
     }
 }
