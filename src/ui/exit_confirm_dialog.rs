@@ -15,8 +15,7 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::utils::{output_size, to_physical_precise_round};
 
-const TEXT: &str = "Are you sure you want to exit niri?\n\n\
-                    Press <span face='mono' bgcolor='#2C2C2C'> Enter </span> to confirm.";
+const KEY_NAME: &str = "Enter";
 const PADDING: i32 = 16;
 const FONT: &str = "sans 14px";
 const BORDER: i32 = 8;
@@ -24,6 +23,8 @@ const BORDER: i32 = 8;
 pub struct ExitConfirmDialog {
     is_open: bool,
     buffers: RefCell<HashMap<NotNan<f64>, Option<MemoryBuffer>>>,
+    #[cfg(feature = "dbus")]
+    accesskit_adapter: Option<accesskit_unix::Adapter>,
 }
 
 impl ExitConfirmDialog {
@@ -34,12 +35,26 @@ impl ExitConfirmDialog {
                 NotNan::new(1.).unwrap(),
                 Some(render(1.)?),
             )])),
+            #[cfg(feature = "dbus")]
+            accesskit_adapter: None,
         })
     }
 
     pub fn show(&mut self) -> bool {
         if !self.is_open {
             self.is_open = true;
+
+            #[cfg(feature = "dbus")]
+            {
+                let mut adapter = accesskit_unix::Adapter::new(
+                    ActivationHandler::default(),
+                    super::a11y::ActionHandler::default(),
+                    super::a11y::DeactivationHandler::default(),
+                );
+                adapter.update_window_focus_state(true);
+                self.accesskit_adapter = Some(adapter);
+            }
+
             true
         } else {
             false
@@ -49,6 +64,12 @@ impl ExitConfirmDialog {
     pub fn hide(&mut self) -> bool {
         if self.is_open {
             self.is_open = false;
+
+            #[cfg(feature = "dbus")]
+            {
+                self.accesskit_adapter = None;
+            }
+
             true
         } else {
             false
@@ -106,13 +127,15 @@ fn render(scale: f64) -> anyhow::Result<MemoryBuffer> {
     let mut font = FontDescription::from_string(FONT);
     font.set_absolute_size(to_physical_precise_round(scale, font.size()));
 
+    let markup = text(true);
+
     let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
     let cr = cairo::Context::new(&surface)?;
     let layout = pangocairo::functions::create_layout(&cr);
     layout.context().set_round_glyph_positions(false);
     layout.set_font_description(Some(&font));
     layout.set_alignment(Alignment::Center);
-    layout.set_markup(TEXT);
+    layout.set_markup(&markup);
 
     let (mut width, mut height) = layout.pixel_size();
     width += padding * 2;
@@ -128,7 +151,7 @@ fn render(scale: f64) -> anyhow::Result<MemoryBuffer> {
     layout.context().set_round_glyph_positions(false);
     layout.set_font_description(Some(&font));
     layout.set_alignment(Alignment::Center);
-    layout.set_markup(TEXT);
+    layout.set_markup(&markup);
 
     cr.set_source_rgb(1., 1., 1.);
     pangocairo::functions::show_layout(&cr, &layout);
@@ -154,4 +177,37 @@ fn render(scale: f64) -> anyhow::Result<MemoryBuffer> {
     );
 
     Ok(buffer)
+}
+
+fn text(markup: bool) -> String {
+    let key = match markup {
+        true => format!("<span face='mono' bgcolor='#2C2C2C'> {KEY_NAME} </span>"),
+        false => KEY_NAME.to_string(),
+    };
+    format!(
+        "Are you sure you want to exit niri?\n\n\
+              Press {} to confirm.",
+        key
+    )
+}
+
+#[cfg(feature = "dbus")]
+#[derive(Default)]
+struct ActivationHandler {}
+
+#[cfg(feature = "dbus")]
+impl accesskit::ActivationHandler for ActivationHandler {
+    fn request_initial_tree(&mut self) -> Option<accesskit::TreeUpdate> {
+        const DIALOG_ID: accesskit::NodeId = accesskit::NodeId(0);
+
+        let mut dialog = accesskit::Node::new(accesskit::Role::AlertDialog);
+        dialog.set_label(text(false));
+        dialog.set_modal();
+
+        Some(accesskit::TreeUpdate {
+            nodes: vec![(DIALOG_ID, dialog)],
+            tree: Some(accesskit::Tree::new(DIALOG_ID)),
+            focus: DIALOG_ID,
+        })
+    }
 }
