@@ -5808,7 +5808,11 @@ impl Niri {
             Ok(())
         }
 
-        let locked = self.is_locked();
+        // Consider only the fully locked state here. When using the locked hint with sleep
+        // inhibitor tools, we want to allow sleep only after the screens are fully cleared with
+        // the lock screen, which corresponds to the Locked state.
+        let locked = matches!(self.lock_state, LockState::Locked(_));
+
         if self.locked_hint.is_some_and(|h| h == locked) {
             return;
         }
