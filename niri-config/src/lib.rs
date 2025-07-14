@@ -213,6 +213,8 @@ pub struct Touchpad {
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
     pub scroll_button: Option<u32>,
+    #[knuffel(child)]
+    pub scroll_button_lock: bool,
     #[knuffel(child, unwrap(argument, str))]
     pub tap_button_map: Option<TapButtonMap>,
     #[knuffel(child)]
@@ -240,6 +242,8 @@ pub struct Mouse {
     #[knuffel(child, unwrap(argument))]
     pub scroll_button: Option<u32>,
     #[knuffel(child)]
+    pub scroll_button_lock: bool,
+    #[knuffel(child)]
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
@@ -262,6 +266,8 @@ pub struct Trackpoint {
     #[knuffel(child, unwrap(argument))]
     pub scroll_button: Option<u32>,
     #[knuffel(child)]
+    pub scroll_button_lock: bool,
+    #[knuffel(child)]
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
@@ -281,6 +287,8 @@ pub struct Trackball {
     pub scroll_method: Option<ScrollMethod>,
     #[knuffel(child, unwrap(argument))]
     pub scroll_button: Option<u32>,
+    #[knuffel(child)]
+    pub scroll_button_lock: bool,
     #[knuffel(child)]
     pub left_handed: bool,
     #[knuffel(child)]
@@ -2351,6 +2359,8 @@ pub struct DebugConfig {
     #[knuffel(child)]
     pub honor_xdg_activation_with_invalid_serial: bool,
     #[knuffel(child)]
+    pub deactivate_unfocused_windows: bool,
+    #[knuffel(child)]
     pub skip_cursor_only_updates_during_vrr: bool,
 }
 
@@ -2675,7 +2685,10 @@ impl FromStr for Color {
     type Err = miette::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let color = csscolorparser::parse(s).into_diagnostic()?.to_array();
+        let color = csscolorparser::parse(s)
+            .into_diagnostic()?
+            .clamp()
+            .to_array();
         Ok(Self::from_array_unpremul(color))
     }
 }
@@ -3066,7 +3079,7 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceName {
                     ctx.emit_error(DecodeError::unexpected(
                         val,
                         "named workspace",
-                        format!("duplicate named workspace: {}", s),
+                        format!("duplicate named workspace: {s}"),
                     ));
                     return Ok(Self(String::new()));
                 }
@@ -3949,6 +3962,7 @@ mod tests {
                     accel-profile "flat"
                     scroll-method "two-finger"
                     scroll-button 272
+                    scroll-button-lock
                     tap-button-map "left-middle-right"
                     disabled-on-external-mouse
                     scroll-factor 0.9
@@ -3980,6 +3994,7 @@ mod tests {
                     accel-profile "flat"
                     scroll-method "edge"
                     scroll-button 275
+                    scroll-button-lock
                     left-handed
                     middle-emulation
                 }
@@ -4230,6 +4245,7 @@ mod tests {
                     scroll_button: Some(
                         272,
                     ),
+                    scroll_button_lock: true,
                     tap_button_map: Some(
                         LeftMiddleRight,
                     ),
@@ -4257,6 +4273,7 @@ mod tests {
                     scroll_button: Some(
                         273,
                     ),
+                    scroll_button_lock: false,
                     left_handed: false,
                     middle_emulation: true,
                     scroll_factor: Some(
@@ -4280,6 +4297,7 @@ mod tests {
                     scroll_button: Some(
                         274,
                     ),
+                    scroll_button_lock: false,
                     left_handed: false,
                     middle_emulation: false,
                 },
@@ -4298,6 +4316,7 @@ mod tests {
                     scroll_button: Some(
                         275,
                     ),
+                    scroll_button_lock: true,
                     left_handed: true,
                     middle_emulation: true,
                 },
@@ -5324,6 +5343,7 @@ mod tests {
                 disable_monitor_names: false,
                 strict_new_window_focus_policy: false,
                 honor_xdg_activation_with_invalid_serial: false,
+                deactivate_unfocused_windows: false,
                 skip_cursor_only_updates_during_vrr: false,
             },
             workspaces: [

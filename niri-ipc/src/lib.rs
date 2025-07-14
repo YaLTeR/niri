@@ -332,7 +332,7 @@ pub enum Action {
     FocusWindowUpOrColumnLeft {},
     /// Focus the window above or the column to the right.
     FocusWindowUpOrColumnRight {},
-    /// Focus the window or the workspace above.
+    /// Focus the window or the workspace below.
     FocusWindowOrWorkspaceDown {},
     /// Focus the window or the workspace above.
     FocusWindowOrWorkspaceUp {},

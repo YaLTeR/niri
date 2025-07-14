@@ -136,6 +136,7 @@ use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::{Workspace, WorkspaceId};
 use crate::layout::{HitType, Layout, LayoutElement as _, MonitorRenderElement};
 use crate::niri_render_elements;
+use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
@@ -262,6 +263,7 @@ pub struct Niri {
     pub layer_shell_state: WlrLayerShellState,
     pub session_lock_state: SessionLockManagerState,
     pub foreign_toplevel_state: ForeignToplevelManagerState,
+    pub ext_workspace_state: ExtWorkspaceManagerState,
     pub screencopy_state: ScreencopyManagerState,
     pub output_management_state: OutputManagementManagerState,
     pub viewporter_state: ViewporterState,
@@ -728,6 +730,7 @@ impl State {
         self.niri.refresh_idle_inhibit();
         self.refresh_pointer_contents();
         foreign_toplevel::refresh(self);
+        ext_workspace::refresh(self);
 
         #[cfg(feature = "xdp-gnome-screencast")]
         self.niri.refresh_mapped_cast_outputs();
@@ -2193,7 +2196,7 @@ impl State {
             self.niri.dynamic_cast_id_for_portal.get(),
             gnome_shell_introspect::WindowProperties {
                 title: String::from("niri Dynamic Cast Target"),
-                app_id: String::from("rs.bxt.niri"),
+                app_id: String::from("rs.bxt.niri.desktop"),
             },
         );
 
@@ -2202,7 +2205,14 @@ impl State {
             let props = with_toplevel_role(mapped.toplevel(), |role| {
                 gnome_shell_introspect::WindowProperties {
                     title: role.title.clone().unwrap_or_default(),
-                    app_id: role.app_id.clone().unwrap_or_default(),
+                    app_id: role
+                        .app_id
+                        .as_ref()
+                        // We don't do proper .desktop file tracking (it's quite involved), and
+                        // Wayland windows can set any app id they want. However, this seems to
+                        // work well enough in practice.
+                        .map(|app_id| format!("{app_id}.desktop"))
+                        .unwrap_or_default(),
                 }
             });
 
@@ -2328,6 +2338,8 @@ impl Niri {
             VirtualPointerManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let foreign_toplevel_state =
             ForeignToplevelManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
+        let ext_workspace_state =
+            ExtWorkspaceManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let mut output_management_state =
             OutputManagementManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         output_management_state.on_config_changed(config_.outputs.clone());
@@ -2523,6 +2535,7 @@ impl Niri {
             layer_shell_state,
             session_lock_state,
             foreign_toplevel_state,
+            ext_workspace_state,
             output_management_state,
             screencopy_state,
             viewporter_state,
@@ -3404,80 +3417,119 @@ impl Niri {
         self.global_space.output_under(pos).next().cloned()
     }
 
-    pub fn output_left(&self) -> Option<Output> {
-        let active = self.layout.active_output()?;
-        let active_geo = self.global_space.output_geometry(active).unwrap();
+    pub fn output_left_of(&self, current: &Output) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
         let extended_geo = Rectangle::new(
-            Point::from((i32::MIN / 2, active_geo.loc.y)),
-            Size::from((i32::MAX, active_geo.size.h)),
+            Point::from((i32::MIN / 2, current_geo.loc.y)),
+            Size::from((i32::MAX, current_geo.size.h)),
         );
 
         self.global_space
             .outputs()
             .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).x < center(active_geo).x && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(active_geo).x - center(*geo).x)
+            .filter(|(_, geo)| center(*geo).x < center(current_geo).x && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(current_geo).x - center(*geo).x)
             .map(|(output, _)| output)
             .cloned()
+    }
+
+    pub fn output_right_of(&self, current: &Output) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
+        let extended_geo = Rectangle::new(
+            Point::from((i32::MIN / 2, current_geo.loc.y)),
+            Size::from((i32::MAX, current_geo.size.h)),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(*geo).x > center(current_geo).x && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(*geo).x - center(current_geo).x)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_up_of(&self, current: &Output) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
+        let extended_geo = Rectangle::new(
+            Point::from((current_geo.loc.x, i32::MIN / 2)),
+            Size::from((current_geo.size.w, i32::MAX)),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(*geo).y < center(current_geo).y && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(current_geo).y - center(*geo).y)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_down_of(&self, current: &Output) -> Option<Output> {
+        let current_geo = self.global_space.output_geometry(current)?;
+        let extended_geo = Rectangle::new(
+            Point::from((current_geo.loc.x, i32::MIN / 2)),
+            Size::from((current_geo.size.w, i32::MAX)),
+        );
+
+        self.global_space
+            .outputs()
+            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
+            .filter(|(_, geo)| center(*geo).y > center(current_geo).y && geo.overlaps(extended_geo))
+            .min_by_key(|(_, geo)| center(*geo).y - center(current_geo).y)
+            .map(|(output, _)| output)
+            .cloned()
+    }
+
+    pub fn output_previous_of(&self, current: &Output) -> Option<Output> {
+        self.sorted_outputs
+            .iter()
+            .rev()
+            .skip_while(|&output| output != current)
+            .nth(1)
+            .or(self.sorted_outputs.last())
+            .filter(|&output| output != current)
+            .cloned()
+    }
+
+    pub fn output_next_of(&self, current: &Output) -> Option<Output> {
+        self.sorted_outputs
+            .iter()
+            .skip_while(|&output| output != current)
+            .nth(1)
+            .or(self.sorted_outputs.first())
+            .filter(|&output| output != current)
+            .cloned()
+    }
+
+    pub fn output_left(&self) -> Option<Output> {
+        let active = self.layout.active_output()?;
+        self.output_left_of(active)
     }
 
     pub fn output_right(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
-        let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::new(
-            Point::from((i32::MIN / 2, active_geo.loc.y)),
-            Size::from((i32::MAX, active_geo.size.h)),
-        );
-
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).x > center(active_geo).x && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(*geo).x - center(active_geo).x)
-            .map(|(output, _)| output)
-            .cloned()
+        self.output_right_of(active)
     }
 
     pub fn output_up(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
-        let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::new(
-            Point::from((active_geo.loc.x, i32::MIN / 2)),
-            Size::from((active_geo.size.w, i32::MAX)),
-        );
+        self.output_up_of(active)
+    }
 
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(*geo).y < center(active_geo).y && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(active_geo).y - center(*geo).y)
-            .map(|(output, _)| output)
-            .cloned()
+    pub fn output_down(&self) -> Option<Output> {
+        let active = self.layout.active_output()?;
+        self.output_down_of(active)
     }
 
     pub fn output_previous(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
-
-        self.sorted_outputs
-            .iter()
-            .rev()
-            .skip_while(|&output| output != active)
-            .nth(1)
-            .or(self.sorted_outputs.last())
-            .filter(|&output| output != active)
-            .cloned()
+        self.output_previous_of(active)
     }
 
     pub fn output_next(&self) -> Option<Output> {
         let active = self.layout.active_output()?;
-
-        self.sorted_outputs
-            .iter()
-            .skip_while(|&output| output != active)
-            .nth(1)
-            .or(self.sorted_outputs.first())
-            .filter(|&output| output != active)
-            .cloned()
+        self.output_next_of(active)
     }
 
     pub fn find_output_and_workspace_index(
@@ -3497,23 +3549,6 @@ impl Niri {
 
         let target_output = target_workspace.current_output();
         Some((target_output.cloned(), target_workspace_index))
-    }
-
-    pub fn output_down(&self) -> Option<Output> {
-        let active = self.layout.active_output()?;
-        let active_geo = self.global_space.output_geometry(active).unwrap();
-        let extended_geo = Rectangle::new(
-            Point::from((active_geo.loc.x, i32::MIN / 2)),
-            Size::from((active_geo.size.w, i32::MAX)),
-        );
-
-        self.global_space
-            .outputs()
-            .map(|output| (output, self.global_space.output_geometry(output).unwrap()))
-            .filter(|(_, geo)| center(active_geo).y < center(*geo).y && geo.overlaps(extended_geo))
-            .min_by_key(|(_, geo)| center(*geo).y - center(active_geo).y)
-            .map(|(output, _)| output)
-            .cloned()
     }
 
     pub fn output_for_tablet(&self) -> Option<&Output> {
@@ -5219,7 +5254,7 @@ impl Niri {
 
         let dbus = &self.dbus.as_ref().unwrap();
         let server = dbus.conn_screen_cast.as_ref().unwrap().object_server();
-        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{}", session_id);
+        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{session_id}");
         if let Ok(iface) = server.interface::<_, mutter_screen_cast::Session>(path) {
             let _span = tracy_client::span!("invoking Session::stop");
 
@@ -5818,18 +5853,16 @@ impl Niri {
     ///
     /// Make sure the pointer location and contents are up to date before calling this.
     pub fn maybe_activate_pointer_constraint(&self) {
-        let pointer = self.seat.get_pointer().unwrap();
-        let pointer_pos = pointer.current_location();
-
         let Some((surface, surface_loc)) = &self.pointer_contents.surface else {
             return;
         };
+
+        let pointer = self.seat.get_pointer().unwrap();
         if Some(surface) != pointer.current_focus().as_ref() {
             return;
         }
 
-        let pointer = &self.seat.get_pointer().unwrap();
-        with_pointer_constraint(surface, pointer, |constraint| {
+        with_pointer_constraint(surface, &pointer, |constraint| {
             let Some(constraint) = constraint else { return };
 
             if constraint.is_active() {
@@ -5838,6 +5871,7 @@ impl Niri {
 
             // Constraint does not apply if not within region.
             if let Some(region) = constraint.region() {
+                let pointer_pos = pointer.current_location();
                 let pos_within_surface = pointer_pos - *surface_loc;
                 if !region.contains(pos_within_surface.to_i32_round()) {
                     return;

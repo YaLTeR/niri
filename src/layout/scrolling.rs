@@ -1291,20 +1291,28 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 self.view_offset.offset(offset);
             }
 
-            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
-                // We might need to move the view to ensure the resized window is still visible.
+            // Upon unfullscreening, restore the view offset.
+            //
+            // In tabbed display mode, there can be multiple tiles in a fullscreen column. They
+            // will unfullscreen one by one, and the column width will shrink only when the
+            // last tile unfullscreens. This is when we want to restore the view offset,
+            // otherwise it will immediately reset back by the animate_view_offset below.
+            let is_fullscreen = self.columns[col_idx].tiles.iter().any(Tile::is_fullscreen);
+            let unfullscreen_offset = if was_fullscreen && !is_fullscreen {
+                // Take the value unconditionally, even if the view is currently frozen by
+                // a view gesture. It shouldn't linger around because it's only valid for this
+                // particular unfullscreen.
+                self.view_offset_before_fullscreen.take()
+            } else {
+                None
+            };
 
-                // Upon unfullscreening, restore the view offset.
-                //
-                // In tabbed display mode, there can be multiple tiles in a fullscreen column. They
-                // will unfullscreen one by one, and the column width will shrink only when the
-                // last tile unfullscreens. This is when we want to restore the view offset,
-                // otherwise it will immediately reset back by the animate_view_offset below.
-                let is_fullscreen = self.columns[col_idx].tiles.iter().any(Tile::is_fullscreen);
-                if was_fullscreen && !is_fullscreen {
-                    if let Some(prev_offset) = self.view_offset_before_fullscreen.take() {
-                        self.animate_view_offset(col_idx, prev_offset);
-                    }
+            // We might need to move the view to ensure the resized window is still visible. But
+            // only do it when the view isn't frozen by an interactive resize or a view gesture.
+            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
+                // Restore the view offset upon unfullscreening if needed.
+                if let Some(prev_offset) = unfullscreen_offset {
+                    self.animate_view_offset(col_idx, prev_offset);
                 }
 
                 // Synchronize the horizontal view movement with the resize so that it looks nice.
@@ -3458,7 +3466,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.interactive_resize = None;
     }
 
-    pub fn refresh(&mut self, is_active: bool) {
+    pub fn refresh(&mut self, is_active: bool, is_focused: bool) {
         for (col_idx, col) in self.columns.iter_mut().enumerate() {
             let mut col_resize_data = None;
             if let Some(resize) = &self.interactive_resize {
@@ -3503,11 +3511,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 win.set_active_in_column(active_in_column);
                 win.set_floating(false);
 
-                let active = is_active
-                    && self.active_column_idx == col_idx
+                let mut active = is_active && self.active_column_idx == col_idx;
+                if self.options.deactivate_unfocused_windows {
+                    active &= active_in_column && is_focused;
+                } else {
                     // In tabbed mode, all tabs have activated state to reduce unnecessary
                     // animations when switching tabs.
-                    && (active_in_column || is_tabbed);
+                    active &= active_in_column || is_tabbed;
+                }
                 win.set_activated(active);
 
                 win.set_interactive_resize(col_resize_data);
