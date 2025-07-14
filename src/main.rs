@@ -201,7 +201,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .handle()
         .insert_source(
             Signals::new(&[Signal::SIGINT, Signal::SIGTERM, Signal::SIGHUP]).unwrap(),
-            |_, _, state| {
+            |event, _, state| {
+                info!("quitting due to receiving signal {:?}", event.signal());
                 state.niri.stop_signal.stop();
             },
         )
