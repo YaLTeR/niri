@@ -193,6 +193,9 @@ pub struct Niri {
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
 
+    /// Whether niri was run with `--session`
+    pub is_session_instance: bool,
+
     /// Name of the Wayland socket.
     ///
     /// This is `None` when creating `Niri` without a Wayland socket.
@@ -359,6 +362,9 @@ pub struct Niri {
     pub mods_with_finger_scroll_binds: HashSet<Modifiers>,
 
     pub lock_state: LockState,
+
+    // State that we last sent to the logind LockedHint.
+    pub locked_hint: Option<bool>,
 
     pub screenshot_ui: ScreenshotUi,
     pub config_error_notification: ConfigErrorNotification,
@@ -629,6 +635,7 @@ impl State {
         display: Display<State>,
         headless: bool,
         create_wayland_socket: bool,
+        is_session_instance: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let _span = tracy_client::span!("State::new");
 
@@ -657,6 +664,7 @@ impl State {
             display,
             &backend,
             create_wayland_socket,
+            is_session_instance,
         );
         backend.init(&mut niri);
 
@@ -689,6 +697,9 @@ impl State {
             let _span = tracy_client::span!("flush_clients");
             self.niri.display_handle.flush_clients().unwrap();
         }
+
+        #[cfg(feature = "dbus")]
+        self.niri.update_locked_hint();
 
         // Clear the time so it's fetched afresh next iteration.
         self.niri.clock.clear();
@@ -2225,6 +2236,7 @@ impl Niri {
         display: Display<State>,
         backend: &Backend,
         create_wayland_socket: bool,
+        is_session_instance: bool,
     ) -> Self {
         let _span = tracy_client::span!("Niri::new");
 
@@ -2495,6 +2507,7 @@ impl Niri {
             stop_signal,
             socket_name,
             display_handle,
+            is_session_instance,
             start_time: Instant::now(),
             is_at_startup: true,
             clock: animation_clock,
@@ -2594,6 +2607,7 @@ impl Niri {
             mods_with_finger_scroll_binds,
 
             lock_state: LockState::Unlocked,
+            locked_hint: None,
 
             screenshot_ui,
             config_error_notification,
@@ -5739,6 +5753,81 @@ impl Niri {
             output_state.lock_surface = None;
         }
         self.queue_redraw_all();
+    }
+
+    #[cfg(feature = "dbus")]
+    fn update_locked_hint(&mut self) {
+        use std::sync::LazyLock;
+
+        if !self.is_session_instance {
+            return;
+        }
+
+        static XDG_SESSION_ID: LazyLock<Option<String>> = LazyLock::new(|| {
+            let id = std::env::var("XDG_SESSION_ID").ok();
+            if id.is_none() {
+                warn!(
+                    "env var 'XDG_SESSION_ID' is unset or invalid; logind LockedHint won't be set"
+                );
+            }
+            id
+        });
+
+        let Some(session_id) = &*XDG_SESSION_ID else {
+            return;
+        };
+
+        fn call(session_id: &str, locked: bool) -> anyhow::Result<()> {
+            let conn = zbus::blocking::Connection::system()
+                .context("error connecting to the system bus")?;
+
+            let message = conn
+                .call_method(
+                    Some("org.freedesktop.login1"),
+                    "/org/freedesktop/login1",
+                    Some("org.freedesktop.login1.Manager"),
+                    "GetSession",
+                    &(session_id),
+                )
+                .context("failed to call GetSession")?;
+
+            let message_body = message.body();
+            let session_path: zbus::zvariant::ObjectPath = message_body
+                .deserialize()
+                .context("failed to deserialize GetSession reply")?;
+
+            conn.call_method(
+                Some("org.freedesktop.login1"),
+                session_path,
+                Some("org.freedesktop.login1.Session"),
+                "SetLockedHint",
+                &(locked),
+            )
+            .context("failed to call SetLockedHint")?;
+
+            Ok(())
+        }
+
+        let locked = self.is_locked();
+        if self.locked_hint.is_some_and(|h| h == locked) {
+            return;
+        }
+
+        self.locked_hint = Some(locked);
+
+        let res = thread::Builder::new()
+            .name("Logind LockedHint Updater".to_owned())
+            .spawn(move || {
+                let _span = tracy_client::span!("LockedHint");
+
+                if let Err(err) = call(session_id, locked) {
+                    warn!("failed to set logind LockedHint: {err:?}");
+                }
+            });
+
+        if let Err(err) = res {
+            warn!("error spawning a thread to set logind LockedHint: {err:?}");
+        }
     }
 
     pub fn new_lock_surface(&mut self, surface: LockSurface, output: &Output) {
