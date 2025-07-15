@@ -404,6 +404,7 @@ where
             ext_foreign_toplevel_list_v1::Request::Stop => {
                 resource.finished();
 
+                // remove the instance here so we won't send any more events.
                 let state = state.foreign_toplevel_manager_state();
                 state.ext_instances.remove(resource);
             }
@@ -418,6 +419,7 @@ where
         resource: &ExtForeignToplevelListV1,
         _data: &(),
     ) {
+        // also remove the instance here, in case `stop` was never sent, e.g. sudden disconnect.
         let state = state.foreign_toplevel_manager_state();
         state.ext_instances.remove(resource);
     }
@@ -506,6 +508,7 @@ where
             zwlr_foreign_toplevel_manager_v1::Request::Stop => {
                 resource.finished();
 
+                // remove the instance here so we won't send any more events.
                 let state = state.foreign_toplevel_manager_state();
                 state.wlr_instances.remove(resource);
             }
@@ -519,6 +522,7 @@ where
         resource: &ZwlrForeignToplevelManagerV1,
         _data: &(),
     ) {
+        // also remove the instance here, in case `stop` was never sent, e.g. sudden disconnect.
         let state = state.foreign_toplevel_manager_state();
         state.wlr_instances.remove(resource);
     }
