@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use keyframe::functions::{EaseOutCubic, EaseOutQuad};
+use keyframe::functions::{BezierCurve, EaseOutCubic, EaseOutQuad};
+use keyframe::mint::Vector2;
 use keyframe::EasingFunction;
 
 mod spring;
@@ -43,6 +44,7 @@ pub enum Curve {
     EaseOutQuad,
     EaseOutCubic,
     EaseOutExpo,
+    Bezier(BezierCurve),
 }
 
 impl Animation {
@@ -342,6 +344,7 @@ impl Curve {
             Curve::EaseOutQuad => EaseOutQuad.y(x),
             Curve::EaseOutCubic => EaseOutCubic.y(x),
             Curve::EaseOutExpo => 1. - 2f64.powf(-10. * x),
+            Curve::Bezier(b) => b.y(x),
         }
     }
 }
@@ -353,6 +356,9 @@ impl From<niri_config::AnimationCurve> for Curve {
             niri_config::AnimationCurve::EaseOutQuad => Curve::EaseOutQuad,
             niri_config::AnimationCurve::EaseOutCubic => Curve::EaseOutCubic,
             niri_config::AnimationCurve::EaseOutExpo => Curve::EaseOutExpo,
+            niri_config::AnimationCurve::Bezier(x1, y1, x2, y2) => Curve::Bezier(
+                BezierCurve::from(Vector2 { x: x1, y: y1 }, Vector2 { x: x2, y: y2 }),
+            ),
         }
     }
 }
