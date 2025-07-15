@@ -213,7 +213,7 @@ jobs:
   alpine:
     runs-on: ubuntu-24.04
     container:
-      image: rust:latest-alpine
+      image: rust:alpine
       options: --user root
 
     steps:
