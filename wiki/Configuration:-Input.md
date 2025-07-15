@@ -143,6 +143,13 @@ input {
 > }
 > ```
 
+> [!NOTE]
+>
+> <sup>Since: next release</sup>
+>
+> If the `xkb` section is empty (like it is by default), niri will fetch xkb settings from systemd-localed at `org.freedesktop.locale1` over D-Bus.
+> This way, for example, system installers can dynamically set the niri keyboard layout.
+
 When using multiple layouts, niri can remember the current layout globally (the default) or per-window.
 You can control this with the `track-layout` option.
 

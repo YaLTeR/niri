@@ -15,7 +15,7 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
-    WarpMouseToFocusMode, WorkspaceReference,
+    WarpMouseToFocusMode, WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -114,6 +114,8 @@ use crate::animation::Clock;
 use crate::backend::tty::SurfaceDmabufFeedback;
 use crate::backend::{Backend, Headless, RenderResult, Tty, Winit};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
+#[cfg(feature = "dbus")]
+use crate::dbus::freedesktop_locale1::Locale1ToNiri;
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
 #[cfg(feature = "dbus")]
@@ -318,6 +320,9 @@ pub struct Niri {
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
     pub keyboard_shortcuts_inhibiting_surfaces: HashMap<WlSurface, KeyboardShortcutsInhibitor>,
+
+    /// Most recent XKB settings from org.freedesktop.locale1.
+    pub xkb_from_locale1: Option<Xkb>,
 
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
@@ -1490,6 +1495,12 @@ impl State {
             }
 
             if set_xkb_config {
+                // If xkb is unset in the niri config, use settings from locale1.
+                if xkb == Xkb::default() {
+                    trace!("using xkb from locale1");
+                    xkb = self.niri.xkb_from_locale1.clone().unwrap_or_default();
+                }
+
                 let keyboard = self.niri.seat.get_keyboard().unwrap();
                 if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
                     warn!("error updating xkb config: {err:?}");
@@ -2226,6 +2237,30 @@ impl State {
             warn!("error sending windows to introspect: {err:?}");
         }
     }
+
+    #[cfg(feature = "dbus")]
+    pub fn on_locale1_msg(&mut self, msg: Locale1ToNiri) {
+        let Locale1ToNiri::XkbChanged(xkb) = msg;
+
+        trace!("locale1 xkb settings changed: {xkb:?}");
+        let xkb = self.niri.xkb_from_locale1.insert(xkb);
+
+        {
+            let config = self.niri.config.borrow();
+            if config.input.keyboard.xkb != Xkb::default() {
+                trace!("ignoring locale1 xkb change because niri config has xkb settings");
+                return;
+            }
+        }
+
+        let xkb = xkb.clone();
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
+            warn!("error updating xkb config: {err:?}");
+        }
+
+        self.ipc_keyboard_layouts_changed();
+    }
 }
 
 impl Niri {
@@ -2583,6 +2618,7 @@ impl Niri {
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
+            xkb_from_locale1: None,
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
