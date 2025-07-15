@@ -245,8 +245,8 @@ jobs:
         uses: acj/freebsd-firecracker-action@136ca0bce2adade21e526ceb07db643ad23dd2dd # v0.5.1
         with:
           run-in-vm: |
-            sudo pkg update -f
-            sudo pkg install -y \
+            pkg update -f
+            pkg install -y \
               rustup \
               cargo \
               clang \
