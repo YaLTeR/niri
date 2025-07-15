@@ -227,6 +227,7 @@ jobs:
           apk add --no-cache \
             build-base \
             clang-dev \
+            llvm-dev \
             pkgconfig \
             eudev-dev \
             libxkbcommon-dev \
