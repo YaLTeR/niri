@@ -840,6 +840,18 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
+
+    /// Set view offset of window.
+    ViewOffset {
+        /// Id of the window to set view offset.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+        /// View offset to set
+        #[cfg_attr(feature = "clap", arg(long))]
+        offset: f64,
+    }
 }
 
 /// Change in window or column size.
@@ -1150,6 +1162,8 @@ pub struct Window {
     pub is_floating: bool,
     /// Whether this window requests your attention.
     pub is_urgent: bool,
+    /// Offset of screen for this window
+    pub view_offset: f64,
 }
 
 /// Output configuration change result.
