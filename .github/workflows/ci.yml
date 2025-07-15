@@ -227,7 +227,6 @@ jobs:
           apk add --no-cache \
             build-base \
             eudev-dev \
-            libgbm-dev \
             libxkbcommon-dev \
             wayland-dev \
             libinput-dev \
