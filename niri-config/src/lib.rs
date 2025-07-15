@@ -81,7 +81,7 @@ pub struct Config {
     pub workspaces: Vec<Workspace>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone)]
 pub struct Input {
     #[knuffel(child, default)]
     pub keyboard: Keyboard,
@@ -111,7 +111,7 @@ pub struct Input {
     pub mod_key_nested: Option<ModKey>,
 }
 
-#[derive(knuffel::Decode, Debug, PartialEq, Eq)]
+#[derive(knuffel::Decode, Debug, PartialEq, Eq, Clone)]
 pub struct Keyboard {
     #[knuffel(child, default)]
     pub xkb: Xkb,
@@ -178,7 +178,7 @@ pub enum CenterFocusedColumn {
     OnOverflow,
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
 pub enum TrackLayout {
     /// The layout change is global.
     #[default]
@@ -187,7 +187,7 @@ pub enum TrackLayout {
     Window,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone)]
 pub struct Touchpad {
     #[knuffel(child)]
     pub off: bool,
@@ -227,7 +227,7 @@ pub struct Touchpad {
     pub scroll_factor: Option<FloatOrInt<0, 100>>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone)]
 pub struct Mouse {
     #[knuffel(child)]
     pub off: bool,
@@ -251,7 +251,7 @@ pub struct Mouse {
     pub scroll_factor: Option<FloatOrInt<0, 100>>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone)]
 pub struct Trackpoint {
     #[knuffel(child)]
     pub off: bool,
@@ -273,7 +273,7 @@ pub struct Trackpoint {
     pub middle_emulation: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone)]
 pub struct Trackball {
     #[knuffel(child)]
     pub off: bool,
@@ -359,7 +359,7 @@ impl From<TapButtonMap> for input::TapButtonMap {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone)]
 pub struct Tablet {
     #[knuffel(child)]
     pub off: bool,
@@ -371,7 +371,7 @@ pub struct Tablet {
     pub left_handed: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone)]
 pub struct Touch {
     #[knuffel(child)]
     pub off: bool,

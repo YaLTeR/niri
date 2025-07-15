@@ -97,6 +97,8 @@ pub enum Request {
         /// Configuration to apply.
         action: OutputAction,
     },
+    /// Change the input configuration temporarily
+    Input(InputAction),
     /// Start continuously receiving events from the compositor.
     ///
     /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send
@@ -158,6 +160,8 @@ pub enum Response {
     PickedColor(Option<PickedColor>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
+    /// Input configuration change result,
+    InputConfigChanged,
     /// Information about the overview.
     OverviewState(Overview),
 }
@@ -944,6 +948,275 @@ pub enum OutputAction {
         /// Variable refresh rate mode to set.
         #[cfg_attr(feature = "clap", command(flatten))]
         vrr: VrrToSet,
+    },
+}
+
+/// Inputs that niri can configure
+// Variants in this enum should match the spelling of the ones in niri-config.
+// Most thigs from niri-config should be present here.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "input"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Inputs"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum InputAction {
+    /// Change settings of the keyboard input
+    #[cfg_attr(feature = "clap", command(subcommand))]
+    Keyboard(Keyboard),
+    /// Change settings of the touchpad input
+    #[cfg_attr(feature = "clap", command(subcommand))]
+    Touchpad(Touchpad),
+    /// Change settings of the mouse input
+    #[cfg_attr(feature = "clap", command(subcommand))]
+    Mouse(Mouse),
+    /// Change settings of the trackpoint input
+    #[cfg_attr(feature = "clap", command(subcommand))]
+    Trackpoint(Trackpoint),
+}
+
+/// Actions niri can do to the keyboard input
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "ACTION"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum Keyboard {
+    /// Modify keyboard xkb configuration
+    Xkb {
+        #[cfg_attr(feature = "clap", command(flatten))]
+        xkb: XkbToSet,
+    },
+    RepeatDelay {
+        #[cfg_attr(feature = "clap", arg())]
+        repeat_delay: u16,
+    },
+    RepeatRate {
+        #[cfg_attr(feature = "clap", arg())]
+        repeat_rate: u8,
+    },
+    #[cfg_attr(feature = "clap", command(subcommand))]
+    TrackLayout(TrackLayoutToSet),
+    Numlock {
+        #[cfg_attr(feature = "clap", arg())]
+        numlock: bool,
+    },
+}
+
+/// Xkb configuration niri can modify
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::Args))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct XkbToSet {
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub rules: Option<String>,
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub model: Option<String>,
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub layout: Option<String>,
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub variant: Option<String>,
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub options: Option<String>,
+    #[cfg_attr(feature = "clap", arg(long))]
+    pub file: Option<String>,
+}
+
+/// Track layout to set
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "ACTION"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum TrackLayoutToSet {
+    Global,
+    Window,
+}
+
+/// Actions niri can do to the touchpad input
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "ACTION"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum Touchpad {
+    /// Turn touchpad on
+    On,
+    /// Turn touchpad off
+    Off,
+    Tap {
+        #[cfg_attr(feature = "clap", arg())]
+        tap: bool,
+    },
+    Dwt {
+        #[cfg_attr(feature = "clap", arg())]
+        dwt: bool,
+    },
+    Dwtp {
+        #[cfg_attr(feature = "clap", arg())]
+        dwtp: bool,
+    },
+    Drag {
+        #[cfg_attr(feature = "clap", arg())]
+        drag: Option<bool>,
+    },
+    DragLock {
+        #[cfg_attr(feature = "clap", arg())]
+        drag_lock: bool,
+    },
+    NaturalScroll {
+        #[cfg_attr(feature = "clap", arg())]
+        natural_scroll: bool,
+    },
+    #[cfg_attr(feature = "clap", command(subcommand))]
+    ClickMethod(ClickMethodToSet),
+    AccelSpeed {
+        #[cfg_attr(feature = "clap", arg(value_parser = parse_range::<-1, 1>))]
+        accel_speed: f64,
+    },
+    #[cfg_attr(feature = "clap", command(subcommand))]
+    AccelProfile(AccelProfileToSet),
+    ScrollButton {
+        #[cfg_attr(feature = "clap", arg())]
+        scroll_button: Option<u32>,
+    },
+    ScrollButtonLock {
+        #[cfg_attr(feature = "clap", arg())]
+        scroll_button_lock: bool,
+    },
+    #[cfg_attr(feature = "clap", command(subcommand))]
+    TapButtonMap(TapButtonMapToSet),
+    LeftHanded {
+        #[cfg_attr(feature = "clap", arg())]
+        left_handed: bool,
+    },
+    DisabledOnExternalMouse {
+        #[cfg_attr(feature = "clap", arg())]
+        disabled_on_external_mouse: bool,
+    },
+    MiddleEmulation {
+        #[cfg_attr(feature = "clap", arg())]
+        middle_emulation: bool,
+    },
+}
+
+fn parse_range<const MIN: i32, const MAX: i32>(s: &str) -> Result<f64, &'static str> {
+    let n: f64 = s.parse().map_err(|_| "failed to parse value")?;
+
+    if ((MIN as f64)..=(MAX as f64)).contains(&n) {
+        Ok(n)
+    } else {
+        Err("Provided value out of range")
+    }
+}
+
+/// Acceleration profile to set
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::Subcommand))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "POSITION"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Position Values"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum AccelProfileToSet {
+    Adaptive,
+    Flat,
+}
+
+/// Click method to set.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::Subcommand))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "POSITION"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Position Values"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ClickMethodToSet {
+    Clickfinger,
+    ButtonAreas,
+}
+
+/// Tap button map to set.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::Subcommand))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "POSITION"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Position Values"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum TapButtonMapToSet {
+    LeftRightMiddle,
+    LeftMiddleRight,
+}
+
+/// Actions niri can do to the mouse input
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "ACTION"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum Mouse {
+    On,
+    Off,
+    NaturalScroll {
+        #[cfg_attr(feature = "clap", arg())]
+        natural_scroll: bool,
+    },
+    AccelSpeed {
+        #[cfg_attr(feature = "clap", arg())]
+        accel_speed: f64,
+    },
+    #[cfg_attr(feature = "clap", command(subcommand))]
+    AccelProfile(AccelProfileToSet),
+    ScrollButton {
+        #[cfg_attr(feature = "clap", arg())]
+        scroll_button: Option<u32>,
+    },
+    ScrollButtonLock {
+        #[cfg_attr(feature = "clap", arg())]
+        scroll_button_lock: bool,
+    },
+    LeftHanded {
+        #[cfg_attr(feature = "clap", arg())]
+        left_handed: bool,
+    },
+    MddleEmulation {
+        #[cfg_attr(feature = "clap", arg())]
+        middle_emulation: bool,
+    },
+    ScrollFactor {
+        #[cfg_attr(feature = "clap", arg())]
+        scroll_factor: f64,
+    },
+}
+
+/// Actions niri can do to the trackpoint input
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "ACTION"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum Trackpoint {
+    On,
+    Off,
+    NaturalScroll {
+        #[cfg_attr(feature = "clap", arg())]
+        natural_scroll: bool,
+    },
+    AccelSpeed {
+        #[cfg_attr(feature = "clap", arg())]
+        accel_speed: f64,
+    },
+    #[cfg_attr(feature = "clap", command(subcommand))]
+    AccelProfile(AccelProfileToSet),
+    ScrollButton {
+        #[cfg_attr(feature = "clap", arg())]
+        scroll_button: Option<u32>,
+    },
+    ScrollButtonLock {
+        #[cfg_attr(feature = "clap", arg())]
+        scroll_button_lock: bool,
+    },
+    LeftHanded {
+        #[cfg_attr(feature = "clap", arg())]
+        left_handed: bool,
+    },
+    MddleEmulation {
+        #[cfg_attr(feature = "clap", arg())]
+        middle_emulation: bool,
     },
 }
 

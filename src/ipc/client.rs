@@ -27,6 +27,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             output: output.clone(),
             action: action.clone(),
         },
+        Msg::Input(input) => Request::Input(input.clone()),
         Msg::Workspaces => Request::Workspaces,
         Msg::Windows => Request::Windows,
         Msg::Layers => Request::Layers,
@@ -324,6 +325,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!("The change will apply when it is connected.");
             }
         }
+        Msg::Input(_) => {}
         Msg::Workspaces => {
             let Response::Workspaces(mut response) = response else {
                 bail!("unexpected response: expected Workspaces, got {response:?}");

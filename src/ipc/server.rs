@@ -413,6 +413,13 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
 
             Response::OutputConfigChanged(response)
         }
+        Request::Input(input) => {
+            ctx.event_loop.insert_idle(move |state| {
+                state.apply_transient_input_config(input);
+            });
+
+            Response::InputConfigChanged
+        }
         Request::FocusedOutput => {
             let (tx, rx) = async_channel::bounded(1);
             ctx.event_loop.insert_idle(move |state| {
