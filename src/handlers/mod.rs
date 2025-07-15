@@ -312,8 +312,8 @@ impl SelectionHandler for State {
 }
 
 impl DataDeviceHandler for State {
-    fn data_device_state(&self) -> &DataDeviceState {
-        &self.niri.data_device_state
+    fn data_device_state(&mut self) -> &mut DataDeviceState {
+        &mut self.niri.data_device_state
     }
 }
 
@@ -392,23 +392,23 @@ impl ServerDndGrabHandler for State {}
 delegate_data_device!(State);
 
 impl PrimarySelectionHandler for State {
-    fn primary_selection_state(&self) -> &PrimarySelectionState {
-        &self.niri.primary_selection_state
+    fn primary_selection_state(&mut self) -> &mut PrimarySelectionState {
+        &mut self.niri.primary_selection_state
     }
 }
 delegate_primary_selection!(State);
 
 impl WlrDataControlHandler for State {
-    fn data_control_state(&self) -> &WlrDataControlState {
-        &self.niri.wlr_data_control_state
+    fn data_control_state(&mut self) -> &mut WlrDataControlState {
+        &mut self.niri.wlr_data_control_state
     }
 }
 
 delegate_data_control!(State);
 
 impl ExtDataControlHandler for State {
-    fn data_control_state(&self) -> &ExtDataControlState {
-        &self.niri.ext_data_control_state
+    fn data_control_state(&mut self) -> &mut ExtDataControlState {
+        &mut self.niri.ext_data_control_state
     }
 }
 
