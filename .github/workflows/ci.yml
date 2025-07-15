@@ -213,7 +213,7 @@ jobs:
   alpine:
     runs-on: ubuntu-24.04
     container:
-      image: rust:alpine
+      image: alpine
       options: --user root
 
     steps:
@@ -225,7 +225,7 @@ jobs:
         run: |
           apk update
           apk add --no-cache \
-            build-base clang-libclang clang-libs eudev-dev glib-dev libdisplay-info-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pango-dev pipewire-dev
+            build-base cargo clang-libclang clang-libs eudev-dev glib-dev libdisplay-info-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pango-dev pipewire-dev rust
 
       - uses: Swatinem/rust-cache@v2
 
