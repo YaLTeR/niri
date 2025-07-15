@@ -91,6 +91,11 @@ The talk is in Russian, but I prepared full English subtitles that you can find 
 A June 2025 interview by a German tech podcast Das Triumvirat (in English).
 We talk about niri development and history, and my experience building and maintaining niri.
 
+## Contributing
+
+If you'd like to help with niri, there are plenty of both coding- and non-coding-related ways to do so.
+See [CONTRIBUTING.md](https://github.com/YaLTeR/niri/blob/main/CONTRIBUTING.md) for an overview.
+
 ## Inspiration
 
 Niri is heavily inspired by [PaperWM] which implements scrollable tiling on top of GNOME Shell.
