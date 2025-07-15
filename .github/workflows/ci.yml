@@ -260,7 +260,7 @@ jobs:
               cairo \
               gobject-introspection \
               gtk4 \
-              libdisplay-info-dev
+              libdisplay-info
 
           run:
             cargo build --release --no-default-features --features dbus,xdp-gnome-screencast
