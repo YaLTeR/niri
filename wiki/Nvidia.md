@@ -24,7 +24,7 @@ Luckily, you can mitigate this by configuring the NVIDIA drivers with a per-proc
                 "settings": [
                     {
                         "key": "GLVidHeapReuseRatio",
-                        "value": 1
+                        "value": 0
                     }
                 ]
             }
@@ -36,4 +36,6 @@ Luckily, you can mitigate this by configuring the NVIDIA drivers with a per-proc
 
 The change should be picked up [by restarting niri](https://download.nvidia.com/XFree86/Linux-x86_64/384.59/README/profiles.html#ApplicationProf9ccbe) after writing the config file.
 
-The upstream issue that this solution was pulled from is [here](github.com/NVIDIA/egl-wayland/issues/126#issuecomment-2379945259). There is a (slim) chance that NVIDIA updates their built-in application profiles to apply this to niri automatically; it is unlikely that the underlying heuristic will see a proper fix.
+The upstream issue that this solution was pulled from is [here](https://github.com/NVIDIA/egl-wayland/issues/126#issuecomment-2379945259). There is a (slim) chance that NVIDIA updates their built-in application profiles to apply this to niri automatically; it is unlikely that the underlying heuristic will see a proper fix.
+
+The fix shipped in the driver at the time of writing uses a value of 0, while the initial config posted by an Nvidia engineer approximately a year prior used a value of 1. 
