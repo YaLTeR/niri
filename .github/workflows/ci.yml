@@ -226,7 +226,8 @@ jobs:
           apk update
           apk add --no-cache \
             build-base \
-            clang \
+            clang-dev \
+            pkgconfig \
             eudev-dev \
             libxkbcommon-dev \
             wayland-dev \
