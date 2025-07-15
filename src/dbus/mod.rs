@@ -3,6 +3,7 @@ use zbus::object_server::Interface;
 
 use crate::niri::State;
 
+pub mod freedesktop_locale1;
 pub mod freedesktop_screensaver;
 pub mod gnome_shell_introspect;
 pub mod gnome_shell_screenshot;
@@ -32,6 +33,7 @@ pub struct DBusServers {
     pub conn_introspect: Option<Connection>,
     #[cfg(feature = "xdp-gnome-screencast")]
     pub conn_screen_cast: Option<Connection>,
+    pub conn_locale1: Option<Connection>,
 }
 
 impl DBusServers {
@@ -122,6 +124,22 @@ impl DBusServers {
                     .unwrap();
                 let screen_cast = ScreenCast::new(backend.ipc_outputs(), to_niri);
                 dbus.conn_screen_cast = try_start(screen_cast);
+            }
+        }
+
+        let (to_niri, from_locale1) = calloop::channel::channel();
+        niri.event_loop
+            .insert_source(from_locale1, move |event, _, state| match event {
+                calloop::channel::Event::Msg(msg) => state.on_locale1_msg(msg),
+                calloop::channel::Event::Closed => (),
+            })
+            .unwrap();
+        match freedesktop_locale1::start(to_niri) {
+            Ok(conn) => {
+                dbus.conn_locale1 = Some(conn);
+            }
+            Err(err) => {
+                warn!("error starting locale1 watcher: {err:?}");
             }
         }
 
