@@ -15,7 +15,7 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
-    WarpMouseToFocusMode, WorkspaceReference,
+    WarpMouseToFocusMode, WorkspaceReference, DEFAULT_MRU_COMMIT_MS,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -160,6 +160,7 @@ use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
+use crate::ui::window_mru_ui::{WindowMruUi, WindowMruUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
 use crate::utils::xwayland::satellite::Satellite;
@@ -367,6 +368,7 @@ pub struct Niri {
     pub locked_hint: Option<bool>,
 
     pub screenshot_ui: ScreenshotUi,
+    pub window_mru_ui: WindowMruUi,
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: Option<ExitConfirmDialog>,
@@ -400,6 +402,8 @@ pub struct Niri {
     /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
     #[cfg(feature = "xdp-gnome-screencast")]
     pub dynamic_cast_id_for_portal: MappedId,
+
+    pending_mru_commit: Option<PendingMruCommit>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -561,6 +565,24 @@ pub enum CastTarget {
     Nothing,
     Output(WeakOutput),
     Window { id: u64 },
+}
+
+/// Window MRU traversal context.
+#[derive(Debug)]
+pub struct WindowMRU {
+    /// List of window ids to be traversed in MRU order.
+    pub ids: Vec<MappedId>,
+
+    /// Current index in the MRU traversal.
+    pub current: usize,
+}
+
+/// Pending update to a window's focus timestamp.
+#[derive(Debug)]
+struct PendingMruCommit {
+    id: MappedId,
+    token: RegistrationToken,
+    stamp: Instant,
 }
 
 impl RedrawState {
@@ -1183,6 +1205,43 @@ impl State {
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(true);
+
+                    // If `mapped` does not have a most_recent_timestamp,
+                    // then the window is newly created/mapped and
+                    // a timestamp is unconditionally created.
+                    //
+                    // If `mapped` already has a timestamp,
+                    // *and* there is no active window-mru,
+                    // the timestamp will be updated for `mapped`, but only
+                    // after the focus lock-in period has gone by without
+                    // the focus having elsewhere.
+                    let stamp = Instant::now();
+                    let focus_id = mapped.id();
+
+                    if mapped.get_focus_timestamp().is_none() {
+                        mapped.update_focus_timestamp(stamp);
+                    } else {
+                        let timer =
+                            Timer::from_duration(Duration::from_millis(DEFAULT_MRU_COMMIT_MS));
+
+                        let focus_token = self
+                            .niri
+                            .event_loop
+                            .insert_source(timer, move |_, _, state| {
+                                state.niri.mru_commit();
+                                TimeoutAction::Drop
+                            })
+                            .unwrap();
+                        if let Some(PendingMruCommit { token, .. }) =
+                            self.niri.pending_mru_commit.replace(PendingMruCommit {
+                                id: focus_id,
+                                token: focus_token,
+                                stamp,
+                            })
+                        {
+                            self.niri.event_loop.remove(token);
+                        }
+                    }
                 }
             }
 
@@ -2412,6 +2471,7 @@ impl Niri {
         let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
+        let window_mru_ui = WindowMruUi::new();
         let config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
 
@@ -2610,6 +2670,7 @@ impl Niri {
             locked_hint: None,
 
             screenshot_ui,
+            window_mru_ui,
             config_error_notification,
             hotkey_overlay,
             exit_confirm_dialog,
@@ -2640,6 +2701,8 @@ impl Niri {
 
             #[cfg(feature = "xdp-gnome-screencast")]
             dynamic_cast_id_for_portal: MappedId::next(),
+
+            pending_mru_commit: None,
         };
 
         niri.reset_pointer_inactivity_timer();
@@ -3553,6 +3616,13 @@ impl Niri {
         Some((target_output.cloned(), target_workspace_index))
     }
 
+    pub fn find_window_by_id(&self, id: MappedId) -> Option<Window> {
+        self.layout
+            .windows()
+            .find(|(_, m)| m.id() == id)
+            .map(|(_, m)| m.window.clone())
+    }
+
     pub fn output_for_tablet(&self) -> Option<&Output> {
         let config = self.config.borrow();
         let map_to_output = config.input.tablet.map_to_output.as_ref();
@@ -4009,6 +4079,7 @@ impl Niri {
         self.layout.advance_animations();
         self.config_error_notification.advance_animations();
         self.screenshot_ui.advance_animations();
+        self.window_mru_ui.advance_animations();
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
@@ -4023,7 +4094,7 @@ impl Niri {
         self.layout.update_render_elements(output);
 
         for (out, state) in self.output_state.iter_mut() {
-            if output.map_or(true, |output| out == output) {
+            if output.is_none_or(|output| out == output) {
                 let scale = Scale::from(out.current_scale().fractional_scale());
                 let transform = out.current_transform();
 
@@ -4041,6 +4112,10 @@ impl Niri {
                     };
 
                     mapped.update_render_elements(geo.size.to_f64());
+                }
+
+                if self.window_mru_ui.is_open() && Some(out) == self.layout.active_output() {
+                    self.window_mru_ui.update_render_elements(out);
                 }
             }
         }
@@ -4166,6 +4241,15 @@ impl Niri {
             return elements;
         }
 
+        if Some(output) == self.layout.active_output() {
+            elements.extend(
+                self.window_mru_ui
+                    .render_output(self, output, renderer.as_gles_renderer())
+                    .into_iter()
+                    .map(OutputRenderElements::from),
+            )
+        }
+
         // Draw the hotkey overlay on top.
         if let Some(element) = self.hotkey_overlay.render(renderer, output) {
             elements.push(element.into());
@@ -4173,7 +4257,10 @@ impl Niri {
 
         // Don't draw the focus ring on the workspaces while interactively moving above those
         // workspaces, since the interactively-moved window already has a focus ring.
-        let focus_ring = !self.layout.interactive_move_is_moving_above_output(output);
+        // Likewise, don't draw the focus ring while the MRU UI is open to avoid the confusion
+        // of having two focus rings on screen.
+        let focus_ring = !(self.layout.interactive_move_is_moving_above_output(output)
+            || self.window_mru_ui.is_open());
 
         // Get monitor elements.
         let mon = self.layout.monitor_for_output(output).unwrap();
@@ -4358,6 +4445,7 @@ impl Niri {
             state.unfinished_animations_remain |=
                 self.config_error_notification.are_animations_ongoing();
             state.unfinished_animations_remain |= self.screenshot_ui.are_animations_ongoing();
+            state.unfinished_animations_remain |= self.window_mru_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= state.screen_transition.is_some();
 
             // Also keep redrawing if the current cursor is animated.
@@ -6206,6 +6294,22 @@ impl Niri {
 
         self.notified_activity_this_iteration = true;
     }
+
+    // Consume the active `PendingMruCommit`, if any, and use the information
+    // it contains to update the (active) window's focus timestamp
+    pub fn mru_commit(&mut self) {
+        if let Some(pending) = self.pending_mru_commit.take() {
+            if let Some(window) = self
+                .layout
+                .workspaces_mut()
+                .flat_map(|ws| ws.windows_mut())
+                .find(|w| w.id() == pending.id)
+            {
+                window.update_focus_timestamp(pending.stamp);
+            }
+            self.event_loop.remove(pending.token);
+        }
+    }
 }
 
 pub struct NewClient {
@@ -6256,6 +6360,7 @@ niri_render_elements! {
             SolidColorRenderElement
         >>>,
         ScreenshotUi = ScreenshotUiRenderElement,
+        WindowMruUi = WindowMruUiRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
