@@ -441,6 +441,10 @@ mod tests {
                 }
 
                 window-open { off; }
+
+                window-close {
+                    curve "cubic-bezier" 0.05 0.7 0.1 1  
+                }
             }
 
             gestures {
@@ -1038,7 +1042,12 @@ mod tests {
                         kind: Easing(
                             EasingParams {
                                 duration_ms: 150,
-                                curve: EaseOutQuad,
+                                curve: CubicBezier(
+                                    0.05,
+                                    0.7,
+                                    0.1,
+                                    1.0,
+                                ),
                             },
                         ),
                     },
