@@ -230,7 +230,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --release --no-default-features --features dbus,xdp-gnome-screencast
+        run: cargo build --all
 
   # nix:
   #   runs-on: ubuntu-24.04
