@@ -251,18 +251,16 @@ jobs:
               llvm \
               pkgconf \
               wayland \
-              devel/libxkbcommon \
-              devel/wayland \
-              devel/libinput \
-              devel/dbus \
+              libxkbcommon \
+              libinput \
+              dbus \
               seatd \
-              devel/pipewire \
-              devel/pango \
-              devel/cairo \
-              devel/gobject-introspection \
-              devel/gtk4 \
-              devel/libadwaita \
-              devel/libdisplay-info
+              pipewire \
+              pango \
+              cairo \
+              gobject-introspection \
+              gtk4 \
+              libdisplay-info-dev
 
           run:
             cargo build --release --no-default-features --features dbus,xdp-gnome-screencast
