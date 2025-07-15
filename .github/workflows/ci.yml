@@ -225,7 +225,7 @@ jobs:
         run: |
           apk update
           apk add --no-cache \
-            clang-libclang clang-libs eudev-dev glib-dev libdisplay-info-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pango-dev pipewire-dev
+            build-base clang-libclang clang-libs eudev-dev glib-dev libdisplay-info-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pango-dev pipewire-dev
 
       - uses: Swatinem/rust-cache@v2
 
