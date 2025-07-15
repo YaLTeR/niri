@@ -30,8 +30,8 @@ const WLR_VERSION: u32 = 3;
 
 pub struct ForeignToplevelManagerState {
     display: DisplayHandle,
-    ext_instances: Vec<ExtForeignToplevelListV1>,
-    wlr_instances: Vec<ZwlrForeignToplevelManagerV1>,
+    ext_instances: HashSet<ExtForeignToplevelListV1>,
+    wlr_instances: HashSet<ZwlrForeignToplevelManagerV1>,
     toplevels: HashMap<WlSurface, ToplevelData>,
 }
 
@@ -77,8 +77,8 @@ impl ForeignToplevelManagerState {
         display.create_global::<D, ZwlrForeignToplevelManagerV1, _>(WLR_VERSION, global_data);
         Self {
             display: display.clone(),
-            ext_instances: Vec::new(),
-            wlr_instances: Vec::new(),
+            ext_instances: HashSet::new(),
+            wlr_instances: HashSet::new(),
             toplevels: HashMap::new(),
         }
     }
@@ -378,7 +378,7 @@ where
             data.add_ext_instance::<D>(handle, client, &manager);
         }
 
-        state.ext_instances.push(manager);
+        state.ext_instances.insert(manager);
     }
 
     fn can_view(client: Client, global_data: &ForeignToplevelGlobalData) -> bool {
@@ -405,7 +405,7 @@ where
                 resource.finished();
 
                 let state = state.foreign_toplevel_manager_state();
-                state.ext_instances.retain(|x| x != resource);
+                state.ext_instances.remove(resource);
             }
             ext_foreign_toplevel_list_v1::Request::Destroy => {}
             _ => unreachable!(),
@@ -419,7 +419,7 @@ where
         _data: &(),
     ) {
         let state = state.foreign_toplevel_manager_state();
-        state.ext_instances.retain(|x| x != resource);
+        state.ext_instances.remove(resource);
     }
 }
 
@@ -451,7 +451,7 @@ where
     ) {
         let state = state.foreign_toplevel_manager_state();
         for data in state.toplevels.values_mut() {
-            data.ext_instances.retain(|instance| instance != resource);
+            data.ext_instances.remove(resource);
         }
     }
 }
@@ -480,7 +480,7 @@ where
             data.add_wlr_instance::<D>(handle, client, &manager);
         }
 
-        state.wlr_instances.push(manager);
+        state.wlr_instances.insert(manager);
     }
 
     fn can_view(client: Client, global_data: &ForeignToplevelGlobalData) -> bool {
@@ -507,7 +507,7 @@ where
                 resource.finished();
 
                 let state = state.foreign_toplevel_manager_state();
-                state.wlr_instances.retain(|x| x != resource);
+                state.wlr_instances.remove(resource);
             }
             _ => unreachable!(),
         }
@@ -520,7 +520,7 @@ where
         _data: &(),
     ) {
         let state = state.foreign_toplevel_manager_state();
-        state.wlr_instances.retain(|x| x != resource);
+        state.wlr_instances.remove(resource);
     }
 }
 
@@ -580,8 +580,7 @@ where
     ) {
         let state = state.foreign_toplevel_manager_state();
         for data in state.toplevels.values_mut() {
-            data.wlr_instances
-                .retain(|instance, _| instance != resource);
+            data.wlr_instances.remove(resource);
         }
     }
 }
