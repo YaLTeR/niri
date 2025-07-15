@@ -225,26 +225,12 @@ jobs:
         run: |
           apk update
           apk add --no-cache \
-            build-base \
-            clang-dev \
-            llvm-dev \
-            pkgconfig \
-            eudev-dev \
-            libxkbcommon-dev \
-            wayland-dev \
-            libinput-dev \
-            dbus-dev \
-            libseat-dev \
-            pipewire-dev \
-            pango-dev \
-            cairo-dev \
-            libdisplay-info-dev \
-            libadwaita-dev
+            clang-libclang clang-libs eudev-dev glib-dev libdisplay-info-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pango-dev pipewire-dev
 
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --all
+        run: cargo build --release --no-default-features --features dbus,xdp-gnome-screencast
 
   # nix:
   #   runs-on: ubuntu-24.04
