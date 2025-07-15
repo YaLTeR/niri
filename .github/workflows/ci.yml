@@ -247,24 +247,22 @@ jobs:
           prepare: |
             pkg update -f
             pkg install -y \
-              rustup \
-              cargo \
-              clang \
+              rust \
               llvm \
               pkgconf \
-              libudev \
-              mesa-libs \
-              xkbcommon \
               wayland \
+              libxkbcommon \
+              gbm-libs \
               libinput \
               dbus \
-              libseat \
+              seatd \
               pipewire \
               pango \
               cairo \
               gobject-introspection \
-              libdisplay-info
-            rustup default stable
+              gtk4 \
+              libadwaita
+
           run:
             cargo build --release --no-default-features --features dbus,xdp-gnome-screencast
 
