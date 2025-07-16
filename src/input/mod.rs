@@ -359,6 +359,17 @@ impl State {
 
         let is_inhibiting_shortcuts = self.is_inhibiting_shortcuts();
 
+        // Accessibility modifier grabs should override XKB state changes (e.g. Caps Lock), so we
+        // need to process them before keyboard.input() below.
+        #[cfg(feature = "dbus")]
+        if self.a11y_process_key(
+            Duration::from_millis(u64::from(time)),
+            event.key_code(),
+            event.state(),
+        ) {
+            return;
+        }
+
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
             event.key_code(),
