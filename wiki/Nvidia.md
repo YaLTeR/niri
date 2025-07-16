@@ -39,3 +39,15 @@ Restart niri after writing the config file to apply the change.
 The upstream issue that this solution was pulled from is [here](https://github.com/NVIDIA/egl-wayland/issues/126#issuecomment-2379945259). There is a (slim) chance that NVIDIA updates their built-in application profiles to apply this to niri automatically; it is unlikely that the underlying heuristic will see a proper fix.
 
 The fix shipped in the driver at the time of writing uses a value of 0, while the initial config posted by an Nvidia engineer approximately a year prior used a value of 1. 
+
+### Screencast flickering fix
+
+If you have screencast glitches or flickering on NVIDIA, set this in the niri config:
+
+```kdl
+debug {
+    wait-for-frame-completion-in-pipewire
+}
+```
+
+This will become unnecessary once niri supports explicit sync for PipeWire screencasts: https://github.com/YaLTeR/niri/issues/1432
