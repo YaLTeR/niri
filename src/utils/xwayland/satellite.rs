@@ -238,6 +238,8 @@ fn spawn(path: String, xwl: &Satellite) {
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
+    unsafe { process.pre_exec(crate::utils::signals::unblock_all) };
+
     // Spawning and waiting takes some milliseconds, so do it in a thread.
     let res = thread::Builder::new()
         .name("Xwl-s Spawner".to_owned())
