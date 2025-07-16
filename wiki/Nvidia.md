@@ -34,7 +34,7 @@ Luckily, you can mitigate this by configuring the NVIDIA drivers with a per-proc
     
     (The file in `/etc/nvidia/nvidia-application-profiles-rc.d/` can be named anything, and does not actually need an extension).
 
-The change should be picked up [by restarting niri](https://download.nvidia.com/XFree86/Linux-x86_64/384.59/README/profiles.html#ApplicationProf9ccbe) after writing the config file.
+Restart niri after writing the config file to apply the change.
 
 The upstream issue that this solution was pulled from is [here](https://github.com/NVIDIA/egl-wayland/issues/126#issuecomment-2379945259). There is a (slim) chance that NVIDIA updates their built-in application profiles to apply this to niri automatically; it is unlikely that the underlying heuristic will see a proper fix.
 
