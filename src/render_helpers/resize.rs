@@ -174,7 +174,7 @@ impl RenderElement<GlesRenderer> for ResizeRenderElement {
         Ok(())
     }
 
-    fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
+    fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
         self.0.underlying_storage(renderer)
     }
 }
@@ -193,7 +193,10 @@ impl<'render> RenderElement<TtyRenderer<'render>> for ResizeRenderElement {
         Ok(())
     }
 
-    fn underlying_storage(&self, renderer: &mut TtyRenderer<'render>) -> Option<UnderlyingStorage> {
+    fn underlying_storage(
+        &self,
+        renderer: &mut TtyRenderer<'render>,
+    ) -> Option<UnderlyingStorage<'_>> {
         self.0.underlying_storage(renderer)
     }
 }
