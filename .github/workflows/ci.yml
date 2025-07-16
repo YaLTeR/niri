@@ -244,7 +244,7 @@ jobs:
       - name: Build
         uses: vmactions/freebsd-vm@966989c456d41351f095a421f60e71342d3bce41  # v1.2.1
         with:
-          copyback: false
+          sync: nfs
           prepare: |
             pkg update -f
             pkg install -y \
@@ -258,7 +258,7 @@ jobs:
 
             cargo build \
               --offline --locked --config source.crates-io.replace-with=vendored-sources --config source.vendored-sources.directory=vendor \
-              --release --no-default-features dbus --features xdp-gnome-screencast
+              --release --no-default-features --features xdp-gnome-screencast
 
   # nix:
   #   runs-on: ubuntu-24.04
