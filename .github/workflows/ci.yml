@@ -247,7 +247,7 @@ jobs:
           prepare: |
             pkg update -f
             pkg install -y \
-              curl rust devel/cargo llvm19 pkgconf pixman libudev-devd libdisplay-info seatd libinput libxkbcommon pipewire mesa-libs cairo devel/glib20 gettext-runtime harfbuzz pango
+              curl rust llvm19 pkgconf pixman libudev-devd libdisplay-info seatd libinput libxkbcommon pipewire mesa-libs cairo devel/glib20 gettext-runtime harfbuzz pango
 
             cargo vendor ./vendor
 
