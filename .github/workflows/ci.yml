@@ -251,10 +251,12 @@ jobs:
               curl rust llvm19 pkgconf pixman libudev-devd libdisplay-info seatd libinput libxkbcommon pipewire mesa-libs cairo devel/glib20 gettext-runtime harfbuzz pango
           run: |
             curl -o patch-pipewire_init 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-pipewire_init?id=f3f7e555b06d9a87d63c047ce3e82e936a11f2fe'
+            curl -o patch-drm 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-drm?id=f3f7e555b06d9a87d63c047ce3e82e936a11f2fe'
 
             cargo vendor ./vendor
 
             ( cd vendor; patch -p2 < ../patch-pipewire_init; )
+            ( cd vendor/drm; patch -p2 < ../../patch-drm; )
 
             cargo build \
               --offline --locked --config 'source.crates-io.replace-with="vendored-sources"' --config 'source.vendored-sources.directory="vendor"' \
