@@ -3,6 +3,7 @@ use zbus::object_server::Interface;
 
 use crate::niri::State;
 
+pub mod freedesktop_a11y;
 pub mod freedesktop_locale1;
 pub mod freedesktop_screensaver;
 pub mod gnome_shell_introspect;
@@ -15,6 +16,7 @@ pub mod mutter_screen_cast;
 #[cfg(feature = "xdp-gnome-screencast")]
 use mutter_screen_cast::ScreenCast;
 
+use self::freedesktop_a11y::KeyboardMonitor;
 use self::freedesktop_screensaver::ScreenSaver;
 use self::gnome_shell_introspect::Introspect;
 use self::mutter_display_config::DisplayConfig;
@@ -34,6 +36,7 @@ pub struct DBusServers {
     #[cfg(feature = "xdp-gnome-screencast")]
     pub conn_screen_cast: Option<Connection>,
     pub conn_locale1: Option<Connection>,
+    pub conn_keyboard_monitor: Option<Connection>,
 }
 
 impl DBusServers {
@@ -124,6 +127,12 @@ impl DBusServers {
                     .unwrap();
                 let screen_cast = ScreenCast::new(backend.ipc_outputs(), to_niri);
                 dbus.conn_screen_cast = try_start(screen_cast);
+            }
+
+            let keyboard_monitor = KeyboardMonitor::new();
+            if let Some(x) = try_start(keyboard_monitor.clone()) {
+                dbus.conn_keyboard_monitor = Some(x);
+                niri.a11y_keyboard_monitor = Some(keyboard_monitor);
             }
         }
 

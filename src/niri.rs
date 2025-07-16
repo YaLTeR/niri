@@ -385,6 +385,8 @@ pub struct Niri {
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
     #[cfg(feature = "dbus")]
+    pub a11y_keyboard_monitor: Option<crate::dbus::freedesktop_a11y::KeyboardMonitor>,
+    #[cfg(feature = "dbus")]
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
 
     pub ipc_server: Option<IpcServer>,
@@ -2658,6 +2660,8 @@ impl Niri {
 
             #[cfg(feature = "dbus")]
             dbus: None,
+            #[cfg(feature = "dbus")]
+            a11y_keyboard_monitor: None,
             #[cfg(feature = "dbus")]
             inhibit_power_key_fd: None,
 
