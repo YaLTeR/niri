@@ -259,7 +259,7 @@ jobs:
             ( cd vendor/drm; patch -p2 < ../../patch-drm; )
 
             cargo build \
-              --offline --locked --config 'source.crates-io.replace-with="vendored-sources"' --config 'source.vendored-sources.directory="vendor"' \
+              --offline --config 'source.crates-io.replace-with="vendored-sources"' --config 'source.vendored-sources.directory="vendor"' \
               --release --no-default-features --features xdp-gnome-screencast
 
   # nix:
