@@ -375,12 +375,13 @@ impl State {
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
 
-                if this.niri.exit_confirm_dialog.is_open() && pressed && raw == Some(Keysym::Return)
-                {
-                    info!("quitting after confirming exit dialog");
-                    this.niri.stop_signal.stop();
+                if this.niri.exit_confirm_dialog.is_open() && pressed {
+                    if raw == Some(Keysym::Return) {
+                        info!("quitting after confirming exit dialog");
+                        this.niri.stop_signal.stop();
+                    }
 
-                    // Don't send this Enter press to any clients.
+                    // Don't send this press to any clients.
                     this.niri.suppressed_keys.insert(key_code);
                     return FilterResult::Intercept(None);
                 }

@@ -512,6 +512,7 @@ pub enum KeyboardFocus {
     LayerShell { surface: WlSurface },
     LockScreen { surface: Option<WlSurface> },
     ScreenshotUi,
+    ExitConfirmDialog,
     Overview,
 }
 
@@ -611,6 +612,7 @@ impl KeyboardFocus {
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface.as_ref(),
             KeyboardFocus::ScreenshotUi => None,
+            KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
         }
     }
@@ -621,6 +623,7 @@ impl KeyboardFocus {
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface,
             KeyboardFocus::ScreenshotUi => None,
+            KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
         }
     }
@@ -944,7 +947,10 @@ impl State {
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
 
-        if !self.niri.is_locked() && !self.niri.screenshot_ui.is_open() {
+        if !self.niri.exit_confirm_dialog.is_open()
+            && !self.niri.is_locked()
+            && !self.niri.screenshot_ui.is_open()
+        {
             // Don't refresh cursor focus during transitions.
             if let Some((output, _)) = self.niri.output_under(location) {
                 let monitor = self.niri.layout.monitor_for_output(output).unwrap();
@@ -1063,7 +1069,9 @@ impl State {
         }
 
         // Compute the current focus.
-        let focus = if self.niri.is_locked() {
+        let focus = if self.niri.exit_confirm_dialog.is_open() {
+            KeyboardFocus::ExitConfirmDialog
+        } else if self.niri.is_locked() {
             KeyboardFocus::LockScreen {
                 surface: self.niri.lock_surface_focus(),
             }
@@ -3193,7 +3201,7 @@ impl Niri {
         extended_bounds: bool,
         pos: Point<f64, Logical>,
     ) -> Option<(Output, &Workspace<Mapped>)> {
-        if self.is_locked() || self.screenshot_ui.is_open() {
+        if self.exit_confirm_dialog.is_open() || self.is_locked() || self.screenshot_ui.is_open() {
             return None;
         }
 
@@ -3226,7 +3234,7 @@ impl Niri {
     /// The cursor may be inside the window's activation region, but not within the window's input
     /// region.
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Mapped> {
-        if self.is_locked() || self.screenshot_ui.is_open() {
+        if self.exit_confirm_dialog.is_open() || self.is_locked() || self.screenshot_ui.is_open() {
             return None;
         }
 
@@ -3278,7 +3286,9 @@ impl Niri {
         // The ordering here must be consistent with the ordering in render() so that input is
         // consistent with the visuals.
 
-        if self.is_locked() {
+        if self.exit_confirm_dialog.is_open() {
+            return rv;
+        } else if self.is_locked() {
             let Some(state) = self.output_state.get(output) else {
                 return rv;
             };
@@ -3909,6 +3919,7 @@ impl Niri {
             // layer-shell, the layout will briefly draw as active, despite never having focus.
             KeyboardFocus::LockScreen { .. } => true,
             KeyboardFocus::ScreenshotUi => true,
+            KeyboardFocus::ExitConfirmDialog => true,
             KeyboardFocus::Overview => true,
         };
 
