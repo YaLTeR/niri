@@ -1479,10 +1479,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     fn activate_column_retain_tile_pos(&mut self, new_active_column_idx: usize) -> bool {
-        let prev_row = self.columns[self.active_column_idx].active_tile_idx;
+        let prev_tile_idx = self.columns[self.active_column_idx].active_tile_idx;
         self.activate_column(new_active_column_idx);
-        let tiles = self.columns[self.active_column_idx].tiles.len();
-        return self.columns[self.active_column_idx].activate_idx(min(prev_row, tiles - 1));
+        let tiles_len = self.columns[self.active_column_idx].tiles.len();
+        return self.columns[self.active_column_idx]
+            .activate_idx(min(prev_tile_idx, tiles_len - 1));
     }
 
     pub fn focus_right(&mut self) -> bool {
