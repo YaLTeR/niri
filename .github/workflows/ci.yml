@@ -222,8 +222,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          apk add --no-cache ${{ env.DEPS_APK }} libadwaita-dev tar
+          apk add --no-cache ${{ env.DEPS_APK }}
 
+      - name: Install tar (for caching)
+        run: |
+          apk add --no-cache tar
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --no-default-features --features dbus,xdp-gnome-screencast
 
