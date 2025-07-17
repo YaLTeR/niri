@@ -1,5 +1,6 @@
 site_name: niri
 docs_dir: wiki
+site_url: https://chinatsu.github.io/niri/
 use_directory_urls: false
 theme:
   name: material
