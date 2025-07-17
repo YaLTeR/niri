@@ -259,8 +259,8 @@ jobs:
             ( cd vendor/drm; patch -p2 < ../../patch-drm; )
 
             cargo build \
-              --offline --locked \
-              --config 'patch.crates-io.pipewire.path="vendor/pipewire"' \
+              --offline \
+              --config 'patch.crates-io.pipewire-rs.path="vendor/pipewire"' \
               --config 'patch.crates-io.drm.path="vendor/drm"' \
               --config 'source.crates-io.replace-with="vendored-sources"' --config 'source.vendored-sources.directory="vendor"' \
               --release --no-default-features --features dbus,xdp-gnome-screencast
