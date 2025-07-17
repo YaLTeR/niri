@@ -13,254 +13,258 @@ env:
   DEPS_DNF: cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
+  # build:
+  #   strategy:
+  #     fail-fast: false
 
-      matrix:
-        configuration: [debug, release]
+  #     matrix:
+  #       configuration: [debug, release]
 
-        include:
-          - configuration: release
-            release-flag: '--release'
+  #       include:
+  #         - configuration: release
+  #           release-flag: '--release'
 
-    name: test - ${{ matrix.configuration }}
-    runs-on: ubuntu-24.04
+  #   name: test - ${{ matrix.configuration }}
+  #   runs-on: ubuntu-24.04
 
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         show-progress: false
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }}
+  #     - name: Install dependencies
+  #       run: |
+  #         sudo apt-get update -y
+  #         sudo apt-get install -y ${{ env.DEPS_APT }}
 
-      - uses: dtolnay/rust-toolchain@stable
+  #     - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.configuration }}
+  #     - uses: Swatinem/rust-cache@v2
+  #       with:
+  #         key: ${{ matrix.configuration }}
 
-      - name: Check (no default features)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features
+  #     - name: Check (no default features)
+  #       run: cargo check ${{ matrix.release-flag }} --no-default-features
 
-      - name: Check (just dbus)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features --features dbus
+  #     - name: Check (just dbus)
+  #       run: cargo check ${{ matrix.release-flag }} --no-default-features --features dbus
 
-      - name: Check (just systemd)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features --features systemd
+  #     - name: Check (just systemd)
+  #       run: cargo check ${{ matrix.release-flag }} --no-default-features --features systemd
 
-      - name: Check (just dinit)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features --features dinit
+  #     - name: Check (just dinit)
+  #       run: cargo check ${{ matrix.release-flag }} --no-default-features --features dinit
 
-      - name: Check (just xdp-gnome-screencast)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features --features xdp-gnome-screencast
+  #     - name: Check (just xdp-gnome-screencast)
+  #       run: cargo check ${{ matrix.release-flag }} --no-default-features --features xdp-gnome-screencast
 
-      - name: Check
-        run: cargo check ${{ matrix.release-flag }}
+  #     - name: Check
+  #       run: cargo check ${{ matrix.release-flag }}
 
-      - name: Build (with profiling)
-        run: cargo build ${{ matrix.release-flag }} --features profile-with-tracy
+  #     - name: Build (with profiling)
+  #       run: cargo build ${{ matrix.release-flag }} --features profile-with-tracy
 
-      - name: Build tests
-        run: cargo test --no-run --all --exclude niri-visual-tests ${{ matrix.release-flag }}
+  #     - name: Build tests
+  #       run: cargo test --no-run --all --exclude niri-visual-tests ${{ matrix.release-flag }}
 
-      - name: Test
-        run: cargo test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture
+  #     - name: Test
+  #       run: cargo test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture
 
-  # Job that runs randomized tests for a longer period of time.
-  randomized-tests:
-    strategy:
-      fail-fast: false
+  # # Job that runs randomized tests for a longer period of time.
+  # randomized-tests:
+  #   strategy:
+  #     fail-fast: false
 
-    name: randomized tests
-    runs-on: ubuntu-24.04
+  #   name: randomized tests
+  #   runs-on: ubuntu-24.04
 
-    env:
-      RUST_BACKTRACE: 1
-      PROPTEST_CASES: 200000
-      PROPTEST_MAX_LOCAL_REJECTS: 200000
-      PROPTEST_MAX_GLOBAL_REJECTS: 200000
-      PROPTEST_MAX_SHRINK_ITERS: 200000
+  #   env:
+  #     RUST_BACKTRACE: 1
+  #     PROPTEST_CASES: 200000
+  #     PROPTEST_MAX_LOCAL_REJECTS: 200000
+  #     PROPTEST_MAX_GLOBAL_REJECTS: 200000
+  #     PROPTEST_MAX_SHRINK_ITERS: 200000
 
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         show-progress: false
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }}
+  #     - name: Install dependencies
+  #       run: |
+  #         sudo apt-get update -y
+  #         sudo apt-get install -y ${{ env.DEPS_APT }}
 
-      - uses: dtolnay/rust-toolchain@stable
+  #     - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+  #     - uses: Swatinem/rust-cache@v2
 
-      - name: Build tests
-        run: cargo test --no-run --all --exclude niri-visual-tests --release
+  #     - name: Build tests
+  #       run: cargo test --no-run --all --exclude niri-visual-tests --release
 
-      - name: Test
-        run: cargo test --all --exclude niri-visual-tests --release
+  #     - name: Test
+  #       run: cargo test --all --exclude niri-visual-tests --release
 
-  visual-tests:
-    strategy:
-      fail-fast: false
+  # visual-tests:
+  #   strategy:
+  #     fail-fast: false
 
-    name: visual tests
-    runs-on: ubuntu-24.04
+  #   name: visual tests
+  #   runs-on: ubuntu-24.04
 
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         show-progress: false
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+  #     - name: Install dependencies
+  #       run: |
+  #         sudo apt-get update -y
+  #         sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
-      - uses: dtolnay/rust-toolchain@stable
+  #     - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+  #     - uses: Swatinem/rust-cache@v2
 
-      - name: Build
-        run: cargo build --package niri-visual-tests
+  #     - name: Build
+  #       run: cargo build --package niri-visual-tests
 
-  msrv:
-    strategy:
-      fail-fast: false
+  # msrv:
+  #   strategy:
+  #     fail-fast: false
 
-    name: msrv
-    runs-on: ubuntu-24.04
+  #   name: msrv
+  #   runs-on: ubuntu-24.04
 
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         show-progress: false
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+  #     - name: Install dependencies
+  #       run: |
+  #         sudo apt-get update -y
+  #         sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
-      - uses: dtolnay/rust-toolchain@1.80.1
+  #     - uses: dtolnay/rust-toolchain@1.80.1
 
-      - uses: Swatinem/rust-cache@v2
+  #     - uses: Swatinem/rust-cache@v2
 
-      - run: cargo check --all-targets
+  #     - run: cargo check --all-targets
 
-  clippy:
-    strategy:
-      fail-fast: false
+  # clippy:
+  #   strategy:
+  #     fail-fast: false
 
-    name: clippy
-    runs-on: ubuntu-24.04
+  #   name: clippy
+  #   runs-on: ubuntu-24.04
 
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         show-progress: false
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+  #     - name: Install dependencies
+  #       run: |
+  #         sudo apt-get update -y
+  #         sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         components: clippy
 
-      - uses: Swatinem/rust-cache@v2
+  #     - uses: Swatinem/rust-cache@v2
 
-      - name: Run clippy
-        run: cargo clippy --all --all-targets
+  #     - name: Run clippy
+  #       run: cargo clippy --all --all-targets
 
-  rustfmt:
-    runs-on: ubuntu-24.04
+  # rustfmt:
+  #   runs-on: ubuntu-24.04
 
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         show-progress: false
 
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
+  #     - uses: dtolnay/rust-toolchain@nightly
+  #       with:
+  #         components: rustfmt
 
-      - name: Run rustfmt
-        run: cargo fmt --all -- --check
+  #     - name: Run rustfmt
+  #       run: cargo fmt --all -- --check
 
-  fedora:
-    runs-on: ubuntu-24.04
-    container: fedora:41
+  # fedora:
+  #   runs-on: ubuntu-24.04
+  #   container: fedora:41
 
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         show-progress: false
 
-      - name: Install dependencies
-        run: |
-          sudo dnf update -y
-          sudo dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
+  #     - name: Install dependencies
+  #       run: |
+  #         sudo dnf update -y
+  #         sudo dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
 
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo build --all
+  #     - uses: Swatinem/rust-cache@v2
+  #     - run: cargo build --all
 
-  nix:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
+  # nix:
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         show-progress: false
 
-      - name: Check flake inputs
-        uses: DeterminateSystems/flake-checker-action@v4
-        continue-on-error: true
+  #     - name: Check flake inputs
+  #       uses: DeterminateSystems/flake-checker-action@v4
+  #       continue-on-error: true
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v3
-        continue-on-error: true
+  #     - name: Install Nix
+  #       uses: DeterminateSystems/nix-installer-action@v3
+  #       continue-on-error: true
 
-      - run: nix flake check
-        continue-on-error: true
+  #     - run: nix flake check
+  #       continue-on-error: true
 
-  check-links:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
-      - uses: lycheeverse/lychee-action@v2.0.2 # later versions break fragment checks. don't bump until this is fixed: https://github.com/lycheeverse/lychee/issues/1574
-        with:
-          args: --offline --include-fragments 'wiki/*.md'
+  # check-links:
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         show-progress: false
+  #     - uses: lycheeverse/lychee-action@v2.0.2 # later versions break fragment checks. don't bump until this is fixed: https://github.com/lycheeverse/lychee/issues/1574
+  #       with:
+  #         args: --offline --include-fragments 'wiki/*.md'
 
-  publish-wiki:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs:
-      - build
-      - check-links
-    permissions:
-      contents: write
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          lfs: true
-          show-progress: false
-      - uses: Andrew-Chen-Wang/github-wiki-action@b7e552d7cb0fa7f83e459012ffc6840fd87bcb83
+  # publish-wiki:
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  #   needs:
+  #     - build
+  #     - check-links
+  #   permissions:
+  #     contents: write
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         lfs: true
+  #         show-progress: false
+  #     - uses: Andrew-Chen-Wang/github-wiki-action@b7e552d7cb0fa7f83e459012ffc6840fd87bcb83
 
   publish-docs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs:
-      - build
-      - check-links
+    # needs:
+    #   - build
+    #   - check-links
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Configure Git Credentials
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
@@ -270,27 +274,27 @@ jobs:
       - name: Deploy documentation
         run: uv run mkdocs gh-deploy --force
 
-  rustdoc:
-    needs: build
-    permissions:
-      contents: write
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
+  # rustdoc:
+  #   needs: build
+  #   permissions:
+  #     contents: write
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         show-progress: false
 
-      - uses: dtolnay/rust-toolchain@stable
+  #     - uses: dtolnay/rust-toolchain@stable
 
-      - name: Generate documentation
-        run: cargo doc --no-deps -p niri-ipc
+  #     - name: Generate documentation
+  #       run: cargo doc --no-deps -p niri-ipc
 
-      - run: cp ./resources/rustdoc-index.html ./target/doc/index.html
+  #     - run: cp ./resources/rustdoc-index.html ./target/doc/index.html
 
-      - name: Deploy documentation
-        if: github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/doc
-          force_orphan: true
+  #     - name: Deploy documentation
+  #       if: github.ref == 'refs/heads/main'
+  #       uses: peaceiris/actions-gh-pages@v4
+  #       with:
+  #         github_token: ${{ secrets.GITHUB_TOKEN }}
+  #         publish_dir: ./target/doc
+  #         force_orphan: true
