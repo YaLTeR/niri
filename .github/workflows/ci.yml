@@ -75,7 +75,7 @@ jobs:
     strategy:
       fail-fast: false
 
-    name: test build musl
+    name: alpine
     runs-on: ubuntu-latest
     steps:
       - uses: jirutka/setup-alpine@v1
