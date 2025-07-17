@@ -225,7 +225,7 @@ jobs:
           apk add --no-cache ${{ env.DEPS_APK }} libadwaita-dev
 
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --all
+      - run: cargo build --no-default-features --features dbus,xdp-gnome-screencast
 
   nix:
     runs-on: ubuntu-24.04
