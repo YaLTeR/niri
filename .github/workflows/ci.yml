@@ -248,7 +248,7 @@ jobs:
           prepare: |
             pkg update -f
             pkg install -y \
-              curl rust clang llvm19 pkgconf pixman libudev-devd libdisplay-info seatd libinput libxkbcommon pipewire mesa-libs cairo devel/glib20 gettext-runtime harfbuzz pango
+              curl rust llvm pkgconf pixman libudev-devd libdisplay-info seatd libinput libxkbcommon pipewire mesa-libs cairo devel/glib20 gettext-runtime harfbuzz pango
           run: |
             curl -o patch-pipewire_init 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-pipewire_init?id=f3f7e555b06d9a87d63c047ce3e82e936a11f2fe'
             curl -o patch-drm 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-drm?id=f3f7e555b06d9a87d63c047ce3e82e936a11f2fe'
