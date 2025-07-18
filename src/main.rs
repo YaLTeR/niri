@@ -134,6 +134,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Needs to be done before starting Tracy, so that it applies to Tracy's threads.
+    niri::utils::signals::block_early().unwrap();
+
     // Avoid starting Tracy for the `niri msg` code path since starting/stopping Tracy is a bit
     // slow.
     tracy_client::Client::start();
