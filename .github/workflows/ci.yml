@@ -240,29 +240,23 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
-      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0  # v2.8.0
-
       - name: Build
         uses: vmactions/freebsd-vm@966989c456d41351f095a421f60e71342d3bce41  # v1.2.1
         with:
           sync: sshfs
-          release: "15.0"
           prepare: |
             pkg update -f
             pkg install -y ${{ env.DEPS_PKG }}
           run: |
             curl -o patch-pipewire_init 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-pipewire_init?id=f3f7e555b06d9a87d63c047ce3e82e936a11f2fe'
-            curl -o patch-drm 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-drm?id=f3f7e555b06d9a87d63c047ce3e82e936a11f2fe'
 
             cargo vendor ./vendor
 
             ( cd vendor; patch -p2 < ../patch-pipewire_init; )
-            ( cd vendor/drm; patch -p2 < ../../patch-drm; )
 
             cargo build \
               --offline \
               --config 'patch.crates-io.pipewire.path="vendor/pipewire"' \
-              --config 'patch.crates-io.drm.path="vendor/drm"' \
               --config 'source.crates-io.replace-with="vendored-sources"' --config 'source.vendored-sources.directory="vendor"' \
               --no-default-features --features dbus,xdp-gnome-screencast
 
