@@ -6,6 +6,7 @@ use std::ffi::OsStr;
 use std::ops::{Mul, MulAssign};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use bitflags::bitflags;
@@ -93,10 +94,10 @@ pub struct Input {
     pub trackpoint: Trackpoint,
     #[knuffel(child, default)]
     pub trackball: Trackball,
-    #[knuffel(child, default)]
-    pub tablet: Tablet,
-    #[knuffel(child, default)]
-    pub touch: Touch,
+    #[knuffel(children(name = "tablet"), default)]
+    pub tablets: Tablets,
+    #[knuffel(children(name = "touch"), default)]
+    pub touch_screens: TouchScreens,
     #[knuffel(child)]
     pub disable_power_key_handling: bool,
     #[knuffel(child)]
@@ -359,8 +360,13 @@ impl From<TapButtonMap> for input::TapButtonMap {
     }
 }
 
+#[derive(Debug, Default, PartialEq)]
+pub struct Tablets(pub Vec<Tablet>);
+
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Tablet {
+    #[knuffel(argument)]
+    pub name: Option<String>,
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child, unwrap(arguments))]
@@ -371,12 +377,65 @@ pub struct Tablet {
     pub left_handed: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+static DEFAULT_TABLET: LazyLock<Tablet> = LazyLock::new(Tablet::default);
+
+impl FromIterator<Tablet> for Tablets {
+    fn from_iter<T: IntoIterator<Item = Tablet>>(iter: T) -> Self {
+        Self(Vec::from_iter(
+            iter.into_iter().filter(|t| *t != *DEFAULT_TABLET),
+        ))
+    }
+}
+
+impl Tablets {
+    pub fn find<'a>(&'a self, name: &str) -> &'a Tablet {
+        self.0
+            .iter()
+            .find(|t| {
+                t.name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+            .or_else(|| self.0.iter().find(|t| t.name.is_none()))
+            .unwrap_or(&DEFAULT_TABLET)
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct TouchScreens(pub Vec<Touch>);
+
+#[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct Touch {
+    #[knuffel(argument)]
+    pub name: Option<String>,
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child, unwrap(argument))]
     pub map_to_output: Option<String>,
+}
+
+static DEFAULT_TOUCH: LazyLock<Touch> = LazyLock::new(Touch::default);
+
+impl FromIterator<Touch> for TouchScreens {
+    fn from_iter<T: IntoIterator<Item = Touch>>(iter: T) -> Self {
+        Self(Vec::from_iter(
+            iter.into_iter().filter(|t| *t != *DEFAULT_TOUCH),
+        ))
+    }
+}
+
+impl TouchScreens {
+    pub fn find<'a>(&'a self, name: &str) -> &'a Touch {
+        self.0
+            .iter()
+            .find(|t| {
+                t.name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+            })
+            .or_else(|| self.0.iter().find(|t| t.name.is_none()))
+            .unwrap_or(&DEFAULT_TOUCH)
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -4005,8 +4064,16 @@ mod tests {
                                        4.0 5.0 6.0
                 }
 
+                tablet "ELAN9009:00 04F3:2F2A Stylus" {
+                    map-to-output "DP-1"
+                }
+
                 touch {
                     map-to-output "eDP-1"
+                }
+
+                touch "ELAN9009:00 04F3:2F2A" {
+                    map-to-output "DP-1"
                 }
 
                 disable-power-key-handling
@@ -4320,29 +4387,59 @@ mod tests {
                     left_handed: true,
                     middle_emulation: true,
                 },
-                tablet: Tablet {
-                    off: false,
-                    calibration_matrix: Some(
-                        [
-                            1.0,
-                            2.0,
-                            3.0,
-                            4.0,
-                            5.0,
-                            6.0,
-                        ],
-                    ),
-                    map_to_output: Some(
-                        "eDP-1",
-                    ),
-                    left_handed: false,
-                },
-                touch: Touch {
-                    off: false,
-                    map_to_output: Some(
-                        "eDP-1",
-                    ),
-                },
+                tablets: Tablets(
+                    [
+                        Tablet {
+                            name: None,
+                            off: false,
+                            calibration_matrix: Some(
+                                [
+                                    1.0,
+                                    2.0,
+                                    3.0,
+                                    4.0,
+                                    5.0,
+                                    6.0,
+                                ],
+                            ),
+                            map_to_output: Some(
+                                "eDP-1",
+                            ),
+                            left_handed: false,
+                        },
+                        Tablet {
+                            name: Some(
+                                "ELAN9009:00 04F3:2F2A Stylus",
+                            ),
+                            off: false,
+                            calibration_matrix: None,
+                            map_to_output: Some(
+                                "DP-1",
+                            ),
+                            left_handed: false,
+                        },
+                    ],
+                ),
+                touch_screens: TouchScreens(
+                    [
+                        Touch {
+                            name: None,
+                            off: false,
+                            map_to_output: Some(
+                                "eDP-1",
+                            ),
+                        },
+                        Touch {
+                            name: Some(
+                                "ELAN9009:00 04F3:2F2A",
+                            ),
+                            off: false,
+                            map_to_output: Some(
+                                "DP-1",
+                            ),
+                        },
+                    ],
+                ),
                 disable_power_key_handling: true,
                 warp_mouse_to_focus: Some(
                     WarpMouseToFocus {
