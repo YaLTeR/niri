@@ -7,4 +7,8 @@ requires-python = ">=3.10"
 dependencies = [
     "markdown-callouts>=0.4.0",
     "mkdocs-material>=9.6.15",
+    "pygments",
 ]
+
+[tool.uv.sources]
+pygments = { git = "https://github.com/chinatsu/pygments" }
