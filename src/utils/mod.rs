@@ -399,6 +399,32 @@ pub fn center_preferring_top_left_in_area(
     area.loc + offset
 }
 
+pub fn right_align_preferring_top_left_in_area(
+    area: Rectangle<f64, Logical>,
+    size: Size<f64, Logical>,
+) -> Point<f64, Logical> {
+    let area_size = area.size.to_point();
+    let size = size.to_point();
+    let mut offset = area_size - size;
+    // For right alignment, we want maximum X offset but still keep Y centered
+    offset.x = f64::max(offset.x, 0.);
+    offset.y = f64::max(offset.y, 0.).downscale(2.);
+    area.loc + offset
+}
+
+pub fn left_align_preferring_top_left_in_area(
+    area: Rectangle<f64, Logical>,
+    size: Size<f64, Logical>,
+) -> Point<f64, Logical> {
+    let area_size = area.size.to_point();
+    let size = size.to_point();
+    let mut offset = Point::from((0., (area_size.y - size.y).downscale(2.)));
+    // For left alignment, X offset is 0 (left edge), Y is centered
+    offset.x = f64::max(offset.x, 0.);
+    offset.y = f64::max(offset.y, 0.);
+    area.loc + offset
+}
+
 pub fn baba_is_float_offset(now: Duration, view_height: f64) -> f64 {
     let now = now.as_secs_f64();
     let amplitude = view_height / 96.;
