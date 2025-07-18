@@ -81,6 +81,15 @@ binds {
 
 This is mostly useful for the scroll bindings.
 
+You can bind only `Mod` to an action, but it must be set to activate on release so it doesn't conflict with all other binds.
+Binds with `release=true` will run on release as long as no other binds activated between press and release.
+
+```kdl
+binds {
+    Mod release=true { toggle-overview; }
+}
+```
+
 ### Scroll Bindings
 
 You can bind mouse wheel scroll ticks using the following syntax.
