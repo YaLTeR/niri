@@ -34,6 +34,12 @@ pub fn listen(handle: &calloop::LoopHandle<crate::niri::State>) {
         .unwrap();
 }
 
+// We block the signals early, so that they apply to all threads.
+// They are then blocked *again* by the `Signals` source. That's fine.
+pub fn block_early() -> io::Result<()> {
+    set_sigmask(&preferred_sigset()?)
+}
+
 pub fn unblock_all() -> io::Result<()> {
     set_sigmask(&empty_sigset()?)
 }
@@ -42,6 +48,25 @@ pub fn empty_sigset() -> io::Result<libc::sigset_t> {
     let mut sigset = mem::MaybeUninit::uninit();
     if unsafe { libc::sigemptyset(sigset.as_mut_ptr()) } == 0 {
         Ok(unsafe { sigset.assume_init() })
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+pub fn preferred_sigset() -> io::Result<libc::sigset_t> {
+    let mut set = empty_sigset()?;
+    unsafe {
+        add_signal(&mut set, libc::SIGINT)?;
+        add_signal(&mut set, libc::SIGTERM)?;
+        add_signal(&mut set, libc::SIGHUP)?;
+    }
+    Ok(set)
+}
+
+// SAFETY: `signum` must be a valid signal number.
+unsafe fn add_signal(set: &mut libc::sigset_t, signum: libc::c_int) -> io::Result<()> {
+    if unsafe { libc::sigaddset(set, signum) } == 0 {
+        Ok(())
     } else {
         Err(io::Error::last_os_error())
     }
