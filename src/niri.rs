@@ -15,7 +15,7 @@ use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
-    WarpMouseToFocusMode, WorkspaceReference,
+    WarpMouseToFocusMode, WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -115,6 +115,8 @@ use crate::backend::tty::SurfaceDmabufFeedback;
 use crate::backend::{Backend, Headless, RenderResult, Tty, Winit};
 use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
+use crate::dbus::freedesktop_locale1::Locale1ToNiri;
+#[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
@@ -192,6 +194,9 @@ pub struct Niri {
     pub scheduler: Scheduler<()>,
     pub stop_signal: LoopSignal,
     pub display_handle: DisplayHandle,
+
+    /// Whether niri was run with `--session`
+    pub is_session_instance: bool,
 
     /// Name of the Wayland socket.
     ///
@@ -316,6 +321,9 @@ pub struct Niri {
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
     pub keyboard_shortcuts_inhibiting_surfaces: HashMap<WlSurface, KeyboardShortcutsInhibitor>,
 
+    /// Most recent XKB settings from org.freedesktop.locale1.
+    pub xkb_from_locale1: Option<Xkb>,
+
     pub cursor_manager: CursorManager,
     pub cursor_texture_cache: CursorTextureCache,
     pub cursor_shape_manager_state: CursorShapeManagerState,
@@ -359,6 +367,9 @@ pub struct Niri {
     pub mods_with_finger_scroll_binds: HashSet<Modifiers>,
 
     pub lock_state: LockState,
+
+    // State that we last sent to the logind LockedHint.
+    pub locked_hint: Option<bool>,
 
     pub screenshot_ui: ScreenshotUi,
     pub config_error_notification: ConfigErrorNotification,
@@ -629,6 +640,7 @@ impl State {
         display: Display<State>,
         headless: bool,
         create_wayland_socket: bool,
+        is_session_instance: bool,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let _span = tracy_client::span!("State::new");
 
@@ -657,6 +669,7 @@ impl State {
             display,
             &backend,
             create_wayland_socket,
+            is_session_instance,
         );
         backend.init(&mut niri);
 
@@ -689,6 +702,9 @@ impl State {
             let _span = tracy_client::span!("flush_clients");
             self.niri.display_handle.flush_clients().unwrap();
         }
+
+        #[cfg(feature = "dbus")]
+        self.niri.update_locked_hint();
 
         // Clear the time so it's fetched afresh next iteration.
         self.niri.clock.clear();
@@ -1479,6 +1495,12 @@ impl State {
             }
 
             if set_xkb_config {
+                // If xkb is unset in the niri config, use settings from locale1.
+                if xkb == Xkb::default() {
+                    trace!("using xkb from locale1");
+                    xkb = self.niri.xkb_from_locale1.clone().unwrap_or_default();
+                }
+
                 let keyboard = self.niri.seat.get_keyboard().unwrap();
                 if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
                     warn!("error updating xkb config: {err:?}");
@@ -2215,6 +2237,30 @@ impl State {
             warn!("error sending windows to introspect: {err:?}");
         }
     }
+
+    #[cfg(feature = "dbus")]
+    pub fn on_locale1_msg(&mut self, msg: Locale1ToNiri) {
+        let Locale1ToNiri::XkbChanged(xkb) = msg;
+
+        trace!("locale1 xkb settings changed: {xkb:?}");
+        let xkb = self.niri.xkb_from_locale1.insert(xkb);
+
+        {
+            let config = self.niri.config.borrow();
+            if config.input.keyboard.xkb != Xkb::default() {
+                trace!("ignoring locale1 xkb change because niri config has xkb settings");
+                return;
+            }
+        }
+
+        let xkb = xkb.clone();
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
+            warn!("error updating xkb config: {err:?}");
+        }
+
+        self.ipc_keyboard_layouts_changed();
+    }
 }
 
 impl Niri {
@@ -2225,6 +2271,7 @@ impl Niri {
         display: Display<State>,
         backend: &Backend,
         create_wayland_socket: bool,
+        is_session_instance: bool,
     ) -> Self {
         let _span = tracy_client::span!("Niri::new");
 
@@ -2495,6 +2542,7 @@ impl Niri {
             stop_signal,
             socket_name,
             display_handle,
+            is_session_instance,
             start_time: Instant::now(),
             is_at_startup: true,
             clock: animation_clock,
@@ -2570,6 +2618,7 @@ impl Niri {
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
+            xkb_from_locale1: None,
             cursor_manager,
             cursor_texture_cache: Default::default(),
             cursor_shape_manager_state,
@@ -2594,6 +2643,7 @@ impl Niri {
             mods_with_finger_scroll_binds,
 
             lock_state: LockState::Unlocked,
+            locked_hint: None,
 
             screenshot_ui,
             config_error_notification,
@@ -5741,6 +5791,85 @@ impl Niri {
         self.queue_redraw_all();
     }
 
+    #[cfg(feature = "dbus")]
+    fn update_locked_hint(&mut self) {
+        use std::sync::LazyLock;
+
+        if !self.is_session_instance {
+            return;
+        }
+
+        static XDG_SESSION_ID: LazyLock<Option<String>> = LazyLock::new(|| {
+            let id = std::env::var("XDG_SESSION_ID").ok();
+            if id.is_none() {
+                warn!(
+                    "env var 'XDG_SESSION_ID' is unset or invalid; logind LockedHint won't be set"
+                );
+            }
+            id
+        });
+
+        let Some(session_id) = &*XDG_SESSION_ID else {
+            return;
+        };
+
+        fn call(session_id: &str, locked: bool) -> anyhow::Result<()> {
+            let conn = zbus::blocking::Connection::system()
+                .context("error connecting to the system bus")?;
+
+            let message = conn
+                .call_method(
+                    Some("org.freedesktop.login1"),
+                    "/org/freedesktop/login1",
+                    Some("org.freedesktop.login1.Manager"),
+                    "GetSession",
+                    &(session_id),
+                )
+                .context("failed to call GetSession")?;
+
+            let message_body = message.body();
+            let session_path: zbus::zvariant::ObjectPath = message_body
+                .deserialize()
+                .context("failed to deserialize GetSession reply")?;
+
+            conn.call_method(
+                Some("org.freedesktop.login1"),
+                session_path,
+                Some("org.freedesktop.login1.Session"),
+                "SetLockedHint",
+                &(locked),
+            )
+            .context("failed to call SetLockedHint")?;
+
+            Ok(())
+        }
+
+        // Consider only the fully locked state here. When using the locked hint with sleep
+        // inhibitor tools, we want to allow sleep only after the screens are fully cleared with
+        // the lock screen, which corresponds to the Locked state.
+        let locked = matches!(self.lock_state, LockState::Locked(_));
+
+        if self.locked_hint.is_some_and(|h| h == locked) {
+            return;
+        }
+
+        self.locked_hint = Some(locked);
+
+        let res = thread::Builder::new()
+            .name("Logind LockedHint Updater".to_owned())
+            .spawn(move || {
+                let _span = tracy_client::span!("LockedHint");
+
+                if let Err(err) = call(session_id, locked) {
+                    warn!("failed to set logind LockedHint: {err:?}");
+                }
+            });
+
+        if let Err(err) = res {
+            warn!("error spawning a thread to set logind LockedHint: {err:?}");
+        }
+    }
+
     pub fn new_lock_surface(&mut self, surface: LockSurface, output: &Output) {
         let lock = match &self.lock_state {
             LockState::Unlocked => {
@@ -5769,18 +5898,16 @@ impl Niri {
     ///
     /// Make sure the pointer location and contents are up to date before calling this.
     pub fn maybe_activate_pointer_constraint(&self) {
-        let pointer = self.seat.get_pointer().unwrap();
-        let pointer_pos = pointer.current_location();
-
         let Some((surface, surface_loc)) = &self.pointer_contents.surface else {
             return;
         };
+
+        let pointer = self.seat.get_pointer().unwrap();
         if Some(surface) != pointer.current_focus().as_ref() {
             return;
         }
 
-        let pointer = &self.seat.get_pointer().unwrap();
-        with_pointer_constraint(surface, pointer, |constraint| {
+        with_pointer_constraint(surface, &pointer, |constraint| {
             let Some(constraint) = constraint else { return };
 
             if constraint.is_active() {
@@ -5789,6 +5916,7 @@ impl Niri {
 
             // Constraint does not apply if not within region.
             if let Some(region) = constraint.region() {
+                let pointer_pos = pointer.current_location();
                 let pos_within_surface = pointer_pos - *surface_loc;
                 if !region.contains(pos_within_surface.to_i32_round()) {
                     return;

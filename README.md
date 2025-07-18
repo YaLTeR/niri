@@ -79,6 +79,23 @@ I've seen someone use it fine on an Eee PC 900 from 2008, of all things.
     - Display scaling (integer or fractional) keeps X11 apps crisp, but you need the latest xwayland-satellite.
     For games, you can run them in [gamescope] at native resolution, even with display scaling.
 
+## Media
+
+[niri: Making a Wayland compositor in Rust](https://youtu.be/Kmz8ODolnDg?list=PLRdS-n5seLRqrmWDQY4KDqtRMfIwU0U3T)
+
+My talk from the 2024 Moscow RustCon about niri, and how I do randomized property testing and profiling, and measure input latency.
+The talk is in Russian, but I prepared full English subtitles that you can find in YouTube's subtitle language selector.
+
+[An interview with Ivan, the developer behind Niri](https://www.trommelspeicher.de/podcast/special_the_developer_behind_niri)
+
+A June 2025 interview by a German tech podcast Das Triumvirat (in English).
+We talk about niri development and history, and my experience building and maintaining niri.
+
+## Contributing
+
+If you'd like to help with niri, there are plenty of both coding- and non-coding-related ways to do so.
+See [CONTRIBUTING.md](https://github.com/YaLTeR/niri/blob/main/CONTRIBUTING.md) for an overview.
+
 ## Inspiration
 
 Niri is heavily inspired by [PaperWM] which implements scrollable tiling on top of GNOME Shell.
@@ -95,18 +112,6 @@ Here are some other projects which implement a similar workflow:
 - [scroll](https://github.com/dawsers/scroll) and [papersway]: scrollable tiling on top of sway/i3.
 - [hyprscrolling] and [hyprslidr]: scrollable tiling on top of Hyprland.
 - [PaperWM.spoon]: scrollable tiling on top of macOS.
-
-## Media
-
-[niri: Making a Wayland compositor in Rust](https://youtu.be/Kmz8ODolnDg?list=PLRdS-n5seLRqrmWDQY4KDqtRMfIwU0U3T)
-
-My talk from the 2024 Moscow RustCon about niri, and how I do randomized property testing and profiling, and measure input latency.
-The talk is in Russian, but I prepared full English subtitles that you can find in YouTube's subtitle language selector.
-
-[An interview with Ivan, the developer behind Niri](https://www.trommelspeicher.de/podcast/special_the_developer_behind_niri)
-
-A June 2025 interview by a German tech podcast Das Triumvirat (in English).
-We talk about niri development and history, and my experience building and maintaining niri.
 
 ## Contact
 

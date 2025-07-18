@@ -494,6 +494,7 @@ dependencies = [
  "async-task",
  "bitflags 2.9.1",
  "futures-io",
+ "nix 0.29.0",
  "polling",
  "rustix 0.38.44",
  "slab",
@@ -641,6 +642,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a5abde44486daf70c5be8b8f8f1b66c49f86236edf6fa2abadb4d961c4c6229a"
 dependencies = [
  "clap",
+]
+
+[[package]]
+name = "clap_complete_nushell"
+version = "4.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a0c951694691e65bf9d421d597d68416c22de9632e884c28412cb8cd8b73dce"
+dependencies = [
+ "clap",
+ "clap_complete",
 ]
 
 [[package]]
@@ -2267,6 +2278,7 @@ dependencies = [
  "calloop-wayland-source 0.4.0",
  "clap",
  "clap_complete",
+ "clap_complete_nushell",
  "directories",
  "drm-ffi",
  "fastrand",
