@@ -370,6 +370,13 @@ impl State {
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
 
+                #[cfg(feature = "dbus")]
+                if let Some(monitor) = &this.niri.a11y_keyboard_monitor {
+                    if monitor.process_key(pressed, &keysym) {
+                        return FilterResult::Intercept(None);
+                    }
+                }
+
                 if let Some(dialog) = &this.niri.exit_confirm_dialog {
                     if dialog.is_open() && pressed && raw == Some(Keysym::Return) {
                         info!("quitting after confirming exit dialog");
