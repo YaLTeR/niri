@@ -2174,18 +2174,24 @@ impl<W: LayoutElement> Layout<W> {
         workspace.focus_window_up_or_bottom();
     }
 
-    pub fn move_to_workspace_up(&mut self) {
+    pub fn move_to_workspace_up(
+    	&mut self,
+    	activate: ActivateWindow,
+	) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_to_workspace_up();
+        monitor.move_to_workspace_up(activate);
     }
 
-    pub fn move_to_workspace_down(&mut self) {
+    pub fn move_to_workspace_down(
+    	&mut self,
+		activate: ActivateWindow,
+	) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_to_workspace_down();
+        monitor.move_to_workspace_down(activate);
     }
 
     pub fn move_to_workspace(
