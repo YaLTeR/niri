@@ -100,7 +100,6 @@ use smithay::wayland::shell::wlr_layer::{self, Layer, WlrLayerShellState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
-#[cfg(test)]
 use smithay::wayland::single_pixel_buffer::SinglePixelBufferState;
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::TabletManagerState;
@@ -298,13 +297,6 @@ pub struct Niri {
     pub activation_state: XdgActivationState,
     pub mutter_x11_interop_state: MutterX11InteropManagerState,
 
-    // This will not work as is outside of tests, so it is gated with #[cfg(test)] for now. In
-    // particular, shaders will need to learn about the single pixel buffer. Also, it must be
-    // verified that a black single-pixel-buffer background lets the foreground surface to be
-    // unredirected.
-    //
-    // https://github.com/YaLTeR/niri/issues/619
-    #[cfg(test)]
     pub single_pixel_buffer_state: SinglePixelBufferState,
 
     pub seat: Seat<State>,
@@ -2406,7 +2398,6 @@ impl Niri {
         let mutter_x11_interop_state =
             MutterX11InteropManagerState::new::<State, _>(&display_handle, move |_| true);
 
-        #[cfg(test)]
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
 
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
@@ -2608,7 +2599,6 @@ impl Niri {
             gamma_control_manager_state,
             activation_state,
             mutter_x11_interop_state,
-            #[cfg(test)]
             single_pixel_buffer_state,
 
             seat,
