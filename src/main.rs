@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, mem};
 
-use calloop::signals::{Signal, Signals};
 use calloop::EventLoop;
 use clap::{CommandFactory, Parser};
 use clap_complete::Shell;
@@ -135,6 +134,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Needs to be done before starting Tracy, so that it applies to Tracy's threads.
+    niri::utils::signals::block_early().unwrap();
+
     // Avoid starting Tracy for the `niri msg` code path since starting/stopping Tracy is a bit
     // slow.
     tracy_client::Client::start();
@@ -197,16 +199,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut event_loop = EventLoop::<State>::try_new().unwrap();
 
     // Handle Ctrl+C and other signals.
-    event_loop
-        .handle()
-        .insert_source(
-            Signals::new(&[Signal::SIGINT, Signal::SIGTERM, Signal::SIGHUP]).unwrap(),
-            |event, _, state| {
-                info!("quitting due to receiving signal {:?}", event.signal());
-                state.niri.stop_signal.stop();
-            },
-        )
-        .unwrap();
+    niri::utils::signals::listen(&event_loop.handle());
 
     // Create the compositor.
     let display = Display::new().unwrap();
