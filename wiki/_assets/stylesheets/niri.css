@@ -1,0 +1,5 @@
+.badge {
+    font-size: 0.85em;
+    box-shadow: 0 0 0 1px inset var(--md-accent-fg-color--transparent);
+    padding: 0.2rem 0.3rem;
+}

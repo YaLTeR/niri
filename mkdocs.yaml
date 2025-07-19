@@ -26,6 +26,10 @@ markdown_extensions:
   - attr_list
 plugins:
   - search
+hooks:
+  - docs/hooks/shortcodes.py
+extra_css:
+  - _assets/stylesheets/niri.css
 not_in_nav: |
   _Sidebar.md
   Configuration:-Overview.md
