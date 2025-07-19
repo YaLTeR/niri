@@ -28,6 +28,7 @@ plugins:
   - search
 hooks:
   - docs/hooks/shortcodes.py
+  - docs/hooks/remove-must-fail.py
 extra_css:
   - _assets/stylesheets/niri.css
 not_in_nav: |

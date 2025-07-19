@@ -25,15 +25,7 @@ from re import Match
 def on_page_markdown(
     markdown: str, *, page, config, files
 ):
-    def replace(match: Match):
-        args = match.groups()[0]
-        return _badge_for_version(args)
-
     return re.sub(
-        r"<sup>Since: (.*?)</sup>",
-        replace, markdown, flags = re.I | re.M
+        r",must-fail",
+        '', markdown, flags = re.I | re.M
     )
-
-def _badge_for_version(version: str):
-    path = f"https://github.com/YaLTeR/niri/releases/tag/v{version}"
-    return f"<span class=\"badge\">[Since {version}]({path})</span>"

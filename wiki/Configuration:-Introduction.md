@@ -93,7 +93,7 @@ input {
 }
 ```
 
-```kdl
+```kdl,must-fail
 // This is NOT valid: input section appears twice.
 input {
     keyboard {
