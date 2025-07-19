@@ -3600,6 +3600,7 @@ fn arbitrary_center_focused_column() -> impl Strategy<Value = CenterFocusedColum
         Just(CenterFocusedColumn::Never),
         Just(CenterFocusedColumn::OnOverflow),
         Just(CenterFocusedColumn::Always),
+	Just(CenterFocusedColumn::Enclosed),
     ]
 }
 
