@@ -81,15 +81,19 @@ I've seen someone use it fine on an Eee PC 900 from 2008, of all things.
 
 ## Media
 
-[niri: Making a Wayland compositor in Rust](https://youtu.be/Kmz8ODolnDg?list=PLRdS-n5seLRqrmWDQY4KDqtRMfIwU0U3T)
+[niri: Making a Wayland compositor in Rust](https://youtu.be/Kmz8ODolnDg?list=PLRdS-n5seLRqrmWDQY4KDqtRMfIwU0U3T) · *December 2024*
 
 My talk from the 2024 Moscow RustCon about niri, and how I do randomized property testing and profiling, and measure input latency.
 The talk is in Russian, but I prepared full English subtitles that you can find in YouTube's subtitle language selector.
 
-[An interview with Ivan, the developer behind Niri](https://www.trommelspeicher.de/podcast/special_the_developer_behind_niri)
+[An interview with Ivan, the developer behind Niri](https://www.trommelspeicher.de/podcast/special_the_developer_behind_niri) · *June 2025*
 
-A June 2025 interview by a German tech podcast Das Triumvirat (in English).
+An interview by a German tech podcast Das Triumvirat (in English).
 We talk about niri development and history, and my experience building and maintaining niri.
+
+[A tour of the niri scrolling-tiling Wayland compositor](https://lwn.net/Articles/1025866/) · *July 2025*
+
+An LWN article with a nice overview and introduction to niri.
 
 ## Contributing
 
