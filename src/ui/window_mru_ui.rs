@@ -1214,7 +1214,7 @@ impl ClosingThumbnail {
 /// Key bindings available when the MRU UI is open.
 /// Because the UI is closed when the Alt key is released, all bindings
 /// have the ALT modifier.
-pub const MRU_UI_BINDINGS: &[Bind] = &[
+pub static MRU_UI_BINDINGS: &[Bind] = &[
     // Escape just closes the MRU UI
     Bind {
         key: Key {
