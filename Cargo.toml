@@ -20,7 +20,7 @@ bitflags = "2.9.1"
 clap = { version = "4.5.41", features = ["derive"] }
 insta = "1.43.1"
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.140"
+serde_json = "1.0.141"
 tracing = { version = "0.1.41", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracy-client = { version = "0.18.2", default-features = false }
@@ -53,7 +53,7 @@ keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 anyhow.workspace = true
 arrayvec = "0.7.6"
 async-channel = "2.5.0"
-async-io = { version = "2.4.1", optional = true }
+async-io = { version = "2.5.0", optional = true }
 atomic = "0.6.1"
 bitflags.workspace = true
 bytemuck = { version = "1.23.1", features = ["derive"] }
@@ -75,8 +75,8 @@ log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_de
 niri-config = { version = "25.5.1", path = "niri-config" }
 niri-ipc = { version = "25.5.1", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.0.0"
-pango = { version = "0.20.12", features = ["v1_44"] }
-pangocairo = "0.20.10"
+pango = { version = "0.21.0", features = ["v1_44"] }
+pangocairo = "0.21.0"
 pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", optional = true, features = ["v0_3_33"] }
 png = "0.17.16"
 portable-atomic = { version = "1.11.1", default-features = false, features = ["float"] }
@@ -92,7 +92,7 @@ url = { version = "2.5.4", optional = true }
 wayland-backend = "0.3.10"
 wayland-scanner = "0.31.6"
 xcursor = "0.3.10"
-zbus = { version = "5.8.0", optional = true }
+zbus = { version = "5.9.0", optional = true }
 
 [dependencies.smithay]
 workspace = true
