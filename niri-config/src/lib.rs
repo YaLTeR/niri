@@ -229,6 +229,10 @@ pub struct Touchpad {
     pub middle_emulation: bool,
     #[knuffel(child, unwrap(argument))]
     pub scroll_factor: Option<FloatOrInt<0, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor_horizontal: Option<FloatOrInt<-100, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor_vertical: Option<FloatOrInt<-100, 100>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -253,6 +257,10 @@ pub struct Mouse {
     pub middle_emulation: bool,
     #[knuffel(child, unwrap(argument))]
     pub scroll_factor: Option<FloatOrInt<0, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor_horizontal: Option<FloatOrInt<-100, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor_vertical: Option<FloatOrInt<-100, 100>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -275,6 +283,12 @@ pub struct Trackpoint {
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor: Option<FloatOrInt<0, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor_horizontal: Option<FloatOrInt<-100, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor_vertical: Option<FloatOrInt<-100, 100>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -297,6 +311,12 @@ pub struct Trackball {
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor: Option<FloatOrInt<0, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor_horizontal: Option<FloatOrInt<-100, 100>>,
+    #[knuffel(child, unwrap(argument))]
+    pub scroll_factor_vertical: Option<FloatOrInt<-100, 100>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4055,6 +4075,139 @@ mod tests {
     }
 
     #[test]
+    fn parse_per_axis_scroll_touchpad() {
+        let parsed = do_parse(
+            r#"
+            input {
+                touchpad {
+                    natural-scroll
+                    scroll-factor 1.5
+                    scroll-factor-horizontal 2.0
+                    scroll-factor-vertical -1.5
+                }
+            }
+            "#,
+        );
+
+        let touchpad = &parsed.input.touchpad;
+        assert_eq!(touchpad.natural_scroll, true);
+        assert_eq!(touchpad.scroll_factor, Some(FloatOrInt(1.5)));
+        assert_eq!(touchpad.scroll_factor_horizontal, Some(FloatOrInt(2.0)));
+        assert_eq!(touchpad.scroll_factor_vertical, Some(FloatOrInt(-1.5)));
+    }
+
+    #[test]
+    fn parse_per_axis_scroll_mouse() {
+        let parsed = do_parse(
+            r#"
+            input {
+                mouse {
+                    scroll-factor-horizontal -2.5
+                    scroll-factor-vertical 0.5
+                }
+            }
+            "#,
+        );
+
+        let mouse = &parsed.input.mouse;
+        assert_eq!(mouse.natural_scroll, false); // Default
+        assert_eq!(mouse.scroll_factor, None);
+        assert_eq!(mouse.scroll_factor_horizontal, Some(FloatOrInt(-2.5))); // Negative for direction + sensitivity
+        assert_eq!(mouse.scroll_factor_vertical, Some(FloatOrInt(0.5)));
+    }
+
+    #[test]
+    fn parse_per_axis_scroll_trackpoint() {
+        let parsed = do_parse(
+            r#"
+            input {
+                trackpoint {
+                    scroll-factor 2.0
+                    scroll-factor-horizontal -1.0
+                }
+            }
+            "#,
+        );
+
+        let trackpoint = &parsed.input.trackpoint;
+        assert_eq!(trackpoint.natural_scroll, false); // Default
+        assert_eq!(trackpoint.scroll_factor, Some(FloatOrInt(2.0)));
+        assert_eq!(trackpoint.scroll_factor_horizontal, Some(FloatOrInt(-1.0))); // Negative for direction + sensitivity
+        assert_eq!(trackpoint.scroll_factor_vertical, None); // Should fallback to scroll_factor
+                                                             // (2.0)
+    }
+
+    #[test]
+    fn parse_per_axis_scroll_trackball() {
+        let parsed = do_parse(
+            r#"
+            input {
+                trackball {
+                    natural-scroll
+                    scroll-factor-horizontal 100.0
+                    scroll-factor-vertical -100.0
+                }
+            }
+            "#,
+        );
+
+        let trackball = &parsed.input.trackball;
+        assert_eq!(trackball.natural_scroll, true);
+        assert_eq!(trackball.scroll_factor, None);
+        assert_eq!(trackball.scroll_factor_horizontal, Some(FloatOrInt(100.0)));
+        assert_eq!(trackball.scroll_factor_vertical, Some(FloatOrInt(-100.0))); // Negative for
+                                                                                // direction +
+                                                                                // sensitivity
+    }
+
+    #[test]
+    fn parse_per_axis_scroll_edge_cases() {
+        let parsed = do_parse(
+            r#"
+            input {
+                mouse {
+                    scroll-factor-horizontal 0.0
+                    scroll-factor-vertical -0.0
+                }
+                touchpad {
+                    scroll-factor-horizontal -100.0
+                    scroll-factor-vertical 100.0
+                }
+            }
+            "#,
+        );
+
+        let mouse = &parsed.input.mouse;
+        assert_eq!(mouse.scroll_factor_horizontal, Some(FloatOrInt(0.0)));
+        assert_eq!(mouse.scroll_factor_vertical, Some(FloatOrInt(-0.0)));
+
+        let touchpad = &parsed.input.touchpad;
+        assert_eq!(touchpad.scroll_factor_horizontal, Some(FloatOrInt(-100.0)));
+        assert_eq!(touchpad.scroll_factor_vertical, Some(FloatOrInt(100.0)));
+    }
+
+    #[test]
+    fn parse_legacy_compatibility() {
+        // Test that old configs still work
+        let parsed = do_parse(
+            r#"
+            input {
+                touchpad {
+                    natural-scroll
+                    scroll-factor 1.5
+                }
+            }
+            "#,
+        );
+
+        let touchpad = &parsed.input.touchpad;
+        assert_eq!(touchpad.natural_scroll, true);
+        assert_eq!(touchpad.scroll_factor, Some(FloatOrInt(1.5)));
+        assert_eq!(touchpad.scroll_factor_horizontal, None); // Falls back to scroll_factor
+        assert_eq!(touchpad.scroll_factor_vertical, None); // Falls back to scroll_factor
+    }
+
+    #[test]
     fn parse() {
         let parsed = do_parse(
             r##"
@@ -4374,6 +4527,8 @@ mod tests {
                             0.9,
                         ),
                     ),
+                    scroll_factor_horizontal: None,
+                    scroll_factor_vertical: None,
                 },
                 mouse: Mouse {
                     off: false,
@@ -4398,6 +4553,8 @@ mod tests {
                             0.2,
                         ),
                     ),
+                    scroll_factor_horizontal: None,
+                    scroll_factor_vertical: None,
                 },
                 trackpoint: Trackpoint {
                     off: true,
@@ -4417,6 +4574,9 @@ mod tests {
                     scroll_button_lock: false,
                     left_handed: false,
                     middle_emulation: false,
+                    scroll_factor: None,
+                    scroll_factor_horizontal: None,
+                    scroll_factor_vertical: None,
                 },
                 trackball: Trackball {
                     off: true,
@@ -4436,6 +4596,9 @@ mod tests {
                     scroll_button_lock: true,
                     left_handed: true,
                     middle_emulation: true,
+                    scroll_factor: None,
+                    scroll_factor_horizontal: None,
+                    scroll_factor_vertical: None,
                 },
                 tablet: Tablet {
                     off: false,

@@ -37,6 +37,8 @@ input {
         // accel-speed 0.2
         // accel-profile "flat"
         // scroll-factor 1.0
+        // scroll-factor-horizontal 1.0
+        // scroll-factor-vertical 1.0
         // scroll-method "two-finger"
         // scroll-button 273
         // scroll-button-lock
@@ -53,6 +55,8 @@ input {
         // accel-speed 0.2
         // accel-profile "flat"
         // scroll-factor 1.0
+        // scroll-factor-horizontal 1.0
+        // scroll-factor-vertical 1.0
         // scroll-method "no-scroll"
         // scroll-button 273
         // scroll-button-lock
@@ -65,6 +69,9 @@ input {
         // natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // scroll-factor 1.0
+        // scroll-factor-horizontal 1.0
+        // scroll-factor-vertical 1.0
         // scroll-method "on-button-down"
         // scroll-button 273
         // scroll-button-lock
@@ -77,6 +84,9 @@ input {
         // natural-scroll
         // accel-speed 0.2
         // accel-profile "flat"
+        // scroll-factor 1.0
+        // scroll-factor-horizontal 1.0
+        // scroll-factor-vertical 1.0
         // scroll-method "on-button-down"
         // scroll-button 273
         // scroll-button-lock
@@ -248,9 +258,13 @@ Settings specific to `touchpad`s:
 - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
 - `disabled-on-external-mouse`: do not send events while external pointer device is plugged in.
 
-Settings specific to `touchpad` and `mouse`:
+Settings specific to `touchpad`, `mouse`, `trackpoint`, and `trackball`:
 
 - `scroll-factor`: <sup>Since: 0.1.10</sup> scales the scrolling speed by this value.
+- `scroll-factor-horizontal`: <sup>Since: next release</sup> scales the horizontal scrolling speed by this value. If not set, falls back to `scroll-factor`. Negative values invert the scrolling direction.
+- `scroll-factor-vertical`: <sup>Since: next release</sup> scales the vertical scrolling speed by this value. If not set, falls back to `scroll-factor`. Negative values invert the scrolling direction.
+
+**Note**: While `trackpoint` and `trackball` devices have their own scroll factor config fields, scroll events from these devices currently fall back to default values (1.0) at runtime due to how libinput reports their axis sources. Trackpoints use [button scrolling](https://wayland.freedesktop.org/libinput/doc/latest/trackpoints.html#button-scrolling-on-trackpoints) by default, which generates different axis source events than mouse wheels or touchpad finger scrolling.
 
 Settings specific to `tablet`s:
 
