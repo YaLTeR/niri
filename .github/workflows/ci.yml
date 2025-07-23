@@ -269,6 +269,9 @@ jobs:
     needs:
       - build
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: docs/
     steps:
       - uses: actions/checkout@v4
         with:
@@ -277,8 +280,6 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-      - name: Enter docs directory
-        run: cd docs
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
