@@ -27,10 +27,21 @@ markdown_extensions:
 plugins:
   - search
 hooks:
-  - docs/hooks/shortcodes.py
-  - docs/hooks/remove-must-fail.py
+  - hooks/shortcodes.py
+  - hooks/remove-must-fail.py
 extra_css:
   - _assets/stylesheets/niri.css
+strict: true
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: relative_to_docs
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: relative_to_docs
+    unrecognized_links: warn
 not_in_nav: |
   _Sidebar.md
   Configuration:-Overview.md
