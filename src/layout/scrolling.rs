@@ -3,7 +3,7 @@ use std::iter::{self, zip};
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CenterFocusedColumn, PresetSize, Struts};
+use niri_config::{CenterFocusedColumn, NewColumnLocation, PresetSize, Struts};
 use niri_ipc::{ColumnDisplay, SizeChange};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -944,7 +944,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             if was_empty {
                 0
             } else {
-                self.active_column_idx + 1
+                match self.options.new_column_location {
+                    NewColumnLocation::RightOfActive => self.active_column_idx + 1,
+                    NewColumnLocation::LeftOfActive => self.active_column_idx,
+                    NewColumnLocation::FirstOfWorkspace => 0,
+                    NewColumnLocation::LastOfWorkspace => self.columns.len(),
+                }
             }
         });
 
