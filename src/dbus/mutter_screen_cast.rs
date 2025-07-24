@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -36,6 +35,13 @@ pub enum CursorMode {
     Hidden = 0,
     Embedded = 1,
     Metadata = 2,
+}
+
+#[derive(Debug, DeserializeDict, Type)]
+#[zvariant(signature = "dict")]
+struct CreateSessionProperties {
+    #[zvariant(rename = "remote-desktop-session-id")]
+    remote_desktop_session_id: Option<String>,
 }
 
 #[derive(Debug, DeserializeDict, Type)]
@@ -90,6 +96,12 @@ struct StreamParameters {
     position: (i32, i32),
     /// Size of the stream in logical coordinates.
     size: (i32, i32),
+    /// Unique identifier used to map the stream to a corresponding region on an EI
+    /// absolute device (remote desktop).
+    ///
+    /// Currently output names (like eDP-1) are used.
+    #[zvariant(rename = "mapping-id")]
+    mapping_id: Option<String>,
 }
 
 pub enum ScreenCastToNiri {
@@ -110,9 +122,16 @@ impl ScreenCast {
     async fn create_session(
         &self,
         #[zbus(object_server)] server: &ObjectServer,
-        properties: HashMap<&str, Value<'_>>,
+        properties: CreateSessionProperties,
     ) -> fdo::Result<OwnedObjectPath> {
-        if properties.contains_key("remote-desktop-session-id") {
+        if properties.remote_desktop_session_id.is_some() {
+            // TODO: integrate with RemoteDesktop API
+
+            // object_server().interface::<_, mutter_remote_desktop::Session>().get() ???
+
+            // easiest would to be use the channel to Niri, but we need to check that
+            // there is no associated screen cast session already
+
             return Err(fdo::Error::Failed(
                 "there are no remote desktop sessions".to_owned(),
             ));
@@ -294,6 +313,8 @@ impl Stream {
                 StreamParameters {
                     position: (logical.x, logical.y),
                     size: (logical.width as i32, logical.height as i32),
+                    mapping_id: Some(output.name.clone()), /* TODO: only when stream/session is
+                                                            * started via remote desktop */
                 }
             }
             StreamTarget::Window { .. } => {
@@ -301,6 +322,8 @@ impl Stream {
                 StreamParameters {
                     position: (0, 0),
                     size: (1, 1),
+                    mapping_id: None, /* TODO: can you remotedesktop to
+                                       * a specific window??? */
                 }
             }
         }
