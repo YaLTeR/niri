@@ -77,7 +77,7 @@ niri-ipc = { version = "25.5.1", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.0.0"
 pango = { version = "0.20.12", features = ["v1_44"] }
 pangocairo = "0.20.10"
-pipewire = { git = "https://gitlab.freedesktop.org/abmantis/pipewire-rs.git", branch= "buffer_meta_data", optional = true, features = ["v0_3_33"] }
+pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", optional = true, features = ["v0_3_33"] }
 png = "0.17.16"
 portable-atomic = { version = "1.11.1", default-features = false, features = ["float"] }
 profiling = "1.0.17"
