@@ -5,6 +5,7 @@ use std::iter::zip;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use std::ptr::NonNull;
 use std::rc::Rc;
+use std::sync::OnceLock;
 use std::time::Duration;
 use std::{mem, slice};
 
@@ -101,6 +102,7 @@ const CURSOR_BPP: u32 = 4;
 const CURSOR_WIDTH: u32 = 24;
 const CURSOR_HEIGHT: u32 = 24;
 const MAX_CURSOR_BITMAP_SIZE: usize = (CURSOR_WIDTH * CURSOR_HEIGHT * CURSOR_BPP) as usize;
+static CURSOR_BITMAP: OnceLock<[u8; MAX_CURSOR_BITMAP_SIZE]> = OnceLock::new();
 
 pub struct PipeWire {
     _context: Context,
@@ -955,27 +957,37 @@ impl Cast {
         None
     }
 
-    fn draw_cursor_bitmap(bitmap: &mut [u32]) {
-        let size = std::cmp::min(CURSOR_WIDTH, CURSOR_HEIGHT);
-        let radius = (size / 2) as i32;
-        let radius_sq = radius * radius;
-        let border = radius_sq / 3;
+    fn draw_cursor_bitmap(buffer: &mut [u8]) {
+        let bitmap = CURSOR_BITMAP.get_or_init(|| {
+            let mut bitmap = [0u8; MAX_CURSOR_BITMAP_SIZE];
+            let size = std::cmp::min(CURSOR_WIDTH, CURSOR_HEIGHT);
+            let radius = (size / 2) as i32;
+            let radius_sq = radius * radius;
+            let border = radius_sq / 3;
 
-        for x in 0..CURSOR_WIDTH {
-            let dx = x as i32 - radius;
-            for y in 0..CURSOR_HEIGHT {
-                let dy = y as i32 - radius;
-                let dist = dx * dx + dy * dy;
-                let index = (x + y * CURSOR_WIDTH) as usize;
-                if dist < (radius_sq - border) {
-                    bitmap[index] = 0xAAFFFFFF;
-                } else if dist <= radius_sq {
-                    bitmap[index] = 0xAA000000;
-                } else {
-                    bitmap[index] = 0x00000000;
+            for x in 0..CURSOR_HEIGHT {
+                let dx = x as i32 - radius;
+                let dx_sq = dx * dx;
+                for y in 0..CURSOR_WIDTH {
+                    let dy = y as i32 - radius;
+                    let dist = dx_sq + dy * dy;
+                    let index = ((x * CURSOR_WIDTH + y) * CURSOR_BPP) as usize;
+                    if dist < (radius_sq - border) {
+                        bitmap[index] = 0xFF;
+                        bitmap[index + 1] = 0xFF;
+                        bitmap[index + 2] = 0xFF;
+                        bitmap[index + 3] = 0xAA;
+                    } else if dist <= radius_sq {
+                        bitmap[index] = 0x00;
+                        bitmap[index + 1] = 0x00;
+                        bitmap[index + 2] = 0x00;
+                        bitmap[index + 3] = 0xAA;
+                    }
                 }
             }
-        }
+            bitmap
+        });
+        buffer.copy_from_slice(bitmap);
     }
 
     fn add_cursor_metadata(spa_buffer: *mut spa_buffer, pointer_location: &Point<f64, Logical>) {
@@ -995,10 +1007,10 @@ impl Cast {
         trace!("writing cursor metadata");
         let cursor_meta: &mut spa_meta_cursor = unsafe { &mut *cursor_meta_ptr };
         cursor_meta.id = 1;
-        cursor_meta.position.x = (pointer_location.x - (CURSOR_WIDTH as f64 / 2.0)).round() as i32;
-        cursor_meta.position.y = (pointer_location.y - (CURSOR_HEIGHT as f64 / 2.0)).round() as i32;
-        cursor_meta.hotspot.x = 0;
-        cursor_meta.hotspot.y = 0;
+        cursor_meta.position.x = pointer_location.x.round() as i32;
+        cursor_meta.position.y = pointer_location.y.round() as i32;
+        cursor_meta.hotspot.x = (CURSOR_WIDTH / 2) as i32;
+        cursor_meta.hotspot.y = (CURSOR_HEIGHT / 2) as i32;
 
         // TODO: Can the bitmap be initialized previously in start_cast?
         // Alternativelly, initialize on first pass. For this, bitmap_offset must be 0 on
@@ -1018,12 +1030,8 @@ impl Cast {
             bitmap_meta.stride = (bitmap_meta.size.width * CURSOR_BPP) as _;
 
             bitmap_meta.offset = mem::size_of::<spa_meta_bitmap>() as _;
-            let bitmap_data = unsafe {
-                bitmap_meta_ptr
-                    .cast::<u8>()
-                    .offset(bitmap_meta.offset as _)
-                    .cast::<u32>()
-            };
+            let bitmap_data =
+                unsafe { bitmap_meta_ptr.cast::<u8>().offset(bitmap_meta.offset as _) };
 
             let bitmap_slice =
                 unsafe { slice::from_raw_parts_mut(bitmap_data, MAX_CURSOR_BITMAP_SIZE as usize) };
