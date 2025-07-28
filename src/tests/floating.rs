@@ -4,6 +4,7 @@ use niri_config::Config;
 use niri_ipc::SizeChange;
 use smithay::utils::Point;
 use wayland_client::protocol::wl_surface::WlSurface;
+use crate::layout::ActivateWindow;
 
 use super::*;
 
@@ -349,7 +350,7 @@ fn moving_across_workspaces_doesnt_cancel_resize() {
 
     // Move to a different workspace before the window has a chance to respond. This will remove it
     // from one floating layout and add into a different one, potentially causing a size request.
-    f.niri().layout.move_to_workspace_down();
+    f.niri().layout.move_to_workspace_down(ActivateWindow::No);
     // Drop the Activated state to force a configure.
     f.niri_focus_output(2);
     f.double_roundtrip(id);
@@ -369,7 +370,7 @@ fn moving_across_workspaces_doesnt_cancel_resize() {
     // Focus, adding Activated, and move to workspace down, causing removing and adding to a
     // floating layout.
     f.niri_focus_output(1);
-    f.niri().layout.move_to_workspace_down();
+    f.niri().layout.move_to_workspace_down(ActivateWindow::No);
     f.double_roundtrip(id);
 
     // This should request the current size (300 × 300) since the window responded to the change.
