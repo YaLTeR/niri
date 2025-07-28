@@ -1,6 +1,8 @@
 site_name: niri
 docs_dir: wiki
 site_url: https://chinatsu.github.io/niri/
+repo_url: https://github.com/chinatsu/niri # https://github.com/YaLTeR/niri
+edit_uri: edit/main/docs/wiki/
 use_directory_urls: false
 theme:
   name: material
@@ -8,6 +10,7 @@ theme:
     - navigation.instant
     - search.suggest
     - content.code.copy
+    - content.action.edit
   palette:
     scheme: slate
     primary: black
