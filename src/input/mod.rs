@@ -47,7 +47,7 @@ use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _, Options};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
-use crate::ui::window_mru_ui::{WindowMru, MRU_UI_BINDINGS};
+use crate::ui::window_mru_ui::{ThumbnailSelectionAnimation, WindowMru, MRU_UI_BINDINGS};
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
@@ -2146,14 +2146,45 @@ impl State {
             }
             Action::MruClose => {
                 if self.niri.window_mru_ui.is_open() {
-                    if let Some(id) = self.niri.window_mru_ui.current_window_id() {
+                    if let Some(thumb) = self.niri.window_mru_ui.select_thumbnail() {
+                        let id = thumb.id;
                         if let Some(window) = self.niri.find_window_by_id(id) {
-                            self.focus_window(&window)
+                            // Setup the thumbnail selection animation.
+                            let mut tsa = self.niri.layout.active_monitor_ref().map(|mon| {
+                                let config =
+                                    self.niri.config.borrow().animations.thumbnail_select.0;
+                                ThumbnailSelectionAnimation::new(
+                                    thumb,
+                                    mon,
+                                    self.niri.clock.clone(),
+                                    config,
+                                )
+                            });
+
+                            // Transfer focus to the selected window id
+                            self.focus_window(&window);
+
+                            std::mem::swap(&mut self.niri.thumbnail_selection_animation, &mut tsa);
+
+                            // If there was another thumbnail selection animation in progress,
+                            // mark the corresponding tile for regular rendering.
+                            if let Some(old_tile) = tsa
+                                .and_then(|tsa| self.niri.find_window_by_id(tsa.id))
+                                .and_then(|window| self.niri.layout.find_tile_by_id_mut(&window))
+                            {
+                                old_tile.skip_render = false;
+                            }
+
+                            // Mark the tile corresponding to the thumbnail as to-be-skipped during
+                            // regular Tile rendering.
+                            if let Some(tile) = self.niri.layout.find_tile_by_id_mut(&window) {
+                                tile.skip_render = true;
+                            }
                         }
+                        self.niri.window_mru_ui.close();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
                     }
-                    self.niri.window_mru_ui.close();
-                    // FIXME: granular
-                    self.niri.queue_redraw_all();
                 }
             }
             Action::MruCancel => {

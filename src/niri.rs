@@ -159,7 +159,9 @@ use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
-use crate::ui::window_mru_ui::{WindowMruUi, WindowMruUiRenderElement};
+use crate::ui::window_mru_ui::{
+    ThumbnailSelectionAnimation, WindowMruUi, WindowMruUiRenderElement,
+};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
 use crate::utils::xwayland::satellite::Satellite;
@@ -396,6 +398,8 @@ pub struct Niri {
     pub dynamic_cast_id_for_portal: MappedId,
 
     pending_mru_commit: Option<PendingMruCommit>,
+
+    pub thumbnail_selection_animation: Option<ThumbnailSelectionAnimation>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -2683,6 +2687,7 @@ impl Niri {
             dynamic_cast_id_for_portal: MappedId::next(),
 
             pending_mru_commit: None,
+            thumbnail_selection_animation: None,
         };
 
         niri.reset_pointer_inactivity_timer();
@@ -4068,6 +4073,18 @@ impl Niri {
                 }
             }
         }
+
+        if let Some(tsa) = self
+            .thumbnail_selection_animation
+            .take_if(|tsa| tsa.anim.is_done())
+        {
+            if let Some(tile) = self
+                .find_window_by_id(tsa.id)
+                .and_then(|window| self.layout.find_tile_by_id_mut(&window))
+            {
+                tile.skip_render = false;
+            }
+        }
     }
 
     pub fn update_render_elements(&mut self, output: Option<&Output>) {
@@ -4221,13 +4238,27 @@ impl Niri {
             return elements;
         }
 
-        if Some(output) == self.layout.active_output() {
-            elements.extend(
-                self.window_mru_ui
-                    .render_output(self, output, renderer.as_gles_renderer())
-                    .into_iter()
-                    .map(OutputRenderElements::from),
-            )
+        // Render the open MRU UI before the Thumbnail closing animation so that
+        // the zooming thumbnail is rendered under the MRU UI's backdrop. This
+        // can happen if the UI is dismissed and re-invoked in quick succession.
+
+        let mru_elements = (Some(output) == self.layout.active_output()).then(|| {
+            self.window_mru_ui
+                .render_output(self, output, renderer.as_gles_renderer())
+                .into_iter()
+                .map(OutputRenderElements::from)
+        });
+
+        let tsa_elements = self.thumbnail_selection_animation.as_ref().map(|tsa| {
+            tsa.render_output(self, renderer.as_gles_renderer(), output)
+                .into_iter()
+                .map(OutputRenderElements::from)
+        });
+
+        if self.window_mru_ui.is_open() {
+            elements.extend(mru_elements.into_iter().chain(tsa_elements).flatten());
+        } else {
+            elements.extend(tsa_elements.into_iter().chain(mru_elements).flatten());
         }
 
         // Draw the hotkey overlay on top.
@@ -4426,6 +4457,7 @@ impl Niri {
                 self.config_error_notification.are_animations_ongoing();
             state.unfinished_animations_remain |= self.screenshot_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= self.window_mru_ui.are_animations_ongoing();
+            state.unfinished_animations_remain |= self.thumbnail_selection_animation.is_some();
             state.unfinished_animations_remain |= state.screen_transition.is_some();
 
             // Also keep redrawing if the current cursor is animated.

@@ -33,6 +33,7 @@
 
 use std::cmp::min;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
@@ -1394,6 +1395,18 @@ impl<W: LayoutElement> Layout<W> {
                 WorkspaceReference::Index(_) => unreachable!(),
             })
         }
+    }
+
+    pub fn find_tile_by_id(&self, id: &W::Id) -> Option<&Tile<W>> {
+        self.workspaces()
+            .flat_map(|(_, _, ws)| ws.tiles())
+            .find(|t| t.window().id() == id)
+    }
+
+    pub fn find_tile_by_id_mut(&mut self, id: &W::Id) -> Option<&mut Tile<W>> {
+        self.workspaces_mut()
+            .flat_map(|ws| ws.tiles_mut())
+            .find(|t| t.window().id() == id)
     }
 
     pub fn unname_workspace(&mut self, workspace_name: &str) {

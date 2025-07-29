@@ -51,9 +51,12 @@ use smithay::utils::{Coordinate, Logical, Point, Rectangle, Scale, Size, Transfo
 
 use crate::animation::{Animation, Clock};
 use crate::layout::focus_ring::{FocusRing, FocusRingRenderElement};
+use crate::layout::monitor::Monitor;
+use crate::layout::tile::Tile;
 use crate::layout::{LayoutElement, Options};
 use crate::niri::Niri;
 use crate::niri_render_elements;
+use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
@@ -155,14 +158,12 @@ impl Thumbnail {
         };
         let mut rv: Vec<WindowMruUiRenderElement> = Vec::new();
 
-        // if self.open_animation.is_none() {
         rv.extend(
             focus_ring
                 .map(|fr| fr.render(renderer, location).map(Into::into))
                 .into_iter()
                 .flatten(),
         );
-        // }
 
         rv.extend(
             title_texture
@@ -397,6 +398,7 @@ niri_render_elements! {
         SolidColor = SolidColorRenderElement,
         TextureElement = PrimaryGpuTextureRenderElement,
         FocusRing = FocusRingRenderElement,
+        Offscreen = OffscreenRenderElement,
     }
 }
 
@@ -726,6 +728,33 @@ impl WindowMruUi {
         }
     }
 
+    /// Return the window Id and screen position of the selected thumbnail.
+    pub fn select_thumbnail(&mut self) -> Option<SelectedThumbnail> {
+        let id = self.current_window_id()?;
+        let Self::Open(inner) = self else {
+            return None;
+        };
+        let thumbnail = inner.wmru.current()?;
+        let texture = inner
+            .textures
+            .borrow_mut()
+            .get_mut(inner.wmru.current)?
+            .thumbnail
+            .take()?;
+        let view_offset = inner.view_offset?
+            + inner
+                .move_animation
+                .as_ref()
+                .map(|ma| ma.from * ma.anim.value())
+                .unwrap_or(0.);
+        Some(SelectedThumbnail {
+            id,
+            offset: -view_offset + thumbnail.offset + thumbnail.render_offset(),
+            scale: THUMBNAIL_SCALE,
+            texture,
+        })
+    }
+
     pub fn update_render_elements(&mut self, output: &Output) {
         let Self::Open(inner) = self else {
             return;
@@ -824,7 +853,6 @@ impl WindowMruUi {
         rv.push(
             SolidColorRenderElement::from_buffer(
                 &buffer,
-                // Point::from((0., output_size.h / 16.)),
                 Point::default(),
                 progress,
                 Kind::Unspecified,
@@ -942,10 +970,13 @@ impl Inner {
         // Add all visible thumbnails
         let wmru = &self.wmru;
         for (i, t) in wmru.thumbnails.iter().enumerate() {
+            // The next check is somewhat inaccurate because it doesn't factor in the fact that the
+            // thumbnail could be in motion, and instead only considers tiles that have
+            // their final position in the view. In practice this looks ok.
             if t.offset + t.size.w >= view_offset {
                 if t.offset <= view_offset + output_size.w {
                     let mut tcache = self.textures.borrow_mut();
-                    let textures = tcache.get_mut(i);
+                    let textures = tcache.get_mut(i).unwrap();
                     if let Some(id) = wmru.get_id(i) {
                         if let Some(thumb_texture) = textures.get_thumbnail(niri, renderer, id) {
                             let title_texture = (i == wmru.current)
@@ -980,7 +1011,6 @@ impl Inner {
                 }
             }
         }
-
         rv.into_iter()
     }
 }
@@ -1009,46 +1039,7 @@ impl MruUiTileTextures {
                 if mapped.id() != mid {
                     return None;
                 }
-
-                let surface = mapped.toplevel().wl_surface();
-
-                // collect contents for the toplevel surface
-                let mut contents = vec![];
-                render_snapshot_from_surface_tree(
-                    renderer,
-                    surface,
-                    Point::from((0., 0.)),
-                    &mut contents,
-                );
-
-                // render to a new texture
-                let wsz = mapped.window.geometry().to_physical_precise_up(1.);
-
-                render_to_texture(
-                    renderer,
-                    wsz.size,
-                    Scale::from(1.),
-                    Transform::Normal,
-                    Fourcc::Abgr8888,
-                    contents.iter().map(|e| {
-                        e.to_render_element(
-                            mapped.buf_loc().to_f64(),
-                            Scale::from(1.0),
-                            1.0,
-                            Kind::Unspecified,
-                        )
-                    }),
-                )
-                .ok()
-                .map(|(texture, _)| {
-                    TextureBuffer::from_texture(
-                        renderer,
-                        texture,
-                        THUMBNAIL_SCALE,
-                        Transform::Normal,
-                        vec![],
-                    )
-                })
+                render_mapped_to_texture(renderer, mapped, THUMBNAIL_SCALE)
             });
         }
         // TextureBuffer is an Arc, so cloning is cheap
@@ -1071,6 +1062,40 @@ impl MruUiTileTextures {
     }
 }
 
+fn render_mapped_to_texture(
+    renderer: &mut GlesRenderer,
+    mapped: &Mapped,
+    scale: impl Into<Scale<f64>>,
+) -> Option<MruTexture> {
+    let surface = mapped.toplevel().wl_surface();
+
+    // collect contents for the toplevel surface
+    let mut contents = vec![];
+    render_snapshot_from_surface_tree(renderer, surface, Point::from((0., 0.)), &mut contents);
+
+    // render to a new texture
+    let wsz = mapped.size().to_physical(1);
+    render_to_texture(
+        renderer,
+        wsz,
+        Scale::from(1.),
+        Transform::Normal,
+        Fourcc::Abgr8888,
+        contents.iter().map(|e| {
+            e.to_render_element(
+                mapped.buf_loc().to_f64(),
+                Scale::from(1.0),
+                1.0,
+                Kind::Unspecified,
+            )
+        }),
+    )
+    .ok()
+    .map(|(texture, _)| {
+        TextureBuffer::from_texture(renderer, texture, scale, Transform::Normal, vec![])
+    })
+}
+
 pub struct TextureCache(Vec<MruUiTileTextures>);
 
 impl TextureCache {
@@ -1082,8 +1107,8 @@ impl TextureCache {
 
     /// Returns the texture at given cache index
     /// Panics if the index points beyond the end of the cache.
-    fn get_mut(&mut self, index: usize) -> &mut MruUiTileTextures {
-        &mut self.0[index]
+    fn get_mut(&mut self, index: usize) -> Option<&mut MruUiTileTextures> {
+        self.0.get_mut(index)
     }
 }
 
@@ -1208,6 +1233,162 @@ impl ClosingThumbnail {
 
     fn are_animations_ongoing(&self) -> bool {
         !self.anim.is_done()
+    }
+}
+
+pub struct SelectedThumbnail {
+    /// Id of the window the thumbnail corresponds to.
+    pub id: MappedId,
+
+    /// Most recent view offset of the thumbnail (in Monitor coordinate space).
+    pub offset: f64,
+
+    /// Scale used to render the thumbnail relative to its corresponding window.
+    pub scale: f64,
+
+    /// Texture used to render the thumbnail.
+    texture: MruTexture,
+}
+
+pub struct ThumbnailSelectionAnimation {
+    pub id: MappedId,
+    pub anim: Animation,
+    /// Original position of the thumbnail in global coordinate space.
+    from: Point<f64, Logical>,
+    /// Original scale applied to the thumbnail.
+    from_scale: f64,
+    /// Buffer into which the animated tile is rendered.
+    _offscreen: OffscreenBuffer,
+}
+
+impl ThumbnailSelectionAnimation {
+    pub fn new(
+        thumb: SelectedThumbnail,
+        mon: &Monitor<Mapped>,
+        clock: Clock,
+        config: niri_config::Animation,
+    ) -> Self {
+        let mon_view = Rectangle::new(mon.output().current_location().to_f64(), mon.view_size());
+        let texture_size = thumb.texture.logical_size();
+        ThumbnailSelectionAnimation {
+            id: thumb.id,
+            anim: Animation::new(clock, 1., 0., 0., config),
+            from: mon_view.loc
+                + Point::<f64, Logical>::from((
+                    thumb.offset,
+                    (mon_view.size.h - texture_size.h) / 2.,
+                )),
+            from_scale: thumb.scale,
+            _offscreen: OffscreenBuffer::default(),
+        }
+    }
+
+    /// Return the location of the target tile in global coordinate space.
+    fn target_tile_with_location<'n>(
+        &self,
+        niri: &'n Niri,
+    ) -> Option<(&'n Tile<Mapped>, Point<f64, Logical>)> {
+        niri.layout
+            .workspaces()
+            .filter_map(|(mon, _, ws)| {
+                let out = mon?.output();
+
+                ws.tiles_with_render_positions()
+                    .filter_map(|(tile, pos, _)| {
+                        (tile.window().id() == self.id)
+                            .then_some((tile, out.current_location().to_f64() + pos))
+                    })
+                    .next()
+            })
+            .next()
+    }
+
+    pub fn render_output(
+        &self,
+        niri: &Niri,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+    ) -> Vec<WindowMruUiRenderElement> {
+        let mut rv = Vec::new();
+
+        if let Some((tile, to)) = self.target_tile_with_location(niri) {
+            let loc = to + (self.from - to).upscale(self.anim.clamped_value());
+            let scale = Scale::from(
+                (1. + (self.from_scale - 1.) * self.anim.value()).clamp(1., self.from_scale),
+            );
+            if let Some(mon) = niri.layout.monitor_for_output(output) {
+                let mapped_output_view =
+                    Rectangle::new(mon.output().current_location().to_f64(), mon.view_size());
+
+                /*
+                A.
+                This version is a **FAILED** attempt to use an OffscreenBuffer.
+                When `offscreen.render()` is called, the "Failed to bind Framebuffer" error
+                is returned and nothing gets displayed.
+
+                FIXME: This version should be the one used.
+                */
+
+                /*
+                // view rectangle for the scaled thumbnail
+                let view_rect =
+                    Rectangle::new(loc, tile.animated_tile_size().to_f64().downscale(scale));
+
+                // if the view_rect intersects with the monitor's view:w
+                //
+                // add the scaled texture to the render elements.
+                if mapped_output_view.overlaps(view_rect) {
+                    let rve: Vec<TileRenderElement<_>> = tile
+                        .render(
+                            renderer,
+                            Point::default(),
+                            true, /*TODO*/
+                            RenderTarget::Output,
+                        )
+                        .collect();
+                    match self.offscreen.render(renderer, scale, &rve) {
+                        Ok((ore, _, _)) => rv.push(ore.into()),
+                        Err(err) => warn!(
+                            "Couldn't render tile into offscreen for thumbnail animation: {err:?}"
+                        ),
+                    }
+                }
+                */
+
+                /*
+                B.
+                This version does a direct render of the Mapped window into a texture buffer.
+                It doesn't handle the case where the thumbnail is resized while expanding.
+                Doing so would be rather clunky as it would just duplicate code from Tile.rs.
+
+                Similarly, the focus ring isn't displayed.
+                */
+
+                // view rectangle for the scaled thumbnail
+                let view_rect = Rectangle::new(loc, tile.tile_size().to_f64().downscale(scale));
+
+                if mapped_output_view.overlaps(view_rect) {
+                    if let Some(tb) = render_mapped_to_texture(renderer, tile.window(), scale) {
+                        let bb = BakedBuffer {
+                            buffer: tb,
+                            location: Point::default(),
+                            src: None,
+                            dst: None,
+                        };
+                        rv.push(
+                            bb.to_render_element(
+                                loc - mapped_output_view.loc,
+                                Scale::from(1.),
+                                1.,
+                                Kind::Unspecified,
+                            )
+                            .into(),
+                        );
+                    }
+                }
+            }
+        }
+        rv
     }
 }
 
