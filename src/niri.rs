@@ -3161,6 +3161,7 @@ impl Niri {
             return false;
         }
 
+        //TODO
         let hot_corners = self.config.borrow().gestures.hot_corners;
         if !hot_corners.off {
             let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
