@@ -189,8 +189,7 @@ impl DisplayConfig {
             for (connector, mode, _props) in requested_config.monitors {
                 if !current_conf.values().any(|o| o.name == connector) {
                     return Err(zbus::fdo::Error::Failed(format!(
-                        "Connector '{}' not found",
-                        connector
+                        "Connector '{connector}' not found",
                     )));
                 }
                 new_conf.insert(
@@ -210,8 +209,7 @@ impl DisplayConfig {
                             7 => niri_ipc::Transform::Flipped270,
                             x => {
                                 return Err(zbus::fdo::Error::Failed(format!(
-                                    "Unknown transform {}",
-                                    x
+                                    "Unknown transform {x}",
                                 )))
                             }
                         },
@@ -220,10 +218,7 @@ impl DisplayConfig {
                             y: requested_config.y,
                         }),
                         mode: Some(niri_ipc::ConfiguredMode::from_str(&mode).map_err(|e| {
-                            zbus::fdo::Error::Failed(format!(
-                                "Could not parse mode '{}': {}",
-                                mode, e
-                            ))
+                            zbus::fdo::Error::Failed(format!("Could not parse mode '{mode}': {e}"))
                         })?),
                         // FIXME: VRR
                         ..Default::default()

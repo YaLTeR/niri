@@ -16,6 +16,12 @@ use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewporter
 use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_surface::{self, XdgSurface};
 use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_toplevel::{self, XdgToplevel};
 use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
+use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::{
+    self, ZwlrLayerShellV1,
+};
+use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
+    self, ZwlrLayerSurfaceV1,
+};
 use wayland_backend::client::Backend;
 use wayland_client::globals::Global;
 use wayland_client::protocol::wl_buffer::{self, WlBuffer};
@@ -46,10 +52,12 @@ pub struct State {
 
     pub compositor: Option<WlCompositor>,
     pub xdg_wm_base: Option<XdgWmBase>,
+    pub layer_shell: Option<ZwlrLayerShellV1>,
     pub spbm: Option<WpSinglePixelBufferManagerV1>,
     pub viewporter: Option<WpViewporter>,
 
     pub windows: Vec<Window>,
+    pub layers: Vec<LayerSurface>,
 }
 
 pub struct Window {
@@ -67,11 +75,48 @@ pub struct Window {
     pub configures_looked_at: usize,
 }
 
+pub struct LayerSurface {
+    pub qh: QueueHandle<State>,
+    pub spbm: WpSinglePixelBufferManagerV1,
+
+    pub surface: WlSurface,
+    pub layer_surface: ZwlrLayerSurfaceV1,
+    pub viewport: WpViewport,
+    pub configures_received: Vec<(u32, LayerConfigure)>,
+    pub close_requested: bool,
+
+    pub configures_looked_at: usize,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Configure {
     pub size: (i32, i32),
     pub bounds: Option<(i32, i32)>,
     pub states: Vec<xdg_toplevel::State>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LayerConfigure {
+    pub size: (u32, u32),
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct LayerMargin {
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+    pub left: i32,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct LayerConfigureProps {
+    pub size: Option<(u32, u32)>,
+    pub anchor: Option<zwlr_layer_surface_v1::Anchor>,
+    pub exclusive_zone: Option<i32>,
+    pub margin: Option<LayerMargin>,
+    pub kb_interactivity: Option<zwlr_layer_surface_v1::KeyboardInteractivity>,
+    pub layer: Option<zwlr_layer_shell_v1::Layer>,
+    pub exclusive_edge: Option<zwlr_layer_surface_v1::Anchor>,
 }
 
 #[derive(Default)]
@@ -103,6 +148,13 @@ impl fmt::Display for Configure {
     }
 }
 
+impl fmt::Display for LayerConfigure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "size: {} × {}", self.size.0, self.size.1)?;
+        Ok(())
+    }
+}
+
 impl Client {
     pub fn new(stream: UnixStream) -> Self {
         let id = ClientId::next();
@@ -126,9 +178,11 @@ impl Client {
             outputs: HashMap::new(),
             compositor: None,
             xdg_wm_base: None,
+            layer_shell: None,
             spbm: None,
             viewporter: None,
             windows: Vec::new(),
+            layers: Vec::new(),
         };
 
         Self {
@@ -160,6 +214,19 @@ impl Client {
 
     pub fn window(&mut self, surface: &WlSurface) -> &mut Window {
         self.state.window(surface)
+    }
+
+    pub fn create_layer(
+        &mut self,
+        output: Option<&WlOutput>,
+        layer: zwlr_layer_shell_v1::Layer,
+        namespace: &str,
+    ) -> &mut LayerSurface {
+        self.state.create_layer(output, layer, namespace.to_owned())
+    }
+
+    pub fn layer(&mut self, surface: &WlSurface) -> &mut LayerSurface {
+        self.state.layer(surface)
     }
 
     pub fn output(&mut self, name: &str) -> WlOutput {
@@ -205,6 +272,45 @@ impl State {
 
     pub fn window(&mut self, surface: &WlSurface) -> &mut Window {
         self.windows
+            .iter_mut()
+            .find(|w| w.surface == *surface)
+            .unwrap()
+    }
+
+    pub fn create_layer(
+        &mut self,
+        output: Option<&WlOutput>,
+        layer: zwlr_layer_shell_v1::Layer,
+        namespace: String,
+    ) -> &mut LayerSurface {
+        let compositor = self.compositor.as_ref().unwrap();
+        let layer_shell = self.layer_shell.as_ref().unwrap();
+        let viewporter = self.viewporter.as_ref().unwrap();
+
+        let surface = compositor.create_surface(&self.qh, ());
+        let layer_surface =
+            layer_shell.get_layer_surface(&surface, output, layer, namespace, &self.qh, ());
+        let viewport = viewporter.get_viewport(&surface, &self.qh, ());
+
+        let layer_surface = LayerSurface {
+            qh: self.qh.clone(),
+            spbm: self.spbm.clone().unwrap(),
+
+            surface,
+            layer_surface,
+            viewport,
+            configures_received: Vec::new(),
+            close_requested: false,
+
+            configures_looked_at: 0,
+        };
+
+        self.layers.push(layer_surface);
+        self.layers.last_mut().unwrap()
+    }
+
+    pub fn layer(&mut self, surface: &WlSurface) -> &mut LayerSurface {
+        self.layers
             .iter_mut()
             .find(|w| w.surface == *surface)
             .unwrap()
@@ -269,6 +375,83 @@ impl Window {
     }
 }
 
+impl LayerSurface {
+    pub fn commit(&self) {
+        self.surface.commit();
+    }
+
+    pub fn ack_last(&self) {
+        let serial = self.configures_received.last().unwrap().0;
+        self.layer_surface.ack_configure(serial);
+    }
+
+    pub fn ack_last_and_commit(&self) {
+        self.ack_last();
+        self.commit();
+    }
+
+    pub fn set_configure_props(&self, props: LayerConfigureProps) {
+        let LayerConfigureProps {
+            size,
+            anchor,
+            exclusive_zone,
+            margin,
+            kb_interactivity,
+            layer,
+            exclusive_edge,
+        } = props;
+
+        if let Some(x) = size {
+            self.layer_surface.set_size(x.0, x.1);
+        }
+        if let Some(x) = anchor {
+            self.layer_surface.set_anchor(x);
+        }
+        if let Some(x) = exclusive_zone {
+            self.layer_surface.set_exclusive_zone(x);
+        }
+        if let Some(x) = margin {
+            self.layer_surface
+                .set_margin(x.top, x.right, x.bottom, x.left);
+        }
+        if let Some(x) = kb_interactivity {
+            self.layer_surface.set_keyboard_interactivity(x);
+        }
+        if let Some(x) = layer {
+            self.layer_surface.set_layer(x);
+        }
+        if let Some(x) = exclusive_edge {
+            self.layer_surface.set_exclusive_edge(x);
+        }
+    }
+
+    pub fn attach_new_buffer(&self) {
+        let buffer = self.spbm.create_u32_rgba_buffer(0, 0, 0, 0, &self.qh, ());
+        self.surface.attach(Some(&buffer), 0, 0);
+    }
+
+    pub fn set_size(&self, w: u16, h: u16) {
+        self.viewport.set_destination(i32::from(w), i32::from(h));
+    }
+
+    pub fn recent_configures(&mut self) -> impl Iterator<Item = &LayerConfigure> {
+        let start = self.configures_looked_at;
+        self.configures_looked_at = self.configures_received.len();
+        self.configures_received[start..].iter().map(|(_, c)| c)
+    }
+
+    pub fn format_recent_configures(&mut self) -> String {
+        let mut buf = String::new();
+        for configure in self.recent_configures() {
+            if !buf.is_empty() {
+                buf.push('\n');
+            }
+            write!(buf, "{configure}").unwrap();
+        }
+        buf
+    }
+}
+
 impl Dispatch<WlCallback, Arc<SyncData>> for State {
     fn event(
         _state: &mut Self,
@@ -306,6 +489,9 @@ impl Dispatch<WlRegistry, ()> for State {
                 } else if interface == XdgWmBase::interface().name {
                     let version = min(version, XdgWmBase::interface().version);
                     state.xdg_wm_base = Some(registry.bind(name, version, qh, ()));
+                } else if interface == ZwlrLayerShellV1::interface().name {
+                    let version = min(version, ZwlrLayerShellV1::interface().version);
+                    state.layer_shell = Some(registry.bind(name, version, qh, ()));
                 } else if interface == WpSinglePixelBufferManagerV1::interface().name {
                     let version = min(version, WpSinglePixelBufferManagerV1::interface().version);
                     state.spbm = Some(registry.bind(name, version, qh, ()));
@@ -382,6 +568,19 @@ impl Dispatch<XdgWmBase, ()> for State {
             }
             _ => unreachable!(),
         }
+    }
+}
+
+impl Dispatch<ZwlrLayerShellV1, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ZwlrLayerShellV1,
+        _event: <ZwlrLayerShellV1 as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
     }
 }
 
@@ -465,6 +664,38 @@ impl Dispatch<XdgToplevel, ()> for State {
                 window.pending_configure.bounds = Some((width, height));
             }
             xdg_toplevel::Event::WmCapabilities { .. } => (),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Dispatch<ZwlrLayerSurfaceV1, ()> for State {
+    fn event(
+        state: &mut Self,
+        layer_surface: &ZwlrLayerSurfaceV1,
+        event: <ZwlrLayerSurfaceV1 as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        let layer_surface = state
+            .layers
+            .iter_mut()
+            .find(|w| w.layer_surface == *layer_surface)
+            .unwrap();
+
+        match event {
+            zwlr_layer_surface_v1::Event::Configure {
+                serial,
+                width,
+                height,
+            } => {
+                let configure = LayerConfigure {
+                    size: (width, height),
+                };
+                layer_surface.configures_received.push((serial, configure));
+            }
+            zwlr_layer_surface_v1::Event::Closed => layer_surface.close_requested = true,
             _ => unreachable!(),
         }
     }

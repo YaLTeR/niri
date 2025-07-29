@@ -297,7 +297,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                 let [r, g, b] = color.rgb.map(|v| (v.clamp(0., 1.) * 255.).round() as u8);
 
                 println!("Picked color: rgb({r}, {g}, {b})",);
-                println!("Hex: #{:02x}{:02x}{:02x}", r, g, b);
+                println!("Hex: #{r:02x}{g:02x}{b:02x}");
             } else {
                 println!("No color was picked.");
             }

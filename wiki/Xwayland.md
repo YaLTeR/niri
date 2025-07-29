@@ -1,4 +1,4 @@
-X11 is very cursed, so built-in Xwayland support is not planned at the moment.
+X11 is very cursed, so built-in Xwayland support [is not planned at the moment](./FAQ.md#why-doesnt-niri-integrate-xwayland-like-other-compositors).
 However, there are multiple solutions to running X11 apps in niri.
 
 ## Using xwayland-satellite

@@ -187,8 +187,7 @@ fn render(
     if let Some(path) = created_path {
         text = format!(
             "Created a default config file at \
-             <span face='monospace' bgcolor='#000000'>{:?}</span>",
-            path
+             <span face='monospace' bgcolor='#000000'>{path:?}</span>",
         );
         border_color = (0.5, 1., 0.5);
     };

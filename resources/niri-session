@@ -1,5 +1,15 @@
 #!/bin/sh
 
+# Detect if being run as a user service, which implies external session management,
+# exec compositor directly
+if [ -n "${MANAGERPID:-}" ] && [ "${SYSTEMD_EXEC_PID:-}" = "$$" ]; then
+    case "$(ps -p "$MANAGERPID" -o cmd=)" in
+    *systemd*--user*)
+        exec niri --session
+        ;;
+    esac
+fi
+
 if [ -n "$SHELL" ] &&
    grep -q "$SHELL" /etc/shells &&
    ! (echo "$SHELL" | grep -q "false") &&
@@ -40,7 +50,7 @@ if hash systemctl >/dev/null 2>&1; then
     systemctl --user start --job-mode=replace-irreversibly niri-shutdown.target
 
     # Unset environment that we've set.
-    systemctl --user unset-environment WAYLAND_DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP NIRI_SOCKET
+    systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY XDG_SESSION_TYPE XDG_CURRENT_DESKTOP NIRI_SOCKET
 elif hash dinitctl >/dev/null 2>&1; then
     # Check that the user dinit daemon is running
     if ! pgrep -u "$(id -u)" dinit >/dev/null 2>&1; then

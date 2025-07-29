@@ -9,9 +9,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, mem};
 
+use calloop::EventLoop;
 use clap::{CommandFactory, Parser};
+use clap_complete::Shell;
+use clap_complete_nushell::Nushell;
 use directories::ProjectDirs;
-use niri::cli::{Cli, Sub};
+use niri::cli::{Cli, CompletionShell, Sub};
 #[cfg(feature = "dbus")]
 use niri::dbus;
 use niri::ipc::client::handle_msg;
@@ -26,7 +29,6 @@ use niri_config::Config;
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
-use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::wayland_server::Display;
 use tracing_subscriber::EnvFilter;
 
@@ -108,11 +110,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Sub::Panic => cause_panic(),
             Sub::Completions { shell } => {
-                clap_complete::generate(shell, &mut Cli::command(), "niri", &mut io::stdout());
+                match shell {
+                    CompletionShell::Nushell => {
+                        clap_complete::generate(
+                            Nushell,
+                            &mut Cli::command(),
+                            "niri",
+                            &mut io::stdout(),
+                        );
+                    }
+                    other => {
+                        let generator = Shell::try_from(other).unwrap();
+                        clap_complete::generate(
+                            generator,
+                            &mut Cli::command(),
+                            "niri",
+                            &mut io::stdout(),
+                        );
+                    }
+                }
                 return Ok(());
             }
         }
     }
+
+    // Needs to be done before starting Tracy, so that it applies to Tracy's threads.
+    niri::utils::signals::block_early().unwrap();
 
     // Avoid starting Tracy for the `niri msg` code path since starting/stopping Tracy is a bit
     // slow.
@@ -172,8 +195,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     store_and_increase_nofile_rlimit();
 
+    // Create the main event loop.
+    let mut event_loop = EventLoop::<State>::try_new().unwrap();
+
+    // Handle Ctrl+C and other signals.
+    niri::utils::signals::listen(&event_loop.handle());
+
     // Create the compositor.
-    let mut event_loop = EventLoop::try_new().unwrap();
     let display = Display::new().unwrap();
     let mut state = State::new(
         config,
@@ -182,6 +210,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         display,
         false,
         true,
+        cli.session,
     )
     .unwrap();
 

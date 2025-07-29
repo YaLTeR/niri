@@ -141,6 +141,8 @@ fn spawn_sync(
         process.env("DESKTOP_STARTUP_ID", token.as_str());
     }
 
+    unsafe { process.pre_exec(crate::utils::signals::unblock_all) };
+
     let Some(mut child) = do_spawn(command, process) else {
         return;
     };

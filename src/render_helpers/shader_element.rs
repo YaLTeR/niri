@@ -70,9 +70,9 @@ unsafe fn compile_program(
     texture_uniforms: &[&str],
     // destruction_callback_sender: Sender<CleanupResource>,
 ) -> Result<ShaderProgram, GlesError> {
-    let shader = format!("#version 100\n{}", src);
+    let shader = format!("#version 100\n{src}");
     let program = unsafe { link_program(gl, include_str!("shaders/texture.vert"), &shader)? };
-    let debug_shader = format!("#version 100\n#define DEBUG_FLAGS\n{}", src);
+    let debug_shader = format!("#version 100\n#define DEBUG_FLAGS\n{src}");
     let debug_program =
         unsafe { link_program(gl, include_str!("shaders/texture.vert"), &debug_shader)? };
 
