@@ -293,7 +293,7 @@ jobs:
         run: cargo doc --no-deps -p niri-ipc
       - run: cp ./resources/rustdoc-index.html ./target/doc/index.html
       - name: Make publish directory
-        run: mkdir publish
+        run: mkdir -p publish/rustdoc
       - name: Copy rustdoc documentation to publish
         run: cp -r ./target/doc/* ./publish/rustdoc
       - name: Copy niri documentation to publish
