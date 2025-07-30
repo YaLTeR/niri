@@ -282,7 +282,6 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
             enable-cache: true
-        working-directory: docs/
       - name: Install the project
         run: uv sync --locked --all-extras --dev
         working-directory: docs/
