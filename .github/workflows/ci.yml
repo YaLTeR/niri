@@ -270,9 +270,6 @@ jobs:
     needs:
       - build
     runs-on: ubuntu-24.04
-    defaults:
-      run:
-        working-directory: docs/
     steps:
       - uses: actions/checkout@v4
         with:
@@ -285,32 +282,23 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
             enable-cache: true
+        working-directory: docs/
       - name: Install the project
         run: uv sync --locked --all-extras --dev
+        working-directory: docs/
       - name: Deploy documentation
-        run: uv run mkdocs gh-deploy --force
-
-  # rustdoc:
-  #   needs: build
-  #   permissions:
-  #     contents: write
-  #   runs-on: ubuntu-24.04
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #       with:
-  #         show-progress: false
-
-  #     - uses: dtolnay/rust-toolchain@stable
-
-  #     - name: Generate documentation
-  #       run: cargo doc --no-deps -p niri-ipc
-
-  #     - run: cp ./resources/rustdoc-index.html ./target/doc/index.html
-
-  #     - name: Deploy documentation
-  #       if: github.ref == 'refs/heads/main'
-  #       uses: peaceiris/actions-gh-pages@v4
-  #       with:
-  #         github_token: ${{ secrets.GITHUB_TOKEN }}
-  #         publish_dir: ./target/doc
-  #         force_orphan: true
+        run: uv run mkdocs build
+        working-directory: docs/
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Generate documentation
+        run: cargo doc --no-deps -p niri-ipc
+      - run: cp ./resources/rustdoc-index.html ./target/doc/index.html
+      - run: mkdir publish; cp -r ./target/doc ./publish/
+      - run: cp -r ./docs/site/* ./publish/
+      - name: Deploy documentation
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./publish
+          force_orphan: true
