@@ -360,6 +360,10 @@ fn arbitrary_parent_id() -> impl Strategy<Value = Option<usize>> {
     ]
 }
 
+fn arbitrary_activate_window_state() -> impl Strategy<Value = ActivateWindow> {
+    prop_oneof![Just(ActivateWindow::Yes), Just(ActivateWindow::Smart), Just(ActivateWindow::No)]
+}
+
 fn arbitrary_scroll_direction() -> impl Strategy<Value = ScrollDirection> {
     prop_oneof![Just(ScrollDirection::Left), Just(ScrollDirection::Right)]
 }
@@ -470,8 +474,8 @@ enum Op {
     FocusWorkspace(#[proptest(strategy = "0..=4usize")] usize),
     FocusWorkspaceAutoBackAndForth(#[proptest(strategy = "0..=4usize")] usize),
     FocusWorkspacePrevious,
-    MoveWindowToWorkspaceDown,
-    MoveWindowToWorkspaceUp,
+    MoveWindowToWorkspaceDown(#[proptest(strategy = "arbitrary_activate_window_state()")] ActivateWindow),
+    MoveWindowToWorkspaceUp(#[proptest(strategy = "arbitrary_activate_window_state()")] ActivateWindow),
     MoveWindowToWorkspace {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
         window_id: Option<usize>,
@@ -1077,8 +1081,8 @@ impl Op {
                 layout.switch_workspace_auto_back_and_forth(idx)
             }
             Op::FocusWorkspacePrevious => layout.switch_workspace_previous(),
-            Op::MoveWindowToWorkspaceDown => layout.move_to_workspace_down(),
-            Op::MoveWindowToWorkspaceUp => layout.move_to_workspace_up(),
+            Op::MoveWindowToWorkspaceDown(activate) => layout.move_to_workspace_down(activate),
+            Op::MoveWindowToWorkspaceUp(activate) => layout.move_to_workspace_up(activate),
             Op::MoveWindowToWorkspace {
                 window_id,
                 workspace_idx,
@@ -1566,8 +1570,8 @@ fn operations_dont_panic() {
         Op::FocusWorkspaceUp,
         Op::FocusWorkspace(1),
         Op::FocusWorkspace(2),
-        Op::MoveWindowToWorkspaceDown,
-        Op::MoveWindowToWorkspaceUp,
+        Op::MoveWindowToWorkspaceDown(ActivateWindow::Yes),
+        Op::MoveWindowToWorkspaceUp(ActivateWindow::Yes),
         Op::MoveWindowToWorkspace {
             window_id: None,
             workspace_idx: 1,
@@ -1622,7 +1626,7 @@ fn operations_from_starting_state_dont_panic() {
         Op::AddWindow {
             params: TestWindowParams::new(1),
         },
-        Op::MoveWindowToWorkspaceDown,
+        Op::MoveWindowToWorkspaceDown(ActivateWindow::Yes),
         Op::AddWindow {
             params: TestWindowParams::new(2),
         },
@@ -1737,8 +1741,8 @@ fn operations_from_starting_state_dont_panic() {
         Op::FocusWorkspace(1),
         Op::FocusWorkspace(2),
         Op::FocusWorkspace(3),
-        Op::MoveWindowToWorkspaceDown,
-        Op::MoveWindowToWorkspaceUp,
+        Op::MoveWindowToWorkspaceDown(ActivateWindow::Yes),
+        Op::MoveWindowToWorkspaceUp(ActivateWindow::Yes),
         Op::MoveWindowToWorkspace {
             window_id: None,
             workspace_idx: 1,
@@ -3317,7 +3321,7 @@ fn move_pending_unfullscreen_window_out_of_active_column() {
         Op::ConsumeWindowIntoColumn,
         // Window 1 is now pending unfullscreen.
         // Moving it out should reset view_offset_before_fullscreen.
-        Op::MoveWindowToWorkspaceDown,
+        Op::MoveWindowToWorkspaceDown(ActivateWindow::No),
     ];
 
     check_ops(&ops);
