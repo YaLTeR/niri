@@ -214,6 +214,12 @@ pub enum Action {
         ///  Whether to show the mouse pointer by default in the screenshot UI.
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
+
+        /// Path to save the screenshot to.
+        ///
+        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set))]
+        path: Option<String>,
     },
     /// Screenshot the focused screen.
     ScreenshotScreen {
@@ -226,6 +232,12 @@ pub enum Action {
         /// Whether to include the mouse pointer in the screenshot.
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
+
+        /// Path to save the screenshot to.
+        ///
+        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set))]
+        path: Option<String>,
     },
     /// Screenshot a window.
     #[cfg_attr(feature = "clap", clap(about = "Screenshot the focused window"))]
@@ -240,6 +252,12 @@ pub enum Action {
         /// The screenshot is saved according to the `screenshot-path` config setting.
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
+
+        /// Path to save the screenshot to.
+        ///
+        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(short = 'f', long, action = clap::ArgAction::Set))]
+        path: Option<String>,
     },
     /// Enable or disable the keyboard shortcuts inhibitor (if any) for the focused surface.
     ToggleKeyboardShortcutsInhibit {},
