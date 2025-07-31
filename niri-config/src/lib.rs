@@ -1272,12 +1272,13 @@ pub struct EasingParams {
     pub curve: AnimationCurve,
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AnimationCurve {
     Linear,
     EaseOutQuad,
     EaseOutCubic,
     EaseOutExpo,
+    Bezier(f64, f64, f64, f64),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -3320,7 +3321,90 @@ impl Animation {
                         ));
                     }
 
-                    easing_params.curve = Some(parse_arg_node("curve", child, ctx)?);
+                    let mut iter_args = child.arguments.iter();
+                    let val = iter_args.next().ok_or_else(|| {
+                        DecodeError::missing(child, "additional argument `curve` is required")
+                    })?;
+                    let animation_curve_string: String =
+                        knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                    let animation_curve_str = animation_curve_string.as_str();
+
+                    let animation_curve = match animation_curve_str {
+                        "linear" => Some(AnimationCurve::Linear),
+                        "ease-out-quad" => Some(AnimationCurve::EaseOutQuad),
+                        "ease-out-cubic" => Some(AnimationCurve::EaseOutCubic),
+                        "ease-out-expo" => Some(AnimationCurve::EaseOutExpo),
+                        "bezier" => {
+                            let val = iter_args.next().ok_or_else(|| {
+                                DecodeError::missing(
+                                    child,
+                                    "missing x1 coordinate for control point",
+                                )
+                            })?;
+                            // the X axis represents time so it cannot be negative
+                            let x1: FloatOrInt<0, { i32::MAX }> =
+                                knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                            let val = iter_args.next().ok_or_else(|| {
+                                DecodeError::missing(
+                                    child,
+                                    "missing y1 coordinate for control point",
+                                )
+                            })?;
+                            let y1: FloatOrInt<{ i32::MIN }, { i32::MAX }> =
+                                knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                            let val = iter_args.next().ok_or_else(|| {
+                                DecodeError::missing(
+                                    child,
+                                    "missing x2 coordinate for control point",
+                                )
+                            })?;
+                            let x2: FloatOrInt<0, { i32::MAX }> =
+                                knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                            let val = iter_args.next().ok_or_else(|| {
+                                DecodeError::missing(
+                                    child,
+                                    "missing y2 coordinate for control point",
+                                )
+                            })?;
+                            let y2: FloatOrInt<{ i32::MIN }, { i32::MAX }> =
+                                knuffel::traits::DecodeScalar::decode(val, ctx)?;
+
+                            Some(AnimationCurve::Bezier(x1.0, y1.0, x2.0, y2.0))
+                        }
+                        unknown_curve => {
+                            ctx.emit_error(DecodeError::unexpected(
+                                &val.literal,
+                                "argument",
+                                format!("unexpected argument `{unknown_curve}`"),
+                            ));
+
+                            None
+                        }
+                    };
+
+                    if let Some(val) = iter_args.next() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &val.literal,
+                            "argument",
+                            "unexpected argument",
+                        ));
+                    }
+                    for name in child.properties.keys() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            name,
+                            "property",
+                            format!("unexpected property `{}`", name.escape_default()),
+                        ));
+                    }
+                    for child in child.children() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            child,
+                            "node",
+                            format!("unexpected node `{}`", child.node_name.escape_default()),
+                        ));
+                    }
+
+                    easing_params.curve = animation_curve;
                 }
                 name_str => {
                     if !process_children(child, ctx)? {
