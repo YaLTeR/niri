@@ -307,7 +307,7 @@ wheels = [
 ]
 
 [[package]]
-name = "niri"
+name = "niri-docs"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

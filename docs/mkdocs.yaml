@@ -23,10 +23,7 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.superfences
-  - admonition
-  - pymdownx.details
   - pymdownx.keys
-  - attr_list
 plugins:
   - search
 hooks:
