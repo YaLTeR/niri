@@ -21,12 +21,20 @@ use crate::render_helpers::RenderTarget;
 use crate::utils::transaction::TransactionBlocker;
 use crate::utils::{
     center_preferring_top_left_in_area, clamp_preferring_top_left_in_area, ensure_min_max_size,
-    ensure_min_max_size_maybe_zero, ResizeEdge,
+    ensure_min_max_size_maybe_zero, left_align_preferring_top_left_in_area,
+    right_align_preferring_top_left_in_area, ResizeEdge,
 };
 use crate::window::ResolvedWindowRules;
 
 /// By how many logical pixels the directional move commands move floating windows.
 pub const DIRECTIONAL_MOVE_PX: f64 = 50.;
+
+#[derive(Debug, Clone, Copy)]
+enum WindowAlignment {
+    Left,
+    Center,
+    Right,
+}
 
 /// Space for floating windows.
 #[derive(Debug)]
@@ -927,13 +935,76 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.move_to(idx, new_pos, animate);
     }
 
+    fn compute_effective_area_for_alignment(
+        &self,
+        alignment: WindowAlignment,
+    ) -> Rectangle<f64, Logical> {
+        let mut effective_area = self.working_area;
+
+        // Apply struts to shrink the working area
+        effective_area.size.w = f64::max(
+            0.,
+            effective_area.size.w - self.options.struts.left.0 - self.options.struts.right.0,
+        );
+        effective_area.loc.x += self.options.struts.left.0;
+        effective_area.size.h = f64::max(
+            0.,
+            effective_area.size.h - self.options.struts.top.0 - self.options.struts.bottom.0,
+        );
+        effective_area.loc.y += self.options.struts.top.0;
+
+        // Apply gaps based on alignment type
+        match alignment {
+            WindowAlignment::Left => {
+                effective_area.size.w = f64::max(0., effective_area.size.w - self.options.gaps);
+                effective_area.loc.x += self.options.gaps;
+            }
+            WindowAlignment::Center => {
+                effective_area.size.w =
+                    f64::max(0., effective_area.size.w - 2.0 * self.options.gaps);
+                effective_area.size.h =
+                    f64::max(0., effective_area.size.h - 2.0 * self.options.gaps);
+                effective_area.loc.x += self.options.gaps;
+                effective_area.loc.y += self.options.gaps;
+            }
+            WindowAlignment::Right => {
+                effective_area.size.w = f64::max(0., effective_area.size.w - self.options.gaps);
+            }
+        }
+
+        effective_area
+    }
+
     pub fn center_window(&mut self, id: Option<&W::Id>) {
         let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
             return;
         };
         let idx = self.idx_of(&id).unwrap();
 
-        let new_pos = center_preferring_top_left_in_area(self.working_area, self.data[idx].size);
+        let effective_area = self.compute_effective_area_for_alignment(WindowAlignment::Center);
+        let new_pos = center_preferring_top_left_in_area(effective_area, self.data[idx].size);
+        self.move_to(idx, new_pos, true);
+    }
+
+    pub fn left_align_window(&mut self, id: Option<&W::Id>) {
+        let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
+            return;
+        };
+        let idx = self.idx_of(&id).unwrap();
+
+        let effective_area = self.compute_effective_area_for_alignment(WindowAlignment::Left);
+        let new_pos = left_align_preferring_top_left_in_area(effective_area, self.data[idx].size);
+        self.move_to(idx, new_pos, true);
+    }
+
+    pub fn right_align_window(&mut self, id: Option<&W::Id>) {
+        let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
+            return;
+        };
+        let idx = self.idx_of(&id).unwrap();
+
+        let effective_area = self.compute_effective_area_for_alignment(WindowAlignment::Right);
+        let new_pos = right_align_preferring_top_left_in_area(effective_area, self.data[idx].size);
         self.move_to(idx, new_pos, true);
     }
 
