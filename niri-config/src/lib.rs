@@ -178,6 +178,15 @@ pub enum CenterFocusedColumn {
     OnOverflow,
 }
 
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum NewColumnLocation {
+    #[default]
+    RightOfActive,
+    LeftOfActive,
+    FirstOfWorkspace,
+    LastOfWorkspace,
+}
+
 #[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]
 pub enum TrackLayout {
     /// The layout change is global.
@@ -541,6 +550,8 @@ pub struct Layout {
     pub preset_window_heights: Vec<PresetSize>,
     #[knuffel(child, unwrap(argument), default)]
     pub center_focused_column: CenterFocusedColumn,
+    #[knuffel(child, unwrap(argument), default)]
+    pub new_column_location: NewColumnLocation,
     #[knuffel(child)]
     pub always_center_single_column: bool,
     #[knuffel(child)]
@@ -566,6 +577,7 @@ impl Default for Layout {
             preset_column_widths: Default::default(),
             default_column_width: Default::default(),
             center_focused_column: Default::default(),
+            new_column_location: Default::default(),
             always_center_single_column: false,
             empty_workspace_above_first: false,
             default_column_display: ColumnDisplay::Normal,
