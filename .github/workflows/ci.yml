@@ -288,9 +288,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Generate rustdoc documentation
         run: cargo doc --no-deps -p niri-ipc
-      - run: cp ./resources/rustdoc-index.html ./target/doc/index.html
       - run: mkdir -p publish/niri_ipc
-      - run: cp -r ./target/doc/* ./publish/niri_ipc
+      - run: cp -r ./target/doc/* ./publish/
       - run: cp -r ./docs/site/* ./publish/
       - name: Deploy documentation
         if: github.ref == 'refs/heads/main'
