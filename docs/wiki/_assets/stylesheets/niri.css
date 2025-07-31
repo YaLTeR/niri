@@ -1,3 +1,166 @@
+/* a lot of this has been based off of uv's mkdocs css */
+
+:root {
+  --base: #1e97b5;
+  --fire: #ea740f;
+  --black: color-mix(in srgb, var(--base), black 80%);
+  --white: color-mix(in srgb, var(--base), white 80%);
+  --burning: var(--fire);
+  --abyss: color-mix(in srgb, var(--black), black 50%);
+  --shed: color-mix(in srgb, var(--black), black 10%);
+  --embers: color-mix(in srgb, var(--fire), white 30%);
+  --flash: color-mix(in srgb, var(--fire), yellow 30%);
+  --spicy: color-mix(in srgb, var(--base), var(--fire) 20%);
+  --wick: color-mix(in srgb, var(--fire), white 70%);
+  --ocean: color-mix(in srgb, var(--base), blue 20%);
+  --blindness: color-mix(in srgb, var(--white), white 80%);
+  --granite: color-mix(in srgb, var(--white), gray 80%);
+  --shadow: color-mix(in srgb, var(--base), black 10%);
+}
+
+[data-md-color-scheme="niri-light"] {
+  --md-default-bg-color: var(--white);
+  --md-default-bg-color--dark: var(--black);
+  --md-default-fg-color--lighter: var(--white);
+  --md-default-fg-color--lightest: var(--blindness);
+  --md-primary-fg-color: var(--abyss);
+  --md-typeset-a-color: var(--burning);
+  --md-accent-fg-color: var(--embers);
+  --md-code-fg-color: var(--shed);
+  --md-code-bg-color: var(--blindness);
+
+  --md-code-hl-comment-color: var(--granite);
+  --md-code-hl-punctuation-color: var(--granite);
+  --md-code-hl-generic-color: var(--ocean);
+  --md-code-hl-variable-color: var(--shadow);
+  --md-code-hl-string-color: var(--burning);
+  --md-code-hl-keyword-color: var(--ocean);
+  --md-code-hl-operator-color: var(--ocean);
+  --md-code-hl-number-color: var(--spicy);
+  --md-code-hl-special-color: var(--spicy);
+  --md-code-hl-function-color: var(--wick);
+  --md-code-hl-constant-color: var(--burning);
+  --md-code-hl-name-color: var(--md-code-fg-color);
+}
+
+[data-md-color-scheme="niri-dark"] {
+  --md-default-bg-color: var(--abyss);
+  --md-default-fg-color: var(--white);
+  --md-default-fg-color--light: var(--white);
+  --md-default-fg-color--lighter: var(--white);
+  --md-default-fg-color--lightest: var(--lunar);
+  --md-primary-fg-color: var(--shed);
+  --md-primary-bg-color: var(--white);
+  --md-accent-fg-color: var(--embers);
+
+  --md-typeset-color: var(--white);
+  --md-typeset-a-color: var(--burning);
+  --md-typeset-mark-color: var(--flash);
+
+  --md-code-fg-color: var(--white);
+  --md-code-bg-color: var(--shed);
+
+  --md-code-hl-comment-color: var(--granite);
+  --md-code-hl-punctuation-color: var(--granite);
+  --md-code-hl-generic-color: var(--ocean);
+  --md-code-hl-variable-color: var(--shadow);
+  --md-code-hl-string-color: var(--burning);
+  --md-code-hl-keyword-color: var(--ocean);
+  --md-code-hl-operator-color: var(--ocean);
+  --md-code-hl-number-color: var(--spicy);
+  --md-code-hl-special-color: var(--spicy);
+  --md-code-hl-function-color: var(--wick);
+  --md-code-hl-constant-color: var(--burning);
+  --md-code-hl-name-color: var(--md-code-fg-color);
+
+  --md-typeset-del-color: hsla(6, 90%, 60%, 0.15);
+  --md-typeset-ins-color: hsla(150, 90%, 44%, 0.15);
+  --md-typeset-kbd-border-color: hsla(150, 87%, 25%, 0.05);
+
+  --md-typeset-table-color: hsla(0, 0%, 100%, 0.12);
+  --md-typeset-table-color--light: hsla(0, 0%, 100%, 0.035);
+}
+
+[data-md-color-scheme="niri-dark"] details summary a {
+  color: var(--burning);
+}
+
+[data-md-color-scheme="niri-dark"] div.admonition {
+  color: var(--md-code-fg-color);
+  background-color: var(--md-code-bg-color);
+}
+
+[data-md-color-scheme="niri-dark"] .md-typeset kbd {
+    color: var(--md-code-fg-color);
+    background-color: var(--md-code-bg-color);
+}
+
+
+.md-nav--primary .md-nav__title {
+  box-shadow: none;
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-nav__title {
+    display: none;
+  }
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-main {
+    min-height: 100vh;
+  }
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary .md-nav {
+    font-size: 0.75rem;
+  }
+  .md-nav__item--section > .md-nav__link {
+      font-weight: normal;
+      font-size: 0.85rem;
+  }
+  .md-nav--primary .md-nav__link {
+    margin: 0;
+  }
+  .md-nav--primary .md-nav__item {
+    margin-top: 0.35em;
+  }
+  .md-nav--primary .md-nav__item--section {
+    margin-bottom: 0.75em;
+    margin-top: 1em;
+  }
+  .md-nav__item--section> .md-nav > .md-nav__list > .md-nav__item > .md-nav > .md-nav__list {
+    font-size: 0.725rem;
+  }
+  .md-nav__item--section> .md-nav > .md-nav__list > .md-nav__item > .md-nav > .md-nav__list > .md-nav__item:first-of-type {
+    margin-top: 0.5em;
+  }
+  .md-nav__item--section> .md-nav > .md-nav__list > .md-nav__item > .md-nav > .md-nav__list > .md-nav__item:last-of-type {
+    margin-bottom: 0.575em;
+  }
+}
+
+.md-nav__link--active {
+  font-weight: bold;
+}
+
+.highlight .gp, .highlight .go {
+  user-select: none;
+}
+
+.toclink {
+  color: unset !important;
+}
+
+.toclink:hover {
+  color: var(--md-accent-fg-color) !important;
+}
+
+.md-source-file__fact {
+  visibility: hidden;
+}
+
 .badge {
     font-size: 0.85em;
     box-shadow: 0 0 0 1px inset var(--md-accent-fg-color--transparent);
@@ -6,4 +169,8 @@
 
 .md-typeset table:not([class]) td {
     padding: .5em 1.25em;
+}
+
+.md-header__topic:first-of-type {
+  visibility: hidden;
 }

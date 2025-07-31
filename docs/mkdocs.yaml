@@ -1,19 +1,34 @@
 site_name: niri
 docs_dir: wiki
-site_url: https://chinatsu.github.io/niri/ # TODO before merging: https://yalter.github.io/niri
-repo_url: https://github.com/chinatsu/niri # TODO before merging: https://github.com/YaLTeR/niri
+site_url: https://yalter.github.io/niri
+repo_url: https://github.com/YaLTeR/niri
 edit_uri: edit/main/docs/wiki/
 use_directory_urls: false
+
 theme:
   name: material
+  logo: _assets/icons/logo.svg
+  favicon: _assets/icons/favicon.svg
   features:
     - navigation.instant
     - search.suggest
     - content.code.copy
     - content.action.edit
-  palette:
-    scheme: slate
-    primary: black
+  palette:    
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: niri-light
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: niri-dark
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
 markdown_extensions:
   - github-callouts
   - pymdownx.highlight:
