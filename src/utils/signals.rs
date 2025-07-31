@@ -44,7 +44,7 @@ pub fn unblock_all() -> io::Result<()> {
     set_sigmask(&empty_sigset()?)
 }
 
-pub fn empty_sigset() -> io::Result<libc::sigset_t> {
+fn empty_sigset() -> io::Result<libc::sigset_t> {
     let mut sigset = mem::MaybeUninit::uninit();
     if unsafe { libc::sigemptyset(sigset.as_mut_ptr()) } == 0 {
         Ok(unsafe { sigset.assume_init() })
@@ -53,7 +53,7 @@ pub fn empty_sigset() -> io::Result<libc::sigset_t> {
     }
 }
 
-pub fn preferred_sigset() -> io::Result<libc::sigset_t> {
+fn preferred_sigset() -> io::Result<libc::sigset_t> {
     let mut set = empty_sigset()?;
     unsafe {
         add_signal(&mut set, libc::SIGINT)?;
@@ -72,7 +72,7 @@ unsafe fn add_signal(set: &mut libc::sigset_t, signum: libc::c_int) -> io::Resul
     }
 }
 
-pub fn set_sigmask(set: &libc::sigset_t) -> io::Result<()> {
+fn set_sigmask(set: &libc::sigset_t) -> io::Result<()> {
     let oldset = std::ptr::null_mut(); // ignore old mask
     if unsafe { libc::pthread_sigmask(libc::SIG_SETMASK, set, oldset) } == 0 {
         Ok(())
