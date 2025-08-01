@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger, OutputName};
+use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, OutputName, SwitchBinds, Trigger};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
