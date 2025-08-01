@@ -4,13 +4,13 @@
   --base: #1e97b5;
   --fire: #ea740f;
   --black: color-mix(in srgb, var(--base), black 80%);
-  --white: color-mix(in srgb, var(--base), white 80%);
+  --white: color-mix(in srgb, var(--base), white 98%);
   --burning: var(--fire);
   --abyss: color-mix(in srgb, var(--black), black 50%);
   --shed: color-mix(in srgb, var(--black), black 10%);
   --embers: color-mix(in srgb, var(--fire), white 30%);
   --flash: color-mix(in srgb, var(--fire), yellow 30%);
-  --spicy: color-mix(in srgb, var(--base), var(--fire) 20%);
+  --spicy: color-mix(in srgb, var(--base), var(--fire) 40%);
   --wick: color-mix(in srgb, var(--fire), white 70%);
   --ocean: color-mix(in srgb, var(--base), blue 20%);
   --blindness: color-mix(in srgb, var(--white), white 80%);

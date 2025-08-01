@@ -24,8 +24,11 @@ To set up and run the documentation site locally, it is recommended to use [uv](
 
 The documentation site should now be available on http://127.0.0.1:8000/niri/
 
-
 Changes made to the documentation while the development server is running will cause an automatic page refresh in the browser.
+
+> [!TIP]
+> Images may not be visible, as they are stored on Git LFS.
+> If this is the case, run `git lfs pull`.
 
 ## Browsable
 
