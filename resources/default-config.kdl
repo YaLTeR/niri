@@ -540,7 +540,11 @@ binds {
     Mod+Shift+R { switch-preset-window-height; }
     Mod+Ctrl+R { reset-window-height; }
     Mod+F { maximize-column; }
-    Mod+Shift+F { fullscreen-window; }
+
+    // - "toggle", default behavior, toggling between fullscreen and normal
+    // - "normal", setting a window into its normal size independent of its current state
+    // - "fullscreen", setting a window into fullscreen independent of its current state
+    Mod+Shift+F { fullscreen-window "toggle"; }
 
     // Expand the focused column to space not taken up by other fully visible columns.
     // Makes the column "fill the rest of the space".
