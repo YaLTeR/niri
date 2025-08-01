@@ -8,7 +8,7 @@ use_directory_urls: false
 theme:
   name: material
   logo: _assets/icons/logo.svg
-  favicon: _assets/icons/favicon.svg
+  favicon: _assets/icons/logo.svg
   features:
     - navigation.instant
     - search.suggest

@@ -170,7 +170,3 @@
 .md-typeset table:not([class]) td {
     padding: .5em 1.25em;
 }
-
-.md-header__topic:first-of-type {
-  visibility: hidden;
-}
