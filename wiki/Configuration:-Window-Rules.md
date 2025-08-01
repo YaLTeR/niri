@@ -125,7 +125,8 @@ window-rule {
 ```
 
 Match and exclude directives have the same syntax.
-There can be multiple *matchers* in one directive, then the window should match all of them for the directive to apply.
+There can be multiple *matchers* in one directive, then the window must match all of them for the directive to apply.
+When there are multiple *directives* in a rule, any of the directives can be matched to be applied.
 
 ```kdl
 window-rule {
