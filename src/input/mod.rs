@@ -2113,6 +2113,11 @@ impl State {
                 }
                 self.niri.queue_redraw_all();
             }
+            Action::LoadConfigFile => {
+                if let Some(watcher) = &self.niri.config_file_watcher {
+                    watcher.load_config();
+                }
+            }
         }
     }
 

@@ -2,7 +2,7 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
 use std::os::unix::net::UnixStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -164,6 +164,7 @@ use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
+use crate::utils::watcher::Watcher;
 use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
@@ -189,6 +190,8 @@ pub struct Niri {
     /// reloading the config from disk to determine if the output configuration should be reloaded
     /// (and transient changes dropped).
     pub config_file_output_config: niri_config::Outputs,
+
+    pub config_file_watcher: Option<Watcher>,
 
     pub event_loop: LoopHandle<'static, State>,
     pub scheduler: Scheduler<()>,
@@ -1303,6 +1306,28 @@ impl State {
                 warn!("error loading xkb_file: {err:?}");
             }
         }
+    }
+
+    pub fn setup_config_file_watcher(&mut self, watch_path: &PathBuf) {
+        // Parsing the config actually takes > 20 ms on my beefy machine, so let's do it on the
+        // watcher thread.
+        let process = |path: &Path| {
+            Config::load(path).map_err(|err| {
+                warn!("{:?}", err.context("error loading config"));
+            })
+        };
+
+        let (tx, rx) = calloop::channel::sync_channel(1);
+        self.niri
+            .event_loop
+            .insert_source(rx, |event, _, state| match event {
+                calloop::channel::Event::Msg(config) => state.reload_config(config),
+                calloop::channel::Event::Closed => (),
+            })
+            .unwrap();
+
+        self.niri.config_file_watcher = Some(
+            Watcher::new(watch_path.clone(), process, tx));
     }
 
     pub fn reload_config(&mut self, config: Result<Config, ()>) {
@@ -2538,6 +2563,7 @@ impl Niri {
         let mut niri = Self {
             config,
             config_file_output_config,
+            config_file_watcher: None,
 
             event_loop,
             scheduler,

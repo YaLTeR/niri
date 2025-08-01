@@ -1,21 +1,14 @@
 //! File modification watcher.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
 use smithay::reexports::calloop::channel::SyncSender;
 
 pub struct Watcher {
-    should_stop: Arc<AtomicBool>,
-}
-
-impl Drop for Watcher {
-    fn drop(&mut self) {
-        self.should_stop.store(true, Ordering::SeqCst);
-    }
+    load_config_signal_sender: mpsc::Sender<()>,
 }
 
 impl Watcher {
@@ -33,62 +26,67 @@ impl Watcher {
         changed: SyncSender<T>,
         started: Option<mpsc::SyncSender<()>>,
     ) -> Self {
-        let should_stop = Arc::new(AtomicBool::new(false));
+        let (load_config_signal_sender, load_config_signal_receiver) = mpsc::channel();
 
-        {
-            let should_stop = should_stop.clone();
-            thread::Builder::new()
-                .name(format!("Filesystem Watcher for {}", path.to_string_lossy()))
-                .spawn(move || {
-                    // this "should" be as simple as mtime, but it does not quite work in practice;
-                    // it doesn't work if the config is a symlink, and its target changes but the
-                    // new target and old target have identical mtimes.
-                    //
-                    // in practice, this does not occur on any systems other than nix.
-                    // because, on nix practically everything is a symlink to /nix/store
-                    // and due to reproducibility, /nix/store keeps no mtime (= 1970-01-01)
-                    // so, symlink targets change frequently when mtime doesn't.
-                    let mut last_props = path
+        thread::Builder::new()
+            .name(format!("Filesystem Watcher for {}", path.to_string_lossy()))
+            .spawn(move || {
+                // this "should" be as simple as mtime, but it does not quite work in practice;
+                // it doesn't work if the config is a symlink, and its target changes but the
+                // new target and old target have identical mtimes.
+                //
+                // in practice, this does not occur on any systems other than nix.
+                // because, on nix practically everything is a symlink to /nix/store
+                // and due to reproducibility, /nix/store keeps no mtime (= 1970-01-01)
+                // so, symlink targets change frequently when mtime doesn't.
+                let mut last_props = path
+                    .canonicalize()
+                    .and_then(|canon| Ok((canon.metadata()?.modified()?, canon)))
+                    .ok();
+
+                if let Some(started) = started {
+                    let _ = started.send(());
+                }
+
+                loop {
+                    let mut should_load = match load_config_signal_receiver
+                        .recv_timeout(Duration::from_millis(500))
+                    {
+                        Ok(()) => true,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(mpsc::RecvTimeoutError::Timeout) => false,
+                    };
+
+                    if let Ok(new_props) = path
                         .canonicalize()
                         .and_then(|canon| Ok((canon.metadata()?.modified()?, canon)))
-                        .ok();
-
-                    if let Some(started) = started {
-                        let _ = started.send(());
-                    }
-
-                    loop {
-                        thread::sleep(Duration::from_millis(500));
-
-                        if should_stop.load(Ordering::SeqCst) {
-                            break;
+                    {
+                        if last_props.as_ref() != Some(&new_props) {
+                            last_props = Some(new_props);
+                            trace!("file changed: {}", path.to_string_lossy());
+                            should_load = true;
                         }
 
-                        if let Ok(new_props) = path
-                            .canonicalize()
-                            .and_then(|canon| Ok((canon.metadata()?.modified()?, canon)))
-                        {
-                            if last_props.as_ref() != Some(&new_props) {
-                                trace!("file changed: {}", path.to_string_lossy());
+                        if should_load {
+                            let rv = process(&path);
 
-                                let rv = process(&path);
-
-                                if let Err(err) = changed.send(rv) {
-                                    warn!("error sending change notification: {err:?}");
-                                    break;
-                                }
-
-                                last_props = Some(new_props);
+                            if let Err(err) = changed.send(rv) {
+                                warn!("error sending change notification: {err:?}");
+                                break;
                             }
                         }
                     }
+                }
 
-                    debug!("exiting watcher thread for {}", path.to_string_lossy());
-                })
-                .unwrap();
-        }
+                debug!("exiting watcher thread for {}", path.to_string_lossy());
+            })
+            .unwrap();
 
-        Self { should_stop }
+        Self { load_config_signal_sender }
+    }
+
+    pub fn load_config(&self) {
+        self.load_config_signal_sender.send(()).ok();
     }
 }
 
@@ -97,7 +95,7 @@ mod tests {
     use std::error::Error;
     use std::fs::File;
     use std::io::Write;
-    use std::sync::atomic::AtomicU8;
+    use std::sync::atomic::{AtomicU8, Ordering};
 
     use calloop::channel::sync_channel;
     use calloop::EventLoop;
