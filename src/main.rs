@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::os::fd::FromRawFd;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::process::Command;
 use std::{env, mem};
 
@@ -23,7 +23,6 @@ use niri::utils::spawning::{
     spawn, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV, REMOVE_ENV_RUST_BACKTRACE,
     REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
-use niri::utils::watcher::Watcher;
 use niri::utils::{cause_panic, version, xwayland, IS_SYSTEMD_SERVICE};
 use niri_config::Config;
 use niri_ipc::socket::SOCKET_PATH_ENV;
@@ -269,27 +268,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Set up config file watcher.
-    let _watcher = {
-        // Parsing the config actually takes > 20 ms on my beefy machine, so let's do it on the
-        // watcher thread.
-        let process = |path: &Path| {
-            Config::load(path).map_err(|err| {
-                warn!("{:?}", err.context("error loading config"));
-            })
-        };
-
-        let (tx, rx) = calloop::channel::sync_channel(1);
-        let watcher = Watcher::new(watch_path.clone(), process, tx);
-        event_loop
-            .handle()
-            .insert_source(rx, |event, _, state| match event {
-                calloop::channel::Event::Msg(config) => state.reload_config(config),
-                calloop::channel::Event::Closed => (),
-            })
-            .unwrap();
-        watcher
-    };
+    state.setup_config_file_watcher(&watch_path);
 
     // Spawn commands from cli and auto-start.
     spawn(cli.command, None);
