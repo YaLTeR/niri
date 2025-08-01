@@ -565,7 +565,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.column_x(idx),
             col.width(),
             col.is_fullscreen,
-        )
+        ) + col.get_view_offset()
     }
 
     fn compute_new_view_offset_for_column_centered(
@@ -579,7 +579,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.column_x(idx),
             col.width(),
             col.is_fullscreen,
-        )
+        ) + col.get_view_offset()
     }
 
     fn compute_new_view_offset_for_column(
@@ -5073,6 +5073,13 @@ impl<W: LayoutElement> Column<W> {
                  (total height {total_height} > max height {max_height})"
             );
         }
+    }
+
+    pub fn get_view_offset(&self) -> f64
+    {
+        self.tiles.iter().fold(0.0, |offset, tile| {
+            offset + tile.window().get_view_offset()
+        })
     }
 }
 
