@@ -749,13 +749,15 @@ mod tests {
                             },
                         ),
                         backdrop_color: None,
-                        hot_corners: HotCorners {
-                            off: true,
-                            top_left: true,
-                            top_right: true,
-                            bottom_left: true,
-                            bottom_right: true,
-                        },
+                        hot_corners: Some(
+                            HotCorners {
+                                off: true,
+                                top_left: true,
+                                top_right: true,
+                                bottom_left: true,
+                                bottom_right: true,
+                            },
+                        ),
                     },
                 ],
             ),
