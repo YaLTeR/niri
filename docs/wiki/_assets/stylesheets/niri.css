@@ -1,46 +1,50 @@
 /* a lot of this has been based off of uv's mkdocs css */
 
+/*  	Black 	Red 	Green 	Yellow 	Blue 	Magenta 	Cyan 	White */
+
 :root {
   --base: #1e97b5;
-  --fire: #ea740f;
+  --rotation: 225;
+  --rotated: hsl(from var(--base) calc(h + var(--rotation)) s l);
+  --spicy: color-mix(in srgb, var(--base), var(--rotated) 40%);
   --black: color-mix(in srgb, var(--base), black 80%);
-  --white: color-mix(in srgb, var(--base), white 98%);
-  --burning: var(--fire);
+  --shadow: color-mix(in srgb, var(--base), black 20%);
   --abyss: color-mix(in srgb, var(--black), black 50%);
-  --shed: color-mix(in srgb, var(--black), black 10%);
-  --embers: color-mix(in srgb, var(--fire), white 30%);
-  --flash: color-mix(in srgb, var(--fire), yellow 30%);
-  --spicy: color-mix(in srgb, var(--base), var(--fire) 40%);
-  --wick: color-mix(in srgb, var(--fire), white 70%);
-  --ocean: color-mix(in srgb, var(--base), blue 20%);
-  --blindness: color-mix(in srgb, var(--white), white 80%);
-  --granite: color-mix(in srgb, var(--white), gray 80%);
-  --shadow: color-mix(in srgb, var(--base), black 10%);
+  --white: color-mix(in srgb, var(--base), white 98%);
+  --not-so-white: color-mix(in srgb, var(--white), black 2%);
+  --even-less-white: color-mix(in srgb, var(--white), black 20%);
+  
+  --red: color-mix(in srgb, var(--base), red 20%);
+  --green: color-mix(in srgb, var(--base), green 20%);
+  --yellow: color-mix(in srgb, var(--base), yellow 20%);
+  --blue: color-mix(in srgb, var(--base), blue 20%);
+  --magenta: color-mix(in srgb, var(--base), magenta 20%);
+  --cyan: color-mix(in srgb, var(--base), cyan 20%);
 }
 
 [data-md-color-scheme="niri-light"] {
   --md-default-bg-color: var(--white);
   --md-default-bg-color--dark: var(--black);
   --md-default-fg-color--lighter: var(--white);
-  --md-default-fg-color--lightest: var(--blindness);
+  --md-default-fg-color--lightest: var(--cyan);
   --md-primary-fg-color: var(--abyss);
-  --md-typeset-a-color: var(--burning);
-  --md-accent-fg-color: var(--embers);
-  --md-code-fg-color: var(--shed);
-  --md-code-bg-color: var(--blindness);
+  --md-typeset-a-color: var(--rotated);
+  --md-accent-fg-color: var(--green);
+  --md-code-fg-color: var(--red);
+  --md-code-bg-color: var(--not-so-white);
 
-  --md-code-hl-comment-color: var(--granite);
-  --md-code-hl-punctuation-color: var(--granite);
-  --md-code-hl-generic-color: var(--ocean);
-  --md-code-hl-variable-color: var(--shadow);
-  --md-code-hl-string-color: var(--burning);
-  --md-code-hl-keyword-color: var(--ocean);
-  --md-code-hl-operator-color: var(--ocean);
-  --md-code-hl-number-color: var(--spicy);
-  --md-code-hl-special-color: var(--spicy);
-  --md-code-hl-function-color: var(--wick);
-  --md-code-hl-constant-color: var(--burning);
-  --md-code-hl-name-color: var(--md-code-fg-color);
+  --md-code-hl-comment-color: color-mix(in srgb, var(--even-less-white), black 40%);
+  --md-code-hl-punctuation-color: color-mix(in srgb, var(--shadow), black 40%);
+  --md-code-hl-generic-color: color-mix(in srgb, var(--green), black 40%);
+  --md-code-hl-variable-color: color-mix(in srgb, var(--shadow), black 40%);
+  --md-code-hl-string-color: color-mix(in srgb, var(--rotated), black 40%);
+  --md-code-hl-keyword-color: color-mix(in srgb, var(--shadow), black 40%);
+  --md-code-hl-operator-color: color-mix(in srgb, var(--blue), black 40%);
+  --md-code-hl-number-color: color-mix(in srgb, var(--spicy), black 40%);
+  --md-code-hl-special-color: color-mix(in srgb, var(--spicy), black 40%);
+  --md-code-hl-function-color: color-mix(in srgb, var(--magenta), black 40%);
+  --md-code-hl-constant-color: color-mix(in srgb, var(--rotated), black 40%);
+  --md-code-hl-name-color: color-mix(in srgb, var(--red), black 40%);
 }
 
 [data-md-color-scheme="niri-dark"] {
@@ -49,40 +53,41 @@
   --md-default-fg-color--light: var(--white);
   --md-default-fg-color--lighter: var(--white);
   --md-default-fg-color--lightest: var(--lunar);
-  --md-primary-fg-color: var(--shed);
+  --md-primary-fg-color: var(--red);
   --md-primary-bg-color: var(--white);
-  --md-accent-fg-color: var(--embers);
+  --md-accent-fg-color: var(--green);
 
   --md-typeset-color: var(--white);
-  --md-typeset-a-color: var(--burning);
-  --md-typeset-mark-color: var(--flash);
+  --md-typeset-a-color: var(--rotated);
+  --md-typeset-mark-color: var(--yellow);
 
   --md-code-fg-color: var(--white);
-  --md-code-bg-color: var(--shed);
+  --md-code-bg-color: var(--black);
 
-  --md-code-hl-comment-color: var(--granite);
-  --md-code-hl-punctuation-color: var(--granite);
-  --md-code-hl-generic-color: var(--ocean);
+  --md-code-hl-comment-color: var(--even-less-white);
+  --md-code-hl-punctuation-color: var(--shadow);
+  --md-code-hl-generic-color: var(--green);
   --md-code-hl-variable-color: var(--shadow);
-  --md-code-hl-string-color: var(--burning);
-  --md-code-hl-keyword-color: var(--ocean);
-  --md-code-hl-operator-color: var(--ocean);
+  --md-code-hl-string-color: var(--rotated);
+  --md-code-hl-keyword-color: var(--shadow);
+  --md-code-hl-operator-color: var(--blue);
   --md-code-hl-number-color: var(--spicy);
   --md-code-hl-special-color: var(--spicy);
-  --md-code-hl-function-color: var(--wick);
-  --md-code-hl-constant-color: var(--burning);
-  --md-code-hl-name-color: var(--md-code-fg-color);
+  --md-code-hl-function-color: var(--magenta);
+  --md-code-hl-constant-color: var(--rotated);
+  --md-code-hl-name-color: var(--red);
 
   --md-typeset-del-color: hsla(6, 90%, 60%, 0.15);
   --md-typeset-ins-color: hsla(150, 90%, 44%, 0.15);
-  --md-typeset-kbd-border-color: hsla(150, 87%, 25%, 0.05);
+  --md-typeset-kbd-border-color: hsla(150, 87%, 10%, 1);
+  --md-typeset-kbd-accent-color: var(--shadow);
 
   --md-typeset-table-color: hsla(0, 0%, 100%, 0.12);
   --md-typeset-table-color--light: hsla(0, 0%, 100%, 0.035);
 }
 
 [data-md-color-scheme="niri-dark"] details summary a {
-  color: var(--burning);
+  color: var(--rotated);
 }
 
 [data-md-color-scheme="niri-dark"] div.admonition {
