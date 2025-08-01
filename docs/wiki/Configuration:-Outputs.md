@@ -16,6 +16,13 @@ output "eDP-1" {
     focus-at-startup
     background-color "#003300"
     backdrop-color "#001100"
+    hot-corners {
+        off
+        top-left
+        top-right
+        bottom-left
+        bottom-right
+    }
 }
 
 output "HDMI-A-1" {
@@ -217,3 +224,18 @@ output "HDMI-A-1" {
     backdrop-color "#001100"
 }
 ```
+
+### Hot Corners
+
+<sup>Since: TODO</sup>
+
+Defines hot corners for the specific monitor.
+
+Put your mouse at a corner of your monitor (by default, top-left) to toggle the overview.
+Also works during drag-and-dropping something.
+
+- `off` disables the hot corners for this monitor.
+- `top-left` enables the top left hot corner for this monitor.
+- `top-right` enables the top right hot corner for this monitor.
+- `bottom-left` enables the bottom left hot corner for this monitor.
+- `bottom-right` enables the bottom right hot corner for this monitor.
