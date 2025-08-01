@@ -3161,11 +3161,48 @@ impl Niri {
             return false;
         }
 
-        //TODO
-        let hot_corners = self.config.borrow().gestures.hot_corners;
+        let mut hot_corners = self.config.borrow().gestures.hot_corners;
+        let name = output.user_data().get::<OutputName>().unwrap();
+        let config = self.config.borrow();
+        let opconf = config.outputs.find(name);
+        if opconf.is_some() {
+            hot_corners = opconf.unwrap().hot_corners;
+        }
+
         if !hot_corners.off {
-            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-            if hot_corner.contains(pos_within_output) {
+            let size = output.current_mode().unwrap().size;
+            let transform = output.current_transform();
+            let size = transform.transform_size(size);
+
+            let hot_top_left = Rectangle::new(Point::new(0., 0.), Size::from((1., 1.)));
+            let hot_top_right =
+                Rectangle::new(Point::new((size.w - 1) as f64, 0.), Size::from((1., 1.)));
+            let hot_bottom_left =
+                Rectangle::new(Point::new(0., (size.h - 1) as f64), Size::from((1., 1.)));
+            let hot_bottom_right = Rectangle::new(
+                Point::new((size.w - 1) as f64, (size.h - 1) as f64),
+                Size::from((1., 1.)),
+            );
+
+            if !(hot_corners.top_left
+                || hot_corners.top_right
+                || hot_corners.bottom_left
+                || hot_corners.bottom_right)
+            {
+                hot_corners.top_left = true;
+            }
+
+            let inside_top_left = hot_top_left.contains(pos_within_output) && hot_corners.top_left;
+            let inside_top_right =
+                hot_top_right.contains(pos_within_output) && hot_corners.top_right;
+            let inside_bottom_left =
+                hot_bottom_left.contains(pos_within_output) && hot_corners.bottom_left;
+            let inside_bottom_right =
+                hot_bottom_right.contains(pos_within_output) && hot_corners.bottom_right;
+
+            let inside_hot_corner =
+                inside_top_left || inside_top_right || inside_bottom_left || inside_bottom_right;
+            if inside_hot_corner {
                 return true;
             }
         }
