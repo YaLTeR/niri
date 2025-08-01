@@ -1,22 +1,17 @@
 //! File modification watcher.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::mpsc;
 use std::time::{Duration, SystemTime};
 use std::{io, thread};
 
 use niri_config::ConfigPath;
 use smithay::reexports::calloop::channel::SyncSender;
 
-pub struct Watcher {
-    should_stop: Arc<AtomicBool>,
-}
+use crate::niri::State;
 
-impl Drop for Watcher {
-    fn drop(&mut self) {
-        self.should_stop.store(true, Ordering::SeqCst);
-    }
+pub struct Watcher {
+    load_config_signal_sender: mpsc::Sender<()>,
 }
 
 impl Watcher {
@@ -36,79 +31,107 @@ impl Watcher {
         started: Option<mpsc::SyncSender<()>>,
         polling_interval: Duration,
     ) -> Self {
-        let should_stop = Arc::new(AtomicBool::new(false));
+        let (load_config_signal_sender, load_config_signal_receiver) = mpsc::channel();
 
-        {
-            let should_stop = should_stop.clone();
-            thread::Builder::new()
-                .name(format!("Filesystem Watcher for {config_path:?}"))
-                .spawn(move || {
-                    // this "should" be as simple as storing the last seen mtime,
-                    // and if the contents change without updating mtime, we ignore it.
-                    //
-                    // but that breaks if the config is a symlink, and its target
-                    // changes but the new target and old target have identical mtimes.
-                    // in which case we should *not* ignore it; this is an entirely different file.
-                    //
-                    // in practice, this edge case does not occur on systems other than nix.
-                    // because, on nix, everything is a symlink to /nix/store
-                    // and /nix/store keeps no mtime (= 1970-01-01)
-                    // so, symlink targets change frequently when mtime doesn't.
-                    //
-                    // therefore, we must also store the canonical path, along with its mtime
+        thread::Builder::new()
+            .name(format!("Filesystem Watcher for {config_path:?}"))
+            .spawn(move || {
+                // this "should" be as simple as storing the last seen mtime,
+                // and if the contents change without updating mtime, we ignore it.
+                //
+                // but that breaks if the config is a symlink, and its target
+                // changes but the new target and old target have identical mtimes.
+                // in which case we should *not* ignore it; this is an entirely different file.
+                //
+                // in practice, this edge case does not occur on systems other than nix.
+                // because, on nix, everything is a symlink to /nix/store
+                // and /nix/store keeps no mtime (= 1970-01-01)
+                // so, symlink targets change frequently when mtime doesn't.
+                //
+                // therefore, we must also store the canonical path, along with its mtime
 
-                    fn see_path(path: &Path) -> io::Result<(SystemTime, PathBuf)> {
-                        let canon = path.canonicalize()?;
-                        let mtime = canon.metadata()?.modified()?;
-                        Ok((mtime, canon))
+                fn see_path(path: &Path) -> io::Result<(SystemTime, PathBuf)> {
+                    let canon = path.canonicalize()?;
+                    let mtime = canon.metadata()?.modified()?;
+                    Ok((mtime, canon))
+                }
+
+                fn see(config_path: &ConfigPath) -> io::Result<(SystemTime, PathBuf)> {
+                    match config_path {
+                        ConfigPath::Explicit(path) => see_path(path),
+                        ConfigPath::Regular {
+                            user_path,
+                            system_path,
+                        } => see_path(user_path).or_else(|_| see_path(system_path)),
                     }
+                }
 
-                    fn see(config_path: &ConfigPath) -> io::Result<(SystemTime, PathBuf)> {
-                        match config_path {
-                            ConfigPath::Explicit(path) => see_path(path),
-                            ConfigPath::Regular {
-                                user_path,
-                                system_path,
-                            } => see_path(user_path).or_else(|_| see_path(system_path)),
+                let mut last_props = see(&config_path).ok();
+
+                if let Some(started) = started {
+                    let _ = started.send(());
+                }
+
+                loop {
+                    let mut should_load =
+                        match load_config_signal_receiver.recv_timeout(polling_interval) {
+                            Ok(()) => true,
+                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                            Err(mpsc::RecvTimeoutError::Timeout) => false,
+                        };
+
+                    if let Ok(new_props) = see(&config_path) {
+                        if last_props.as_ref() != Some(&new_props) {
+                            last_props = Some(new_props);
+                            trace!("config file changed");
+                            should_load = true;
                         }
-                    }
 
-                    let mut last_props = see(&config_path).ok();
+                        if should_load {
+                            let rv = process(&config_path);
 
-                    if let Some(started) = started {
-                        let _ = started.send(());
-                    }
-
-                    loop {
-                        thread::sleep(polling_interval);
-
-                        if should_stop.load(Ordering::SeqCst) {
-                            break;
-                        }
-
-                        if let Ok(new_props) = see(&config_path) {
-                            if last_props.as_ref() != Some(&new_props) {
-                                trace!("config file changed");
-
-                                let rv = process(&config_path);
-
-                                if let Err(err) = changed.send(rv) {
-                                    warn!("error sending change notification: {err:?}");
-                                    break;
-                                }
-
-                                last_props = Some(new_props);
+                            if let Err(err) = changed.send(rv) {
+                                warn!("error sending change notification: {err:?}");
+                                break;
                             }
                         }
                     }
+                }
 
-                    debug!("exiting watcher thread for {config_path:?}");
-                })
-                .unwrap();
+                debug!("exiting watcher thread for {config_path:?}");
+            })
+            .unwrap();
+
+        Self {
+            load_config_signal_sender,
         }
-
-        Self { should_stop }
     }
+
+    pub fn load_config(&self) {
+        self.load_config_signal_sender.send(()).ok();
+    }
+}
+
+pub fn setup(state: &mut State, config_path: &ConfigPath) {
+    // Parsing the config actually takes > 20 ms on my beefy machine, so let's do it on the
+    // watcher thread.
+    let process = |path: &ConfigPath| {
+        path.load().map_err(|err| {
+            warn!("{err:?}");
+        })
+    };
+
+    let (tx, rx) = calloop::channel::sync_channel(1);
+    state
+        .niri
+        .event_loop
+        .insert_source(rx, |event, _, state| match event {
+            calloop::channel::Event::Msg(config) => state.reload_config(config),
+            calloop::channel::Event::Closed => (),
+        })
+        .unwrap();
+
+    state.niri.config_file_watcher = Some(Watcher::new(config_path.clone(), process, tx));
 }
 
 #[cfg(test)]

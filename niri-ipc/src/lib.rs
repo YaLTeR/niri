@@ -840,6 +840,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
+    /// Reload the config file.
+    LoadConfigFile {},
 }
 
 /// Change in window or column size.
