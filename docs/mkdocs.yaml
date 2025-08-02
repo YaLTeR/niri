@@ -14,18 +14,21 @@ theme:
     - search.suggest
     - content.code.copy
     - content.action.edit
-  palette:    
+  palette:
     - media: "(prefers-color-scheme)"
+      primary: custom
       toggle:
         icon: material/brightness-auto
         name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
-      scheme: niri-light
+      primary: custom
+      scheme: default
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
-      scheme: niri-dark
+      primary: custom
+      scheme: slate
       toggle:
         icon: material/brightness-4
         name: Switch to system preference
