@@ -85,7 +85,7 @@ pub struct Cast {
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub enum CastState {
+enum CastState {
     ResizePending {
         pending_size: Size<u32, Physical>,
     },
