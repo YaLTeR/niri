@@ -1928,13 +1928,6 @@ impl State {
                     }
                 }
 
-<<<<<<< HEAD
-=======
-                let config = self.niri.config.borrow();
-                let wait_for_sync = config.debug().wait_for_frame_completion_in_pipewire;
-                drop(config);
-
->>>>>>> 30b68f0a (niri-config: support merging certain fields)
                 self.backend.with_primary_renderer(|renderer| {
                     // FIXME: pointer.
                     let elements = mapped
@@ -4993,13 +4986,6 @@ impl Niri {
 
         let scale = Scale::from(output.current_scale().fractional_scale());
 
-<<<<<<< HEAD
-=======
-        let config = self.config.borrow();
-        let wait_for_sync = config.debug().wait_for_frame_completion_in_pipewire;
-        drop(config);
-
->>>>>>> 30b68f0a (niri-config: support merging certain fields)
         let mut elements = None;
         let mut casts_to_stop = vec![];
 
@@ -5053,13 +5039,6 @@ impl Niri {
 
         let scale = Scale::from(output.current_scale().fractional_scale());
 
-<<<<<<< HEAD
-=======
-        let config = self.config.borrow();
-        let wait_for_sync = config.debug().wait_for_frame_completion_in_pipewire;
-        drop(config);
-
->>>>>>> 30b68f0a (niri-config: support merging certain fields)
         let mut casts_to_stop = vec![];
 
         let mut casts = mem::take(&mut self.casts);
