@@ -17,10 +17,10 @@ rust-version = "1.80.1"
 [workspace.dependencies]
 anyhow = "1.0.98"
 bitflags = "2.9.1"
-clap = { version = "4.5.41", features = ["derive"] }
+clap = { version = "4.5.42", features = ["derive"] }
 insta = "1.43.1"
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.140"
+serde_json = "1.0.141"
 tracing = { version = "0.1.41", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracy-client = { version = "0.18.2", default-features = false }
@@ -53,11 +53,11 @@ keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 anyhow.workspace = true
 arrayvec = "0.7.6"
 async-channel = "2.5.0"
-async-io = { version = "2.4.1", optional = true }
+async-io = { version = "2.5.0", optional = true }
 atomic = "0.6.1"
 bitflags.workspace = true
 bytemuck = { version = "1.23.1", features = ["derive"] }
-calloop = { version = "0.14.2", features = ["executor", "futures-io", "signals"] }
+calloop = { version = "0.14.3", features = ["executor", "futures-io", "signals"] }
 clap = { workspace = true, features = ["string"] }
 clap_complete = "4.5.55"
 clap_complete_nushell = "4.5.8"
@@ -66,7 +66,7 @@ drm-ffi = "0.9.0"
 fastrand = "2.3.0"
 futures-util = { version = "0.3.31", default-features = false, features = ["std", "io"] }
 git-version = "0.3.9"
-glam = "0.30.4"
+glam = "0.30.5"
 input = { version = "0.9.1", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.174"
@@ -89,10 +89,10 @@ tracing-subscriber.workspace = true
 tracing.workspace = true
 tracy-client.workspace = true
 url = { version = "2.5.4", optional = true }
-wayland-backend = "0.3.10"
-wayland-scanner = "0.31.6"
+wayland-backend = "0.3.11"
+wayland-scanner = "0.31.7"
 xcursor = "0.3.10"
-zbus = { version = "5.8.0", optional = true }
+zbus = { version = "5.9.0", optional = true }
 
 [dependencies.smithay]
 workspace = true
@@ -119,7 +119,7 @@ insta.workspace = true
 proptest = "1.7.0"
 proptest-derive = { version = "0.6.0", features = ["boxed_union"] }
 rayon = "1.10.0"
-wayland-client = "0.31.10"
+wayland-client = "0.31.11"
 xshell = "0.2.7"
 
 [features]
