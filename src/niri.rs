@@ -1308,7 +1308,7 @@ impl State {
     pub fn reload_config(&mut self, config: Result<Config, ()>) {
         let _span = tracy_client::span!("State::reload_config");
 
-        let mut config = match config {
+        let config = match config {
             Ok(config) => config,
             Err(()) => {
                 self.niri.config_error_notification.show();
@@ -1340,13 +1340,13 @@ impl State {
             self.niri.layout.ensure_named_workspace(ws_config);
         }
 
-        let rate = 1.0 / config.animations.slowdown.0.max(0.001);
+        let rate = 1.0 / config.animations().slowdown.0.max(0.001);
         self.niri.clock.set_rate(rate);
         self.niri
             .clock
-            .set_complete_instantly(config.animations.off);
+            .set_complete_instantly(config.animations().off);
 
-        *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
+        *CHILD_ENV.write().unwrap() = config.environment();
 
         let mut reload_xkb = None;
         let mut libinput_config_changed = false;
@@ -1402,14 +1402,14 @@ impl State {
         }
 
         let new_mod_key = self.backend.mod_key(&config);
-        if new_mod_key != self.backend.mod_key(&old_config) || config.binds != old_config.binds {
+        if new_mod_key != self.backend.mod_key(&old_config) || config.binds() != old_config.binds() {
             self.niri
                 .hotkey_overlay
                 .on_hotkey_config_updated(new_mod_key);
-            self.niri.mods_with_mouse_binds = mods_with_mouse_binds(new_mod_key, &config.binds);
-            self.niri.mods_with_wheel_binds = mods_with_wheel_binds(new_mod_key, &config.binds);
+            self.niri.mods_with_mouse_binds = mods_with_mouse_binds(new_mod_key, &config.binds());
+            self.niri.mods_with_wheel_binds = mods_with_wheel_binds(new_mod_key, &config.binds());
             self.niri.mods_with_finger_scroll_binds =
-                mods_with_finger_scroll_binds(new_mod_key, &config.binds);
+                mods_with_finger_scroll_binds(new_mod_key, &config.binds());
         }
 
         if config.window_rules != old_config.window_rules {
@@ -1420,30 +1420,33 @@ impl State {
             layer_rules_changed = true;
         }
 
-        if config.animations.window_resize.custom_shader
-            != old_config.animations.window_resize.custom_shader
+        if config.animations().window_resize.custom_shader
+            != old_config.animations().window_resize.custom_shader
         {
-            let src = config.animations.window_resize.custom_shader.as_deref();
+            let animations = config.animations();
+            let src = animations.window_resize.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
                 shaders::set_custom_resize_program(renderer, src);
             });
             shaders_changed = true;
         }
 
-        if config.animations.window_close.custom_shader
-            != old_config.animations.window_close.custom_shader
+        if config.animations().window_close.custom_shader
+            != old_config.animations().window_close.custom_shader
         {
-            let src = config.animations.window_close.custom_shader.as_deref();
+            let animations = config.animations();
+            let src = animations.window_close.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
                 shaders::set_custom_close_program(renderer, src);
             });
             shaders_changed = true;
         }
 
-        if config.animations.window_open.custom_shader
-            != old_config.animations.window_open.custom_shader
+        if config.animations().window_open.custom_shader
+            != old_config.animations().window_open.custom_shader
         {
-            let src = config.animations.window_open.custom_shader.as_deref();
+            let animations = config.animations();
+            let src = animations.window_open.custom_shader.as_deref();
             self.backend.with_primary_renderer(|renderer| {
                 shaders::set_custom_open_program(renderer, src);
             });
@@ -1454,8 +1457,8 @@ impl State {
             cursor_inactivity_timeout_changed = true;
         }
 
-        if config.debug.keep_laptop_panel_on_when_lid_is_closed
-            != old_config.debug.keep_laptop_panel_on_when_lid_is_closed
+        if config.debug().keep_laptop_panel_on_when_lid_is_closed
+            != old_config.debug().keep_laptop_panel_on_when_lid_is_closed
         {
             output_config_changed = true;
         }
@@ -1464,7 +1467,7 @@ impl State {
         if config.overview.backdrop_color != old_config.overview.backdrop_color {
             output_config_changed = true;
         }
-        if config.layout.background_color != old_config.layout.background_color {
+        if config.layout().background_color != old_config.layout().background_color {
             output_config_changed = true;
         }
 
@@ -1615,7 +1618,7 @@ impl State {
 
             let background_color = config
                 .and_then(|c| c.background_color)
-                .unwrap_or(full_config.layout.background_color)
+                .unwrap_or(full_config.layout().background_color)
                 .to_array_unpremul();
             let background_color = Color32F::from(background_color);
 
@@ -1882,7 +1885,7 @@ impl State {
         match &cast.target {
             CastTarget::Nothing => {
                 let config = self.niri.config.borrow();
-                let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
+                let wait_for_sync = config.debug().wait_for_frame_completion_in_pipewire;
                 drop(config);
 
                 self.backend.with_primary_renderer(|renderer| {
@@ -1927,7 +1930,7 @@ impl State {
                 }
 
                 let config = self.niri.config.borrow();
-                let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
+                let wait_for_sync = config.debug().wait_for_frame_completion_in_pipewire;
                 drop(config);
 
                 self.backend.with_primary_renderer(|renderer| {
@@ -2101,7 +2104,7 @@ impl State {
 
                 {
                     let config = self.niri.config.borrow();
-                    if config.debug.force_pipewire_invalid_modifier {
+                    if config.debug().force_pipewire_invalid_modifier {
                         render_formats = render_formats
                             .into_iter()
                             .filter(|f| f.modifier == Modifier::Invalid)
@@ -2286,9 +2289,9 @@ impl Niri {
 
         let mut animation_clock = Clock::default();
 
-        let rate = 1.0 / config_.animations.slowdown.0.max(0.001);
+        let rate = 1.0 / config_.animations().slowdown.0.max(0.001);
         animation_clock.set_rate(rate);
-        animation_clock.set_complete_instantly(config_.animations.off);
+        animation_clock.set_complete_instantly(config_.animations().off);
 
         let layout = Layout::new(animation_clock.clone(), &config_);
 
@@ -2444,9 +2447,9 @@ impl Niri {
             CursorManager::new(&config_.cursor.xcursor_theme, config_.cursor.xcursor_size);
 
         let mod_key = backend.mod_key(&config.borrow());
-        let mods_with_mouse_binds = mods_with_mouse_binds(mod_key, &config_.binds);
-        let mods_with_wheel_binds = mods_with_wheel_binds(mod_key, &config_.binds);
-        let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
+        let mods_with_mouse_binds = mods_with_mouse_binds(mod_key, &config_.binds());
+        let mods_with_wheel_binds = mods_with_wheel_binds(mod_key, &config_.binds());
+        let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds());
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
         let config_error_notification =
@@ -2881,7 +2884,7 @@ impl Niri {
 
         let background_color = c
             .and_then(|c| c.background_color)
-            .unwrap_or(config.layout.background_color)
+            .unwrap_or(config.layout().background_color)
             .to_array_unpremul();
 
         let mut backdrop_color = c
@@ -3136,7 +3139,7 @@ impl Niri {
             return false;
         }
 
-        let hot_corners = self.config.borrow().gestures.hot_corners;
+        let hot_corners = self.config.borrow().gestures().hot_corners;
         if !hot_corners.off {
             let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
             if hot_corner.contains(pos_within_output) {
@@ -3411,7 +3414,7 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
-            let hot_corners = self.config.borrow().gestures.hot_corners;
+            let hot_corners = self.config.borrow().gestures().hot_corners;
             if !hot_corners.off {
                 let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
                 if hot_corner.contains(pos_within_output) {
@@ -4104,7 +4107,7 @@ impl Niri {
         let _span = tracy_client::span!("Niri::render");
 
         if target == RenderTarget::Output {
-            if let Some(preview) = self.config.borrow().debug.preview_render {
+            if let Some(preview) = self.config.borrow().debug().preview_render {
                 target = match preview {
                     PreviewRender::Screencast => RenderTarget::Screencast,
                     PreviewRender::ScreenCapture => RenderTarget::ScreenCapture,
@@ -4994,7 +4997,7 @@ impl Niri {
         let scale = Scale::from(output.current_scale().fractional_scale());
 
         let config = self.config.borrow();
-        let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
+        let wait_for_sync = config.debug().wait_for_frame_completion_in_pipewire;
         drop(config);
 
         let mut elements = None;
@@ -5051,7 +5054,7 @@ impl Niri {
         let scale = Scale::from(output.current_scale().fractional_scale());
 
         let config = self.config.borrow();
-        let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
+        let wait_for_sync = config.debug().wait_for_frame_completion_in_pipewire;
         drop(config);
 
         let mut casts_to_stop = vec![];

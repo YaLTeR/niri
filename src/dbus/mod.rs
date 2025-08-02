@@ -63,7 +63,7 @@ impl DBusServers {
             dbus.conn_service_channel = try_start(service_channel);
         }
 
-        if is_session_instance || config.debug.dbus_interfaces_in_non_session_instances {
+        if is_session_instance || config.debug().dbus_interfaces_in_non_session_instances {
             let (to_niri, from_display_config) = calloop::channel::channel();
             let display_config = DisplayConfig::new(to_niri, backend.ipc_outputs());
             niri.event_loop

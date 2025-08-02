@@ -145,13 +145,13 @@ impl Winit {
         shaders::init(renderer);
 
         let config = self.config.borrow();
-        if let Some(src) = config.animations.window_resize.custom_shader.as_deref() {
+        if let Some(src) = config.animations().window_resize.custom_shader.as_deref() {
             shaders::set_custom_resize_program(renderer, Some(src));
         }
-        if let Some(src) = config.animations.window_close.custom_shader.as_deref() {
+        if let Some(src) = config.animations().window_close.custom_shader.as_deref() {
             shaders::set_custom_close_program(renderer, Some(src));
         }
-        if let Some(src) = config.animations.window_open.custom_shader.as_deref() {
+        if let Some(src) = config.animations().window_open.custom_shader.as_deref() {
             shaders::set_custom_open_program(renderer, Some(src));
         }
         drop(config);
@@ -208,7 +208,7 @@ impl Winit {
             if self
                 .config
                 .borrow()
-                .debug
+                .debug()
                 .wait_for_frame_completion_before_queueing
             {
                 let _span = tracy_client::span!("wait for completion");

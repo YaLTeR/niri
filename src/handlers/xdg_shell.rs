@@ -1268,7 +1268,7 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
             trace!("taking pending transaction");
             if let Some(transaction) = mapped.take_pending_transaction(serial) {
                 // Transaction can be already completed if it ran past the deadline.
-                let disable = state.niri.config.borrow().debug.disable_transactions;
+                let disable = state.niri.config.borrow().debug().disable_transactions;
                 if !transaction.is_completed() && !disable {
                     // Register the deadline even if this is the last pending, since dmabuf
                     // rendering can still run over the deadline.
