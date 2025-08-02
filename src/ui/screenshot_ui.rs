@@ -224,7 +224,7 @@ impl ScreenshotUi {
 
         let open_anim = {
             let c = config.borrow();
-            Animation::new(clock.clone(), 0., 1., 0., c.animations.screenshot_ui_open.0)
+            Animation::new(clock.clone(), 0., 1., 0., c.animations().screenshot_ui_open.0)
         };
 
         *self = Self::Open {

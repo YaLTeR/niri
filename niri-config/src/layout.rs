@@ -5,7 +5,7 @@ use crate::appearance::{
     Border, FocusRing, InsertHint, Shadow, TabIndicator, WorkspaceShadow, DEFAULT_BACKDROP_COLOR,
     DEFAULT_BACKGROUND_COLOR,
 };
-use crate::core::FloatOrInt;
+use crate::core::{FloatOrInt, MaybeSet};
 use crate::utils::expect_only_children;
 use crate::Color;
 
@@ -47,8 +47,8 @@ pub struct Layout {
     pub empty_workspace_above_first: bool,
     #[knuffel(child, unwrap(argument, str), default = ColumnDisplay::Normal)]
     pub default_column_display: ColumnDisplay,
-    #[knuffel(child, unwrap(argument), default = FloatOrInt(16.))]
-    pub gaps: FloatOrInt<0, 65535>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub gaps: MaybeSet<FloatOrInt<0, 65535>>,
     #[knuffel(child, default)]
     pub struts: Struts,
     #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
@@ -70,9 +70,56 @@ impl Default for Layout {
             always_center_single_column: false,
             empty_workspace_above_first: false,
             default_column_display: ColumnDisplay::Normal,
-            gaps: FloatOrInt(16.),
+            gaps: MaybeSet::unset(FloatOrInt(16.)),
             struts: Default::default(),
             background_color: DEFAULT_BACKGROUND_COLOR,
+        }
+    }
+}
+
+impl Layout {
+    pub fn merge_with(&mut self, other: &Self) {
+        let default = Self::default();
+        if other.focus_ring != default.focus_ring {
+            self.focus_ring = other.focus_ring;
+        }
+        if other.border != default.border {
+            self.border = other.border;
+        }
+        if other.shadow != default.shadow {
+            self.shadow = other.shadow;
+        }
+        if other.tab_indicator != default.tab_indicator {
+            self.tab_indicator = other.tab_indicator;
+        }
+        if other.insert_hint != default.insert_hint {
+            self.insert_hint = other.insert_hint;
+        }
+        self.preset_column_widths
+            .extend_from_slice(&other.preset_column_widths);
+        if other.default_column_width != default.default_column_width {
+            self.default_column_width = other.default_column_width;
+        }
+        self.preset_window_heights
+            .extend_from_slice(&other.preset_window_heights);
+        if other.center_focused_column != default.center_focused_column {
+            self.center_focused_column = other.center_focused_column;
+        }
+        if other.always_center_single_column != default.always_center_single_column {
+            self.always_center_single_column = other.always_center_single_column;
+        }
+        if other.empty_workspace_above_first != default.empty_workspace_above_first {
+            self.empty_workspace_above_first = other.empty_workspace_above_first;
+        }
+        if other.default_column_display != default.default_column_display {
+            self.default_column_display = other.default_column_display;
+        }
+        if other.gaps.is_set() {
+            self.gaps = other.gaps.clone();
+        }
+        self.struts.merge_with(&other.struts);
+        if other.background_color != default.background_color {
+            self.background_color = other.background_color;
         }
     }
 }
@@ -140,42 +187,88 @@ pub struct Struts {
     pub bottom: FloatOrInt<-65535, 65535>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+impl Struts {
+    pub fn merge_with(&mut self, other: &Self) {
+        let default = Self::default();
+        if other.left != default.left {
+            self.left = other.left;
+        }
+        if other.right != default.right {
+            self.right = other.right;
+        }
+        if other.top != default.top {
+            self.top = other.top;
+        }
+        if other.bottom != default.bottom {
+            self.bottom = other.bottom;
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct DndEdgeViewScroll {
-    #[knuffel(child, unwrap(argument), default = Self::default().trigger_width)]
-    pub trigger_width: FloatOrInt<0, 65535>,
-    #[knuffel(child, unwrap(argument), default = Self::default().delay_ms)]
-    pub delay_ms: u16,
-    #[knuffel(child, unwrap(argument), default = Self::default().max_speed)]
-    pub max_speed: FloatOrInt<0, 1_000_000>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub trigger_width: MaybeSet<FloatOrInt<0, 65535>>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub delay_ms: MaybeSet<u16>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub max_speed: MaybeSet<FloatOrInt<0, 1_000_000>>,
 }
 
 impl Default for DndEdgeViewScroll {
     fn default() -> Self {
         Self {
-            trigger_width: FloatOrInt(30.), // Taken from GTK 4.
-            delay_ms: 100,
-            max_speed: FloatOrInt(1500.),
+            trigger_width: MaybeSet::unset(FloatOrInt(30.)),
+            delay_ms: MaybeSet::unset(100),
+            max_speed: MaybeSet::unset(FloatOrInt(1500.)),
         }
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+impl DndEdgeViewScroll {
+    pub fn merge_with(&mut self, other: &Self) {
+        if other.trigger_width.is_set() {
+            self.trigger_width = other.trigger_width.clone();
+        }
+        if other.delay_ms.is_set() {
+            self.delay_ms = other.delay_ms.clone();
+        }
+        if other.max_speed.is_set() {
+            self.max_speed = other.max_speed.clone();
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct DndEdgeWorkspaceSwitch {
-    #[knuffel(child, unwrap(argument), default = Self::default().trigger_height)]
-    pub trigger_height: FloatOrInt<0, 65535>,
-    #[knuffel(child, unwrap(argument), default = Self::default().delay_ms)]
-    pub delay_ms: u16,
-    #[knuffel(child, unwrap(argument), default = Self::default().max_speed)]
-    pub max_speed: FloatOrInt<0, 1_000_000>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub trigger_height: MaybeSet<FloatOrInt<0, 65535>>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub delay_ms: MaybeSet<u16>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub max_speed: MaybeSet<FloatOrInt<0, 1_000_000>>,
 }
 
 impl Default for DndEdgeWorkspaceSwitch {
     fn default() -> Self {
         Self {
-            trigger_height: FloatOrInt(50.),
-            delay_ms: 100,
-            max_speed: FloatOrInt(1500.),
+            trigger_height: MaybeSet::unset(FloatOrInt(50.)),
+            delay_ms: MaybeSet::unset(100),
+            max_speed: MaybeSet::unset(FloatOrInt(1500.)),
+        }
+    }
+}
+
+impl DndEdgeWorkspaceSwitch {
+    pub fn merge_with(&mut self, other: &Self) {
+        if other.trigger_height.is_set() {
+            self.trigger_height = other.trigger_height.clone();
+        }
+        if other.delay_ms.is_set() {
+            self.delay_ms = other.delay_ms.clone();
+        }
+        if other.max_speed.is_set() {
+            self.max_speed = other.max_speed.clone();
         }
     }
 }
@@ -184,6 +277,15 @@ impl Default for DndEdgeWorkspaceSwitch {
 pub struct HotCorners {
     #[knuffel(child)]
     pub off: bool,
+}
+
+impl HotCorners {
+    pub fn merge_with(&mut self, other: &Self) {
+        let default = Self::default();
+        if other.off != default.off {
+            self.off = other.off;
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -202,6 +304,21 @@ impl Default for Overview {
             zoom: FloatOrInt(0.5),
             backdrop_color: DEFAULT_BACKDROP_COLOR,
             workspace_shadow: WorkspaceShadow::default(),
+        }
+    }
+}
+
+impl Overview {
+    pub fn merge_with(&mut self, other: &Self) {
+        let default = Self::default();
+        if other.zoom != default.zoom {
+            self.zoom = other.zoom;
+        }
+        if other.backdrop_color != default.backdrop_color {
+            self.backdrop_color = other.backdrop_color;
+        }
+        if other.workspace_shadow != default.workspace_shadow {
+            self.workspace_shadow = other.workspace_shadow;
         }
     }
 }
@@ -282,6 +399,21 @@ impl CornerRadius {
             && self.top_right == 0.
             && self.bottom_right == 0.
             && self.bottom_left == 0.
+    }
+
+    pub fn merge_with(&mut self, other: &Self) {
+        if other.top_left != CornerRadius::default().top_left {
+            self.top_left = other.top_left;
+        }
+        if other.top_right != CornerRadius::default().top_right {
+            self.top_right = other.top_right;
+        }
+        if other.bottom_right != CornerRadius::default().bottom_right {
+            self.bottom_right = other.bottom_right;
+        }
+        if other.bottom_left != CornerRadius::default().bottom_left {
+            self.bottom_left = other.bottom_left;
+        }
     }
 }
 
@@ -412,6 +544,31 @@ pub struct FloatingPosition {
     pub y: FloatOrInt<-65535, 65535>,
     #[knuffel(property, default)]
     pub relative_to: RelativeTo,
+}
+
+impl Default for FloatingPosition {
+    fn default() -> Self {
+        Self {
+            x: FloatOrInt(0.),
+            y: FloatOrInt(0.),
+            relative_to: RelativeTo::default(),
+        }
+    }
+}
+
+impl FloatingPosition {
+    pub fn merge_with(&mut self, other: &Self) {
+        let default = Self::default();
+        if other.x != default.x {
+            self.x = other.x;
+        }
+        if other.y != default.y {
+            self.y = other.y;
+        }
+        if other.relative_to != default.relative_to {
+            self.relative_to = other.relative_to;
+        }
+    }
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]

@@ -15,6 +15,28 @@ use crate::{expect_only_children, WorkspaceReference};
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds(pub Vec<Bind>);
 
+impl Binds {
+    pub fn merge_with(&mut self, other: &Self) {
+        use std::collections::HashMap;
+        let mut by_key: HashMap<(Trigger, Modifiers), usize> = self
+            .0
+            .iter()
+            .enumerate()
+            .map(|(i, b)| ((b.key.trigger, b.key.modifiers), i))
+            .collect();
+
+        for nb in &other.0 {
+            let k = (nb.key.trigger, nb.key.modifiers);
+            if let Some(&i) = by_key.get(&k) {
+                self.0[i] = nb.clone();
+            } else {
+                by_key.insert(k, self.0.len());
+                self.0.push(nb.clone());
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
     pub key: Key,
@@ -60,6 +82,23 @@ pub struct SwitchBinds {
     pub tablet_mode_on: Option<SwitchAction>,
     #[knuffel(child)]
     pub tablet_mode_off: Option<SwitchAction>,
+}
+
+impl SwitchBinds {
+    pub fn merge_with(&mut self, other: &Self) {
+        if other.lid_open.is_some() {
+            self.lid_open = other.lid_open.clone();
+        }
+        if other.lid_close.is_some() {
+            self.lid_close = other.lid_close.clone();
+        }
+        if other.tablet_mode_on.is_some() {
+            self.tablet_mode_on = other.tablet_mode_on.clone();
+        }
+        if other.tablet_mode_off.is_some() {
+            self.tablet_mode_off = other.tablet_mode_off.clone();
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]

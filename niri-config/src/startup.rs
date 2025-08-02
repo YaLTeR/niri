@@ -44,6 +44,25 @@ pub struct Clipboard {
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq, Eq)]
 pub struct Environment(#[knuffel(children)] pub Vec<EnvironmentVariable>);
 
+impl Environment {
+    pub fn merge_with(&mut self, other: &Self) {
+        use std::collections::HashMap;
+
+        let mut var_map: HashMap<String, usize> = HashMap::new();
+        for (i, var) in self.0.iter().enumerate() {
+            var_map.insert(var.name.clone(), i);
+        }
+
+        for other_var in &other.0 {
+            if let Some(&index) = var_map.get(&other_var.name) {
+                self.0[index] = other_var.clone();
+            } else {
+                self.0.push(other_var.clone());
+            }
+        }
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
 pub struct EnvironmentVariable {
     #[knuffel(node_name)]

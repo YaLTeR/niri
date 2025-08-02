@@ -538,13 +538,13 @@ impl Tty {
             shaders::init(gles_renderer);
 
             let config = self.config.borrow();
-            if let Some(src) = config.animations.window_resize.custom_shader.as_deref() {
+            if let Some(src) = config.animations().window_resize.custom_shader.as_deref() {
                 shaders::set_custom_resize_program(gles_renderer, Some(src));
             }
-            if let Some(src) = config.animations.window_close.custom_shader.as_deref() {
+            if let Some(src) = config.animations().window_close.custom_shader.as_deref() {
                 shaders::set_custom_close_program(gles_renderer, Some(src));
             }
-            if let Some(src) = config.animations.window_open.custom_shader.as_deref() {
+            if let Some(src) = config.animations().window_open.custom_shader.as_deref() {
                 shaders::set_custom_open_program(gles_renderer, Some(src));
             }
             drop(config);
@@ -809,7 +809,7 @@ impl Tty {
 
         let device = self.devices.get_mut(&node).context("missing device")?;
 
-        let disable_monitor_names = self.config.borrow().debug.disable_monitor_names;
+        let disable_monitor_names = self.config.borrow().debug().disable_monitor_names;
         let output_name = device.known_crtc_name(&crtc, &connector, disable_monitor_names);
 
         let non_desktop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
@@ -1173,7 +1173,7 @@ impl Tty {
                 Duration::ZERO
             }
         };
-        let presentation_time = if niri.config.borrow().debug.emulate_zero_presentation_time {
+        let presentation_time = if niri.config.borrow().debug().emulate_zero_presentation_time {
             Duration::ZERO
         } else {
             presentation_time
@@ -1403,7 +1403,7 @@ impl Tty {
         // Overlay planes are disabled by default as they cause weird performance issues on my
         // system.
         let flags = {
-            let debug = &self.config.borrow().debug;
+            let debug = &self.config.borrow().debug();
 
             let primary_scanout_flag = if debug.restrict_primary_scanout_to_matching_format {
                 FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT
@@ -1440,7 +1440,7 @@ impl Tty {
                     || self
                         .config
                         .borrow()
-                        .debug
+                        .debug()
                         .wait_for_frame_completion_before_queueing;
                 if needs_sync {
                     if let PrimaryPlaneElement::Swapchain(element) = res.primary_element {
@@ -1615,7 +1615,7 @@ impl Tty {
         let _span = tracy_client::span!("Tty::refresh_ipc_outputs");
 
         let mut ipc_outputs = HashMap::new();
-        let disable_monitor_names = self.config.borrow().debug.disable_monitor_names;
+        let disable_monitor_names = self.config.borrow().debug().disable_monitor_names;
 
         for (node, device) in &self.devices {
             for (connector, crtc) in device.drm_scanner.crtcs() {
@@ -1785,7 +1785,7 @@ impl Tty {
         let mut disable_laptop_panels = false;
         if niri.is_lid_closed {
             let config = self.config.borrow();
-            if !config.debug.keep_laptop_panel_on_when_lid_is_closed {
+            if !config.debug().keep_laptop_panel_on_when_lid_is_closed {
                 // Check if any external monitor is connected.
                 'outer: for device in self.devices.values() {
                     for (connector, _crtc) in device.drm_scanner.crtcs() {
@@ -1909,7 +1909,7 @@ impl Tty {
             }
 
             let config = self.config.borrow();
-            let disable_monitor_names = config.debug.disable_monitor_names;
+            let disable_monitor_names = config.debug().disable_monitor_names;
 
             for (connector, crtc) in device.drm_scanner.crtcs() {
                 // Check if connected.
@@ -1962,7 +1962,7 @@ impl Tty {
     }
 
     pub fn disconnected_connector_name_by_name_match(&self, target: &str) -> Option<OutputName> {
-        let disable_monitor_names = self.config.borrow().debug.disable_monitor_names;
+        let disable_monitor_names = self.config.borrow().debug().disable_monitor_names;
         for device in self.devices.values() {
             for (connector, crtc) in device.drm_scanner.crtcs() {
                 // Check if connected.
@@ -2129,7 +2129,8 @@ impl GammaProps {
 }
 
 fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
-    let path = config.debug.render_drm_device.as_ref()?;
+    let debug = config.debug();
+    let path = debug.render_drm_device.as_ref()?;
     debug!("attempting to use render node from config: {path:?}");
 
     match DrmNode::from_path(path) {

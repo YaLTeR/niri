@@ -42,6 +42,68 @@ pub struct DebugConfig {
     pub skip_cursor_only_updates_during_vrr: bool,
 }
 
+impl DebugConfig {
+    pub fn merge_with(&mut self, other: &Self) {
+        if other.preview_render.is_some() {
+            self.preview_render = other.preview_render;
+        }
+        if other.dbus_interfaces_in_non_session_instances {
+            self.dbus_interfaces_in_non_session_instances = true;
+        }
+        if other.wait_for_frame_completion_before_queueing {
+            self.wait_for_frame_completion_before_queueing = true;
+        }
+        if other.wait_for_frame_completion_in_pipewire {
+            self.wait_for_frame_completion_in_pipewire = true;
+        }
+        if other.enable_overlay_planes {
+            self.enable_overlay_planes = true;
+        }
+        if other.disable_cursor_plane {
+            self.disable_cursor_plane = true;
+        }
+        if other.disable_direct_scanout {
+            self.disable_direct_scanout = true;
+        }
+        if other.restrict_primary_scanout_to_matching_format {
+            self.restrict_primary_scanout_to_matching_format = true;
+        }
+        if other.render_drm_device.is_some() {
+            self.render_drm_device = other.render_drm_device.clone();
+        }
+        if other.force_pipewire_invalid_modifier {
+            self.force_pipewire_invalid_modifier = true;
+        }
+        if other.emulate_zero_presentation_time {
+            self.emulate_zero_presentation_time = true;
+        }
+        if other.disable_resize_throttling {
+            self.disable_resize_throttling = true;
+        }
+        if other.disable_transactions {
+            self.disable_transactions = true;
+        }
+        if other.keep_laptop_panel_on_when_lid_is_closed {
+            self.keep_laptop_panel_on_when_lid_is_closed = true;
+        }
+        if other.disable_monitor_names {
+            self.disable_monitor_names = true;
+        }
+        if other.strict_new_window_focus_policy {
+            self.strict_new_window_focus_policy = true;
+        }
+        if other.honor_xdg_activation_with_invalid_serial {
+            self.honor_xdg_activation_with_invalid_serial = true;
+        }
+        if other.deactivate_unfocused_windows {
+            self.deactivate_unfocused_windows = true;
+        }
+        if other.skip_cursor_only_updates_during_vrr {
+            self.skip_cursor_only_updates_during_vrr = true;
+        }
+    }
+}
+
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewRender {
     Screencast,
