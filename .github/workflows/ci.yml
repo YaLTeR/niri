@@ -246,7 +246,7 @@ jobs:
         with:
           cache-on-failure: true
 
-      - run: du -h /home/runner/work/niri/niri
+      - run: du  -h /home/runner/work/niri/niri
 
       - name: Build
         uses: vmactions/freebsd-vm@966989c456d41351f095a421f60e71342d3bce41  # v1.2.1
