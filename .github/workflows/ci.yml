@@ -240,10 +240,11 @@ jobs:
         with:
           show-progress: false
 
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+
       - name: Build
         uses: vmactions/freebsd-vm@966989c456d41351f095a421f60e71342d3bce41  # v1.2.1
         with:
-          copyback: false
           prepare: |
             pkg update -f
             pkg install -y ${{ env.DEPS_PKG }}
