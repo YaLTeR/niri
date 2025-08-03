@@ -57,6 +57,7 @@ pub struct PipeWire {
     _context: Context,
     pub core: Core,
     pub token: RegistrationToken,
+    event_loop: LoopHandle<'static, State>,
     to_niri: calloop::channel::Sender<PwToNiri>,
 }
 
@@ -67,6 +68,7 @@ pub enum PwToNiri {
 }
 
 pub struct Cast {
+    event_loop: LoopHandle<'static, State>,
     pub session_id: usize,
     pub stream_id: usize,
     pub stream: Stream,
@@ -143,7 +145,7 @@ macro_rules! make_params {
 
 impl PipeWire {
     pub fn new(
-        event_loop: &LoopHandle<'static, State>,
+        event_loop: LoopHandle<'static, State>,
         to_niri: calloop::channel::Sender<PwToNiri>,
     ) -> anyhow::Result<Self> {
         let main_loop = MainLoop::new(None).context("error creating MainLoop")?;
@@ -185,6 +187,7 @@ impl PipeWire {
             _context: context,
             core,
             token,
+            event_loop,
             to_niri,
         })
     }
@@ -666,6 +669,7 @@ impl PipeWire {
             .context("error connecting stream")?;
 
         let cast = Cast {
+            event_loop: self.event_loop.clone(),
             session_id,
             stream_id,
             stream,
@@ -784,12 +788,7 @@ impl Cast {
         Duration::ZERO
     }
 
-    fn schedule_redraw(
-        &mut self,
-        event_loop: &LoopHandle<'static, State>,
-        output: Output,
-        target_time: Duration,
-    ) {
+    fn schedule_redraw(&mut self, output: Output, target_time: Duration) {
         if self.scheduled_redraw.is_some() {
             return;
         }
@@ -797,7 +796,8 @@ impl Cast {
         let now = get_monotonic_time();
         let duration = target_time.saturating_sub(now);
         let timer = Timer::from_duration(duration);
-        let token = event_loop
+        let token = self
+            .event_loop
             .insert_source(timer, move |_, _, state| {
                 // Guard against output disconnecting before the timer has a chance to run.
                 if state.niri.output_state.contains_key(&output) {
@@ -810,9 +810,9 @@ impl Cast {
         self.scheduled_redraw = Some(token);
     }
 
-    fn remove_scheduled_redraw(&mut self, event_loop: &LoopHandle<'static, State>) {
+    fn remove_scheduled_redraw(&mut self) {
         if let Some(token) = self.scheduled_redraw.take() {
-            event_loop.remove(token);
+            self.event_loop.remove(token);
         }
     }
 
@@ -825,17 +825,16 @@ impl Cast {
     /// [`Cast::dequeue_buffer_and_render()`].
     pub fn check_time_and_schedule(
         &mut self,
-        event_loop: &LoopHandle<'static, State>,
         output: &Output,
         target_frame_time: Duration,
     ) -> bool {
         let delay = self.compute_extra_delay(target_frame_time);
         if delay >= CAST_DELAY_ALLOWANCE {
             trace!("delay >= allowance, scheduling redraw");
-            self.schedule_redraw(event_loop, output.clone(), target_frame_time + delay);
+            self.schedule_redraw(output.clone(), target_frame_time + delay);
             true
         } else {
-            self.remove_scheduled_redraw(event_loop);
+            self.remove_scheduled_redraw();
             false
         }
     }

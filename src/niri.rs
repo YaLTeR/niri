@@ -2029,7 +2029,8 @@ impl State {
                 let pw = if let Some(pw) = &self.niri.pipewire {
                     pw
                 } else {
-                    match PipeWire::new(&self.niri.event_loop, self.niri.pw_to_niri.clone()) {
+                    match PipeWire::new(self.niri.event_loop.clone(), self.niri.pw_to_niri.clone())
+                    {
                         Ok(pipewire) => self.niri.pipewire.insert(pipewire),
                         Err(err) => {
                             warn!(
@@ -5019,7 +5020,7 @@ impl Niri {
                 }
             }
 
-            if cast.check_time_and_schedule(&self.event_loop, output, target_presentation_time) {
+            if cast.check_time_and_schedule(output, target_presentation_time) {
                 continue;
             }
 
@@ -5085,7 +5086,7 @@ impl Niri {
                 }
             }
 
-            if cast.check_time_and_schedule(&self.event_loop, output, target_presentation_time) {
+            if cast.check_time_and_schedule(output, target_presentation_time) {
                 continue;
             }
 
