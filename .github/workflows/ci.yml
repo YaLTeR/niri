@@ -233,7 +233,6 @@ jobs:
       - run: cargo build --all
 
   freebsd:
-    timeout-minutes: 10
     runs-on: ubuntu-24.04
 
     steps:
