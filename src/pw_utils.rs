@@ -38,6 +38,7 @@ use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::sync::SyncPoint;
 use smithay::output::{Output, OutputModeSource};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
@@ -92,6 +93,13 @@ struct CastInner {
     refresh: u32,
     min_time_between_frames: Duration,
     dmabufs: HashMap<i64, Dmabuf>,
+    /// Buffers dequeued from PipeWire in process of rendering.
+    ///
+    /// This is an ordered list of buffers that we started rendering to and waiting for the
+    /// rendering to complete. The completion can be checked from the `SyncPoint`s. The buffers are
+    /// stored in order from oldest to newest, and the same ordering should be preserved when
+    /// submitting completed buffers to PipeWire.
+    rendering_buffers: Vec<(NonNull<pw_buffer>, SyncPoint)>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -236,6 +244,7 @@ impl PipeWire {
             refresh,
             min_time_between_frames: Duration::ZERO,
             dmabufs: HashMap::new(),
+            rendering_buffers: Vec::new(),
         }));
 
         let listener = stream
@@ -655,6 +664,10 @@ impl PipeWire {
                     trace!("pw stream: remove_buffer");
                     let mut inner = inner.borrow_mut();
 
+                    inner
+                        .rendering_buffers
+                        .retain(|(buf, _)| buf.as_ptr() != buffer);
+
                     unsafe {
                         let spa_buffer = (*buffer).buffer;
                         let spa_data = (*spa_buffer).datas;
@@ -856,13 +869,84 @@ impl Cast {
         unsafe { NonNull::new(self.stream.dequeue_raw_buffer()) }
     }
 
+    fn queue_completed_buffers(&mut self) {
+        let mut inner = self.inner.borrow_mut();
+
+        // We want to queue buffers in order, so find the first still-rendering buffer, and queue
+        // everything up to that. Even if there are completed buffers past the first
+        // still-rendering buffer, we do not want to queue them, since that would send frames out
+        // of order.
+        let first_in_progress_idx = inner
+            .rendering_buffers
+            .iter()
+            .position(|(_, sync)| !sync.is_reached())
+            .unwrap_or(inner.rendering_buffers.len());
+
+        for (buffer, _) in inner.rendering_buffers.drain(..first_in_progress_idx) {
+            trace!("queueing completed buffer");
+            unsafe {
+                pw_stream_queue_buffer(self.stream.as_raw_ptr(), buffer.as_ptr());
+            }
+        }
+    }
+
+    unsafe fn queue_after_sync(&mut self, pw_buffer: NonNull<pw_buffer>, sync_point: SyncPoint) {
+        let mut inner = self.inner.borrow_mut();
+
+        let mut sync_point = sync_point;
+        let sync_fd = match sync_point.export() {
+            Some(sync_fd) => Some(sync_fd),
+            None => {
+                // There are two main ways this can happen. First is that the SyncPoint is
+                // pre-signalled, then the buffer is already ready and no waiting is needed. Second
+                // is that the SyncPoint is potentially still not signalled, but exporting a fence
+                // fd had failed. In this case, there's not much we can do (perhaps do a blocking
+                // wait for the SyncPoint, which itself might fail).
+                //
+                // So let's hope for the best and mark the buffer as submittable. We do not reuse
+                // the original SyncPoint because if we do hit the second case (when it's not
+                // signalled), then without a sync fd we cannot schedule a queue upon its
+                // completion, effectively going stuck. It's better to queue an incomplete buffer
+                // than getting stuck.
+                sync_point = SyncPoint::signaled();
+                None
+            }
+        };
+
+        inner.rendering_buffers.push((pw_buffer, sync_point));
+        drop(inner);
+
+        match sync_fd {
+            None => {
+                trace!("sync_fd is None, queueing completed buffers");
+                // In case this is the only buffer in the list, we will queue it right away.
+                self.queue_completed_buffers();
+            }
+            Some(sync_fd) => {
+                trace!("scheduling buffer to queue");
+                let stream_id = self.stream_id;
+                let source = Generic::new(sync_fd, Interest::READ, Mode::OneShot);
+                self.event_loop
+                    .insert_source(source, move |_, _, state| {
+                        for cast in &mut state.niri.casts {
+                            if cast.stream_id == stream_id {
+                                cast.queue_completed_buffers();
+                            }
+                        }
+
+                        Ok(PostAction::Remove)
+                    })
+                    .unwrap();
+            }
+        }
+    }
+
     pub fn dequeue_buffer_and_render(
         &mut self,
         renderer: &mut GlesRenderer,
         elements: &[impl RenderElement<GlesRenderer>],
         size: Size<i32, Physical>,
         scale: Scale<f64>,
-        wait_for_sync: bool,
     ) -> bool {
         let mut inner = self.inner.borrow_mut();
 
@@ -909,33 +993,20 @@ impl Cast {
                 elements.iter().rev(),
             ) {
                 Ok(sync_point) => {
-                    // FIXME: implement PipeWire explicit sync, and at the very least async wait.
-                    if wait_for_sync {
-                        let _span = tracy_client::span!("wait for completion");
-                        if let Err(err) = sync_point.wait() {
-                            warn!("error waiting for pw frame completion: {err:?}");
-                        }
-                    }
+                    mark_buffer_as_good(pw_buffer);
+                    self.queue_after_sync(pw_buffer, sync_point);
+                    true
                 }
                 Err(err) => {
                     warn!("error rendering to dmabuf: {err:?}");
                     return_unused_buffer(&self.stream, pw_buffer);
-                    return false;
+                    false
                 }
             }
-
-            mark_buffer_as_good(pw_buffer);
-            pw_stream_queue_buffer(self.stream.as_raw_ptr(), buffer);
         }
-
-        true
     }
 
-    pub fn dequeue_buffer_and_clear(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        wait_for_sync: bool,
-    ) -> bool {
+    pub fn dequeue_buffer_and_clear(&mut self, renderer: &mut GlesRenderer) -> bool {
         let mut inner = self.inner.borrow_mut();
 
         // Clear out the damage tracker if we're in Ready state.
@@ -958,26 +1029,17 @@ impl Cast {
 
             match clear_dmabuf(renderer, dmabuf) {
                 Ok(sync_point) => {
-                    // FIXME: implement PipeWire explicit sync, and at the very least async wait.
-                    if wait_for_sync {
-                        let _span = tracy_client::span!("wait for completion");
-                        if let Err(err) = sync_point.wait() {
-                            warn!("error waiting for pw frame completion: {err:?}");
-                        }
-                    }
+                    mark_buffer_as_good(pw_buffer);
+                    self.queue_after_sync(pw_buffer, sync_point);
+                    true
                 }
                 Err(err) => {
                     warn!("error clearing dmabuf: {err:?}");
                     return_unused_buffer(&self.stream, pw_buffer);
-                    return false;
+                    false
                 }
             }
-
-            mark_buffer_as_good(pw_buffer);
-            pw_stream_queue_buffer(self.stream.as_raw_ptr(), buffer);
         }
-
-        true
     }
 }
 

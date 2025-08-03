@@ -2331,8 +2331,6 @@ pub struct DebugConfig {
     #[knuffel(child)]
     pub wait_for_frame_completion_before_queueing: bool,
     #[knuffel(child)]
-    pub wait_for_frame_completion_in_pipewire: bool,
-    #[knuffel(child)]
     pub enable_overlay_planes: bool,
     #[knuffel(child)]
     pub disable_cursor_plane: bool,
@@ -5327,7 +5325,6 @@ mod tests {
                 preview_render: None,
                 dbus_interfaces_in_non_session_instances: false,
                 wait_for_frame_completion_before_queueing: false,
-                wait_for_frame_completion_in_pipewire: false,
                 enable_overlay_planes: false,
                 disable_cursor_plane: false,
                 disable_direct_scanout: false,
