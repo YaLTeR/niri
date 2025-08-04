@@ -3478,7 +3478,17 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
-            let hot_corners = self.config.borrow().gestures.hot_corners;
+            let mut hot_corners = self.config.borrow().gestures.hot_corners;
+            let name = output.user_data().get::<OutputName>().unwrap();
+            let config = self.config.borrow();
+            let opconf = config.outputs.find(name);
+
+            if opconf.is_some() {
+                if let Some(hc) = opconf.unwrap().hot_corners {
+                    hot_corners = hc;
+                }
+            }
+
             if !hot_corners.off {
                 let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
                 if hot_corner.contains(pos_within_output) {
