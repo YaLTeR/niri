@@ -3172,9 +3172,9 @@ impl Niri {
         }
 
         if !hot_corners.off {
-            let size = output.current_mode().unwrap().size;
+            let output_size = output_size(output);
             let transform = output.current_transform();
-            let size = transform.transform_size(size);
+            let size = transform.transform_size(output_size);
 
             let hot_top_left = Rectangle::new(Point::new(0., 0.), Size::from((1., 1.)));
             let hot_top_right =
