@@ -891,6 +891,8 @@ impl Cast {
     }
 
     unsafe fn queue_after_sync(&mut self, pw_buffer: NonNull<pw_buffer>, sync_point: SyncPoint) {
+        let _span = tracy_client::span!("Cast::queue_after_sync");
+
         let mut inner = self.inner.borrow_mut();
 
         let mut sync_point = sync_point;
