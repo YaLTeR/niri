@@ -536,9 +536,6 @@ impl PipeWire {
                             ))),
                         ),
                         Property::new(SPA_PARAM_BUFFERS_blocks, pod::Value::Int(plane_count)),
-                        // Property::new(SPA_PARAM_BUFFERS_size, pod::Value::Int(size as i32)),
-                        // Property::new(SPA_PARAM_BUFFERS_stride, pod::Value::Int(stride as i32)),
-                        // Property::new(SPA_PARAM_BUFFERS_align, pod::Value::Int(16)),
                         Property::new(
                             SPA_PARAM_BUFFERS_dataType,
                             pod::Value::Choice(ChoiceValue::Int(Choice(
