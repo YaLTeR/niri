@@ -81,6 +81,8 @@ pub struct Cast {
     pub cursor_mode: CursorMode,
     pub last_frame_time: Duration,
     scheduled_redraw: Option<RegistrationToken>,
+    // Incremented once per successful frame, stored in buffer meta.
+    sequence_counter: u64,
     inner: Rc<RefCell<CastInner>>,
 }
 
@@ -550,21 +552,21 @@ impl PipeWire {
 
                     // FIXME: Hidden / embedded / metadata cursor
 
-                    // let o2 = pod::object!(
-                    //     SpaTypes::ObjectParamMeta,
-                    //     ParamType::Meta,
-                    //     Property::new(SPA_PARAM_META_type,
-                    // pod::Value::Id(Id(SPA_META_Header))),
-                    //     Property::new(
-                    //         SPA_PARAM_META_size,
-                    //         pod::Value::Int(size_of::<spa_meta_header>() as i32)
-                    //     ),
-                    // );
+                    let o2 = pod::object!(
+                        SpaTypes::ObjectParamMeta,
+                        ParamType::Meta,
+                        Property::new(
+                            SPA_PARAM_META_type,
+                            pod::Value::Id(spa::utils::Id(SPA_META_Header))
+                        ),
+                        Property::new(
+                            SPA_PARAM_META_size,
+                            pod::Value::Int(size_of::<spa_meta_header>() as i32)
+                        ),
+                    );
                     let mut b1 = vec![];
-                    // let mut b2 = vec![];
-                    let mut params = [
-                        make_pod(&mut b1, o1), // make_pod(&mut b2, o2)
-                    ];
+                    let mut b2 = vec![];
+                    let mut params = [make_pod(&mut b1, o1), make_pod(&mut b2, o2)];
 
                     if let Err(err) = stream.update_params(&mut params) {
                         warn!("error updating stream params: {err:?}");
@@ -704,6 +706,7 @@ impl PipeWire {
             cursor_mode,
             last_frame_time: Duration::ZERO,
             scheduled_redraw: None,
+            sequence_counter: 0,
             inner,
         };
         Ok(cast)
@@ -990,7 +993,8 @@ impl Cast {
                 elements.iter().rev(),
             ) {
                 Ok(sync_point) => {
-                    mark_buffer_as_good(pw_buffer);
+                    mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                    trace!("queueing buffer with seq={}", self.sequence_counter);
                     self.queue_after_sync(pw_buffer, sync_point);
                     true
                 }
@@ -1026,7 +1030,8 @@ impl Cast {
 
             match clear_dmabuf(renderer, dmabuf) {
                 Ok(sync_point) => {
-                    mark_buffer_as_good(pw_buffer);
+                    mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                    trace!("queueing clear buffer with seq={}", self.sequence_counter);
                     self.queue_after_sync(pw_buffer, sync_point);
                     true
                 }
@@ -1216,10 +1221,16 @@ unsafe fn return_unused_buffer(stream: &Stream, pw_buffer: NonNull<pw_buffer>) {
     // Some (older?) consumers will check for size == 0 instead of the CORRUPTED flag.
     (*chunk).size = 0;
     (*chunk).flags = SPA_CHUNK_FLAG_CORRUPTED as i32;
+
+    if let Some(header) = find_meta_header(spa_buffer) {
+        let header = header.as_ptr();
+        (*header).flags = SPA_META_HEADER_FLAG_CORRUPTED;
+    }
+
     pw_stream_queue_buffer(stream.as_raw_ptr(), pw_buffer);
 }
 
-unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>) {
+unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64) {
     let pw_buffer = pw_buffer.as_ptr();
     let spa_buffer = (*pw_buffer).buffer;
     let chunk = (*(*spa_buffer).datas).chunk;
@@ -1234,4 +1245,17 @@ unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>) {
     (*chunk).size = 1;
     // Clear the corrupted flag we may have set before.
     (*chunk).flags = SPA_CHUNK_FLAG_NONE as i32;
+
+    *sequence = sequence.wrapping_add(1);
+    if let Some(header) = find_meta_header(spa_buffer) {
+        let header = header.as_ptr();
+        // Clear the corrupted flag we may have set before.
+        (*header).flags = 0;
+        (*header).seq = *sequence;
+    }
+}
+
+unsafe fn find_meta_header(buffer: *mut spa_buffer) -> Option<NonNull<spa_meta_header>> {
+    let p = spa_buffer_find_meta_data(buffer, SPA_META_Header, size_of::<spa_meta_header>()).cast();
+    NonNull::new(p)
 }
