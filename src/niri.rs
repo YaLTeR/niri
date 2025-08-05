@@ -128,8 +128,8 @@ use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
-    apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
-    mods_with_wheel_binds, TabletData,
+    apply_libinput_settings, is_inside_hot_corner, mods_with_finger_scroll_binds,
+    mods_with_mouse_binds, mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -3123,48 +3123,17 @@ impl Niri {
             return false;
         }
 
-        let mut hot_corners = self.config.borrow().gestures.hot_corners;
-        let name = output.user_data().get::<OutputName>().unwrap();
+        // Prioritize monitor specific hot corners first
         let config = self.config.borrow();
-        let opconf = config.outputs.find(name);
-        if opconf.is_some() {
-            if let Some(hc) = opconf.unwrap().hot_corners {
-                hot_corners = hc;
-            }
-        }
-
-        if !hot_corners.off {
-            let output_size = output_size(output);
-            let transform = output.current_transform();
-            let size = transform.transform_size(output_size);
-
-            let hot_top_left = Rectangle::new(Point::new(0., 0.), Size::from((1., 1.)));
-            let hot_top_right = Rectangle::new(Point::new(size.w - 1., 0.), Size::from((1., 1.)));
-            let hot_bottom_left = Rectangle::new(Point::new(0., size.h - 1.), Size::from((1., 1.)));
-            let hot_bottom_right =
-                Rectangle::new(Point::new(size.w - 1., size.h - 1.), Size::from((1., 1.)));
-
-            if !(hot_corners.top_left
-                || hot_corners.top_right
-                || hot_corners.bottom_left
-                || hot_corners.bottom_right)
-            {
-                hot_corners.top_left = true;
-            }
-
-            let inside_top_left = hot_top_left.contains(pos_within_output) && hot_corners.top_left;
-            let inside_top_right =
-                hot_top_right.contains(pos_within_output) && hot_corners.top_right;
-            let inside_bottom_left =
-                hot_bottom_left.contains(pos_within_output) && hot_corners.bottom_left;
-            let inside_bottom_right =
-                hot_bottom_right.contains(pos_within_output) && hot_corners.bottom_right;
-
-            let inside_hot_corner =
-                inside_top_left || inside_top_right || inside_bottom_left || inside_bottom_right;
-            if inside_hot_corner {
-                return true;
-            }
+        let hot_corners = output
+            .user_data()
+            .get::<OutputName>()
+            .and_then(|name| config.outputs.find(name))
+            .and_then(|c| c.hot_corners)
+            .unwrap_or(config.gestures.hot_corners);
+        if hot_corners.is_enabled() && is_inside_hot_corner(&hot_corners, output, pos_within_output)
+        {
+            return true;
         }
 
         if layer_popup_under(Layer::Top) || layer_toplevel_under(Layer::Top) {
@@ -3434,58 +3403,19 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
-            let mut hot_corners = self.config.borrow().gestures.hot_corners;
-            let name = output.user_data().get::<OutputName>().unwrap();
+            // Prioritize monitor specific hot corners first
             let config = self.config.borrow();
-            let opconf = config.outputs.find(name);
+            let hot_corners = output
+                .user_data()
+                .get::<OutputName>()
+                .and_then(|name| config.outputs.find(name))
+                .and_then(|c| c.hot_corners)
+                .unwrap_or(config.gestures.hot_corners);
 
-            if opconf.is_some() {
-                if let Some(hc) = opconf.unwrap().hot_corners {
-                    hot_corners = hc;
-                }
-            }
-
-            if !hot_corners.off {
-                let output_size = output_size(output);
-                let transform = output.current_transform();
-                let size = transform.transform_size(output_size);
-
-                let hot_top_left = Rectangle::new(Point::new(0., 0.), Size::from((1., 1.)));
-                let hot_top_right =
-                    Rectangle::new(Point::new((size.w - 1.) as f64, 0.), Size::from((1., 1.)));
-                let hot_bottom_left =
-                    Rectangle::new(Point::new(0., (size.h - 1.) as f64), Size::from((1., 1.)));
-                let hot_bottom_right = Rectangle::new(
-                    Point::new((size.w - 1.) as f64, (size.h - 1.) as f64),
-                    Size::from((1., 1.)),
-                );
-
-                //if no corners are set, but hot corners are enabled, enable top_left hot
-                //corner.
-                if !(hot_corners.top_left
-                    || hot_corners.top_right
-                    || hot_corners.bottom_left
-                    || hot_corners.bottom_right)
-                {
-                    hot_corners.top_left = true;
-                }
-
-                let inside_top_left =
-                    hot_top_left.contains(pos_within_output) && hot_corners.top_left;
-                let inside_top_right =
-                    hot_top_right.contains(pos_within_output) && hot_corners.top_right;
-                let inside_bottom_left =
-                    hot_bottom_left.contains(pos_within_output) && hot_corners.bottom_left;
-                let inside_bottom_right =
-                    hot_bottom_right.contains(pos_within_output) && hot_corners.bottom_right;
-
-                let inside_hot_corner = inside_top_left
-                    || inside_top_right
-                    || inside_bottom_left
-                    || inside_bottom_right;
-                if inside_hot_corner {
-                    return rv;
-                }
+            if hot_corners.is_enabled()
+                && is_inside_hot_corner(&hot_corners, output, pos_within_output)
+            {
+                return rv;
             }
 
             under = under

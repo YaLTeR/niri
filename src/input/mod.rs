@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, OutputName, SwitchBinds, Trigger};
+use niri_config::{
+    Action, Bind, Binds, HotCorners, Key, ModKey, Modifiers, OutputName, SwitchBinds, Trigger,
+};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -2298,61 +2300,26 @@ impl State {
         pointer.frame(self);
 
         // contents_under() will return no surface when the hot corner should trigger.
-        let mut hot_corners = self.niri.config.borrow().gestures.hot_corners;
-        if !hot_corners.off
+        let hot_corners = self.niri.config.borrow().gestures.hot_corners;
+        if hot_corners.is_enabled()
             && pointer.current_focus().is_none()
             && !self.niri.screenshot_ui.is_open()
         {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
-                let name = output.user_data().get::<OutputName>().unwrap();
+                // Prioritize monitor specific hot corners
                 let config = self.niri.config.borrow();
-                let opconf = config.outputs.find(name);
-
-                if opconf.is_some() {
-                    if let Some(hc) = opconf.unwrap().hot_corners {
-                        hot_corners = hc;
-                    }
+                let hot_corners = output
+                    .user_data()
+                    .get::<OutputName>()
+                    .and_then(|name| config.outputs.find(name))
+                    .and_then(|c| c.hot_corners)
+                    .unwrap_or(config.gestures.hot_corners);
+                let inside_hot_corner =
+                    is_inside_hot_corner(&hot_corners, output, pos_within_output);
+                if inside_hot_corner && !was_inside_hot_corner {
+                    self.niri.layout.toggle_overview();
                 }
-                if !hot_corners.off {
-                    let output_size = output_size(output);
-                    let transform = output.current_transform();
-                    let size = transform.transform_size(output_size);
-
-                    let hot_top_left = Rectangle::new(Point::new(0., 0.), Size::from((1., 1.)));
-                    let hot_top_right =
-                        Rectangle::new(Point::new(size.w - 1., 0.), Size::from((1., 1.)));
-                    let hot_bottom_left =
-                        Rectangle::new(Point::new(0., size.h - 1.), Size::from((1., 1.)));
-                    let hot_bottom_right =
-                        Rectangle::new(Point::new(size.w - 1., size.h - 1.), Size::from((1., 1.)));
-                    //if no corners are set, but hot corners are enabled, enable top_left hot
-                    //corner.
-                    if !(hot_corners.top_left
-                        || hot_corners.top_right
-                        || hot_corners.bottom_left
-                        || hot_corners.bottom_right)
-                    {
-                        hot_corners.top_left = true;
-                    }
-
-                    let inside_top_left =
-                        hot_top_left.contains(pos_within_output) && hot_corners.top_left;
-                    let inside_top_right =
-                        hot_top_right.contains(pos_within_output) && hot_corners.top_right;
-                    let inside_bottom_left =
-                        hot_bottom_left.contains(pos_within_output) && hot_corners.bottom_left;
-                    let inside_bottom_right =
-                        hot_bottom_right.contains(pos_within_output) && hot_corners.bottom_right;
-
-                    let inside_hot_corner = inside_top_left
-                        || inside_top_right
-                        || inside_bottom_left
-                        || inside_bottom_right;
-                    if inside_hot_corner && !was_inside_hot_corner {
-                        self.niri.layout.toggle_overview();
-                    }
-                    self.niri.pointer_inside_hot_corner = inside_hot_corner;
-                }
+                self.niri.pointer_inside_hot_corner = inside_hot_corner;
             }
         }
 
@@ -2430,63 +2397,26 @@ impl State {
         pointer.frame(self);
 
         // contents_under() will return no surface when the hot corner should trigger.
-        let mut hot_corners = self.niri.config.borrow().gestures.hot_corners;
-        if !hot_corners.off
+        let hot_corners = self.niri.config.borrow().gestures.hot_corners;
+        if hot_corners.is_enabled()
             && pointer.current_focus().is_none()
             && !self.niri.screenshot_ui.is_open()
         {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
-                let name = output.user_data().get::<OutputName>().unwrap();
+                // Prioritize monitor specific hot corners
                 let config = self.niri.config.borrow();
-                let opconf = config.outputs.find(name);
-
-                if opconf.is_some() {
-                    if let Some(hc) = opconf.unwrap().hot_corners {
-                        hot_corners = hc;
-                    }
+                let hot_corners = output
+                    .user_data()
+                    .get::<OutputName>()
+                    .and_then(|name| config.outputs.find(name))
+                    .and_then(|c| c.hot_corners)
+                    .unwrap_or(config.gestures.hot_corners);
+                let inside_hot_corner =
+                    is_inside_hot_corner(&hot_corners, output, pos_within_output);
+                if inside_hot_corner && !was_inside_hot_corner {
+                    self.niri.layout.toggle_overview();
                 }
-
-                if !hot_corners.off {
-                    let output_size = output_size(output);
-                    let transform = output.current_transform();
-                    let size = transform.transform_size(output_size);
-
-                    let hot_top_left = Rectangle::new(Point::new(0., 0.), Size::from((1., 1.)));
-                    let hot_top_right =
-                        Rectangle::new(Point::new(size.w - 1., 0.), Size::from((1., 1.)));
-                    let hot_bottom_left =
-                        Rectangle::new(Point::new(0., size.h - 1.), Size::from((1., 1.)));
-                    let hot_bottom_right =
-                        Rectangle::new(Point::new(size.w - 1., size.h - 1.), Size::from((1., 1.)));
-
-                    //if no corners are set, but hot corners are enabled, enable top_left hot
-                    //corner.
-                    if !(hot_corners.top_left
-                        || hot_corners.top_right
-                        || hot_corners.bottom_left
-                        || hot_corners.bottom_right)
-                    {
-                        hot_corners.top_left = true;
-                    }
-
-                    let inside_top_left =
-                        hot_top_left.contains(pos_within_output) && hot_corners.top_left;
-                    let inside_top_right =
-                        hot_top_right.contains(pos_within_output) && hot_corners.top_right;
-                    let inside_bottom_left =
-                        hot_bottom_left.contains(pos_within_output) && hot_corners.bottom_left;
-                    let inside_bottom_right =
-                        hot_bottom_right.contains(pos_within_output) && hot_corners.bottom_right;
-
-                    let inside_hot_corner = inside_top_left
-                        || inside_top_right
-                        || inside_bottom_left
-                        || inside_bottom_right;
-                    if inside_hot_corner && !was_inside_hot_corner {
-                        self.niri.layout.toggle_overview();
-                    }
-                    self.niri.pointer_inside_hot_corner = inside_hot_corner;
-                }
+                self.niri.pointer_inside_hot_corner = inside_hot_corner;
             }
         }
 
@@ -4069,6 +3999,38 @@ fn should_intercept_key(
         }
         (None, true) => FilterResult::Forward,
     }
+}
+
+pub fn is_inside_hot_corner(
+    hot_corners: &HotCorners,
+    output: &Output,
+    pos: Point<f64, Logical>,
+) -> bool {
+    let output_size = output_size(output);
+    let transform = output.current_transform();
+    let size = transform.transform_size(output_size);
+
+    if hot_corners.top_left
+        && Rectangle::new(Point::new(0., 0.), Size::from((1., 1.))).contains(pos)
+    {
+        return true;
+    }
+    if hot_corners.top_right
+        && Rectangle::new(Point::new(size.w - 1., 0.), Size::from((1., 1.))).contains(pos)
+    {
+        return true;
+    }
+    if hot_corners.bottom_left
+        && Rectangle::new(Point::new(0., size.h - 1.), Size::from((1., 1.))).contains(pos)
+    {
+        return true;
+    }
+    if hot_corners.bottom_right
+        && Rectangle::new(Point::new(size.w - 1., size.h - 1.), Size::from((1., 1.))).contains(pos)
+    {
+        return true;
+    }
+    false
 }
 
 fn find_bind(
