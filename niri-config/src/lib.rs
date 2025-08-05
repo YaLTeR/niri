@@ -2372,14 +2372,19 @@ pub enum PreviewRender {
 
 #[derive(Debug, Clone)]
 pub enum ConfigPath {
+    /// Explicitly set config path.
+    ///
     /// Load the config only from this path, never create it.
     Explicit(PathBuf),
-    /// Normal operation: Prioritize the user path, fallback to the system path,
-    /// else maybe create the user path if we're starting (but not reloading).
+
+    /// Default config path.
+    ///
+    /// Prioritize the user path, fallback to the system path, fallback to creating the user path
+    /// at compositor startup.
     Regular {
-        /// User config path, usually `$XDG_CONFIG_HOME/niri/config.kdl`
+        /// User config path, usually `$XDG_CONFIG_HOME/niri/config.kdl`.
         user_path: PathBuf,
-        /// System config path, usually `/etc/niri/config.kdl`
+        /// System config path, usually `/etc/niri/config.kdl`.
         system_path: PathBuf,
     },
 }
@@ -2391,9 +2396,7 @@ impl ConfigPath {
 
         self.load_inner(|user_path, system_path| {
             Err(miette::miette!(
-                "No config file found. Create one at {user_path} or {system_path}",
-                user_path = user_path.display(),
-                system_path = system_path.display(),
+                "no config file found; create one at {user_path:?} or {system_path:?}",
             ))
         })
         .context("error loading config")
@@ -2406,7 +2409,7 @@ impl ConfigPath {
     /// If the config was created, but for some reason could not be read afterwards,
     /// this may return `(Some(_), Err(_))`.
     pub fn load_or_create(&self) -> (Option<&Path>, miette::Result<Config>) {
-        let _span = tracy_client::span!("ConfigPath::load_or_create_with");
+        let _span = tracy_client::span!("ConfigPath::load_or_create");
 
         let mut created_at = None;
 
@@ -2414,54 +2417,18 @@ impl ConfigPath {
             .load_inner(|user_path, _| {
                 Self::create(user_path, &mut created_at)
                     .map(|()| user_path)
-                    .map_err(|err| err.context(format!("error creating config at {user_path:?}")))
+                    .with_context(|| format!("error creating config at {user_path:?}"))
             })
             .context("error loading config");
 
         (created_at, result)
     }
 
-    fn create<'a>(path: &'a Path, created_at: &mut Option<&'a Path>) -> miette::Result<()> {
-        if let Some(default_parent) = path.parent() {
-            fs::create_dir_all(default_parent)
-                .into_diagnostic()
-                .map_err(|err| {
-                    err.context(format!(
-                        "error creating config directory {default_parent:?}"
-                    ))
-                })?;
-        }
-
-        // Create the config and fill it with the default config if it doesn't exist.
-        let mut new_file = match File::options()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(path)
-        {
-            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
-            res => res,
-        }
-        .into_diagnostic()
-        .map_err(|err| err.context(format!("error opening config file at {path:?}")))?;
-
-        *created_at = Some(path);
-
-        let default = include_bytes!("../../resources/default-config.kdl");
-
-        new_file
-            .write_all(default)
-            .into_diagnostic()
-            .map_err(|err| err.context(format!("error writing default config to {path:?}")))?;
-
-        Ok(())
-    }
-
     fn load_inner<'a>(
         &'a self,
         maybe_create: impl FnOnce(&'a Path, &'a Path) -> miette::Result<&'a Path>,
     ) -> miette::Result<Config> {
-        Config::load_internal(match self {
+        let path = match self {
             ConfigPath::Explicit(path) => path.as_path(),
             ConfigPath::Regular {
                 user_path,
@@ -2475,17 +2442,45 @@ impl ConfigPath {
                     maybe_create(user_path.as_path(), system_path.as_path())?
                 }
             }
-        })
+        };
+        Config::load(path)
+    }
+
+    fn create<'a>(path: &'a Path, created_at: &mut Option<&'a Path>) -> miette::Result<()> {
+        if let Some(default_parent) = path.parent() {
+            fs::create_dir_all(default_parent)
+                .into_diagnostic()
+                .with_context(|| format!("error creating config directory {default_parent:?}"))?;
+        }
+
+        // Create the config and fill it with the default config if it doesn't exist.
+        let mut new_file = match File::options()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(path)
+        {
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
+            res => res,
+        }
+        .into_diagnostic()
+        .with_context(|| format!("error opening config file at {path:?}"))?;
+
+        *created_at = Some(path);
+
+        let default = include_bytes!("../../resources/default-config.kdl");
+
+        new_file
+            .write_all(default)
+            .into_diagnostic()
+            .with_context(|| format!("error writing default config to {path:?}"))?;
+
+        Ok(())
     }
 }
 
 impl Config {
     pub fn load(path: &Path) -> miette::Result<Self> {
-        let _span = tracy_client::span!("Config::load");
-        Self::load_internal(path).context("error loading config")
-    }
-
-    fn load_internal(path: &Path) -> miette::Result<Self> {
         let contents = fs::read_to_string(path)
             .into_diagnostic()
             .with_context(|| format!("error reading {path:?}"))?;

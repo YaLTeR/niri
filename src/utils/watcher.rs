@@ -25,7 +25,8 @@ impl Watcher {
         process: impl FnMut(&ConfigPath) -> T + Send + 'static,
         changed: SyncSender<T>,
     ) -> Self {
-        Self::with_start_notification(path, process, changed, None)
+        let interval = Duration::from_millis(500);
+        Self::with_start_notification(path, process, changed, None, interval)
     }
 
     pub fn with_start_notification<T: Send + 'static>(
@@ -33,6 +34,7 @@ impl Watcher {
         mut process: impl FnMut(&ConfigPath) -> T + Send + 'static,
         changed: SyncSender<T>,
         started: Option<mpsc::SyncSender<()>>,
+        polling_interval: Duration,
     ) -> Self {
         let should_stop = Arc::new(AtomicBool::new(false));
 
@@ -78,7 +80,7 @@ impl Watcher {
                     }
 
                     loop {
-                        thread::sleep(Duration::from_millis(500));
+                        thread::sleep(polling_interval);
 
                         if should_stop.load(Ordering::SeqCst) {
                             break;
@@ -160,54 +162,57 @@ mod tests {
         }
 
         fn setup_any(self, setup: impl FnOnce(&Shell) -> Result) -> TestSetup {
-            TestSetup(self._setup_any(setup))
-        }
-
-        fn _setup_any(
-            self,
-            setup: impl FnOnce(&Shell) -> Result,
-        ) -> Result<(Shell, TempDir, ConfigPath)> {
-            let sh = Shell::new()?;
-            let temp_dir = sh.create_temp_dir()?;
+            let sh = Shell::new().unwrap();
+            let temp_dir = sh.create_temp_dir().unwrap();
             sh.change_dir(temp_dir.path());
 
+            let dir = sh.current_dir();
             let config_path = match self {
-                TestPath::Explicit(path) => ConfigPath::Explicit(sh.current_dir().join(path)),
+                TestPath::Explicit(path) => ConfigPath::Explicit(dir.join(path)),
                 TestPath::Regular {
                     user_path,
                     system_path,
                 } => ConfigPath::Regular {
-                    user_path: sh.current_dir().join(user_path),
-                    system_path: sh.current_dir().join(system_path),
+                    user_path: dir.join(user_path),
+                    system_path: dir.join(system_path),
                 },
             };
 
-            setup(&sh)?;
+            setup(&sh).unwrap();
 
-            Ok((sh, temp_dir, config_path))
+            TestSetup {
+                sh,
+                config_path,
+                _temp_dir: temp_dir,
+            }
         }
     }
 
-    struct TestSetup(Result<(Shell, TempDir, ConfigPath)>);
+    struct TestSetup {
+        sh: Shell,
+        config_path: ConfigPath,
+        _temp_dir: TempDir,
+    }
 
     impl TestSetup {
         fn assert_initial_not_exists(self) -> Self {
-            Self(self.0.inspect(|(_, _, config_path)| {
-                let canon = canon(&config_path);
-                assert!(!canon.exists(), "initial should not exist");
-            }))
+            let canon = canon(&self.config_path);
+            assert!(!canon.exists(), "initial should not exist");
+            self
         }
+
         fn assert_initial(self, expected: &str) -> Self {
-            Self(self.0.inspect(|(_, _, config_path)| {
-                let canon = canon(&config_path);
-                assert!(canon.exists(), "initial should exist at {canon:?}");
-                let actual = fs::read_to_string(canon).unwrap();
-                assert_eq!(actual, expected, "initial file contents do not match");
-            }))
+            let canon = canon(&self.config_path);
+            assert!(canon.exists(), "initial should exist at {canon:?}");
+            let actual = fs::read_to_string(canon).unwrap();
+            assert_eq!(actual, expected, "initial file contents do not match");
+            self
         }
 
         fn run(self, body: impl FnOnce(&Shell, &mut TestUtil) -> Result) -> Result {
-            let (sh, _temp_dir, config_path) = self.0?;
+            let TestSetup {
+                sh, config_path, ..
+            } = self;
 
             let (tx, rx) = sync_channel(1);
             let (started_tx, started_rx) = mpsc::sync_channel(1);
@@ -217,6 +222,7 @@ mod tests {
                 |config_path| canon(config_path).clone(),
                 tx,
                 Some(started_tx),
+                Duration::from_millis(100),
             );
 
             started_rx.recv()?;
@@ -232,56 +238,17 @@ mod tests {
 
             let mut test = TestUtil { event_loop };
 
-            test.assert_unchanged(); // don't trigger before we start
-            test.pass_time(); // ensure mtimes aren't the same as the initial state
+            // don't trigger before we start
+            test.assert_unchanged();
+            // pass_time() inside assert_unchanged() ensures that mtime
+            // isn't the same as the initial time
+
             body(&sh, &mut test)?;
-            test.assert_unchanged(); // nothing should trigger after the test runs
+
+            // nothing should trigger after the test runs
+            test.assert_unchanged();
+
             Ok(())
-        }
-
-        fn change<Body, Discard>(self, body: Body) -> SimpleChange<impl FnOnce(&Shell) -> Result>
-        where
-            Body: FnOnce(&Shell) -> xshell::Result<Discard>,
-        {
-            self.change_any(|sh| {
-                _ = body(sh)?;
-                Ok(())
-            })
-        }
-
-        fn change_any<Body>(self, body: Body) -> SimpleChange<impl FnOnce(&Shell) -> Result>
-        where
-            Body: FnOnce(&Shell) -> Result,
-        {
-            SimpleChange { setup: self, body }
-        }
-    }
-
-    struct SimpleChange<Body> {
-        setup: TestSetup,
-        body: Body,
-    }
-
-    impl<Body> SimpleChange<Body>
-    where
-        Body: FnOnce(&Shell) -> Result,
-    {
-        fn assert_unchanged(self) -> Result {
-            self.run_with_assertion(|test| test.assert_unchanged())
-        }
-
-        fn assert_changed_to(self, expected: &str) -> Result {
-            self.run_with_assertion(|test| test.assert_changed_to(expected))
-        }
-
-        fn run_with_assertion(self, assertion: impl FnOnce(&mut TestUtil)) -> Result {
-            let Self { setup, body } = self;
-            setup.run(|sh, test| {
-                test.pass_time();
-                body(sh)?;
-                assertion(test);
-                Ok(())
-            })
         }
     }
 
@@ -291,13 +258,13 @@ mod tests {
 
     impl<'a> TestUtil<'a> {
         fn pass_time(&self) {
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(50));
         }
 
         fn assert_unchanged(&mut self) {
             let mut new_path = None;
             self.event_loop
-                .dispatch(Duration::from_millis(750), &mut new_path)
+                .dispatch(Duration::from_millis(150), &mut new_path)
                 .unwrap();
             assert_eq!(
                 new_path, None,
@@ -310,7 +277,7 @@ mod tests {
         fn assert_changed_to(&mut self, expected: &str) {
             let mut new_path = None;
             self.event_loop
-                .dispatch(Duration::from_millis(750), &mut new_path)
+                .dispatch(Duration::from_millis(150), &mut new_path)
                 .unwrap();
             let Some(new_path) = new_path else {
                 panic!("watcher should have noticed a change, but it didn't");
@@ -327,8 +294,12 @@ mod tests {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
             .assert_initial("a")
-            .change(|sh| sh.write_file("niri/config.kdl", "b"))
-            .assert_changed_to("b")
+            .run(|sh, test| {
+                sh.write_file("niri/config.kdl", "b")?;
+                test.assert_changed_to("b");
+
+                Ok(())
+            })
     }
 
     #[test]
@@ -336,8 +307,12 @@ mod tests {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
             .assert_initial("a")
-            .change(|sh| sh.write_file("niri/config.kdl", "a"))
-            .assert_changed_to("a")
+            .run(|sh, test| {
+                sh.write_file("niri/config.kdl", "a")?;
+                test.assert_changed_to("a");
+
+                Ok(())
+            })
     }
 
     #[test]
@@ -345,8 +320,12 @@ mod tests {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
             .assert_initial("a")
-            .change(|sh| cmd!(sh, "touch niri/config.kdl").run())
-            .assert_changed_to("a")
+            .run(|sh, test| {
+                cmd!(sh, "touch niri/config.kdl").run()?;
+                test.assert_changed_to("a");
+
+                Ok(())
+            })
     }
 
     #[test]
@@ -354,8 +333,12 @@ mod tests {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.create_dir("niri"))
             .assert_initial_not_exists()
-            .change(|sh| sh.write_file("niri/config.kdl", "a"))
-            .assert_changed_to("a")
+            .run(|sh, test| {
+                sh.write_file("niri/config.kdl", "a")?;
+                test.assert_changed_to("a");
+
+                Ok(())
+            })
     }
 
     #[test]
@@ -378,8 +361,12 @@ mod tests {
                 cmd!(sh, "ln -sf config2.kdl niri/config.kdl").run()
             })
             .assert_initial("a")
-            .change(|sh| sh.write_file("niri/config2.kdl", "b"))
-            .assert_changed_to("b")
+            .run(|sh, test| {
+                sh.write_file("niri/config2.kdl", "b")?;
+                test.assert_changed_to("b");
+
+                Ok(())
+            })
     }
 
     #[test]
@@ -390,8 +377,12 @@ mod tests {
                 cmd!(sh, "ln -s niri2 niri").run()
             })
             .assert_initial("a")
-            .change(|sh| sh.write_file("niri2/config.kdl", "b"))
-            .assert_changed_to("b")
+            .run(|sh, test| {
+                sh.write_file("niri2/config.kdl", "b")?;
+                test.assert_changed_to("b");
+
+                Ok(())
+            })
     }
 
     #[test]
@@ -399,8 +390,12 @@ mod tests {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
             .assert_initial("a")
-            .change(|sh| sh.remove_path("niri/config.kdl"))
-            .assert_unchanged()
+            .run(|sh, test| {
+                sh.remove_path("niri/config.kdl")?;
+                test.assert_unchanged();
+
+                Ok(())
+            })
     }
 
     #[test]
@@ -408,8 +403,12 @@ mod tests {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
             .assert_initial("a")
-            .change(|sh| sh.remove_path("niri"))
-            .assert_unchanged()
+            .run(|sh, test| {
+                sh.remove_path("niri")?;
+                test.assert_unchanged();
+
+                Ok(())
+            })
     }
 
     #[test]
@@ -417,11 +416,13 @@ mod tests {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
             .assert_initial("a")
-            .change(|sh| {
+            .run(|sh, test| {
                 sh.remove_path("niri/config.kdl")?;
-                sh.write_file("niri/config.kdl", "b")
+                sh.write_file("niri/config.kdl", "b")?;
+                test.assert_changed_to("b");
+
+                Ok(())
             })
-            .assert_changed_to("b")
     }
 
     #[test]
@@ -432,11 +433,13 @@ mod tests {
                 Ok(())
             })
             .assert_initial("a")
-            .change(|sh| {
+            .run(|sh, test| {
                 sh.remove_path("niri")?;
-                sh.write_file("niri/config.kdl", "b")
+                sh.write_file("niri/config.kdl", "b")?;
+                test.assert_changed_to("b");
+
+                Ok(())
             })
-            .assert_changed_to("b")
     }
 
     #[test]
@@ -444,12 +447,14 @@ mod tests {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
             .assert_initial("a")
-            .change(|sh| {
+            .run(|sh, test| {
                 sh.write_file("niri2/config.kdl", "b")?;
                 sh.remove_path("niri")?;
-                cmd!(sh, "mv niri2 niri").run()
+                cmd!(sh, "mv niri2 niri").run()?;
+                test.assert_changed_to("b");
+
+                Ok(())
             })
-            .assert_changed_to("b")
     }
 
     #[test]
@@ -460,12 +465,14 @@ mod tests {
                 cmd!(sh, "ln -s niri2 niri").run()
             })
             .assert_initial("a")
-            .change(|sh| {
+            .run(|sh, test| {
                 sh.write_file("niri3/config.kdl", "b")?;
                 sh.remove_path("niri")?;
-                cmd!(sh, "ln -s niri3 niri").run()
+                cmd!(sh, "ln -s niri3 niri").run()?;
+                test.assert_changed_to("b");
+
+                Ok(())
             })
-            .assert_changed_to("b")
     }
 
     // Important: On systems like NixOS, mtime is not kept for config files.
@@ -498,8 +505,12 @@ mod tests {
                 Ok(())
             })
             .assert_initial("a")
-            .change(|sh| cmd!(sh, "ln -sf config3.kdl niri/config.kdl").run())
-            .assert_changed_to("b")
+            .run(|sh, test| {
+                cmd!(sh, "ln -sf config3.kdl niri/config.kdl").run()?;
+                test.assert_changed_to("b");
+
+                Ok(())
+            })
     }
 
     #[test]

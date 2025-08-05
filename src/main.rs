@@ -148,7 +148,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (config_created_at, config_load_result) = config_path.load_or_create();
     let config_errored = config_load_result.is_err();
     let mut config = config_load_result
-        .map_err(|err| error!("{err:?}"))
+        .map_err(|err| warn!("{err:?}"))
         .unwrap_or_default();
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
