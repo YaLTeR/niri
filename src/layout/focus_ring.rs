@@ -20,6 +20,11 @@ pub struct FocusRing {
     is_border: bool,
     use_border_shader: bool,
     config: niri_config::FocusRing,
+    // Rainbow animation config
+    rainbow_enabled: bool,
+    rainbow_speed: f32,
+    animation_time: f32,
+    animate_focus_only: bool,
 }
 
 niri_render_elements! {
@@ -31,6 +36,7 @@ niri_render_elements! {
 
 impl FocusRing {
     pub fn new(config: niri_config::FocusRing) -> Self {
+        let (rainbow_enabled, rainbow_speed, animate_focus_only) = Self::read_rainbow_config(&config);
         Self {
             buffers: Default::default(),
             locations: Default::default(),
@@ -40,11 +46,57 @@ impl FocusRing {
             is_border: false,
             use_border_shader: false,
             config,
+            rainbow_enabled,
+            rainbow_speed,
+            animation_time: 0.0,
+            animate_focus_only,
         }
     }
 
     pub fn update_config(&mut self, config: niri_config::FocusRing) {
+        let (rainbow_enabled, rainbow_speed, animate_focus_only) = Self::read_rainbow_config(&config);
         self.config = config;
+        self.rainbow_enabled = rainbow_enabled;
+        self.rainbow_speed = rainbow_speed;
+        self.animate_focus_only = animate_focus_only;
+    }
+
+    pub fn set_rainbow_enabled(&mut self, enabled: bool) {
+        self.rainbow_enabled = enabled;
+        for border in &mut self.borders {
+            border.set_rainbow_enabled(enabled);
+        }
+    }
+
+    pub fn set_rainbow_speed(&mut self, speed: f32) {
+        self.rainbow_speed = speed;
+        for border in &mut self.borders {
+            border.set_rainbow_speed(speed);
+        }
+    }
+
+    pub fn set_focus_only_animation(&mut self, enabled: bool) {
+        self.animate_focus_only = enabled;
+    }
+
+    pub fn update_animation_time(&mut self, animation_time: f32) {
+        self.animation_time = animation_time;
+        if self.rainbow_enabled {
+            for border in &mut self.borders {
+                border.update_animation_time(animation_time);
+            }
+        }
+    }
+
+    // Retrieve rainbow settings from config if available
+    // Since the config doesn't have these fields yet, we'll use default values
+    fn read_rainbow_config(_config: &niri_config::FocusRing) -> (bool, f32, bool) {
+        // TODO: Once rainbow fields are added to FocusRing config, use them here
+        // For now, return default values
+        let rainbow_enabled = false; // config.rainbow_enabled.unwrap_or(false);
+        let rainbow_speed = 1.0; // config.rainbow_speed.unwrap_or(1.0);
+        let animate_focus_only = true; // config.rainbow_focus_only.unwrap_or(true);
+        (rainbow_enabled, rainbow_speed, animate_focus_only)
     }
 
     pub fn update_shaders(&mut self) {
@@ -85,7 +137,10 @@ impl FocusRing {
             self.config.inactive_gradient
         };
 
-        self.use_border_shader = radius != CornerRadius::default() || gradient.is_some();
+        // Set to use border shader if rainbow animation is enabled for this ring
+        self.use_border_shader = self.rainbow_enabled
+            || radius != CornerRadius::default()
+            || gradient.is_some();
 
         // Set the defaults for solid color + rounded corners.
         let gradient = gradient.unwrap_or_else(|| Gradient::from(color));
@@ -97,21 +152,12 @@ impl FocusRing {
         };
 
         let rounded_corner_border_width = if self.is_border {
-            // HACK: increase the border width used for the inner rounded corners a tiny bit to
-            // reduce background bleed.
             width as f32 + 0.5
         } else {
             0.
         };
 
         let ceil = |logical: f64| (logical * scale).ceil() / scale;
-
-        // All of this stuff should end up aligned to physical pixels because:
-        // * Window size and border width are rounded to physical pixels before being passed to this
-        //   function.
-        // * We will ceil the corner radii below.
-        // * We do not divide anything, only add, subtract and multiply by integers.
-        // * At rendering time, tile positions are rounded to physical pixels.
 
         if is_border {
             let top_left = f64::max(width, ceil(f64::from(radius.top_left)));
@@ -134,35 +180,27 @@ impl FocusRing {
             // Top edge.
             self.sizes[0] = Size::from((win_size.w + width * 2. - top_left - top_right, width));
             self.locations[0] = Point::from((-width + top_left, -width));
-
             // Bottom edge.
-            self.sizes[1] =
-                Size::from((win_size.w + width * 2. - bottom_left - bottom_right, width));
+            self.sizes[1] = Size::from((win_size.w + width * 2. - bottom_left - bottom_right, width));
             self.locations[1] = Point::from((-width + bottom_left, win_size.h));
-
             // Left edge.
             self.sizes[2] = Size::from((width, win_size.h + width * 2. - top_left - bottom_left));
             self.locations[2] = Point::from((-width, -width + top_left));
-
             // Right edge.
             self.sizes[3] = Size::from((width, win_size.h + width * 2. - top_right - bottom_right));
             self.locations[3] = Point::from((win_size.w, -width + top_right));
-
             // Top-left corner.
             self.sizes[4] = Size::from((top_left, top_left));
             self.locations[4] = Point::from((-width, -width));
-
             // Top-right corner.
             self.sizes[5] = Size::from((top_right, top_right));
             self.locations[5] = Point::from((win_size.w + width - top_right, -width));
-
             // Bottom-right corner.
             self.sizes[6] = Size::from((bottom_right, bottom_right));
             self.locations[6] = Point::from((
                 win_size.w + width - bottom_right,
                 win_size.h + width - bottom_right,
             ));
-
             // Bottom-left corner.
             self.sizes[7] = Size::from((bottom_left, bottom_left));
             self.locations[7] = Point::from((-width, win_size.h + width - bottom_left));
@@ -171,8 +209,8 @@ impl FocusRing {
                 buf.resize(size);
             }
 
-            for (border, (loc, size)) in zip(&mut self.borders, zip(self.locations, self.sizes)) {
-                border.update(
+            for (_i, (border, (loc, size))) in zip(&mut self.borders, zip(self.locations, self.sizes)).enumerate() {
+                border.update_with_animation(
                     size,
                     Rectangle::new(gradient_area.loc - loc, gradient_area.size),
                     gradient.in_,
@@ -184,6 +222,9 @@ impl FocusRing {
                     radius,
                     scale as f32,
                     alpha,
+                    self.animation_time,
+                    self.rainbow_speed,
+                    self.rainbow_enabled && (!self.animate_focus_only || is_active),
                 );
             }
         } else {
@@ -191,7 +232,7 @@ impl FocusRing {
             self.buffers[0].resize(self.sizes[0]);
             self.locations[0] = Point::from((-width, -width));
 
-            self.borders[0].update(
+            self.borders[0].update_with_animation(
                 self.sizes[0],
                 Rectangle::new(gradient_area.loc - self.locations[0], gradient_area.size),
                 gradient.in_,
@@ -203,6 +244,9 @@ impl FocusRing {
                 radius,
                 scale as f32,
                 alpha,
+                self.animation_time,
+                self.rainbow_speed,
+                self.rainbow_enabled && (!self.animate_focus_only || is_active),
             );
         }
 
@@ -222,7 +266,6 @@ impl FocusRing {
 
         let border_width = -self.locations[0].y;
 
-        // If drawing as a border with width = 0, then there's nothing to draw.
         if self.is_border && border_width == 0. {
             return rv.into_iter();
         }

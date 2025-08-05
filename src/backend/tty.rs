@@ -64,11 +64,12 @@ use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output};
 
-const SUPPORTED_COLOR_FORMATS: [Fourcc; 4] = [
+const SUPPORTED_COLOR_FORMATS: [Fourcc; 3] = [
     Fourcc::Xrgb8888,
     Fourcc::Xbgr8888,
     Fourcc::Argb8888,
-    Fourcc::Abgr8888,
+    // Incompatabile with NVIDIA
+    // Fourcc::Abgr8888,
 ];
 
 pub struct Tty {

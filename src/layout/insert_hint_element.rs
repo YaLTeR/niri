@@ -21,6 +21,10 @@ impl InsertHintElement {
                 inactive_color: config.color,
                 active_gradient: config.gradient,
                 inactive_gradient: config.gradient,
+                // Add the missing rainbow-related fields with default values
+                rainbow_enabled: false,
+                rainbow_focus_only: false,
+                rainbow_speed: FloatOrInt(1.0),  // Fix: wrap in FloatOrInt
             }),
         }
     }
@@ -33,6 +37,10 @@ impl InsertHintElement {
             inactive_color: config.color,
             active_gradient: config.gradient,
             inactive_gradient: config.gradient,
+            // Add the missing rainbow-related fields with default values
+            rainbow_enabled: false,
+            rainbow_focus_only: false,
+            rainbow_speed: FloatOrInt(1.0),  // Fix: wrap in FloatOrInt
         });
     }
 

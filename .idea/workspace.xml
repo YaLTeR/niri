@@ -25,7 +25,17 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="7357a20f-4ae3-4a02-bab6-099076da6bb7" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/src/pw_utils/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/pw_utils/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/cat-activity.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/cat-activity.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/discord.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/niri-config/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/niri-config/src/lib.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/animation/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/animation/mod.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/backend/tty.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/backend/tty.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/layout/focus_ring.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/layout/focus_ring.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/layout/insert_hint_element.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/layout/insert_hint_element.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render_helpers/border.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/render_helpers/border.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -76,11 +86,14 @@
   &quot;keyToString&quot;: {
     &quot;Cargo.Build `Test pw_utils::tests`.executor&quot;: &quot;Run&quot;,
     &quot;Cargo.Test pw_utils::tests.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.rust.reset.selective.auto.import&quot;: &quot;true&quot;,
     &quot;git-widget-placeholder&quot;: &quot;update__sync&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/cole/projects/pipewire-rs&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/cole/projects/niri&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
@@ -89,7 +102,7 @@
     &quot;org.rust.cargo.project.model.PROJECT_DISCOVERY&quot;: &quot;true&quot;,
     &quot;org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon&quot;: &quot;&quot;,
     &quot;org.rust.hideNoCargoProjectNotifications/home/cole/projects/niri/pipewire-rs/Cargo.toml&quot;: &quot;true&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;editor.preferences.fonts.default&quot;,
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
 }</component>
@@ -253,6 +266,21 @@
       <workItem from="1745401635160" duration="2825000" />
       <workItem from="1745404532998" duration="130000" />
       <workItem from="1745404739075" duration="4761000" />
+      <workItem from="1745428844174" duration="2850000" />
+      <workItem from="1745443759515" duration="453000" />
+      <workItem from="1745444596934" duration="34000" />
+      <workItem from="1745982046228" duration="206000" />
+      <workItem from="1748738332865" duration="693000" />
+      <workItem from="1748739048925" duration="7314000" />
+      <workItem from="1752091268920" duration="3476000" />
+      <workItem from="1752639765853" duration="109000" />
+      <workItem from="1752719785555" duration="246000" />
+      <workItem from="1752944611726" duration="66000" />
+      <workItem from="1753497424261" duration="1001000" />
+      <workItem from="1753595689877" duration="8000" />
+      <workItem from="1753997924578" duration="235000" />
+      <workItem from="1754007177055" duration="62000" />
+      <workItem from="1754427572199" duration="4282000" />
     </task>
     <servers />
   </component>

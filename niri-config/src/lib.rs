@@ -575,7 +575,16 @@ pub struct FocusRing {
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
+
+    // Rainbow animation fields - note the proper knuffel attributes
+    #[knuffel(child, default)]
+    pub rainbow_enabled: bool,
+    #[knuffel(child, unwrap(argument), default)]
+    pub rainbow_speed: FloatOrInt<0, 1000>, // Changed to FloatOrInt for consistency
+    #[knuffel(child, default)]
+    pub rainbow_focus_only: bool,
 }
+
 
 impl Default for FocusRing {
     fn default() -> Self {
@@ -586,9 +595,13 @@ impl Default for FocusRing {
             inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
             active_gradient: None,
             inactive_gradient: None,
+            rainbow_enabled: false,
+            rainbow_speed: FloatOrInt(1.0), // Default rainbow speed
+            rainbow_focus_only: false,
         }
     }
 }
+
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct Gradient {
@@ -685,6 +698,10 @@ impl From<Border> for FocusRing {
             inactive_color: value.inactive_color,
             active_gradient: value.active_gradient,
             inactive_gradient: value.inactive_gradient,
+            // Set rainbow fields to defaults when converting from Border
+            rainbow_enabled: false,
+            rainbow_speed: FloatOrInt(1.0),
+            rainbow_focus_only: false,
         }
     }
 }
@@ -701,6 +718,7 @@ impl From<FocusRing> for Border {
         }
     }
 }
+
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct Shadow {
