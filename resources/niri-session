@@ -1,4 +1,34 @@
-#!/bin/sh
+#!/usr/bin/env sh
+
+print() {
+    case $(basename $SHELL) in
+        fish|bash|zsh)
+            echo -e $@
+            ;;
+        *)
+            # Remove all \x1B escapes from the text.
+            echo $@ | sed 's@\\x1b\[[0-9;]*m@@gi';
+            ;;
+    esac
+}
+
+if ! [ -z $1 ]; then
+    CODE=1
+    if case $1 in --*) true;; *) false;; esac; then
+        if [ "$1" = "--help" ]; then
+            CODE=0
+        else
+            print "\x1b[31;1mError: Unrecognized option $1"
+        fi
+    else
+        print "\x1b[31;1mError: niri-session should be called with no arguments."
+    fi
+
+    print "\n\x1b[0;1mUsage:\x1b[0m niri-session [--help]\n"
+    print "Runs niri as a session on systemd or dinit. If using OpenRC, runit, or other init systems, run \x1b[1mniri --session\x1b[0m instead.\n"
+    print "\x1b[1mOPTIONS\x1b[0m\n--help\t\tShows this help message\n"
+    exit $CODE
+fi
 
 # Detect if being run as a user service, which implies external session management,
 # exec compositor directly
