@@ -1174,7 +1174,7 @@ mod tests {
                 },
                 hot_corners: HotCorners {
                     off: false,
-                    top_left: false,
+                    top_left: true,
                     top_right: false,
                     bottom_left: false,
                     bottom_right: false,
