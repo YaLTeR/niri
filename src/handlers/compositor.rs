@@ -141,7 +141,7 @@ impl CompositorHandler for State {
                             ActivateWindow::Yes
                         } else {
                             let config = self.niri.config.borrow();
-                            if config.debug.strict_new_window_focus_policy {
+                            if config.debug().strict_new_window_focus_policy {
                                 ActivateWindow::No
                             } else {
                                 ActivateWindow::Smart

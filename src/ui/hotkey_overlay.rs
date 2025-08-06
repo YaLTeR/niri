@@ -185,7 +185,7 @@ fn render(
     // target_size.h -= margin * 2;
     // anyhow::ensure!(target_size.w > 0 && target_size.h > 0);
 
-    let binds = &config.binds.0;
+    let binds = &config.binds().0;
 
     // Collect actions that we want to show.
     let mut actions = vec![&Action::ShowHotkeyOverlay];
@@ -558,7 +558,7 @@ mod tests {
     #[track_caller]
     fn check(config: &str, action: Action) -> String {
         let config = Config::parse("test.kdl", config).unwrap();
-        if let Some((key, title)) = format_bind(&config.binds.0, ModKey::Super, &action) {
+        if let Some((key, title)) = format_bind(&config.binds().0, ModKey::Super, &action) {
             format!("{key}: {title}")
         } else {
             String::from("None")

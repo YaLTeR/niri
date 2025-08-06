@@ -64,7 +64,7 @@ impl ConfigErrorNotification {
             from,
             to,
             0.,
-            c.animations.config_notification_open_close.0,
+            c.animations().config_notification_open_close.0,
         )
     }
 

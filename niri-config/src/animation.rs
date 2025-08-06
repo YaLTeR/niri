@@ -3,14 +3,14 @@
 use knuffel::errors::DecodeError;
 use knuffel::Decode;
 
-use crate::core::FloatOrInt;
+use crate::core::{FloatOrInt, MaybeSet};
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Animations {
     #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child, unwrap(argument), default = FloatOrInt(1.))]
-    pub slowdown: FloatOrInt<0, { i32::MAX }>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub slowdown: MaybeSet<FloatOrInt<0, { i32::MAX }>>,
     #[knuffel(child, default)]
     pub workspace_switch: WorkspaceSwitchAnim,
     #[knuffel(child, default)]
@@ -35,7 +35,7 @@ impl Default for Animations {
     fn default() -> Self {
         Self {
             off: false,
-            slowdown: FloatOrInt(1.),
+            slowdown: MaybeSet::unset(FloatOrInt(1.)),
             workspace_switch: Default::default(),
             horizontal_view_movement: Default::default(),
             window_movement: Default::default(),
@@ -49,7 +49,31 @@ impl Default for Animations {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+impl Animations {
+    pub fn merge_with(&mut self, other: &Self) {
+        if other.off {
+            self.off = true;
+        }
+        if other.slowdown.is_set() {
+            self.slowdown = other.slowdown.clone();
+        }
+        self.workspace_switch.merge_with(&other.workspace_switch);
+        self.window_open.merge_with(&other.window_open);
+        self.window_close.merge_with(&other.window_close);
+        self.horizontal_view_movement
+            .merge_with(&other.horizontal_view_movement);
+        self.window_movement.merge_with(&other.window_movement);
+        self.window_resize.merge_with(&other.window_resize);
+        self.config_notification_open_close
+            .merge_with(&other.config_notification_open_close);
+        self.screenshot_ui_open
+            .merge_with(&other.screenshot_ui_open);
+        self.overview_open_close
+            .merge_with(&other.overview_open_close);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct WorkspaceSwitchAnim(pub Animation);
 
 impl Default for WorkspaceSwitchAnim {
@@ -62,6 +86,12 @@ impl Default for WorkspaceSwitchAnim {
                 epsilon: 0.0001,
             }),
         })
+    }
+}
+
+impl WorkspaceSwitchAnim {
+    pub fn merge_with(&mut self, other: &Self) {
+        self.0.merge_with(&other.0);
     }
 }
 
@@ -82,6 +112,15 @@ impl Default for WindowOpenAnim {
                 }),
             },
             custom_shader: None,
+        }
+    }
+}
+
+impl WindowOpenAnim {
+    pub fn merge_with(&mut self, other: &Self) {
+        self.anim.merge_with(&other.anim);
+        if other.custom_shader.is_some() {
+            self.custom_shader = other.custom_shader.clone();
         }
     }
 }
@@ -107,7 +146,16 @@ impl Default for WindowCloseAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+impl WindowCloseAnim {
+    pub fn merge_with(&mut self, other: &Self) {
+        self.anim.merge_with(&other.anim);
+        if other.custom_shader.is_some() {
+            self.custom_shader = other.custom_shader.clone();
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct HorizontalViewMovementAnim(pub Animation);
 
 impl Default for HorizontalViewMovementAnim {
@@ -123,7 +171,13 @@ impl Default for HorizontalViewMovementAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+impl HorizontalViewMovementAnim {
+    pub fn merge_with(&mut self, other: &Self) {
+        self.0.merge_with(&other.0);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct WindowMovementAnim(pub Animation);
 
 impl Default for WindowMovementAnim {
@@ -136,6 +190,12 @@ impl Default for WindowMovementAnim {
                 epsilon: 0.0001,
             }),
         })
+    }
+}
+
+impl WindowMovementAnim {
+    pub fn merge_with(&mut self, other: &Self) {
+        self.0.merge_with(&other.0);
     }
 }
 
@@ -161,7 +221,16 @@ impl Default for WindowResizeAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+impl WindowResizeAnim {
+    pub fn merge_with(&mut self, other: &Self) {
+        self.anim.merge_with(&other.anim);
+        if other.custom_shader.is_some() {
+            self.custom_shader = other.custom_shader.clone();
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ConfigNotificationOpenCloseAnim(pub Animation);
 
 impl Default for ConfigNotificationOpenCloseAnim {
@@ -177,7 +246,13 @@ impl Default for ConfigNotificationOpenCloseAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+impl ConfigNotificationOpenCloseAnim {
+    pub fn merge_with(&mut self, other: &Self) {
+        self.0.merge_with(&other.0);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ScreenshotUiOpenAnim(pub Animation);
 
 impl Default for ScreenshotUiOpenAnim {
@@ -192,7 +267,13 @@ impl Default for ScreenshotUiOpenAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+impl ScreenshotUiOpenAnim {
+    pub fn merge_with(&mut self, other: &Self) {
+        self.0.merge_with(&other.0);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct OverviewOpenCloseAnim(pub Animation);
 
 impl Default for OverviewOpenCloseAnim {
@@ -208,10 +289,34 @@ impl Default for OverviewOpenCloseAnim {
     }
 }
 
+impl OverviewOpenCloseAnim {
+    pub fn merge_with(&mut self, other: &Self) {
+        self.0.merge_with(&other.0);
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Animation {
     pub off: bool,
     pub kind: AnimationKind,
+}
+
+impl Default for Animation {
+    fn default() -> Self {
+        Self {
+            off: false,
+            kind: AnimationKind::Easing(EasingParams::default()),
+        }
+    }
+}
+
+impl Animation {
+    pub fn merge_with(&mut self, other: &Self) {
+        if other.off {
+            self.off = true;
+        }
+        self.kind.merge_with(&other.kind);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -220,10 +325,53 @@ pub enum AnimationKind {
     Spring(SpringParams),
 }
 
+impl Default for AnimationKind {
+    fn default() -> Self {
+        AnimationKind::Easing(EasingParams::default())
+    }
+}
+
+impl AnimationKind {
+    pub fn merge_with(&mut self, other: &Self) {
+        match (&mut *self, other) {
+            (AnimationKind::Easing(params), AnimationKind::Easing(other_params)) => {
+                params.merge_with(other_params);
+            }
+            (AnimationKind::Spring(params), AnimationKind::Spring(other_params)) => {
+                params.merge_with(other_params);
+            }
+            _ => {
+                *self = other.clone();
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EasingParams {
     pub duration_ms: u32,
     pub curve: AnimationCurve,
+}
+
+impl Default for EasingParams {
+    fn default() -> Self {
+        Self {
+            duration_ms: 250,
+            curve: AnimationCurve::EaseOutCubic,
+        }
+    }
+}
+
+impl EasingParams {
+    pub fn merge_with(&mut self, other: &Self) {
+        let default = Self::default();
+        if other.duration_ms != default.duration_ms {
+            self.duration_ms = other.duration_ms;
+        }
+        if other.curve != default.curve {
+            self.curve = other.curve;
+        }
+    }
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
@@ -234,11 +382,42 @@ pub enum AnimationCurve {
     EaseOutExpo,
 }
 
+impl Default for AnimationCurve {
+    fn default() -> Self {
+        AnimationCurve::Linear
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpringParams {
     pub damping_ratio: f64,
     pub stiffness: u32,
     pub epsilon: f64,
+}
+
+impl Default for SpringParams {
+    fn default() -> Self {
+        Self {
+            damping_ratio: 1.0,
+            stiffness: 800,
+            epsilon: 0.0001,
+        }
+    }
+}
+
+impl SpringParams {
+    pub fn merge_with(&mut self, other: &Self) {
+        let default = Self::default();
+        if other.damping_ratio != default.damping_ratio {
+            self.damping_ratio = other.damping_ratio;
+        }
+        if other.stiffness != default.stiffness {
+            self.stiffness = other.stiffness;
+        }
+        if other.epsilon != default.epsilon {
+            self.epsilon = other.epsilon;
+        }
+    }
 }
 
 // Helper functions for animation parsing

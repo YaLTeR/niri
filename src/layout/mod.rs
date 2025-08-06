@@ -620,7 +620,7 @@ impl HitType {
 
 impl Options {
     fn from_config(config: &Config) -> Self {
-        let layout = &config.layout;
+        let layout = &config.layout();
 
         let preset_column_widths = if layout.preset_column_widths.is_empty() {
             Options::default().preset_column_widths
@@ -655,12 +655,12 @@ impl Options {
             default_column_display: layout.default_column_display,
             preset_column_widths,
             default_column_width,
-            animations: config.animations.clone(),
-            gestures: config.gestures,
+            animations: config.animations().clone(),
+            gestures: config.gestures(),
             overview: config.overview,
-            disable_resize_throttling: config.debug.disable_resize_throttling,
-            disable_transactions: config.debug.disable_transactions,
-            deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
+            disable_resize_throttling: config.debug().disable_resize_throttling,
+            disable_transactions: config.debug().disable_transactions,
+            deactivate_unfocused_windows: config.debug().deactivate_unfocused_windows,
             preset_window_heights,
         }
     }
