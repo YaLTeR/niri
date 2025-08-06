@@ -857,10 +857,12 @@ impl Tty {
         }
         debug!("picking mode: {mode:?}");
 
-        // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to run.
-        match set_max_bpc(&device.drm, connector.handle(), 8) {
-            Ok(bpc) => debug!("set max bpc to {bpc}"),
-            Err(err) => debug!("error setting max bpc: {err:?}"),
+        if !niri.config.borrow().debug.disable_set_bpc {
+            // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to run.
+            match set_max_bpc(&device.drm, connector.handle(), 8) {
+                Ok(bpc) => debug!("set max bpc to {bpc}"),
+                Err(err) => debug!("error setting max bpc: {err:?}"),
+            }
         }
 
         let mut gamma_props = GammaProps::new(&device.drm, crtc)

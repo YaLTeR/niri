@@ -2339,6 +2339,8 @@ pub struct DebugConfig {
     #[knuffel(child)]
     pub disable_direct_scanout: bool,
     #[knuffel(child)]
+    pub disable_set_bpc: bool,
+    #[knuffel(child)]
     pub restrict_primary_scanout_to_matching_format: bool,
     #[knuffel(child, unwrap(argument))]
     pub render_drm_device: Option<PathBuf>,
@@ -5434,6 +5436,7 @@ mod tests {
                 enable_overlay_planes: false,
                 disable_cursor_plane: false,
                 disable_direct_scanout: false,
+                disable_set_bpc: false,
                 restrict_primary_scanout_to_matching_format: false,
                 render_drm_device: Some(
                     "/dev/dri/renderD129",
