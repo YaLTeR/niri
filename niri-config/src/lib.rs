@@ -2,7 +2,9 @@
 extern crate tracing;
 
 use std::ffi::OsStr;
-use std::path::Path;
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use layer_rule::LayerRule;
 use miette::{Context, IntoDiagnostic};
@@ -157,7 +159,7 @@ impl Config {
     }
 
     fn load_internal(path: &Path) -> miette::Result<Self> {
-        let contents = std::fs::read_to_string(path)
+        let contents = fs::read_to_string(path)
             .into_diagnostic()
             .with_context(|| format!("error reading {path:?}"))?;
 
@@ -175,6 +177,115 @@ impl Config {
     pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
         let _span = tracy_client::span!("Config::parse");
         knuffel::parse(filename, text)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ConfigPath {
+    /// Explicitly set config path.
+    ///
+    /// Load the config only from this path, never create it.
+    Explicit(PathBuf),
+
+    /// Default config path.
+    ///
+    /// Prioritize the user path, fallback to the system path, fallback to creating the user path
+    /// at compositor startup.
+    Regular {
+        /// User config path, usually `$XDG_CONFIG_HOME/niri/config.kdl`.
+        user_path: PathBuf,
+        /// System config path, usually `/etc/niri/config.kdl`.
+        system_path: PathBuf,
+    },
+}
+
+impl ConfigPath {
+    /// Load the config, or return an error if it doesn't exist.
+    pub fn load(&self) -> miette::Result<Config> {
+        let _span = tracy_client::span!("ConfigPath::load");
+
+        self.load_inner(|user_path, system_path| {
+            Err(miette::miette!(
+                "no config file found; create one at {user_path:?} or {system_path:?}",
+            ))
+        })
+        .context("error loading config")
+    }
+
+    /// Load the config, or create it if it doesn't exist.
+    ///
+    /// Returns a tuple containing the path that was created, if any, and the loaded config.
+    ///
+    /// If the config was created, but for some reason could not be read afterwards,
+    /// this may return `(Some(_), Err(_))`.
+    pub fn load_or_create(&self) -> (Option<&Path>, miette::Result<Config>) {
+        let _span = tracy_client::span!("ConfigPath::load_or_create");
+
+        let mut created_at = None;
+
+        let result = self
+            .load_inner(|user_path, _| {
+                Self::create(user_path, &mut created_at)
+                    .map(|()| user_path)
+                    .with_context(|| format!("error creating config at {user_path:?}"))
+            })
+            .context("error loading config");
+
+        (created_at, result)
+    }
+
+    fn load_inner<'a>(
+        &'a self,
+        maybe_create: impl FnOnce(&'a Path, &'a Path) -> miette::Result<&'a Path>,
+    ) -> miette::Result<Config> {
+        let path = match self {
+            ConfigPath::Explicit(path) => path.as_path(),
+            ConfigPath::Regular {
+                user_path,
+                system_path,
+            } => {
+                if user_path.exists() {
+                    user_path.as_path()
+                } else if system_path.exists() {
+                    system_path.as_path()
+                } else {
+                    maybe_create(user_path.as_path(), system_path.as_path())?
+                }
+            }
+        };
+        Config::load(path)
+    }
+
+    fn create<'a>(path: &'a Path, created_at: &mut Option<&'a Path>) -> miette::Result<()> {
+        if let Some(default_parent) = path.parent() {
+            fs::create_dir_all(default_parent)
+                .into_diagnostic()
+                .with_context(|| format!("error creating config directory {default_parent:?}"))?;
+        }
+
+        // Create the config and fill it with the default config if it doesn't exist.
+        let mut new_file = match File::options()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(path)
+        {
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
+            res => res,
+        }
+        .into_diagnostic()
+        .with_context(|| format!("error opening config file at {path:?}"))?;
+
+        *created_at = Some(path);
+
+        let default = include_bytes!("../../resources/default-config.kdl");
+
+        new_file
+            .write_all(default)
+            .into_diagnostic()
+            .with_context(|| format!("error writing default config to {path:?}"))?;
+
+        Ok(())
     }
 }
 
@@ -2151,6 +2262,48 @@ mod tests {
         let config = Config::parse("config.kdl", "").unwrap();
         assert_eq!(config.input.keyboard.repeat_delay, 600);
         assert_eq!(config.input.keyboard.repeat_rate, 25);
+    }
+
+    #[test]
+    fn config_path_explicit_works() {
+        // Test that explicit paths work correctly
+        let temp_dir = std::env::temp_dir();
+        let test_config = temp_dir.join("test_niri_config.kdl");
+
+        // Write a minimal config
+        std::fs::write(&test_config, "// test config").unwrap();
+
+        let config_path = ConfigPath::Explicit(test_config.clone());
+
+        // Should be able to load the explicit config
+        let result = config_path.load();
+        assert!(result.is_ok());
+
+        // Cleanup
+        std::fs::remove_file(test_config).unwrap();
+    }
+
+    #[test]
+    fn config_path_regular_fallback_works() {
+        // Test that regular paths with fallback work
+        let temp_dir = std::env::temp_dir();
+        let user_path = temp_dir.join("nonexistent_user_config.kdl");
+        let system_path = temp_dir.join("test_system_config.kdl");
+
+        // Write a minimal config to system path
+        std::fs::write(&system_path, "// system config").unwrap();
+
+        let config_path = ConfigPath::Regular {
+            user_path: user_path.clone(),
+            system_path: system_path.clone(),
+        };
+
+        // Should fallback to system path since user path doesn't exist
+        let result = config_path.load();
+        assert!(result.is_ok());
+
+        // Cleanup
+        std::fs::remove_file(system_path).unwrap();
     }
 
     fn make_output_name(
