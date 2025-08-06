@@ -9,8 +9,6 @@ pub struct DebugConfig {
     #[knuffel(child)]
     pub wait_for_frame_completion_before_queueing: bool,
     #[knuffel(child)]
-    pub wait_for_frame_completion_in_pipewire: bool,
-    #[knuffel(child)]
     pub enable_overlay_planes: bool,
     #[knuffel(child)]
     pub disable_cursor_plane: bool,
@@ -52,9 +50,6 @@ impl DebugConfig {
         }
         if other.wait_for_frame_completion_before_queueing {
             self.wait_for_frame_completion_before_queueing = true;
-        }
-        if other.wait_for_frame_completion_in_pipewire {
-            self.wait_for_frame_completion_in_pipewire = true;
         }
         if other.enable_overlay_planes {
             self.enable_overlay_planes = true;
