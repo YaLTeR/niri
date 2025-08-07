@@ -411,7 +411,7 @@ impl State {
                     this.niri.screenshot_ui.set_space_down(pressed);
                 }
 
-                let bindings = &this.niri.config.borrow().binds;
+                let bindings = &this.niri.config.borrow().binds();
                 let res = should_intercept_key(
                     &mut this.niri.suppressed_keys,
                     bindings,
@@ -2298,7 +2298,7 @@ impl State {
         pointer.frame(self);
 
         // contents_under() will return no surface when the hot corner should trigger.
-        let hot_corners = self.niri.config.borrow().gestures.hot_corners;
+        let hot_corners = self.niri.config.borrow().gestures().hot_corners;
         if !hot_corners.off
             && pointer.current_focus().is_none()
             && !self.niri.screenshot_ui.is_open()
@@ -2387,7 +2387,7 @@ impl State {
         pointer.frame(self);
 
         // contents_under() will return no surface when the hot corner should trigger.
-        let hot_corners = self.niri.config.borrow().gestures.hot_corners;
+        let hot_corners = self.niri.config.borrow().gestures().hot_corners;
         if !hot_corners.off
             && pointer.current_focus().is_none()
             && !self.niri.screenshot_ui.is_open()
@@ -2460,7 +2460,7 @@ impl State {
                 }
                 .and_then(|trigger| {
                     let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
+                    let bindings = &config.binds();
                     find_configured_bind(bindings, mod_key, trigger, mods)
                 }) {
                     self.niri.suppressed_buttons.insert(button_code);
@@ -2806,7 +2806,7 @@ impl State {
                         (bind_left, bind_right)
                     } else {
                         let config = self.niri.config.borrow();
-                        let bindings = &config.binds;
+                        let bindings = &config.binds();
                         let bind_left =
                             find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, mods);
                         let bind_right = find_configured_bind(
@@ -2888,7 +2888,7 @@ impl State {
                         (bind_up, bind_down)
                     } else {
                         let config = self.niri.config.borrow();
-                        let bindings = &config.binds;
+                        let bindings = &config.binds();
                         let bind_up =
                             find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, mods);
                         let bind_down =
@@ -3028,7 +3028,7 @@ impl State {
                     .accumulate(horizontal);
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
+                    let bindings = &config.binds();
                     let bind_left =
                         find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollLeft, mods);
                     let bind_right =
@@ -3053,7 +3053,7 @@ impl State {
                     .accumulate(vertical);
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
+                    let bindings = &config.binds();
                     let bind_up =
                         find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollUp, mods);
                     let bind_down =

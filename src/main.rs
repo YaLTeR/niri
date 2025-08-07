@@ -152,7 +152,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_default();
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
-    *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
+    *CHILD_ENV.write().unwrap() = config.environment();
 
     store_and_increase_nofile_rlimit();
 
