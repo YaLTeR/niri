@@ -56,12 +56,12 @@ use crate::layout::tile::Tile;
 use crate::layout::{LayoutElement, Options};
 use crate::niri::Niri;
 use crate::niri_render_elements;
-use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
+use crate::render_helpers::offscreen::OffscreenBuffer;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::surface::render_snapshot_from_surface_tree;
-use crate::render_helpers::texture::TextureBuffer;
-use crate::render_helpers::{render_to_texture, BakedBuffer, ToRenderElement};
+use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
+use crate::render_helpers::{render_to_texture, RenderTarget, ToRenderElement};
 use crate::utils::{output_size, to_physical_precise_round, with_toplevel_role};
 use crate::window::mapped::MappedId;
 use crate::window::{window_matches, Mapped, WindowRef};
@@ -146,15 +146,15 @@ impl Thumbnail {
             .unwrap_or(1.);
         let thumb_size = thumb_texture.logical_size();
         let thumb_elem: WindowMruUiRenderElement = {
-            let bb = BakedBuffer {
-                buffer: thumb_texture,
-                location: Point::default(),
-                src: None,
-                dst: None,
-            };
-
-            bb.to_render_element(location, Scale::from(1.0), thumb_alpha, Kind::Unspecified)
-                .into()
+            PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                thumb_texture,
+                location,
+                1.0,
+                None,
+                None,
+                Kind::Unspecified,
+            ))
+            .into()
         };
         let mut rv: Vec<WindowMruUiRenderElement> = Vec::new();
 
@@ -173,13 +173,14 @@ impl Thumbnail {
                             thumb_size.w.saturating_sub(t.logical_size().w) / 2.,
                             SPACING / 2. + thumb_size.h,
                         ));
-                    let bb = BakedBuffer {
-                        buffer: t,
-                        location: Point::default(),
-                        src: None,
-                        dst: None,
-                    };
-                    bb.to_render_element(location, 1.0.into(), thumb_alpha, Kind::Unspecified)
+                    PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                        t,
+                        location,
+                        thumb_alpha,
+                        None,
+                        None,
+                        Kind::Unspecified,
+                    ))
                 })
                 .map(Into::into),
         );
@@ -398,7 +399,6 @@ niri_render_elements! {
         SolidColor = SolidColorRenderElement,
         TextureElement = PrimaryGpuTextureRenderElement,
         FocusRing = FocusRingRenderElement,
-        Offscreen = OffscreenRenderElement,
     }
 }
 
@@ -1216,19 +1216,14 @@ impl ClosingThumbnail {
     }
 
     pub fn render(&self, location: Point<f64, Logical>) -> PrimaryGpuTextureRenderElement {
-        let bb = BakedBuffer {
-            buffer: self.texture.clone(),
-            location: Point::default(),
-            src: None,
-            dst: None,
-        };
-
-        bb.to_render_element(
+        PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+            self.texture.clone(),
             location,
-            Scale::from(1.0),
             (1. - self.anim.value()) as f32,
+            None,
+            None,
             Kind::Unspecified,
-        )
+        ))
     }
 
     fn are_animations_ongoing(&self) -> bool {
@@ -1258,7 +1253,7 @@ pub struct ThumbnailSelectionAnimation {
     /// Original scale applied to the thumbnail.
     from_scale: f64,
     /// Buffer into which the animated tile is rendered.
-    _offscreen: OffscreenBuffer,
+    offscreen: OffscreenBuffer,
 }
 
 impl ThumbnailSelectionAnimation {
@@ -1279,7 +1274,7 @@ impl ThumbnailSelectionAnimation {
                     (mon_view.size.h - texture_size.h) / 2.,
                 )),
             from_scale: thumb.scale,
-            _offscreen: OffscreenBuffer::default(),
+            offscreen: OffscreenBuffer::default(),
         }
     }
 
@@ -1288,6 +1283,13 @@ impl ThumbnailSelectionAnimation {
         &self,
         niri: &'n Niri,
     ) -> Option<(&'n Tile<Mapped>, Point<f64, Logical>)> {
+        // TODO: add workspace geo
+        // see monitor.rs:1549 => RelocateRenderElement
+        // would need to use mon.workspaces_with_render_geo() **modified**
+        // to return all workspaces (whether or not they can be displayed
+        // on the current monitor). The resulting geo can then be applied
+        // to determine the location of the target tile factoring in a
+        // possible workspace switch animation.
         niri.layout
             .workspaces()
             .filter_map(|(mon, _, ws)| {
@@ -1317,44 +1319,54 @@ impl ThumbnailSelectionAnimation {
                 (1. + (self.from_scale - 1.) * self.anim.value()).clamp(1., self.from_scale),
             );
             if let Some(mon) = niri.layout.monitor_for_output(output) {
-                let mapped_output_view =
+                let output_view_rect =
                     Rectangle::new(mon.output().current_location().to_f64(), mon.view_size());
 
-                /*
-                A.
-                This version is a **FAILED** attempt to use an OffscreenBuffer.
-                When `offscreen.render()` is called, the "Failed to bind Framebuffer" error
-                is returned and nothing gets displayed.
-
-                FIXME: This version should be the one used.
-                */
-
-                /*
-                // view rectangle for the scaled thumbnail
-                let view_rect =
+                // View rectangle for the scaled thumbnail.
+                let thumb_view_rect =
                     Rectangle::new(loc, tile.animated_tile_size().to_f64().downscale(scale));
 
-                // if the view_rect intersects with the monitor's view:w
-                //
-                // add the scaled texture to the render elements.
-                if mapped_output_view.overlaps(view_rect) {
-                    let rve: Vec<TileRenderElement<_>> = tile
+                // Render the tile if it overlaps the monitor's view_rect.
+                if output_view_rect.overlaps(thumb_view_rect) {
+                    let focus_ring = niri
+                        .layout
+                        .focus()
+                        .map(|m| m.id())
+                        .is_some_and(|id| id == self.id);
+
+                    let rve: Vec<_> = tile
                         .render(
                             renderer,
                             Point::default(),
-                            true, /*TODO*/
-                            RenderTarget::Output,
+                            focus_ring,
+                            RenderTarget::Offscreen,
                         )
                         .collect();
-                    match self.offscreen.render(renderer, scale, &rve) {
-                        Ok((ore, _, _)) => rv.push(ore.into()),
+
+                    match self.offscreen.render(renderer, Scale::from(1.), &rve) {
+                        Ok((ore, _, _)) => {
+                            let buffer = TextureBuffer::from_texture(
+                                renderer,
+                                ore.texture().clone(),
+                                scale,
+                                Transform::Normal,
+                                vec![],
+                            );
+                            let tre = TextureRenderElement::from_texture_buffer(
+                                buffer,
+                                loc - output_view_rect.loc + ore.offset(),
+                                1.,
+                                None,
+                                None,
+                                Kind::Unspecified,
+                            );
+                            rv.push(PrimaryGpuTextureRenderElement(tre).into());
+                        }
                         Err(err) => warn!(
                             "Couldn't render tile into offscreen for thumbnail animation: {err:?}"
                         ),
                     }
                 }
-                */
-
                 /*
                 B.
                 This version does a direct render of the Mapped window into a texture buffer.
@@ -1364,28 +1376,29 @@ impl ThumbnailSelectionAnimation {
                 Similarly, the focus ring isn't displayed.
                 */
 
+                /*
                 // view rectangle for the scaled thumbnail
-                let view_rect = Rectangle::new(loc, tile.tile_size().to_f64().downscale(scale));
+                let thumb_view_rect =
+                    Rectangle::new(loc, tile.tile_size().to_f64().downscale(scale));
 
-                if mapped_output_view.overlaps(view_rect) {
+                if output_view_rect.overlaps(thumb_view_rect) {
                     if let Some(tb) = render_mapped_to_texture(renderer, tile.window(), scale) {
-                        let bb = BakedBuffer {
-                            buffer: tb,
-                            location: Point::default(),
-                            src: None,
-                            dst: None,
-                        };
                         rv.push(
-                            bb.to_render_element(
-                                loc - mapped_output_view.loc,
-                                Scale::from(1.),
-                                1.,
-                                Kind::Unspecified,
+                            PrimaryGpuTextureRenderElement(
+                                TextureRenderElement::from_texture_buffer(
+                                    tb,
+                                    loc - output_view_rect.loc,
+                                    1.,
+                                    None,
+                                    None,
+                                    Kind::Unspecified,
+                                ),
                             )
                             .into(),
                         );
                     }
                 }
+                */
             }
         }
         rv

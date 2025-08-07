@@ -1075,7 +1075,7 @@ impl<W: LayoutElement> Tile<W> {
 
         self.window().set_offscreen_data(None);
 
-        if !self.skip_render {
+        if !self.skip_render || target == RenderTarget::Offscreen {
             if let Some(open) = &self.open_animation {
                 let renderer = renderer.as_gles_renderer();
                 let elements =

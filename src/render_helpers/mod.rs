@@ -46,6 +46,8 @@ pub enum RenderTarget {
     Screencast,
     /// Rendering for any other screen capture.
     ScreenCapture,
+    /// Rendering to a texture buffer.
+    Offscreen,
 }
 
 /// Buffer with location, src and dst.
