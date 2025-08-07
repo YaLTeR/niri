@@ -297,11 +297,12 @@ debug {
 
 <sup>Since: next release</sup>
 
-Skips setting max bpc on startup.
+When connecting monitors, niri sets their max bpc to 8 in order to reduce display bandwidth and to potentially allow more monitors to be connected at once.
+Restricting bpc to 8 is not a problem since we don't support HDR or color management yet and can't really make use of higher bpc.
 
-Some displays driven by amdgpu encounter a broken DRM state when setting max bpc to 8. Niri sets this on startup for increases display compatibility. See [this](https://gitlab.freedesktop.org/drm/amd/-/issues/4487) bug report for more details.
-
-Setting this disables this behavior. It may cause issues with some displays.
+Apparently, setting max bpc to 8 breaks some displays driven by AMDGPU.
+If this happens to you, set this debug flag, which will prevent niri from changing max bpc.
+AMDGPU bug report: https://gitlab.freedesktop.org/drm/amd/-/issues/4487.
 
 ```kdl
 debug {
