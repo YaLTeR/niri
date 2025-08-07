@@ -857,7 +857,7 @@ impl Tty {
         }
         debug!("picking mode: {mode:?}");
 
-        if !niri.config.borrow().debug.disable_set_bpc {
+        if !niri.config.borrow().debug.keep_max_bpc_unchanged {
             // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to run.
             match set_max_bpc(&device.drm, connector.handle(), 8) {
                 Ok(bpc) => debug!("set max bpc to {bpc}"),

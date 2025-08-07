@@ -2339,7 +2339,7 @@ pub struct DebugConfig {
     #[knuffel(child)]
     pub disable_direct_scanout: bool,
     #[knuffel(child)]
-    pub disable_set_bpc: bool,
+    pub keep_max_bpc_unchanged: bool,
     #[knuffel(child)]
     pub restrict_primary_scanout_to_matching_format: bool,
     #[knuffel(child, unwrap(argument))]
@@ -5436,7 +5436,7 @@ mod tests {
                 enable_overlay_planes: false,
                 disable_cursor_plane: false,
                 disable_direct_scanout: false,
-                disable_set_bpc: false,
+                keep_max_bpc_unchanged: false,
                 restrict_primary_scanout_to_matching_format: false,
                 render_drm_device: Some(
                     "/dev/dri/renderD129",

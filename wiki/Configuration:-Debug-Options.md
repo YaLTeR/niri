@@ -30,6 +30,7 @@ debug {
     honor-xdg-activation-with-invalid-serial
     skip-cursor-only-updates-during-vrr
     deactivate-unfocused-windows
+    keep-max-bpc-unchanged
 }
 
 binds {
@@ -289,6 +290,22 @@ It will cause niri to drop the Activated state for all unfocused windows.
 ```kdl
 debug {
     deactivate-unfocused-windows
+}
+```
+
+### `keep-max-bpc-unchanged`
+
+<sup>Since: next release</sup>
+
+Skips setting max bpc on startup.
+
+Some displays driven by amdgpu encounter a broken DRM state when setting max bpc to 8. Niri sets this on startup for increases display compatibility. See [this](https://gitlab.freedesktop.org/drm/amd/-/issues/4487) bug report for more details.
+
+Setting this disables this behavior. It may cause issues with some displays.
+
+```kdl
+debug {
+    keep-max-bpc-unchanged
 }
 ```
 
