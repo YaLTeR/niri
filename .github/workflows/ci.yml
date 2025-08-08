@@ -249,26 +249,26 @@ jobs:
         with:
           cache-all-crates: true
 
-      - name: Prepare
-        run: |
-          # Remove man-db triggers to speed up Ubuntu upgrade by a minute or two during vmactions/freebsd-vm action run:
-          sudo rm /var/lib/dpkg/info/man-db.*
-          id
-          ls -la ./cargo-home
-          chmod -R go+w ./cargo-home
+      # - name: Prepare
+      #   run: |
+      #     # Remove man-db triggers to speed up Ubuntu upgrade by a minute or two during vmactions/freebsd-vm action run:
+      #     sudo rm /var/lib/dpkg/info/man-db.*
 
       - name: Build
-        uses: vmactions/freebsd-vm@966989c456d41351f095a421f60e71342d3bce41  # v1.2.1
+        uses: acj/freebsd-firecracker-action@136ca0bce2adade21e526ceb07db643ad23dd2dd # v0.5.1
         with:
-          sync: nfs
-          prepare: |
+          verbose: false
+          checkout: false
+          pre-run: |
+            rsync -r -e "ssh" \
+              --relative \
+              --copy-links \
+              . firecracker:
+          run-in-vm: |
             pkg update -f
             pkg install -y ${{ env.DEPS_PKG }}
-          run: |
-            curl -o patch-pipewire_init 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-pipewire_init?id=f3f7e555b06d9a87d63c047ce3e82e936a11f2fe'
 
-            id
-            ls -la ./cargo-home
+            curl -o patch-pipewire_init 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-pipewire_init?id=f3f7e555b06d9a87d63c047ce3e82e936a11f2fe'
 
             export CARGO_HOME="$PWD/cargo-home"
 
@@ -279,6 +279,26 @@ jobs:
             cargo build \
               --offline \
               --no-default-features --features dbus,xdp-gnome-screencast
+
+      # - name: Build
+      #   uses: vmactions/freebsd-vm@966989c456d41351f095a421f60e71342d3bce41  # v1.2.1
+      #   with:
+      #     sync: nfs
+      #     prepare: |
+      #       pkg update -f
+      #       pkg install -y ${{ env.DEPS_PKG }}
+      #     run: |
+      #       curl -o patch-pipewire_init 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-pipewire_init?id=f3f7e555b06d9a87d63c047ce3e82e936a11f2fe'
+
+      #       export CARGO_HOME="$PWD/cargo-home"
+
+      #       cargo fetch
+
+      #       ( cd $CARGO_HOME/git/checkouts/pipewire-rs-*/*/; patch -p2 < $CARGO_HOME/../patch-pipewire_init; )
+
+      #       cargo build \
+      #         --offline \
+      #         --no-default-features --features dbus,xdp-gnome-screencast
 
   nix:
     runs-on: ubuntu-24.04
