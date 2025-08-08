@@ -272,8 +272,6 @@ jobs:
               --offline \
               --no-default-features --features dbus,xdp-gnome-screencast
 
-      - run: du -h $CARGO_HOME
-
   nix:
     runs-on: ubuntu-24.04
     steps:
