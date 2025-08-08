@@ -357,9 +357,17 @@ pub enum Action {
     /// Focus the window above or the column to the right.
     FocusWindowUpOrColumnRight {},
     /// Focus the window or the workspace below.
-    FocusWindowOrWorkspaceDown {},
+    FocusWindowOrWorkspaceDown {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the window or the workspace above.
-    FocusWindowOrWorkspaceUp {},
+    FocusWindowOrWorkspaceUp {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the topmost window.
     FocusWindowTop {},
     /// Focus the bottommost window.

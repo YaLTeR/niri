@@ -2132,18 +2132,18 @@ impl<W: LayoutElement> Layout<W> {
         workspace.focus_up_or_right();
     }
 
-    pub fn focus_window_or_workspace_down(&mut self) {
+    pub fn focus_window_or_workspace_down(&mut self, skip_animation: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.focus_window_or_workspace_down();
+        monitor.focus_window_or_workspace_down(skip_animation);
     }
 
-    pub fn focus_window_or_workspace_up(&mut self) {
+    pub fn focus_window_or_workspace_up(&mut self, skip_animation: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.focus_window_or_workspace_up();
+        monitor.focus_window_or_workspace_up(skip_animation);
     }
 
     pub fn focus_window_top(&mut self) {
@@ -2244,14 +2244,16 @@ impl<W: LayoutElement> Layout<W> {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.switch_workspace_up();
+        let SKIP_ANIMATION = false;
+        monitor.switch_workspace_up(SKIP_ANIMATION);
     }
 
     pub fn switch_workspace_down(&mut self) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.switch_workspace_down();
+        let SKIP_ANIMATION = false;
+        monitor.switch_workspace_down(SKIP_ANIMATION);
     }
 
     pub fn switch_workspace(&mut self, idx: usize) {

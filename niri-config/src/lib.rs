@@ -1767,8 +1767,8 @@ pub enum Action {
     ),
     FocusWindowUpOrColumnLeft,
     FocusWindowUpOrColumnRight,
-    FocusWindowOrWorkspaceDown,
-    FocusWindowOrWorkspaceUp,
+    FocusWindowOrWorkspaceDown(#[knuffel(property(name = "skip-animation"), default = false)] bool),
+    FocusWindowOrWorkspaceUp(#[knuffel(property(name = "skip-animation"), default = false)] bool),
     FocusWindowTop,
     FocusWindowBottom,
     FocusWindowDownOrTop,
@@ -2030,8 +2030,18 @@ impl From<niri_ipc::Action> for Action {
             } => Self::FocusWindowDownOrColumnRight(skip_animation),
             niri_ipc::Action::FocusWindowUpOrColumnLeft {} => Self::FocusWindowUpOrColumnLeft,
             niri_ipc::Action::FocusWindowUpOrColumnRight {} => Self::FocusWindowUpOrColumnRight,
-            niri_ipc::Action::FocusWindowOrWorkspaceDown {} => Self::FocusWindowOrWorkspaceDown,
-            niri_ipc::Action::FocusWindowOrWorkspaceUp {} => Self::FocusWindowOrWorkspaceUp,
+            niri_ipc::Action::FocusWindowOrWorkspaceDown {
+                skip_animation: None,
+            } => Self::FocusWindowOrWorkspaceDown(false),
+            niri_ipc::Action::FocusWindowOrWorkspaceDown {
+                skip_animation: Some(skip_animation),
+            } => Self::FocusWindowOrWorkspaceDown(skip_animation),
+            niri_ipc::Action::FocusWindowOrWorkspaceUp {
+                skip_animation: None,
+            } => Self::FocusWindowOrWorkspaceUp(false),
+            niri_ipc::Action::FocusWindowOrWorkspaceUp {
+                skip_animation: Some(skip_animation),
+            } => Self::FocusWindowOrWorkspaceUp(skip_animation),
             niri_ipc::Action::FocusWindowTop {} => Self::FocusWindowTop,
             niri_ipc::Action::FocusWindowBottom {} => Self::FocusWindowBottom,
             niri_ipc::Action::FocusWindowDownOrTop {} => Self::FocusWindowDownOrTop,
