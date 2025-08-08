@@ -27,7 +27,7 @@ x Keybindings in the MruUi, e.g. Close window, Quit, Focus selected, prev, next
 x Mru list should contain an Option<BakedBuffer> to cache the texture
   once rendered and then reused as needed.
 x Transition when opening/closing MruUI
-- how to handle overview mode? Inhibit open?
+x how to handle overview mode? Inhibit open?
 - add config item to disable
 - make modifier key configurable
 

@@ -2212,6 +2212,9 @@ impl State {
                     }
                 } else {
                     self.niri.mru_commit();
+                    // For now opt for the simple solution and just close the overview rather than figuring
+                    // out how to cleanly deal with the overview zoom combined with the MRU UI.
+                    self.niri.layout.close_overview();
                     let config = self.niri.config.borrow();
                     let wmru = WindowMru::new(&self.niri, scope, filter, self.niri.clock.clone());
                     self.niri.window_mru_ui.open(
