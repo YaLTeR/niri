@@ -78,6 +78,12 @@ impl ConfigErrorNotification {
     }
 
     pub fn show(&mut self) {
+        let c = self.config.borrow();
+
+        if c.no_failed_config_reloaded_notification {
+            return;
+        }
+
         if self.created_path.is_some() {
             self.created_path = None;
             self.buffers.borrow_mut().clear();
