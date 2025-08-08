@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 
 [[package]]
@@ -320,7 +320,7 @@ dependencies = [
 requires-dist = [
     { name = "markdown-callouts", specifier = ">=0.4.0" },
     { name = "mkdocs-material", specifier = ">=9.6.15" },
-    { name = "pygments", git = "https://github.com/chinatsu/pygments" },
+    { name = "pygments", git = "https://github.com/chinatsu/pygments?rev=8a108c7b2071179d5959d7144b7ffdc062265838" },
 ]
 
 [[package]]
@@ -362,7 +362,7 @@ wheels = [
 [[package]]
 name = "pygments"
 version = "2.19.2"
-source = { git = "https://github.com/chinatsu/pygments#8c8960aa1cf1cf8bcebd20927076c7d44d02bd82" }
+source = { git = "https://github.com/chinatsu/pygments?rev=8a108c7b2071179d5959d7144b7ffdc062265838#8a108c7b2071179d5959d7144b7ffdc062265838" }
 
 [[package]]
 name = "pymdown-extensions"

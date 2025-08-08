@@ -26,18 +26,19 @@ def on_page_markdown(
     markdown: str, *, page, config, files
 ):
     def replace(match: Match):
-        args = match.groups()[0]
-        return _badge_for_version(args)
+        matches = match.groups()
+        preposition, version = matches[0], matches[1]
+        return _badge_for_version(preposition, version)
 
     return re.sub(
-        r"<sup>Since: (.*?)</sup>",
+        r"<sup>(Until|Since): (.*?)</sup>",
         replace, markdown, flags = re.I | re.M
     )
 
-def _badge_for_version(version: str):
+def _badge_for_version(preposition: str, version: str):
     if version == "next release":
         # we might fail to make real links to release notes on other cases too, but for now this is the one i've found
-        return f"<span class=\"badge\">Since: {version}</span>"
+        return f"<span class=\"badge\">{preposition}: {version}</span>"
     else:
         path = f"https://github.com/YaLTeR/niri/releases/tag/v{version}"
-        return f"<span class=\"badge\">[Since: {version}]({path})</span>"
+        return f"<span class=\"badge\">[{preposition}: {version}]({path})</span>"
