@@ -29,7 +29,7 @@ x Mru list should contain an Option<BakedBuffer> to cache the texture
 x Transition when opening/closing MruUI
 x how to handle overview mode? Inhibit open?
 x add config item to disable
-- make modifier key configurable
+x make modifier key configurable
 
 */
 use std::cell::RefCell;
@@ -460,19 +460,17 @@ impl WindowMruUi {
         self.advance(dir);
     }
 
-    pub fn close(&mut self) {
-        let Self::Open(inner) = self else {
-            return;
-        };
+    pub fn close(&mut self) -> Option<SelectedThumbnail> {
+        let Self::Open(inner) = self else { return None };
+        let thumb = inner.select_thumbnail();
+        let clock = inner.clock.clone();
+        let config = inner.options.animations.window_mru_ui_open_close.0;
+
         *self = Self::Closed {
-            close_animation: Some(Animation::new(
-                inner.clock.clone(),
-                1.,
-                0.,
-                0.,
-                inner.options.animations.window_mru_ui_open_close.0,
-            )),
+            close_animation: Some(Animation::new(clock, 1., 0., 0., config)),
         };
+
+        thumb
     }
 
     pub fn advance(&mut self, dir: MruDirection) {
@@ -680,12 +678,7 @@ impl WindowMruUi {
         let Self::Open(inner) = self else {
             return None;
         };
-        let wmru = &inner.wmru;
-        if wmru.thumbnails.is_empty() {
-            None
-        } else {
-            wmru.thumbnails.get(wmru.current).map(|t| t.id)
-        }
+        inner.current_window_id()
     }
 
     pub fn remove_window(&mut self, id: MappedId) {
@@ -726,33 +719,6 @@ impl WindowMruUi {
                 }
             }
         }
-    }
-
-    /// Return the window Id and screen position of the selected thumbnail.
-    pub fn select_thumbnail(&mut self) -> Option<SelectedThumbnail> {
-        let id = self.current_window_id()?;
-        let Self::Open(inner) = self else {
-            return None;
-        };
-        let thumbnail = inner.wmru.current()?;
-        let texture = inner
-            .textures
-            .borrow_mut()
-            .get_mut(inner.wmru.current)?
-            .thumbnail
-            .take()?;
-        let view_offset = inner.view_offset?
-            + inner
-                .move_animation
-                .as_ref()
-                .map(|ma| ma.from * ma.anim.value())
-                .unwrap_or(0.);
-        Some(SelectedThumbnail {
-            id,
-            offset: -view_offset + thumbnail.offset + thumbnail.render_offset(),
-            scale: THUMBNAIL_SCALE,
-            texture,
-        })
     }
 
     pub fn update_render_elements(&mut self, output: &Output) {
@@ -880,9 +846,60 @@ impl WindowMruUi {
             }
         }
     }
+
+    pub fn bindings(&self, config: &niri_config::RecentWindows) -> impl Iterator<Item = Bind> {
+        let modifiers = config.mod_key.to_modifiers();
+
+        MRU_UI_BINDINGS
+            .iter()
+            .chain(
+                self.is_open()
+                    .then_some(MRU_UI_OPENED_BINDINGS.iter())
+                    .into_iter()
+                    .flatten(),
+            )
+            .cloned()
+            .map(move |mut b| {
+                b.key.modifiers |= modifiers;
+                b
+            })
+    }
 }
 
 impl Inner {
+    fn current_window_id(&self) -> Option<MappedId> {
+        let wmru = &self.wmru;
+        if wmru.thumbnails.is_empty() {
+            None
+        } else {
+            wmru.thumbnails.get(wmru.current).map(|t| t.id)
+        }
+    }
+
+    /// Return the window Id and screen position of the selected thumbnail.
+    fn select_thumbnail(&self) -> Option<SelectedThumbnail> {
+        let id = self.current_window_id()?;
+        let thumbnail = self.wmru.current()?;
+        let texture = self
+            .textures
+            .borrow_mut()
+            .get_mut(self.wmru.current)?
+            .thumbnail
+            .take()?;
+        let view_offset = self.view_offset?
+            + self
+                .move_animation
+                .as_ref()
+                .map(|ma| ma.from * ma.anim.value())
+                .unwrap_or(0.);
+        Some(SelectedThumbnail {
+            id,
+            offset: -view_offset + thumbnail.offset + thumbnail.render_offset(),
+            scale: THUMBNAIL_SCALE,
+            texture,
+        })
+    }
+
     fn are_animations_ongoing(&self) -> bool {
         (!self.open_animation.is_done())
             || self
@@ -1338,10 +1355,10 @@ impl ThumbnailSelectionAnimation {
         // is triggered while the thumbnail selection animation is already in
         // progress). This will look really confusing, so instead the thumbnail
         // is rendered:
-        // - on a monitor if it is "moving through" that monitor's
-        //   view_rect, i.e. the final destination is **not** on that monitor
-        // - on the final destination monitor so long as its view_rect overlaps
-        //   the tile's view_rect.
+        // - on a monitor if it is "moving through" that monitor's view_rect, i.e. the final
+        //   destination is **not** on that monitor
+        // - on the final destination monitor so long as its view_rect overlaps the tile's
+        //   view_rect.
 
         if let Some(mon) = niri.layout.monitor_for_output(output) {
             let output_view_rect =
@@ -1409,12 +1426,12 @@ struct ThumbnailAnimationRenderParameters<'n> {
 /// Key bindings available when the MRU UI is open.
 /// Because the UI is closed when the Alt key is released, all bindings
 /// have the ALT modifier.
-pub static MRU_UI_BINDINGS: &[Bind] = &[
+static MRU_UI_OPENED_BINDINGS: &[Bind] = &[
     // Escape just closes the MRU UI
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::Escape),
-            modifiers: Modifiers::ALT,
+            modifiers: Modifiers::empty(),
         },
         action: Action::MruCancel,
         repeat: true,
@@ -1427,7 +1444,7 @@ pub static MRU_UI_BINDINGS: &[Bind] = &[
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::Right),
-            modifiers: Modifiers::ALT,
+            modifiers: Modifiers::empty(),
         },
         action: Action::MruAdvance(MruDirection::Forward, None, None),
         repeat: true,
@@ -1439,7 +1456,7 @@ pub static MRU_UI_BINDINGS: &[Bind] = &[
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::Left),
-            modifiers: Modifiers::ALT,
+            modifiers: Modifiers::empty(),
         },
         action: Action::MruAdvance(MruDirection::Backward, None, None),
         repeat: true,
@@ -1452,7 +1469,7 @@ pub static MRU_UI_BINDINGS: &[Bind] = &[
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::j),
-            modifiers: Modifiers::ALT,
+            modifiers: Modifiers::empty(),
         },
         action: Action::MruAdvance(MruDirection::Forward, None, None),
         repeat: true,
@@ -1464,7 +1481,7 @@ pub static MRU_UI_BINDINGS: &[Bind] = &[
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::k),
-            modifiers: Modifiers::ALT,
+            modifiers: Modifiers::empty(),
         },
         action: Action::MruAdvance(MruDirection::Backward, None, None),
         repeat: true,
@@ -1477,7 +1494,7 @@ pub static MRU_UI_BINDINGS: &[Bind] = &[
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::q),
-            modifiers: Modifiers::ALT,
+            modifiers: Modifiers::empty(),
         },
         action: Action::MruCloseCurrent,
         repeat: true,
@@ -1489,7 +1506,7 @@ pub static MRU_UI_BINDINGS: &[Bind] = &[
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::Return),
-            modifiers: Modifiers::ALT,
+            modifiers: Modifiers::empty(),
         },
         action: Action::MruClose,
         repeat: true,
@@ -1501,7 +1518,7 @@ pub static MRU_UI_BINDINGS: &[Bind] = &[
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::Home),
-            modifiers: Modifiers::ALT,
+            modifiers: Modifiers::empty(),
         },
         action: Action::MruFirst,
         repeat: true,
@@ -1513,7 +1530,7 @@ pub static MRU_UI_BINDINGS: &[Bind] = &[
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::End),
-            modifiers: Modifiers::ALT,
+            modifiers: Modifiers::empty(),
         },
         action: Action::MruLast,
         repeat: true,
@@ -1525,7 +1542,7 @@ pub static MRU_UI_BINDINGS: &[Bind] = &[
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::a),
-            modifiers: Modifiers::ALT,
+            modifiers: Modifiers::empty(),
         },
         action: Action::MruChangeScope(MruScope::All),
         repeat: true,
@@ -1537,7 +1554,7 @@ pub static MRU_UI_BINDINGS: &[Bind] = &[
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::w),
-            modifiers: Modifiers::ALT,
+            modifiers: Modifiers::empty(),
         },
         action: Action::MruChangeScope(MruScope::Workspace),
         repeat: true,
@@ -1549,9 +1566,67 @@ pub static MRU_UI_BINDINGS: &[Bind] = &[
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::o),
-            modifiers: Modifiers::ALT,
+            modifiers: Modifiers::empty(),
         },
         action: Action::MruChangeScope(MruScope::Output),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+];
+
+/// Key bindings that are available both when the MRU UI is opened or closed
+static MRU_UI_BINDINGS: &[Bind] = &[
+    // The following two bindings cover MRU window navigation. They are
+    // preset because the `Alt` key is treated specially in `on_keyboard`.
+    // When it is released the active MRU traversal is considered to have
+    // completed. If the user were allowed to change the MRU bindings
+    // below, the navigation mechanism would no longer work as intended.
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::Tab),
+            modifiers: Modifiers::empty(),
+        },
+        action: Action::MruAdvance(MruDirection::Forward, None, Some(MruFilter::None)),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::Tab),
+            modifiers: Modifiers::SHIFT,
+        },
+        action: Action::MruAdvance(MruDirection::Backward, None, Some(MruFilter::None)),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    // forward/backward bind actions for AppId navigation
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::grave),
+            modifiers: Modifiers::empty(),
+        },
+        action: Action::MruAdvance(MruDirection::Forward, None, Some(MruFilter::AppId)),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::grave),
+            modifiers: Modifiers::SHIFT,
+        },
+        action: Action::MruAdvance(MruDirection::Backward, None, Some(MruFilter::AppId)),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,

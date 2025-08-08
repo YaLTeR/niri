@@ -7,9 +7,7 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{
-    Action, Bind, Binds, Key, ModKey, Modifiers, MruDirection, MruFilter, SwitchBinds, Trigger,
-};
+use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -47,7 +45,7 @@ use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _, Options};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
-use crate::ui::window_mru_ui::{ThumbnailSelectionAnimation, WindowMru, MRU_UI_BINDINGS};
+use crate::ui::window_mru_ui::{ThumbnailSelectionAnimation, WindowMru};
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
@@ -362,7 +360,10 @@ impl State {
         }
 
         let is_inhibiting_shortcuts = self.is_inhibiting_shortcuts();
-        let mru_ui_enabled = !self.niri.config.borrow().recent_windows.off;
+        let (mru_ui_enabled, mru_mod_key) = {
+            let config = &self.niri.config.borrow().recent_windows;
+            (!config.off, config.mod_key)
+        };
 
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
@@ -386,12 +387,16 @@ impl State {
                     }
                 }
 
-                // Check if alt key was released while the MRU UI was open.
-                // If so,  close the UI and transfer focus to the current
-                // selection in the MRU UI.
-                if mru_ui_enabled && !mods.alt && this.niri.window_mru_ui.is_open() {
-                    this.do_action(Action::MruClose, false);
-                    return FilterResult::Intercept(None);
+                // Check if MRU UI mod-key was released while the MRU UI was open.
+                // If so,  close the UI (which will also transfer the focus to the current
+                // MRU UI selection).
+                if mru_ui_enabled && this.niri.window_mru_ui.is_open() {
+                    let mru_mod_key_down =
+                        modifiers_from_state(*mods).contains(mru_mod_key.to_modifiers());
+                    if !mru_mod_key_down {
+                        this.do_action(Action::MruClose, false);
+                        return FilterResult::Intercept(None);
+                    }
                 }
 
                 if pressed
@@ -411,45 +416,29 @@ impl State {
 
                 let res = {
                     let config = this.niri.config.borrow();
-                    let bindings = config.binds.into_iter().chain(PRESET_BINDINGS);
-
-                    // Both branches of the following if statement call `should_intercept_key` the
-                    // same way but with different types for the bindings
-                    // parameter.
-                    if mru_ui_enabled && this.niri.window_mru_ui.is_open() {
-                        // Only a subset of keybindings are available in the WindowMruUi
-                        // plus a few extra specific ones from `MRU_UI_BINDINGS`.
-                        let bindings = bindings
-                            .filter(|b| matches!(b.action, Action::MruAdvance(..)))
-                            .chain(MRU_UI_BINDINGS);
-                        should_intercept_key(
-                            &mut this.niri.suppressed_keys,
-                            bindings,
-                            mod_key,
-                            key_code,
-                            modified,
-                            raw,
-                            pressed,
-                            *mods,
-                            &this.niri.screenshot_ui,
-                            this.niri.config.borrow().input.disable_power_key_handling,
-                            is_inhibiting_shortcuts,
-                        )
-                    } else {
-                        should_intercept_key(
-                            &mut this.niri.suppressed_keys,
-                            bindings,
-                            mod_key,
-                            key_code,
-                            modified,
-                            raw,
-                            pressed,
-                            *mods,
-                            &this.niri.screenshot_ui,
-                            this.niri.config.borrow().input.disable_power_key_handling,
-                            is_inhibiting_shortcuts,
-                        )
-                    }
+                    let mru_ui_bindings = mru_ui_enabled.then_some(
+                        this.niri
+                            .window_mru_ui
+                            .bindings(&config.recent_windows)
+                            .collect::<Vec<_>>(),
+                    );
+                    let bindings = config
+                        .binds
+                        .into_iter()
+                        .chain(mru_ui_bindings.iter().flat_map(|v| v.iter()));
+                    should_intercept_key(
+                        &mut this.niri.suppressed_keys,
+                        bindings,
+                        mod_key,
+                        key_code,
+                        modified,
+                        raw,
+                        pressed,
+                        *mods,
+                        &this.niri.screenshot_ui,
+                        this.niri.config.borrow().input.disable_power_key_handling,
+                        is_inhibiting_shortcuts,
+                    )
                 };
                 if matches!(res, FilterResult::Forward) {
                     // MRU UI prevents interaction with regular windows
@@ -2147,60 +2136,56 @@ impl State {
             }
             Action::MruClose => {
                 if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open() {
-                        if let Some(thumb) = self.niri.window_mru_ui.select_thumbnail() {
-                            let id = thumb.id;
-                            if let Some(window) = self.niri.find_window_by_id(id) {
-                                // Setup the thumbnail selection animation.
-                                let mut tsa = self.niri.layout.active_monitor_ref().map(|mon| {
-                                    let config =
-                                        self.niri.config.borrow().animations.thumbnail_select.0;
-                                    ThumbnailSelectionAnimation::new(
-                                        thumb,
-                                        mon,
-                                        self.niri.clock.clone(),
-                                        config,
-                                    )
-                                });
+                    && self.niri.window_mru_ui.is_open()
+                {
+                    if let Some(thumb) = self.niri.window_mru_ui.close() {
+                        let id = thumb.id;
+                        if let Some(window) = self.niri.find_window_by_id(id) {
+                            // Setup the thumbnail selection animation.
+                            let mut tsa = self.niri.layout.active_monitor_ref().map(|mon| {
+                                let config =
+                                    self.niri.config.borrow().animations.thumbnail_select.0;
+                                ThumbnailSelectionAnimation::new(
+                                    thumb,
+                                    mon,
+                                    self.niri.clock.clone(),
+                                    config,
+                                )
+                            });
 
-                                // Transfer focus to the selected window id
-                                self.focus_window(&window);
+                            // Transfer focus to the selected window id
+                            self.focus_window(&window);
 
-                                std::mem::swap(
-                                    &mut self.niri.thumbnail_selection_animation,
-                                    &mut tsa,
-                                );
+                            std::mem::swap(&mut self.niri.thumbnail_selection_animation, &mut tsa);
 
-                                // If there was another thumbnail selection animation in progress,
-                                // mark the corresponding tile for regular rendering.
-                                if let Some(old_tile) = tsa
-                                    .and_then(|tsa| self.niri.find_window_by_id(tsa.id))
-                                    .and_then(|window| {
-                                        self.niri.layout.find_tile_by_id_mut(&window)
-                                    })
-                                {
-                                    old_tile.skip_render = false;
-                                }
-
-                                // Mark the tile corresponding to the thumbnail as to-be-skipped during
-                                // regular Tile rendering.
-                                if let Some(tile) = self.niri.layout.find_tile_by_id_mut(&window) {
-                                    tile.skip_render = true;
-                                }
+                            // If there was another thumbnail selection animation in progress,
+                            // mark the corresponding tile for regular rendering.
+                            if let Some(old_tile) = tsa
+                                .and_then(|tsa| self.niri.find_window_by_id(tsa.id))
+                                .and_then(|window| self.niri.layout.find_tile_by_id_mut(&window))
+                            {
+                                old_tile.skip_render = false;
                             }
-                            self.niri.window_mru_ui.close();
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
-                        }
+
+                            // Mark the tile corresponding to the thumbnail as to-be-skipped during
+                            // regular Tile rendering.
+                            if let Some(tile) = self.niri.layout.find_tile_by_id_mut(&window) {
+                                tile.skip_render = true;
+                            }
+                        };
                     }
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::MruCancel => {
                 if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open() {
-                        self.niri.window_mru_ui.close();
-                        // FIXME: granular
-                        self.niri.queue_redraw_all();
-                    }
+                    && self.niri.window_mru_ui.is_open()
+                {
+                    self.niri.window_mru_ui.close();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::MruAdvance(dir, scope, filter) => {
                 if !self.niri.config.borrow().recent_windows.off {
@@ -2221,8 +2206,9 @@ impl State {
                         }
                     } else {
                         self.niri.mru_commit();
-                        // For now opt for the simple solution and just close the overview rather than figuring
-                        // out how to cleanly deal with the overview zoom combined with the MRU UI.
+                        // For now opt for the simple solution and just close the overview rather
+                        // than figuring out how to cleanly deal with the
+                        // overview zoom combined with the MRU UI.
                         self.niri.layout.close_overview();
                         let config = self.niri.config.borrow();
                         let wmru =
@@ -2240,47 +2226,51 @@ impl State {
             }
             Action::MruCloseCurrent => {
                 if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open() {
-                        if let Some(id) = self.niri.window_mru_ui.current_window_id() {
-                            if let Some(w) = self.niri.find_window_by_id(id) {
-                                if let Some(tl) = w.toplevel() {
-                                    tl.send_close();
-                                }
+                    && self.niri.window_mru_ui.is_open()
+                {
+                    if let Some(id) = self.niri.window_mru_ui.current_window_id() {
+                        if let Some(w) = self.niri.find_window_by_id(id) {
+                            if let Some(tl) = w.toplevel() {
+                                tl.send_close();
                             }
                         }
-                        // FIXME: granular
-                        self.niri.queue_redraw_all();
                     }
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::MruFirst => {
                 if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open() {
-                        self.niri.window_mru_ui.first();
-                        // FIXME: granular
-                        self.niri.queue_redraw_all();
-                    }
+                    && self.niri.window_mru_ui.is_open()
+                {
+                    self.niri.window_mru_ui.first();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::MruLast => {
                 if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open() {
-                        self.niri.window_mru_ui.last();
-                        // FIXME: granular
-                        self.niri.queue_redraw_all();
-                    }
+                    && self.niri.window_mru_ui.is_open()
+                {
+                    self.niri.window_mru_ui.last();
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::MruChangeScope(scope) => {
                 if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open() {
-                        if let Some(wmru) = self.niri.window_mru_ui.derive_new_mru_list(
-                            &self.niri,
-                            Some(scope),
-                            None,
-                        ) {
-                            self.niri.window_mru_ui.update_mru_list(None, wmru);
-                            // FIXME: granular
-                            self.niri.queue_redraw_all();
-                        }
+                    && self.niri.window_mru_ui.is_open()
+                {
+                    if let Some(wmru) =
+                        self.niri
+                            .window_mru_ui
+                            .derive_new_mru_list(&self.niri, Some(scope), None)
+                    {
+                        self.niri.window_mru_ui.update_mru_list(None, wmru);
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
                     }
+                }
             }
         }
     }
@@ -4190,66 +4180,6 @@ fn find_bind<'a>(
     let trigger = Trigger::Keysym(raw?);
     find_configured_bind(bindings, mod_key, trigger, mods)
 }
-
-/// Preset bindings can be overridden in the user configuration.
-/// The reason for treating them differently is that their key + modifier
-/// combination needs to be frozen for some reason.
-static PRESET_BINDINGS: &[Bind] = &[
-    // The following two bindings cover MRU window navigation. They are
-    // preset because the `Alt` key is treated specially in `on_keyboard`.
-    // When it is released the active MRU traversal is considered to have
-    // completed. If the user were allowed to change the MRU bindings
-    // below, the navigation mechanism would no longer work as intended.
-    Bind {
-        key: Key {
-            trigger: Trigger::Keysym(Keysym::Tab),
-            modifiers: Modifiers::ALT,
-        },
-        action: Action::MruAdvance(MruDirection::Forward, None, Some(MruFilter::None)),
-        repeat: true,
-        cooldown: None,
-        allow_when_locked: false,
-        allow_inhibiting: true,
-        hotkey_overlay_title: None,
-    },
-    Bind {
-        key: Key {
-            trigger: Trigger::Keysym(Keysym::Tab),
-            modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
-        },
-        action: Action::MruAdvance(MruDirection::Backward, None, Some(MruFilter::None)),
-        repeat: true,
-        cooldown: None,
-        allow_when_locked: false,
-        allow_inhibiting: true,
-        hotkey_overlay_title: None,
-    },
-    // forward/backward bind actions for AppId navigation
-    Bind {
-        key: Key {
-            trigger: Trigger::Keysym(Keysym::grave),
-            modifiers: Modifiers::ALT,
-        },
-        action: Action::MruAdvance(MruDirection::Forward, None, Some(MruFilter::AppId)),
-        repeat: true,
-        cooldown: None,
-        allow_when_locked: false,
-        allow_inhibiting: true,
-        hotkey_overlay_title: None,
-    },
-    Bind {
-        key: Key {
-            trigger: Trigger::Keysym(Keysym::grave),
-            modifiers: Modifiers::ALT.union(Modifiers::SHIFT),
-        },
-        action: Action::MruAdvance(MruDirection::Backward, None, Some(MruFilter::AppId)),
-        repeat: true,
-        cooldown: None,
-        allow_when_locked: false,
-        allow_inhibiting: true,
-        hotkey_overlay_title: None,
-    },
-];
 
 fn find_configured_bind<'a>(
     bindings: impl IntoIterator<Item = &'a Bind>,
