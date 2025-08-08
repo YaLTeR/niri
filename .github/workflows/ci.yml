@@ -252,7 +252,6 @@ jobs:
         run: |
           # Remove man-db triggers to speed up Ubuntu upgrade by a minute or two during vmactions/freebsd-vm action run:
           sudo rm /var/lib/dpkg/info/man-db.*
-          du -h $CARGO_HOME
 
       - name: Build
         uses: vmactions/freebsd-vm@966989c456d41351f095a421f60e71342d3bce41  # v1.2.1
@@ -261,8 +260,6 @@ jobs:
             pkg update -f
             pkg install -y ${{ env.DEPS_PKG }}
           run: |
-            du -h $CARGO_HOME
-
             curl -o patch-pipewire_init 'https://cgit.freebsd.org/ports/plain/x11-wm/niri/files/patch-pipewire_init?id=f3f7e555b06d9a87d63c047ce3e82e936a11f2fe'
 
             cargo fetch
