@@ -83,6 +83,8 @@ pub struct Config {
     pub debug: DebugConfig,
     #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
+    #[knuffel(child, default)]
+    pub recent_windows: RecentWindows,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -2466,6 +2468,23 @@ pub enum PreviewRender {
     ScreenCapture,
 }
 
+#[derive(knuffel::Decode, Debug, PartialEq)]
+pub struct RecentWindows {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, unwrap(argument, str), default = Self::default().mod_key)]
+    pub mod_key: ModKey,
+}
+
+impl Default for RecentWindows {
+    fn default() -> Self {
+        RecentWindows {
+            off: false,
+            mod_key: ModKey::Alt,
+        }
+    }
+}
+
 impl Config {
     pub fn load(path: &Path) -> miette::Result<Self> {
         let _span = tracy_client::span!("Config::load");
@@ -4324,6 +4343,11 @@ mod tests {
             }
             workspace "workspace-2"
             workspace "workspace-3"
+
+            recent-windows {
+                off
+                mod-key "Alt"
+            }
             "##,
         );
 
@@ -5518,6 +5542,10 @@ mod tests {
                     open_on_output: None,
                 },
             ],
+            recent_windows: RecentWindows {
+                off: true,
+                mod_key: Alt,
+            },
         }
         "#);
     }

@@ -28,7 +28,7 @@ x Mru list should contain an Option<BakedBuffer> to cache the texture
   once rendered and then reused as needed.
 x Transition when opening/closing MruUI
 x how to handle overview mode? Inhibit open?
-- add config item to disable
+x add config item to disable
 - make modifier key configurable
 
 */
@@ -630,9 +630,6 @@ impl WindowMruUi {
 
             // Whatever textures remain in the previous texture cache should be
             // used to trigger close animations for the corresponding thumbnails.
-            //
-            // TODO: the offset of the closing thumbnails needs to be adjusted
-            // to accout for the view size having potentially changed.
             if let Some(prev_view_offset) = inner.view_offset {
                 prev_wmru
                     .thumbnails

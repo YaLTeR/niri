@@ -362,6 +362,7 @@ impl State {
         }
 
         let is_inhibiting_shortcuts = self.is_inhibiting_shortcuts();
+        let mru_ui_enabled = !self.niri.config.borrow().recent_windows.off;
 
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
@@ -388,7 +389,7 @@ impl State {
                 // Check if alt key was released while the MRU UI was open.
                 // If so,  close the UI and transfer focus to the current
                 // selection in the MRU UI.
-                if !mods.alt && this.niri.window_mru_ui.is_open() {
+                if mru_ui_enabled && !mods.alt && this.niri.window_mru_ui.is_open() {
                     this.do_action(Action::MruClose, false);
                     return FilterResult::Intercept(None);
                 }
@@ -415,7 +416,7 @@ impl State {
                     // Both branches of the following if statement call `should_intercept_key` the
                     // same way but with different types for the bindings
                     // parameter.
-                    if this.niri.window_mru_ui.is_open() {
+                    if mru_ui_enabled && this.niri.window_mru_ui.is_open() {
                         // Only a subset of keybindings are available in the WindowMruUi
                         // plus a few extra specific ones from `MRU_UI_BINDINGS`.
                         let bindings = bindings
@@ -452,7 +453,7 @@ impl State {
                 };
                 if matches!(res, FilterResult::Forward) {
                     // MRU UI prevents interaction with regular windows
-                    if this.niri.window_mru_ui.is_open() {
+                    if mru_ui_enabled && this.niri.window_mru_ui.is_open() {
                         return FilterResult::Intercept(None);
                     } else if this.niri.keyboard_focus.is_overview() && pressed {
                         // If we didn't find any bind, try other hardcoded keys.
@@ -2145,127 +2146,141 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::MruClose => {
-                if self.niri.window_mru_ui.is_open() {
-                    if let Some(thumb) = self.niri.window_mru_ui.select_thumbnail() {
-                        let id = thumb.id;
-                        if let Some(window) = self.niri.find_window_by_id(id) {
-                            // Setup the thumbnail selection animation.
-                            let mut tsa = self.niri.layout.active_monitor_ref().map(|mon| {
-                                let config =
-                                    self.niri.config.borrow().animations.thumbnail_select.0;
-                                ThumbnailSelectionAnimation::new(
-                                    thumb,
-                                    mon,
-                                    self.niri.clock.clone(),
-                                    config,
-                                )
-                            });
+                if !self.niri.config.borrow().recent_windows.off
+                    && self.niri.window_mru_ui.is_open() {
+                        if let Some(thumb) = self.niri.window_mru_ui.select_thumbnail() {
+                            let id = thumb.id;
+                            if let Some(window) = self.niri.find_window_by_id(id) {
+                                // Setup the thumbnail selection animation.
+                                let mut tsa = self.niri.layout.active_monitor_ref().map(|mon| {
+                                    let config =
+                                        self.niri.config.borrow().animations.thumbnail_select.0;
+                                    ThumbnailSelectionAnimation::new(
+                                        thumb,
+                                        mon,
+                                        self.niri.clock.clone(),
+                                        config,
+                                    )
+                                });
 
-                            // Transfer focus to the selected window id
-                            self.focus_window(&window);
+                                // Transfer focus to the selected window id
+                                self.focus_window(&window);
 
-                            std::mem::swap(&mut self.niri.thumbnail_selection_animation, &mut tsa);
+                                std::mem::swap(
+                                    &mut self.niri.thumbnail_selection_animation,
+                                    &mut tsa,
+                                );
 
-                            // If there was another thumbnail selection animation in progress,
-                            // mark the corresponding tile for regular rendering.
-                            if let Some(old_tile) = tsa
-                                .and_then(|tsa| self.niri.find_window_by_id(tsa.id))
-                                .and_then(|window| self.niri.layout.find_tile_by_id_mut(&window))
-                            {
-                                old_tile.skip_render = false;
+                                // If there was another thumbnail selection animation in progress,
+                                // mark the corresponding tile for regular rendering.
+                                if let Some(old_tile) = tsa
+                                    .and_then(|tsa| self.niri.find_window_by_id(tsa.id))
+                                    .and_then(|window| {
+                                        self.niri.layout.find_tile_by_id_mut(&window)
+                                    })
+                                {
+                                    old_tile.skip_render = false;
+                                }
+
+                                // Mark the tile corresponding to the thumbnail as to-be-skipped during
+                                // regular Tile rendering.
+                                if let Some(tile) = self.niri.layout.find_tile_by_id_mut(&window) {
+                                    tile.skip_render = true;
+                                }
                             }
-
-                            // Mark the tile corresponding to the thumbnail as to-be-skipped during
-                            // regular Tile rendering.
-                            if let Some(tile) = self.niri.layout.find_tile_by_id_mut(&window) {
-                                tile.skip_render = true;
-                            }
+                            self.niri.window_mru_ui.close();
+                            // FIXME: granular
+                            self.niri.queue_redraw_all();
                         }
+                    }
+            }
+            Action::MruCancel => {
+                if !self.niri.config.borrow().recent_windows.off
+                    && self.niri.window_mru_ui.is_open() {
                         self.niri.window_mru_ui.close();
                         // FIXME: granular
                         self.niri.queue_redraw_all();
                     }
-                }
-            }
-            Action::MruCancel => {
-                if self.niri.window_mru_ui.is_open() {
-                    self.niri.window_mru_ui.close();
-                    // FIXME: granular
-                    self.niri.queue_redraw_all();
-                }
             }
             Action::MruAdvance(dir, scope, filter) => {
-                if self.niri.window_mru_ui.is_open() {
-                    if let Some(wmru) = self
-                        .niri
-                        .window_mru_ui
-                        .derive_new_mru_list(&self.niri, scope, filter)
-                    {
-                        // Traversal configuration changed while the UI was open.
-                        // The wmru list needs to be refreshed (this can't be done directly
-                        // using a mut call to window_mru_ui because we would need to also pass
-                        // in a ref to niri, so the process is broken down into two steps:
-                        // 1. generate a new WindowMru 2. pass that into the WindowMruUi).
-                        self.niri.window_mru_ui.update_mru_list(Some(dir), wmru);
+                if !self.niri.config.borrow().recent_windows.off {
+                    if self.niri.window_mru_ui.is_open() {
+                        if let Some(wmru) = self
+                            .niri
+                            .window_mru_ui
+                            .derive_new_mru_list(&self.niri, scope, filter)
+                        {
+                            // Traversal configuration changed while the UI was open.
+                            // The wmru list needs to be refreshed (this can't be done directly
+                            // using a mut call to window_mru_ui because we would need to also pass
+                            // in a ref to niri, so the process is broken down into two steps:
+                            // 1. generate a new WindowMru 2. pass that into the WindowMruUi).
+                            self.niri.window_mru_ui.update_mru_list(Some(dir), wmru);
+                        } else {
+                            self.niri.window_mru_ui.advance(dir);
+                        }
                     } else {
-                        self.niri.window_mru_ui.advance(dir);
+                        self.niri.mru_commit();
+                        // For now opt for the simple solution and just close the overview rather than figuring
+                        // out how to cleanly deal with the overview zoom combined with the MRU UI.
+                        self.niri.layout.close_overview();
+                        let config = self.niri.config.borrow();
+                        let wmru =
+                            WindowMru::new(&self.niri, scope, filter, self.niri.clock.clone());
+                        self.niri.window_mru_ui.open(
+                            Rc::new(Options::from_config(&config)),
+                            self.niri.clock.clone(),
+                            wmru,
+                            dir,
+                        );
                     }
-                } else {
-                    self.niri.mru_commit();
-                    // For now opt for the simple solution and just close the overview rather than figuring
-                    // out how to cleanly deal with the overview zoom combined with the MRU UI.
-                    self.niri.layout.close_overview();
-                    let config = self.niri.config.borrow();
-                    let wmru = WindowMru::new(&self.niri, scope, filter, self.niri.clock.clone());
-                    self.niri.window_mru_ui.open(
-                        Rc::new(Options::from_config(&config)),
-                        self.niri.clock.clone(),
-                        wmru,
-                        dir,
-                    );
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
                 }
-                // FIXME: granular
-                self.niri.queue_redraw_all();
             }
             Action::MruCloseCurrent => {
-                if self.niri.window_mru_ui.is_open() {
-                    if let Some(id) = self.niri.window_mru_ui.current_window_id() {
-                        if let Some(w) = self.niri.find_window_by_id(id) {
-                            if let Some(tl) = w.toplevel() {
-                                tl.send_close();
+                if !self.niri.config.borrow().recent_windows.off
+                    && self.niri.window_mru_ui.is_open() {
+                        if let Some(id) = self.niri.window_mru_ui.current_window_id() {
+                            if let Some(w) = self.niri.find_window_by_id(id) {
+                                if let Some(tl) = w.toplevel() {
+                                    tl.send_close();
+                                }
                             }
                         }
-                    }
-                    // FIXME: granular
-                    self.niri.queue_redraw_all();
-                }
-            }
-            Action::MruFirst => {
-                if self.niri.window_mru_ui.is_open() {
-                    self.niri.window_mru_ui.first();
-                    // FIXME: granular
-                    self.niri.queue_redraw_all();
-                }
-            }
-            Action::MruLast => {
-                if self.niri.window_mru_ui.is_open() {
-                    self.niri.window_mru_ui.last();
-                    // FIXME: granular
-                    self.niri.queue_redraw_all();
-                }
-            }
-            Action::MruChangeScope(scope) => {
-                if self.niri.window_mru_ui.is_open() {
-                    if let Some(wmru) =
-                        self.niri
-                            .window_mru_ui
-                            .derive_new_mru_list(&self.niri, Some(scope), None)
-                    {
-                        self.niri.window_mru_ui.update_mru_list(None, wmru);
                         // FIXME: granular
                         self.niri.queue_redraw_all();
                     }
-                }
+            }
+            Action::MruFirst => {
+                if !self.niri.config.borrow().recent_windows.off
+                    && self.niri.window_mru_ui.is_open() {
+                        self.niri.window_mru_ui.first();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+            }
+            Action::MruLast => {
+                if !self.niri.config.borrow().recent_windows.off
+                    && self.niri.window_mru_ui.is_open() {
+                        self.niri.window_mru_ui.last();
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+            }
+            Action::MruChangeScope(scope) => {
+                if !self.niri.config.borrow().recent_windows.off
+                    && self.niri.window_mru_ui.is_open() {
+                        if let Some(wmru) = self.niri.window_mru_ui.derive_new_mru_list(
+                            &self.niri,
+                            Some(scope),
+                            None,
+                        ) {
+                            self.niri.window_mru_ui.update_mru_list(None, wmru);
+                            // FIXME: granular
+                            self.niri.queue_redraw_all();
+                        }
+                    }
             }
         }
     }
