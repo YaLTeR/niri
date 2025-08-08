@@ -1755,7 +1755,7 @@ pub enum Action {
     FocusColumn(#[knuffel(argument)] usize),
     FocusWindowOrMonitorUp,
     FocusWindowOrMonitorDown,
-    FocusColumnOrMonitorLeft(#[knuffel(property(name = "skip-animmation"), default = false)] bool),
+    FocusColumnOrMonitorLeft(#[knuffel(property(name = "skip-animation"), default = false)] bool),
     FocusColumnOrMonitorRight(#[knuffel(property(name = "skip-animation"), default = false)] bool),
     FocusWindowDown,
     FocusWindowUp,
