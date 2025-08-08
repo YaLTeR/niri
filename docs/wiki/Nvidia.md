@@ -42,9 +42,11 @@ The fix shipped in the driver at the time of writing uses a value of 0, while th
 
 ### Screencast flickering fix
 
+<sup>Until: next release</sup>
+
 If you have screencast glitches or flickering on NVIDIA, set this in the niri config:
 
-```kdl
+```kdl,must-fail
 debug {
     wait-for-frame-completion-in-pipewire
 }
