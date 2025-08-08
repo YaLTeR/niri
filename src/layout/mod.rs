@@ -1990,18 +1990,18 @@ impl<W: LayoutElement> Layout<W> {
         workspace.consume_or_expel_window_right(window);
     }
 
-    pub fn focus_left(&mut self) {
+    pub fn focus_left(&mut self, skip_animation: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.focus_left();
+        workspace.focus_left(skip_animation);
     }
 
-    pub fn focus_right(&mut self) {
+    pub fn focus_right(&mut self, skip_animation: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.focus_right();
+        workspace.focus_right(skip_animation);
     }
 
     pub fn focus_column_first(&mut self) {
@@ -2061,9 +2061,9 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
-    pub fn focus_column_left_or_output(&mut self, output: &Output) -> bool {
+    pub fn focus_column_left_or_output(&mut self, output: &Output, skip_animation: bool) -> bool {
         if let Some(workspace) = self.active_workspace_mut() {
-            if workspace.focus_left() {
+            if workspace.focus_left(skip_animation) {
                 return false;
             }
         }
@@ -2072,9 +2072,9 @@ impl<W: LayoutElement> Layout<W> {
         true
     }
 
-    pub fn focus_column_right_or_output(&mut self, output: &Output) -> bool {
+    pub fn focus_column_right_or_output(&mut self, output: &Output, skip_animation: bool) -> bool {
         if let Some(workspace) = self.active_workspace_mut() {
-            if workspace.focus_right() {
+            if workspace.focus_right(skip_animation) {
                 return false;
             }
         }

@@ -293,9 +293,17 @@ pub enum Action {
     /// Focus the previously focused window.
     FocusWindowPrevious {},
     /// Focus the column to the left.
-    FocusColumnLeft {},
+    FocusColumnLeft {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the column to the right.
-    FocusColumnRight {},
+    FocusColumnRight {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the first column.
     FocusColumnFirst {},
     /// Focus the last column.
@@ -317,17 +325,33 @@ pub enum Action {
     /// Focus the window or the monitor below.
     FocusWindowOrMonitorDown {},
     /// Focus the column or the monitor to the left.
-    FocusColumnOrMonitorLeft {},
+    FocusColumnOrMonitorLeft {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the column or the monitor to the right.
-    FocusColumnOrMonitorRight {},
+    FocusColumnOrMonitorRight {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the window below.
     FocusWindowDown {},
     /// Focus the window above.
     FocusWindowUp {},
     /// Focus the window below or the column to the left.
-    FocusWindowDownOrColumnLeft {},
+    FocusWindowDownOrColumnLeft {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the window below or the column to the right.
-    FocusWindowDownOrColumnRight {},
+    FocusWindowDownOrColumnRight {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the window above or the column to the left.
     FocusWindowUpOrColumnLeft {},
     /// Focus the window above or the column to the right.

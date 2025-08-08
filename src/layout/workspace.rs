@@ -838,19 +838,19 @@ impl<W: LayoutElement> Workspace<W> {
         });
     }
 
-    pub fn focus_left(&mut self) -> bool {
+    pub fn focus_left(&mut self, skip_animation: bool) -> bool {
         if self.floating_is_active.get() {
             self.floating.focus_left()
         } else {
-            self.scrolling.focus_left()
+            self.scrolling.focus_left(skip_animation)
         }
     }
 
-    pub fn focus_right(&mut self) -> bool {
+    pub fn focus_right(&mut self, skip_animation: bool) -> bool {
         if self.floating_is_active.get() {
             self.floating.focus_right()
         } else {
-            self.scrolling.focus_right()
+            self.scrolling.focus_right(skip_animation)
         }
     }
 
@@ -871,13 +871,15 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn focus_column_right_or_first(&mut self) {
-        if !self.focus_right() {
+        let SKIP_ANIMATION = false;
+        if !self.focus_right(SKIP_ANIMATION) {
             self.focus_column_first();
         }
     }
 
     pub fn focus_column_left_or_last(&mut self) {
-        if !self.focus_left() {
+        let SKIP_ANIMATION = false;
+        if !self.focus_left(SKIP_ANIMATION) {
             self.focus_column_last();
         }
     }
@@ -916,7 +918,8 @@ impl<W: LayoutElement> Workspace<W> {
         if self.floating_is_active.get() {
             self.floating.focus_down();
         } else {
-            self.scrolling.focus_down_or_left();
+            let SKIP_ANIMATION = false;
+            self.scrolling.focus_down_or_left(SKIP_ANIMATION);
         }
     }
 
@@ -924,7 +927,8 @@ impl<W: LayoutElement> Workspace<W> {
         if self.floating_is_active.get() {
             self.floating.focus_down();
         } else {
-            self.scrolling.focus_down_or_right();
+            let SKIP_ANIMATION = false;
+            self.scrolling.focus_down_or_right(SKIP_ANIMATION);
         }
     }
 

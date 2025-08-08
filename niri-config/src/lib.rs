@@ -128,6 +128,21 @@ pub struct Keyboard {
     pub numlock: bool,
 }
 
+impl Default for Animation {
+    fn default() -> Self {
+        Self {
+            off: true,
+            kind: Default::default(),
+        }
+    }
+}
+
+impl Default for AnimationKind {
+    fn default() -> Self {
+        Self::Easing(Default::default())
+    }
+}
+
 impl Default for Keyboard {
     fn default() -> Self {
         Self {
@@ -1268,14 +1283,15 @@ pub enum AnimationKind {
     Spring(SpringParams),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct EasingParams {
     pub duration_ms: u32,
     pub curve: AnimationCurve,
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq)]
 pub enum AnimationCurve {
+    #[default]
     Linear,
     EaseOutQuad,
     EaseOutCubic,
@@ -1726,10 +1742,10 @@ pub enum Action {
     FocusWindow(u64),
     FocusWindowInColumn(#[knuffel(argument)] u8),
     FocusWindowPrevious,
-    FocusColumnLeft,
+    FocusColumnLeft(#[knuffel(property(name = "skip-animation"), default = false)] bool),
     #[knuffel(skip)]
     FocusColumnLeftUnderMouse,
-    FocusColumnRight,
+    FocusColumnRight(#[knuffel(property(name = "skip-animation"), default = false)] bool),
     #[knuffel(skip)]
     FocusColumnRightUnderMouse,
     FocusColumnFirst,
@@ -1739,12 +1755,16 @@ pub enum Action {
     FocusColumn(#[knuffel(argument)] usize),
     FocusWindowOrMonitorUp,
     FocusWindowOrMonitorDown,
-    FocusColumnOrMonitorLeft,
-    FocusColumnOrMonitorRight,
+    FocusColumnOrMonitorLeft(#[knuffel(property(name = "skip-animmation"), default = false)] bool),
+    FocusColumnOrMonitorRight(#[knuffel(property(name = "skip-animation"), default = false)] bool),
     FocusWindowDown,
     FocusWindowUp,
-    FocusWindowDownOrColumnLeft,
-    FocusWindowDownOrColumnRight,
+    FocusWindowDownOrColumnLeft(
+        #[knuffel(property(name = "skip-animation"), default = false)] bool,
+    ),
+    FocusWindowDownOrColumnRight(
+        #[knuffel(property(name = "skip-animation"), default = false)] bool,
+    ),
     FocusWindowUpOrColumnLeft,
     FocusWindowUpOrColumnRight,
     FocusWindowOrWorkspaceDown,
@@ -1963,8 +1983,18 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusWindow { id } => Self::FocusWindow(id),
             niri_ipc::Action::FocusWindowInColumn { index } => Self::FocusWindowInColumn(index),
             niri_ipc::Action::FocusWindowPrevious {} => Self::FocusWindowPrevious,
-            niri_ipc::Action::FocusColumnLeft {} => Self::FocusColumnLeft,
-            niri_ipc::Action::FocusColumnRight {} => Self::FocusColumnRight,
+            niri_ipc::Action::FocusColumnLeft {
+                skip_animation: None,
+            } => Self::FocusColumnLeft(false),
+            niri_ipc::Action::FocusColumnLeft {
+                skip_animation: Some(skip_animation),
+            } => Self::FocusColumnLeft(skip_animation),
+            niri_ipc::Action::FocusColumnRight {
+                skip_animation: None,
+            } => Self::FocusColumnRight(false),
+            niri_ipc::Action::FocusColumnRight {
+                skip_animation: Some(skip_animation),
+            } => Self::FocusColumnRight(skip_animation),
             niri_ipc::Action::FocusColumnFirst {} => Self::FocusColumnFirst,
             niri_ipc::Action::FocusColumnLast {} => Self::FocusColumnLast,
             niri_ipc::Action::FocusColumnRightOrFirst {} => Self::FocusColumnRightOrFirst,
@@ -1972,12 +2002,32 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::FocusColumn { index } => Self::FocusColumn(index),
             niri_ipc::Action::FocusWindowOrMonitorUp {} => Self::FocusWindowOrMonitorUp,
             niri_ipc::Action::FocusWindowOrMonitorDown {} => Self::FocusWindowOrMonitorDown,
-            niri_ipc::Action::FocusColumnOrMonitorLeft {} => Self::FocusColumnOrMonitorLeft,
-            niri_ipc::Action::FocusColumnOrMonitorRight {} => Self::FocusColumnOrMonitorRight,
+            niri_ipc::Action::FocusColumnOrMonitorLeft {
+                skip_animation: None,
+            } => Self::FocusColumnOrMonitorLeft(false),
+            niri_ipc::Action::FocusColumnOrMonitorLeft {
+                skip_animation: Some(skip_animation),
+            } => Self::FocusColumnOrMonitorLeft(skip_animation),
+            niri_ipc::Action::FocusColumnOrMonitorRight {
+                skip_animation: None,
+            } => Self::FocusColumnOrMonitorRight(false),
+            niri_ipc::Action::FocusColumnOrMonitorRight {
+                skip_animation: Some(skip_animation),
+            } => Self::FocusColumnOrMonitorRight(skip_animation),
             niri_ipc::Action::FocusWindowDown {} => Self::FocusWindowDown,
             niri_ipc::Action::FocusWindowUp {} => Self::FocusWindowUp,
-            niri_ipc::Action::FocusWindowDownOrColumnLeft {} => Self::FocusWindowDownOrColumnLeft,
-            niri_ipc::Action::FocusWindowDownOrColumnRight {} => Self::FocusWindowDownOrColumnRight,
+            niri_ipc::Action::FocusWindowDownOrColumnLeft {
+                skip_animation: None,
+            } => Self::FocusWindowDownOrColumnLeft(false),
+            niri_ipc::Action::FocusWindowDownOrColumnLeft {
+                skip_animation: Some(skip_animation),
+            } => Self::FocusWindowDownOrColumnLeft(skip_animation),
+            niri_ipc::Action::FocusWindowDownOrColumnRight {
+                skip_animation: None,
+            } => Self::FocusWindowDownOrColumnRight(false),
+            niri_ipc::Action::FocusWindowDownOrColumnRight {
+                skip_animation: Some(skip_animation),
+            } => Self::FocusWindowDownOrColumnRight(skip_animation),
             niri_ipc::Action::FocusWindowUpOrColumnLeft {} => Self::FocusWindowUpOrColumnLeft,
             niri_ipc::Action::FocusWindowUpOrColumnRight {} => Self::FocusWindowUpOrColumnRight,
             niri_ipc::Action::FocusWindowOrWorkspaceDown {} => Self::FocusWindowOrWorkspaceDown,
