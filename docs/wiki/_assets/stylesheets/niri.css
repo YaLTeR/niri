@@ -1,0 +1,79 @@
+
+
+:root  > * {
+  --md-primary-fg-color:        #1e97b5;
+}
+
+/* could also rotate the hue a bit if we'd like */
+/*
+[data-md-color-scheme="slate"] {
+  --md-hue: 210; 
+}
+*/
+
+.md-nav--primary .md-nav__title {
+  box-shadow: none;
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-nav__title {
+    display: none;
+  }
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-main {
+    min-height: 100vh;
+  }
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-nav--primary .md-nav {
+    font-size: 0.75rem;
+  }
+  .md-nav__item--section > .md-nav__link {
+      font-weight: normal;
+      font-size: 0.85rem;
+  }
+  .md-nav--primary .md-nav__link {
+    margin: 0;
+  }
+  .md-nav--primary .md-nav__item {
+    margin-top: 0.35em;
+  }
+  .md-nav--primary .md-nav__item--section {
+    margin-bottom: 0.75em;
+    margin-top: 1em;
+  }
+  .md-nav__item--section> .md-nav > .md-nav__list > .md-nav__item > .md-nav > .md-nav__list {
+    font-size: 0.725rem;
+  }
+  .md-nav__item--section> .md-nav > .md-nav__list > .md-nav__item > .md-nav > .md-nav__list > .md-nav__item:first-of-type {
+    margin-top: 0.5em;
+  }
+  .md-nav__item--section> .md-nav > .md-nav__list > .md-nav__item > .md-nav > .md-nav__list > .md-nav__item:last-of-type {
+    margin-bottom: 0.575em;
+  }
+}
+
+.md-nav__link--active {
+  font-weight: bold;
+}
+
+.highlight .gp, .highlight .go {
+  user-select: none;
+}
+
+.md-source-file__fact {
+  visibility: hidden;
+}
+
+.badge {
+    font-size: 0.85em;
+    box-shadow: 0 0 0 1px inset var(--md-accent-fg-color--transparent);
+    padding: 0.2rem 0.3rem;
+}
+
+.md-typeset table:not([class]) td {
+    padding: .5em 1.25em;
+}

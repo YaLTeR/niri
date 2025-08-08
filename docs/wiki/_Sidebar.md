@@ -34,6 +34,7 @@
 ## Development
 * [Design Principles](./Development:-Design-Principles.md)
 * [Developing niri](./Development:-Developing-niri.md)
+* [Documenting niri](./Development:-Documenting-niri.md)
 * [Fractional Layout](./Development:-Fractional-Layout.md)
 * [Redraw Loop](./Development:-Redraw-Loop.md)
 * [Animation Timing](./Development:-Animation-Timing.md)

@@ -285,7 +285,7 @@ window-rule {
 
 Example:
 
-![](https://github.com/user-attachments/assets/375b381e-3a87-4e94-8676-44404971d893)
+![A screenshot showing that only the is-window-cast-target=true windows receive the special border colors](https://github.com/user-attachments/assets/375b381e-3a87-4e94-8676-44404971d893)
 
 #### `is-urgent`
 
@@ -698,7 +698,7 @@ This property can be useful for rectangular windows that do not support the xdg-
 
 | With Background                                  | Without Background                                  |
 | ------------------------------------------------ | --------------------------------------------------- |
-| ![](./img/simple-egl-border-with-background.png) | ![](./img/simple-egl-border-without-background.png) |
+| ![A screenshot displaying a window with draw-border-with-background set to true](./img/simple-egl-border-with-background.png) | ![A screenshot displaying a window with draw-border-with-background set to false](./img/simple-egl-border-without-background.png) |
 
 ```kdl
 window-rule {
@@ -791,7 +791,7 @@ window-rule {
 
 The radius is set in logical pixels, and controls the radius of the window itself, that is, the inner radius of the border:
 
-![](./img/geometry-corner-radius.png)
+![A screenshot showing a window with every corner rounded](./img/geometry-corner-radius.png)
 
 Instead of one radius, you can set four, for each corner.
 The order is the same as in CSS: top-left, top-right, bottom-right, bottom-left.
@@ -804,7 +804,7 @@ window-rule {
 
 This way, you can match GTK 3 applications which have square bottom corners:
 
-![](./img/different-corner-radius.png)
+![A screenshot showing a window with only the top corners rounded](./img/different-corner-radius.png)
 
 #### `clip-to-geometry`
 
@@ -814,7 +814,7 @@ Clips the window to its visual geometry.
 
 This will cut out any client-side window shadows, and also round window corners according to `geometry-corner-radius`.
 
-![](./img/clip-to-geometry.png)
+![A screenshot showing a window with rounded corners, clipped to the visual geometry](./img/clip-to-geometry.png)
 
 ```kdl
 window-rule {
@@ -824,7 +824,7 @@ window-rule {
 
 Enable border, set [`geometry-corner-radius`](#geometry-corner-radius) and `clip-to-geometry`, and you've got a classic setup:
 
-![](./img/border-radius-clip.png)
+![A screenshot showing a window with rounded corners, and a border](./img/border-radius-clip.png)
 
 ```kdl
 prefer-no-csd
