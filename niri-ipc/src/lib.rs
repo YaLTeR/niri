@@ -80,6 +80,8 @@ pub enum Request {
     FocusedOutput,
     /// Request information about the focused window.
     FocusedWindow,
+    /// Request information about the pointer.
+    Pointer,
     /// Request picking a window and get its information.
     PickWindow,
     /// Request picking a color from the screen.
@@ -156,6 +158,8 @@ pub enum Response {
     PickedWindow(Option<Window>),
     /// Information about the picked color.
     PickedColor(Option<PickedColor>),
+    /// Information about the pointer.
+    Pointer(Option<Pointer>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
     /// Information about the overview.
@@ -176,6 +180,23 @@ pub struct Overview {
 pub struct PickedColor {
     /// Color values as red, green, blue, each ranging from 0.0 to 1.0.
     pub rgb: [f64; 3],
+}
+
+/// Location coordinates.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd)]
+pub struct Point {
+    /// x coordinate
+    pub x: f64,
+    /// y coordinate
+    pub y: f64,
+}
+
+/// Pointer information.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Pointer {
+    /// Location of the pointer in the global space.
+    pub location: Point,
 }
 
 /// Actions that niri can perform.
@@ -839,6 +860,13 @@ pub enum Action {
         /// Id of the window to unset urgent.
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
+    },
+    /// Set pointer location
+    SetPointerLocation {
+        /// Desired x coordinate
+        x: f64,
+        /// Desired y coordinate
+        y: f64,
     },
 }
 
