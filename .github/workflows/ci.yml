@@ -271,7 +271,6 @@ jobs:
             ls -la ./cargo-home
 
             export CARGO_HOME="$PWD/cargo-home"
-            chown -R $(whoami) $CARGO_HOME
 
             cargo fetch
 
