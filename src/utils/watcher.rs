@@ -11,7 +11,7 @@ use smithay::reexports::calloop::channel::SyncSender;
 use crate::niri::State;
 
 pub struct Watcher {
-    load_config_signal_sender: mpsc::Sender<()>,
+    load_config: mpsc::Sender<()>,
 }
 
 impl Watcher {
@@ -31,7 +31,7 @@ impl Watcher {
         started: Option<mpsc::SyncSender<()>>,
         polling_interval: Duration,
     ) -> Self {
-        let (load_config_signal_sender, load_config_signal_receiver) = mpsc::channel();
+        let (load_config, load_config_rx) = mpsc::channel();
 
         thread::Builder::new()
             .name(format!("Filesystem Watcher for {config_path:?}"))
@@ -73,12 +73,11 @@ impl Watcher {
                 }
 
                 loop {
-                    let mut should_load =
-                        match load_config_signal_receiver.recv_timeout(polling_interval) {
-                            Ok(()) => true,
-                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                            Err(mpsc::RecvTimeoutError::Timeout) => false,
-                        };
+                    let mut should_load = match load_config_rx.recv_timeout(polling_interval) {
+                        Ok(()) => true,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(mpsc::RecvTimeoutError::Timeout) => false,
+                    };
 
                     if let Ok(new_props) = see(&config_path) {
                         if last_props.as_ref() != Some(&new_props) {
@@ -102,13 +101,11 @@ impl Watcher {
             })
             .unwrap();
 
-        Self {
-            load_config_signal_sender,
-        }
+        Self { load_config }
     }
 
     pub fn load_config(&self) {
-        self.load_config_signal_sender.send(()).ok();
+        let _ = self.load_config.send(());
     }
 }
 

@@ -841,6 +841,9 @@ pub enum Action {
         id: u64,
     },
     /// Reload the config file.
+    ///
+    /// Can be useful for scripts changing the config file, to avoid waiting the small duration for
+    /// niri's config file watcher to notice the changes.
     LoadConfigFile {},
 }
 
