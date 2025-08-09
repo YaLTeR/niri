@@ -1100,6 +1100,26 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    pub fn left_align_window(&mut self, id: Option<&W::Id>) {
+        if id.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) {
+            self.floating.left_align_window(id);
+        } else {
+            self.scrolling.left_align_window(id);
+        }
+    }
+
+    pub fn right_align_window(&mut self, id: Option<&W::Id>) {
+        if id.map_or(self.floating_is_active.get(), |id| {
+            self.floating.has_window(id)
+        }) {
+            self.floating.right_align_window(id);
+        } else {
+            self.scrolling.right_align_window(id);
+        }
+    }
+
     pub fn center_visible_columns(&mut self) {
         if self.floating_is_active.get() {
             return;
