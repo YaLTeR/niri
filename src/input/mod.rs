@@ -365,6 +365,17 @@ impl State {
             (!config.off, config.mod_key)
         };
 
+        // Accessibility modifier grabs should override XKB state changes (e.g. Caps Lock), so we
+        // need to process them before keyboard.input() below.
+        #[cfg(feature = "dbus")]
+        if self.a11y_process_key(
+            Duration::from_millis(u64::from(time)),
+            event.key_code(),
+            event.state(),
+        ) {
+            return;
+        }
+
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
             event.key_code(),
@@ -417,9 +428,11 @@ impl State {
                 let res = {
                     let config = this.niri.config.borrow();
 
-                    // Active key bindings depend on whether the MRU UI is enabled and whether it is open:
+                    // Active key bindings depend on whether the MRU UI is enabled and whether it is
+                    // open:
                     // - if it is disabled: only use keybindings from the configuration
-                    // - if it is enabled and closed: use keybindings from the configuration AND MRU UI keybindings
+                    // - if it is enabled and closed: use keybindings from the configuration AND MRU
+                    //   UI keybindings
                     // - if it is enabled and open: use only MRU UI keybindings
                     let bindings = (!mru_ui_enabled || !this.niri.window_mru_ui.is_open())
                         .then_some(config.binds.into_iter());
@@ -2139,6 +2152,11 @@ impl State {
                     window.set_urgent(false);
                 }
                 self.niri.queue_redraw_all();
+            }
+            Action::LoadConfigFile => {
+                if let Some(watcher) = &self.niri.config_file_watcher {
+                    watcher.load_config();
+                }
             }
             Action::MruClose => {
                 if !self.niri.config.borrow().recent_windows.off

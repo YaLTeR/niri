@@ -167,6 +167,7 @@ use crate::ui::window_mru_ui::{
 };
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
+use crate::utils::watcher::Watcher;
 use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
@@ -192,6 +193,8 @@ pub struct Niri {
     /// reloading the config from disk to determine if the output configuration should be reloaded
     /// (and transient changes dropped).
     pub config_file_output_config: niri_config::Outputs,
+
+    pub config_file_watcher: Option<Watcher>,
 
     pub event_loop: LoopHandle<'static, State>,
     pub scheduler: Scheduler<()>,
@@ -388,6 +391,8 @@ pub struct Niri {
 
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
+    #[cfg(feature = "dbus")]
+    pub a11y_keyboard_monitor: Option<crate::dbus::freedesktop_a11y::KeyboardMonitor>,
     #[cfg(feature = "dbus")]
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
 
@@ -1448,7 +1453,10 @@ impl State {
 
         if config.input.touchpad != old_config.input.touchpad
             || config.input.mouse != old_config.input.mouse
+            || config.input.trackball != old_config.input.trackball
             || config.input.trackpoint != old_config.input.trackpoint
+            || config.input.tablet != old_config.input.tablet
+            || config.input.touch != old_config.input.touch
         {
             libinput_config_changed = true;
         }
@@ -1944,12 +1952,8 @@ impl State {
 
         match &cast.target {
             CastTarget::Nothing => {
-                let config = self.niri.config.borrow();
-                let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
-                drop(config);
-
                 self.backend.with_primary_renderer(|renderer| {
-                    if cast.dequeue_buffer_and_clear(renderer, wait_for_sync) {
+                    if cast.dequeue_buffer_and_clear(renderer) {
                         cast.last_frame_time = get_monotonic_time();
                     }
                 });
@@ -1989,10 +1993,6 @@ impl State {
                     }
                 }
 
-                let config = self.niri.config.borrow();
-                let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
-                drop(config);
-
                 self.backend.with_primary_renderer(|renderer| {
                     // FIXME: pointer.
                     let elements = mapped
@@ -2000,13 +2000,7 @@ impl State {
                         .rev()
                         .collect::<Vec<_>>();
 
-                    if cast.dequeue_buffer_and_render(
-                        renderer,
-                        &elements,
-                        bbox.size,
-                        scale,
-                        wait_for_sync,
-                    ) {
+                    if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
                         cast.last_frame_time = get_monotonic_time();
                     }
                 });
@@ -2092,7 +2086,8 @@ impl State {
                 let pw = if let Some(pw) = &self.niri.pipewire {
                     pw
                 } else {
-                    match PipeWire::new(&self.niri.event_loop, self.niri.pw_to_niri.clone()) {
+                    match PipeWire::new(self.niri.event_loop.clone(), self.niri.pw_to_niri.clone())
+                    {
                         Ok(pipewire) => self.niri.pipewire.insert(pipewire),
                         Err(err) => {
                             warn!(
@@ -2602,6 +2597,7 @@ impl Niri {
         let mut niri = Self {
             config,
             config_file_output_config,
+            config_file_watcher: None,
 
             event_loop,
             scheduler,
@@ -2725,6 +2721,8 @@ impl Niri {
 
             #[cfg(feature = "dbus")]
             dbus: None,
+            #[cfg(feature = "dbus")]
+            a11y_keyboard_monitor: None,
             #[cfg(feature = "dbus")]
             inhibit_power_key_fd: None,
 
@@ -5111,16 +5109,12 @@ impl Niri {
 
         let scale = Scale::from(output.current_scale().fractional_scale());
 
-        let config = self.config.borrow();
-        let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
-        drop(config);
-
         let mut elements = None;
         let mut casts_to_stop = vec![];
 
         let mut casts = mem::take(&mut self.casts);
         for cast in &mut casts {
-            if !cast.is_active.get() {
+            if !cast.is_active() {
                 continue;
             }
 
@@ -5137,7 +5131,7 @@ impl Niri {
                 }
             }
 
-            if cast.check_time_and_schedule(&self.event_loop, output, target_presentation_time) {
+            if cast.check_time_and_schedule(output, target_presentation_time) {
                 continue;
             }
 
@@ -5146,7 +5140,7 @@ impl Niri {
                 self.render(renderer, output, true, RenderTarget::Screencast)
             });
 
-            if cast.dequeue_buffer_and_render(renderer, elements, size, scale, wait_for_sync) {
+            if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
@@ -5168,15 +5162,11 @@ impl Niri {
 
         let scale = Scale::from(output.current_scale().fractional_scale());
 
-        let config = self.config.borrow();
-        let wait_for_sync = config.debug.wait_for_frame_completion_in_pipewire;
-        drop(config);
-
         let mut casts_to_stop = vec![];
 
         let mut casts = mem::take(&mut self.casts);
         for cast in &mut casts {
-            if !cast.is_active.get() {
+            if !cast.is_active() {
                 continue;
             }
 
@@ -5203,15 +5193,14 @@ impl Niri {
                 }
             }
 
-            if cast.check_time_and_schedule(&self.event_loop, output, target_presentation_time) {
+            if cast.check_time_and_schedule(output, target_presentation_time) {
                 continue;
             }
 
             // FIXME: pointer.
             let elements: Vec<_> = mapped.render_for_screen_cast(renderer, scale).collect();
 
-            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale, wait_for_sync)
-            {
+            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
                 cast.last_frame_time = target_presentation_time;
             }
         }

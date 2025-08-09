@@ -857,10 +857,13 @@ impl Tty {
         }
         debug!("picking mode: {mode:?}");
 
-        // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to run.
-        match set_max_bpc(&device.drm, connector.handle(), 8) {
-            Ok(bpc) => debug!("set max bpc to {bpc}"),
-            Err(err) => debug!("error setting max bpc: {err:?}"),
+        if !niri.config.borrow().debug.keep_max_bpc_unchanged {
+            // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to
+            // run.
+            match set_max_bpc(&device.drm, connector.handle(), 8) {
+                Ok(bpc) => debug!("set max bpc to {bpc}"),
+                Err(err) => debug!("error setting max bpc: {err:?}"),
+            }
         }
 
         let mut gamma_props = GammaProps::new(&device.drm, crtc)
@@ -972,7 +975,7 @@ impl Tty {
             surface,
             None,
             allocator.clone(),
-            GbmFramebufferExporter::new(device.gbm.clone(), Some(device.render_node)),
+            GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
             SUPPORTED_COLOR_FORMATS,
             // This is only used to pick a good internal format, so it can use the surface's render
             // formats, even though we only ever render on the primary GPU.
@@ -1002,7 +1005,7 @@ impl Tty {
                     surface,
                     None,
                     allocator,
-                    GbmFramebufferExporter::new(device.gbm.clone(), Some(device.render_node)),
+                    GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
                     SUPPORTED_COLOR_FORMATS,
                     render_formats,
                     device.drm.cursor_size(),
