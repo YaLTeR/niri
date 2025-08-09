@@ -40,6 +40,7 @@ window-rule {
 
     // Properties that apply once upon window opening.
     default-column-width { proportion 0.75; }
+    first-column-width { proportion 1.0; }
     default-window-height { fixed 500; }
     open-on-output "Some Company CoolMonitor 1234"
     open-on-workspace "chat"
@@ -341,6 +342,23 @@ window-rule {
     default-column-width { fixed 1200; }
 }
 ```
+
+#### `first-column-width`
+
+Set the default width of new windows opened on workspaces without any columns.
+
+The syntax and behaviour is the the same as in `default-column-width` above, except that it only applies to windows created on workspaces without any tiled windows.
+
+```kdl
+// Make terminals on empty workspaces take up the full screen
+window-rule {
+    match app-id="^alacritty$"
+
+    first-column-width { proportion 1.0; }
+}
+```
+
+If `first-column-width` is **not** set, then niri will fallback to the global setting.
 
 #### `default-window-height`
 
