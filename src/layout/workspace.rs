@@ -1471,6 +1471,10 @@ impl<W: LayoutElement> Workspace<W> {
         (floating, scrolling)
     }
 
+    pub fn shadow_geometry(&self) -> Rectangle<f64, Logical> {
+        self.shadow.shadow_geometry()
+    }
+
     pub fn render_shadow<R: NiriRenderer>(
         &self,
         renderer: &mut R,
