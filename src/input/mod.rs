@@ -416,16 +416,20 @@ impl State {
 
                 let res = {
                     let config = this.niri.config.borrow();
-                    let mru_ui_bindings = mru_ui_enabled.then_some(
-                        this.niri
-                            .window_mru_ui
-                            .bindings(&config.recent_windows)
-                            .collect::<Vec<_>>(),
-                    );
-                    let bindings = config
-                        .binds
+
+                    // Active key bindings depend on whether the MRU UI is enabled and whether it is open:
+                    // - if it is disabled: only use keybindings from the configuration
+                    // - if it is enabled and closed: use keybindings from the configuration AND MRU UI keybindings
+                    // - if it is enabled and open: use only MRU UI keybindings
+                    let bindings = (!mru_ui_enabled || !this.niri.window_mru_ui.is_open())
+                        .then_some(config.binds.into_iter());
+
+                    let mru_ui_bindings =
+                        mru_ui_enabled.then_some(this.niri.window_mru_ui.bindings());
+                    let bindings = bindings
                         .into_iter()
-                        .chain(mru_ui_bindings.iter().flat_map(|v| v.iter()));
+                        .flatten()
+                        .chain(mru_ui_bindings.into_iter().flatten());
                     should_intercept_key(
                         &mut this.niri.suppressed_keys,
                         bindings,

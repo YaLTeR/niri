@@ -40,7 +40,8 @@ use std::time::Instant;
 use std::{iter, mem};
 
 use niri_config::{
-    Action, Bind, Key, Match, Modifiers, MruDirection, MruFilter, MruScope, RegexEq, Trigger,
+    Action, Bind, Key, Match, ModKey, Modifiers, MruDirection, MruFilter, MruScope, RegexEq,
+    Trigger,
 };
 use pango::{Alignment, EllipsizeMode, FontDescription};
 use pangocairo::cairo::{self, ImageSurface};
@@ -290,7 +291,14 @@ impl WindowMru {
 
 type MruTexture = TextureBuffer<GlesTexture>;
 
-pub enum WindowMruUi {
+pub struct WindowMruUi {
+    state: WindowMruUiState,
+    mod_key: ModKey,
+    cached_bindings: Option<Vec<Bind>>,
+    cached_opened_bindings: Option<Vec<Bind>>,
+}
+
+pub enum WindowMruUiState {
     Closed { close_animation: Option<Animation> },
     Open(Box<Inner>),
 }
@@ -406,14 +414,19 @@ niri_render_elements! {
 }
 
 impl WindowMruUi {
-    pub fn new() -> Self {
-        Self::Closed {
-            close_animation: None,
+    pub fn new(config: &niri_config::RecentWindows) -> Self {
+        Self {
+            mod_key: config.mod_key,
+            cached_bindings: None,
+            cached_opened_bindings: None,
+            state: WindowMruUiState::Closed {
+                close_animation: None,
+            },
         }
     }
 
     pub fn is_open(&self) -> bool {
-        matches!(self, WindowMruUi::Open { .. })
+        matches!(self.state, WindowMruUiState::Open { .. })
     }
 
     pub fn open(
@@ -423,7 +436,9 @@ impl WindowMruUi {
         mut wmru: WindowMru,
         dir: MruDirection,
     ) {
-        let Self::Closed { .. } = self else { return };
+        if self.is_open() {
+            return;
+        }
 
         // Each thumbnail is started with an open_animaiton
         wmru.thumbnails.iter_mut().for_each(|t| {
@@ -456,25 +471,34 @@ impl WindowMruUi {
             clock,
         };
 
-        *self = Self::Open(Box::new(inner));
+        self.state = WindowMruUiState::Open(Box::new(inner));
         self.advance(dir);
     }
 
     pub fn close(&mut self) -> Option<SelectedThumbnail> {
-        let Self::Open(inner) = self else { return None };
+        let WindowMruUiState::Open(ref inner) = self.state else {
+            return None;
+        };
         let thumb = inner.select_thumbnail();
         let clock = inner.clock.clone();
         let config = inner.options.animations.window_mru_ui_open_close.0;
 
-        *self = Self::Closed {
+        self.state = WindowMruUiState::Closed {
             close_animation: Some(Animation::new(clock, 1., 0., 0., config)),
         };
 
         thumb
     }
 
+    pub fn update_config(&mut self, config: &niri_config::Config) {
+        // invalidate cached key bindings
+        self.mod_key = config.recent_windows.mod_key;
+        self.cached_bindings = None;
+        self.cached_opened_bindings = None;
+    }
+
     pub fn advance(&mut self, dir: MruDirection) {
-        let Self::Open(inner) = self else {
+        let WindowMruUiState::Open(ref mut inner) = self.state else {
             return;
         };
         match dir {
@@ -489,7 +513,7 @@ impl WindowMruUi {
         scope: Option<MruScope>,
         filter: Option<MruFilter>,
     ) -> Option<WindowMru> {
-        let Self::Open(inner) = self else {
+        let WindowMruUiState::Open(ref inner) = self.state else {
             return None;
         };
 
@@ -509,7 +533,7 @@ impl WindowMruUi {
 
     /// Replace the current MRU list.
     pub fn update_mru_list(&mut self, dir: Option<MruDirection>, mut wmru: WindowMru) {
-        let Self::Open(inner) = self else {
+        let WindowMruUiState::Open(ref mut inner) = self.state else {
             return;
         };
         let prev_wmru = &mut inner.wmru;
@@ -661,28 +685,28 @@ impl WindowMruUi {
     }
 
     pub fn first(&mut self) {
-        let Self::Open(inner) = self else {
+        let WindowMruUiState::Open(ref mut inner) = self.state else {
             return;
         };
         inner.wmru.current = 0;
     }
 
     pub fn last(&mut self) {
-        let Self::Open(inner) = self else {
+        let WindowMruUiState::Open(ref mut inner) = self.state else {
             return;
         };
         inner.wmru.current = inner.wmru.thumbnails.len().saturating_sub(1);
     }
 
     pub fn current_window_id(&self) -> Option<MappedId> {
-        let Self::Open(inner) = self else {
+        let WindowMruUiState::Open(ref inner) = self.state else {
             return None;
         };
         inner.current_window_id()
     }
 
     pub fn remove_window(&mut self, id: MappedId) {
-        let Self::Open(inner) = self else {
+        let WindowMruUiState::Open(ref mut inner) = self.state else {
             return;
         };
         let wmru = &mut inner.wmru;
@@ -722,7 +746,7 @@ impl WindowMruUi {
     }
 
     pub fn update_render_elements(&mut self, output: &Output) {
-        let Self::Open(inner) = self else {
+        let WindowMruUiState::Open(ref mut inner) = self.state else {
             return;
         };
 
@@ -798,14 +822,14 @@ impl WindowMruUi {
         let mut rv = Vec::new();
         let output_size = output_size(output);
 
-        let progress = match self {
-            Self::Closed {
+        let progress = match self.state {
+            WindowMruUiState::Closed {
                 close_animation: None,
             } => return vec![],
-            Self::Closed {
-                close_animation: Some(close_animation),
+            WindowMruUiState::Closed {
+                close_animation: Some(ref close_animation),
             } => close_animation.clamped_value(),
-            Self::Open(inner) => {
+            WindowMruUiState::Open(ref inner) => {
                 rv.extend(inner.render(niri, renderer, output_size));
                 inner.open_animation.clamped_value()
             }
@@ -830,16 +854,18 @@ impl WindowMruUi {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        match self {
-            Self::Open(inner) => inner.are_animations_ongoing(),
-            Self::Closed { close_animation } => close_animation.is_some(),
+        match self.state {
+            WindowMruUiState::Open(ref inner) => inner.are_animations_ongoing(),
+            WindowMruUiState::Closed {
+                ref close_animation,
+            } => close_animation.is_some(),
         }
     }
 
     pub fn advance_animations(&mut self) {
-        match *self {
-            Self::Open(ref mut inner) => inner.advance_animations(),
-            Self::Closed {
+        match self.state {
+            WindowMruUiState::Open(ref mut inner) => inner.advance_animations(),
+            WindowMruUiState::Closed {
                 ref mut close_animation,
             } => {
                 close_animation.take_if(|a| a.is_done());
@@ -847,22 +873,26 @@ impl WindowMruUi {
         }
     }
 
-    pub fn bindings(&self, config: &niri_config::RecentWindows) -> impl Iterator<Item = Bind> {
-        let modifiers = config.mod_key.to_modifiers();
+    pub fn bindings(&mut self) -> impl Iterator<Item = &Bind> {
+        let modifiers = self.mod_key.to_modifiers();
+        let apply_modkey = move |mut bind: Bind| {
+            bind.key.modifiers |= modifiers;
+            bind
+        };
 
-        MRU_UI_BINDINGS
-            .iter()
-            .chain(
-                self.is_open()
-                    .then_some(MRU_UI_OPENED_BINDINGS.iter())
-                    .into_iter()
-                    .flatten(),
-            )
-            .cloned()
-            .map(move |mut b| {
-                b.key.modifiers |= modifiers;
-                b
-            })
+        let bindings = self
+            .cached_bindings
+            .get_or_insert(MRU_UI_BINDINGS.iter().cloned().map(apply_modkey).collect());
+
+        let opened_bindings = self.cached_opened_bindings.get_or_insert(
+            MRU_UI_OPENED_BINDINGS
+                .iter()
+                .cloned()
+                .map(apply_modkey)
+                .collect(),
+        );
+
+        bindings.iter().chain(opened_bindings.iter())
     }
 }
 
@@ -877,6 +907,7 @@ impl Inner {
     }
 
     /// Return the window Id and screen position of the selected thumbnail.
+    /// The thumbnail texture is _taken_ from the texture cache.
     fn select_thumbnail(&self) -> Option<SelectedThumbnail> {
         let id = self.current_window_id()?;
         let thumbnail = self.wmru.current()?;
@@ -1029,12 +1060,6 @@ impl Inner {
             }
         }
         rv.into_iter()
-    }
-}
-
-impl Default for WindowMruUi {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

@@ -1396,6 +1396,8 @@ impl State {
             mapped.update_config(&config);
         }
 
+        self.niri.window_mru_ui.update_config(&config);
+
         // Create new named workspaces.
         for ws_config in &config.workspaces {
             self.niri.layout.ensure_named_workspace(ws_config);
@@ -2510,7 +2512,7 @@ impl Niri {
         let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
-        let window_mru_ui = WindowMruUi::new();
+        let window_mru_ui = WindowMruUi::new(&config.borrow().recent_windows);
         let config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
 
