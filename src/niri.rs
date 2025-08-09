@@ -6365,6 +6365,12 @@ impl Niri {
         self.notified_activity_this_iteration = true;
     }
 
+    /// Close the MRU UI immediately and cancel thumbnail selection animation.
+    pub fn close_mru_ui(&mut self) {
+        self.window_mru_ui.close();
+        self.thumbnail_selection_animation = None;
+    }
+
     // Consume the active `PendingMruCommit`, if any, and use the information
     // it contains to update the (active) window's focus timestamp
     pub fn mru_commit(&mut self) {

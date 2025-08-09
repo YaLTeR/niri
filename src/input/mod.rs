@@ -2091,10 +2091,12 @@ impl State {
                 self.set_dynamic_cast_target(CastTarget::Nothing);
             }
             Action::ToggleOverview => {
+                self.niri.close_mru_ui();
                 self.niri.layout.toggle_overview();
                 self.niri.queue_redraw_all();
             }
             Action::OpenOverview => {
+                self.niri.close_mru_ui();
                 if self.niri.layout.open_overview() {
                     self.niri.queue_redraw_all();
                 }
@@ -2470,6 +2472,7 @@ impl State {
             if let Some((_, pos_within_output)) = self.niri.output_under(pos) {
                 let inside_hot_corner = hot_corner.contains(pos_within_output);
                 if inside_hot_corner && !was_inside_hot_corner {
+                    self.niri.close_mru_ui();
                     self.niri.layout.toggle_overview();
                 }
                 self.niri.pointer_inside_hot_corner = inside_hot_corner;
@@ -2559,6 +2562,7 @@ impl State {
             if let Some((_, pos_within_output)) = self.niri.output_under(pos) {
                 let inside_hot_corner = hot_corner.contains(pos_within_output);
                 if inside_hot_corner && !was_inside_hot_corner {
+                    self.niri.close_mru_ui();
                     self.niri.layout.toggle_overview();
                 }
                 self.niri.pointer_inside_hot_corner = inside_hot_corner;
@@ -3416,6 +3420,7 @@ impl State {
                             }) {
                                 drop(workspaces);
                                 self.niri.layout.focus_output(&output);
+                                self.niri.close_mru_ui();
                                 self.niri.layout.toggle_overview_to_workspace(ws_idx);
                                 self.niri.mru_commit();
                             }
@@ -3510,6 +3515,7 @@ impl State {
             // We handled this event.
             return;
         } else if event.fingers() == 4 {
+            self.niri.close_mru_ui();
             self.niri.layout.overview_gesture_begin();
             self.niri.queue_redraw_all();
 
