@@ -657,6 +657,8 @@ pub enum Action {
     },
     /// Switch between preset column widths.
     SwitchPresetColumnWidth {},
+    /// Switch between preset column widths backwards.
+    SwitchPresetColumnWidthBack {},
     /// Switch between preset window widths.
     SwitchPresetWindowWidth {
         /// Id of the window whose width to switch.
@@ -665,8 +667,24 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Switch between preset window widths backwards.
+    SwitchPresetWindowWidthBack {
+        /// Id of the window whose width to switch.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Switch between preset window heights.
     SwitchPresetWindowHeight {
+        /// Id of the window whose height to switch.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Switch between preset window heights backwards.
+    SwitchPresetWindowHeightBack {
         /// Id of the window whose height to switch.
         ///
         /// If `None`, uses the focused window.
