@@ -378,7 +378,7 @@ impl<W: LayoutElement> Monitor<W> {
         self.activate_workspace_with_anim_config(
             idx,
             if skip_animation {
-                Default::default()
+                Some(Default::default())
             } else {
                 None
             },
