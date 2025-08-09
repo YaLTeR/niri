@@ -128,8 +128,8 @@ use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
-    apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
-    mods_with_wheel_binds, TabletData,
+    apply_libinput_settings, is_inside_hot_corner, mods_with_finger_scroll_binds,
+    mods_with_mouse_binds, mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -3130,12 +3130,17 @@ impl Niri {
             return false;
         }
 
-        let hot_corners = self.config.borrow().gestures.hot_corners;
-        if !hot_corners.off {
-            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-            if hot_corner.contains(pos_within_output) {
-                return true;
-            }
+        // Prioritize monitor specific hot corners first
+        let config = self.config.borrow();
+        let hot_corners = output
+            .user_data()
+            .get::<OutputName>()
+            .and_then(|name| config.outputs.find(name))
+            .and_then(|c| c.hot_corners)
+            .unwrap_or(config.gestures.hot_corners);
+        if hot_corners.is_enabled() && is_inside_hot_corner(&hot_corners, output, pos_within_output)
+        {
+            return true;
         }
 
         if layer_popup_under(Layer::Top) || layer_toplevel_under(Layer::Top) {
@@ -3405,12 +3410,19 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
-            let hot_corners = self.config.borrow().gestures.hot_corners;
-            if !hot_corners.off {
-                let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-                if hot_corner.contains(pos_within_output) {
-                    return rv;
-                }
+            // Prioritize monitor specific hot corners first
+            let config = self.config.borrow();
+            let hot_corners = output
+                .user_data()
+                .get::<OutputName>()
+                .and_then(|name| config.outputs.find(name))
+                .and_then(|c| c.hot_corners)
+                .unwrap_or(config.gestures.hot_corners);
+
+            if hot_corners.is_enabled()
+                && is_inside_hot_corner(&hot_corners, output, pos_within_output)
+            {
+                return rv;
             }
 
             under = under
