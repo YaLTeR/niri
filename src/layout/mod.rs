@@ -2104,18 +2104,18 @@ impl<W: LayoutElement> Layout<W> {
         workspace.focus_up();
     }
 
-    pub fn focus_down_or_left(&mut self) {
+    pub fn focus_down_or_left(&mut self, skip_animation: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.focus_down_or_left();
+        workspace.focus_down_or_left(skip_animation);
     }
 
-    pub fn focus_down_or_right(&mut self) {
+    pub fn focus_down_or_right(&mut self, skip_animation: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.focus_down_or_right();
+        workspace.focus_down_or_right(skip_animation);
     }
 
     pub fn focus_up_or_left(&mut self) {
@@ -2240,20 +2240,18 @@ impl<W: LayoutElement> Layout<W> {
         monitor.move_column_to_workspace(idx, activate);
     }
 
-    pub fn switch_workspace_up(&mut self) {
+    pub fn switch_workspace_up(&mut self, skip_animation: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        let SKIP_ANIMATION = false;
-        monitor.switch_workspace_up(SKIP_ANIMATION);
+        monitor.switch_workspace_up(skip_animation);
     }
 
-    pub fn switch_workspace_down(&mut self) {
+    pub fn switch_workspace_down(&mut self, skip_animation: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        let SKIP_ANIMATION = false;
-        monitor.switch_workspace_down(SKIP_ANIMATION);
+        monitor.switch_workspace_down(skip_animation);
     }
 
     pub fn switch_workspace(&mut self, idx: usize) {

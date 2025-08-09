@@ -461,9 +461,17 @@ pub enum Action {
     /// Center all fully visible columns on the screen.
     CenterVisibleColumns {},
     /// Focus the workspace below.
-    FocusWorkspaceDown {},
+    FocusWorkspaceDown {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the workspace above.
-    FocusWorkspaceUp {},
+    FocusWorkspaceUp {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus a workspace by reference (index or name).
     FocusWorkspace {
         /// Reference (index or name) of the workspace to focus.

@@ -914,21 +914,19 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn focus_down_or_left(&mut self) {
+    pub fn focus_down_or_left(&mut self, skip_animation: bool) {
         if self.floating_is_active.get() {
             self.floating.focus_down();
         } else {
-            let SKIP_ANIMATION = false;
-            self.scrolling.focus_down_or_left(SKIP_ANIMATION);
+            self.scrolling.focus_down_or_left(skip_animation);
         }
     }
 
-    pub fn focus_down_or_right(&mut self) {
+    pub fn focus_down_or_right(&mut self, skip_animation: bool) {
         if self.floating_is_active.get() {
             self.floating.focus_down();
         } else {
-            let SKIP_ANIMATION = false;
-            self.scrolling.focus_down_or_right(SKIP_ANIMATION);
+            self.scrolling.focus_down_or_right(skip_animation);
         }
     }
 

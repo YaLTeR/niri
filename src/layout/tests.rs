@@ -1014,8 +1014,8 @@ impl Op {
             }
             Op::FocusWindowDown => layout.focus_down(),
             Op::FocusWindowUp => layout.focus_up(),
-            Op::FocusWindowDownOrColumnLeft => layout.focus_down_or_left(),
-            Op::FocusWindowDownOrColumnRight => layout.focus_down_or_right(),
+            Op::FocusWindowDownOrColumnLeft => layout.focus_down_or_left(false),
+            Op::FocusWindowDownOrColumnRight => layout.focus_down_or_right(false),
             Op::FocusWindowUpOrColumnLeft => layout.focus_up_or_left(),
             Op::FocusWindowUpOrColumnRight => layout.focus_up_or_right(),
             Op::FocusWindowOrWorkspaceDown => layout.focus_window_or_workspace_down(false),
@@ -1070,8 +1070,8 @@ impl Op {
                 layout.center_window(id.as_ref());
             }
             Op::CenterVisibleColumns => layout.center_visible_columns(),
-            Op::FocusWorkspaceDown => layout.switch_workspace_down(),
-            Op::FocusWorkspaceUp => layout.switch_workspace_up(),
+            Op::FocusWorkspaceDown => layout.switch_workspace_down(false),
+            Op::FocusWorkspaceUp => layout.switch_workspace_up(false),
             Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
             Op::FocusWorkspaceAutoBackAndForth(idx) => {
                 layout.switch_workspace_auto_back_and_forth(idx)

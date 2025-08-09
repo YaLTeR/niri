@@ -1801,10 +1801,10 @@ pub enum Action {
     #[knuffel(skip)]
     CenterWindowById(u64),
     CenterVisibleColumns,
-    FocusWorkspaceDown,
+    FocusWorkspaceDown(#[knuffel(property(name = "skip-animation"), default = false)] bool),
     #[knuffel(skip)]
     FocusWorkspaceDownUnderMouse,
-    FocusWorkspaceUp,
+    FocusWorkspaceUp(#[knuffel(property(name = "skip-animation"), default = false)] bool),
     #[knuffel(skip)]
     FocusWorkspaceUpUnderMouse,
     FocusWorkspace(#[knuffel(argument)] WorkspaceReference),
@@ -2085,8 +2085,18 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
             niri_ipc::Action::CenterVisibleColumns {} => Self::CenterVisibleColumns,
-            niri_ipc::Action::FocusWorkspaceDown {} => Self::FocusWorkspaceDown,
-            niri_ipc::Action::FocusWorkspaceUp {} => Self::FocusWorkspaceUp,
+            niri_ipc::Action::FocusWorkspaceDown {
+                skip_animation: None,
+            } => Self::FocusWorkspaceDown(false),
+            niri_ipc::Action::FocusWorkspaceDown {
+                skip_animation: Some(skip_animation),
+            } => Self::FocusWorkspaceDown(skip_animation),
+            niri_ipc::Action::FocusWorkspaceUp {
+                skip_animation: None,
+            } => Self::FocusWorkspaceUp(false),
+            niri_ipc::Action::FocusWorkspaceUp {
+                skip_animation: Some(skip_animation),
+            } => Self::FocusWorkspaceUp(skip_animation),
             niri_ipc::Action::FocusWorkspace { reference } => {
                 Self::FocusWorkspace(WorkspaceReference::from(reference))
             }

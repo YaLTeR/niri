@@ -1071,15 +1071,15 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWindowDownOrColumnLeft(_skip_animation) => {
-                self.niri.layout.focus_down_or_left();
+            Action::FocusWindowDownOrColumnLeft(skip_animation) => {
+                self.niri.layout.focus_down_or_left(skip_animation);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWindowDownOrColumnRight(_skip_animation) => {
-                self.niri.layout.focus_down_or_right();
+            Action::FocusWindowDownOrColumnRight(skip_animation) => {
+                self.niri.layout.focus_down_or_right(skip_animation);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
@@ -1299,8 +1299,8 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWorkspaceDown => {
-                self.niri.layout.switch_workspace_down();
+            Action::FocusWorkspaceDown(skip_animation) => {
+                self.niri.layout.switch_workspace_down(skip_animation);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
@@ -1317,8 +1317,8 @@ impl State {
                     }
                 }
             }
-            Action::FocusWorkspaceUp => {
-                self.niri.layout.switch_workspace_up();
+            Action::FocusWorkspaceUp(skip_animation) => {
+                self.niri.layout.switch_workspace_up(skip_animation);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
