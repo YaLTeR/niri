@@ -8,6 +8,7 @@ use crate::render_helpers::shadow::ShadowRenderElement;
 
 #[derive(Debug)]
 pub struct Shadow {
+    shadow_geo: Rectangle<f64, Logical>,
     shader_rects: Vec<Rectangle<f64, Logical>>,
     shaders: Vec<ShadowRenderElement>,
     config: niri_config::Shadow,
@@ -16,6 +17,7 @@ pub struct Shadow {
 impl Shadow {
     pub fn new(config: niri_config::Shadow) -> Self {
         Self {
+            shadow_geo: Rectangle::zero(),
             shader_rects: Vec::new(),
             shaders: Vec::new(),
             config,
@@ -30,6 +32,11 @@ impl Shadow {
         for elem in &mut self.shaders {
             elem.damage_all();
         }
+    }
+
+    /// The most recently calulcated shadow geometry.
+    pub fn shadow_geometry(&self) -> Rectangle<f64, Logical> {
+        self.shadow_geo
     }
 
     pub fn update_render_elements(
@@ -83,6 +90,7 @@ impl Shadow {
         };
 
         let shader_geo = Rectangle::new(Point::from((-width, -width)), shader_size);
+        self.shadow_geo = shader_geo;
 
         // This is actually offset relative to shader_geo, this is handled below.
         let window_geo = Rectangle::new(Point::from((0., 0.)), win_size);

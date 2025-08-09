@@ -1300,15 +1300,22 @@ impl<W: LayoutElement> Monitor<W> {
         })
     }
 
-    pub fn workspaces_with_render_geo(
+    pub fn workspaces_with_custom_render_geo(
         &self,
+        mut get_geometry: impl FnMut(&Workspace<W>, Rectangle<f64, Logical>) -> Rectangle<f64, Logical>,
     ) -> impl Iterator<Item = (&Workspace<W>, Rectangle<f64, Logical>)> {
         let output_geo = Rectangle::from_size(self.view_size);
 
         let geo = self.workspaces_render_geo();
         zip(self.workspaces.iter(), geo)
             // Cull out workspaces outside the output.
-            .filter(move |(_ws, geo)| geo.intersection(output_geo).is_some())
+            .filter(move |(ws, geo)| get_geometry(ws, *geo).intersection(output_geo).is_some())
+    }
+
+    pub fn workspaces_with_render_geo(
+        &self,
+    ) -> impl Iterator<Item = (&Workspace<W>, Rectangle<f64, Logical>)> {
+        self.workspaces_with_custom_render_geo(|_, geo| geo)
     }
 
     pub fn workspaces_with_render_geo_idx(
@@ -1576,24 +1583,30 @@ impl<W: LayoutElement> Monitor<W> {
             .then_some(1.0)
             .or(self.overview_progress.as_ref().map(|p| p.clamped_value()));
 
-        self.workspaces_with_render_geo()
-            .flat_map(move |(ws, geo)| {
-                let shadow = overview_clamped_progress.map(|value| {
-                    ws.render_shadow(renderer)
-                        .map(move |elem| elem.with_alpha(value.clamp(0., 1.) as f32))
-                        .map(MonitorInnerRenderElement::Shadow)
-                });
-                let iter = shadow.into_iter().flatten();
+        self.workspaces_with_custom_render_geo(|ws, geo| {
+            let s_geo = ws.shadow_geometry();
+            Rectangle {
+                loc: geo.loc + s_geo.loc,
+                size: s_geo.size,
+            }
+        })
+        .flat_map(move |(ws, geo)| {
+            let shadow = overview_clamped_progress.map(|value| {
+                ws.render_shadow(renderer)
+                    .map(move |elem| elem.with_alpha(value.clamp(0., 1.) as f32))
+                    .map(MonitorInnerRenderElement::Shadow)
+            });
+            let iter = shadow.into_iter().flatten();
 
-                iter.map(move |elem| {
-                    let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
-                    RelocateRenderElement::from_element(
-                        elem,
-                        geo.loc.to_physical_precise_round(scale),
-                        Relocate::Relative,
-                    )
-                })
+            iter.map(move |elem| {
+                let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
+                RelocateRenderElement::from_element(
+                    elem,
+                    geo.loc.to_physical_precise_round(scale),
+                    Relocate::Relative,
+                )
             })
+        })
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, is_touchpad: bool) {
