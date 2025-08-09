@@ -3086,31 +3086,50 @@ impl State {
 
         self.update_pointer_contents();
 
-        let scroll_factor = match source {
-            AxisSource::Wheel => self.niri.config.borrow().input.mouse.scroll_factor,
-            AxisSource::Finger => self.niri.config.borrow().input.touchpad.scroll_factor,
-            _ => None,
+        macro_rules! get_scroll_factors {
+            ($cfg:expr) => {{
+                let h_factor = $cfg
+                    .scroll_factor_horizontal
+                    .map(|x| x.0)
+                    .or_else(|| $cfg.scroll_factor.map(|x| x.0))
+                    .unwrap_or(1.);
+                let v_factor = $cfg
+                    .scroll_factor_vertical
+                    .map(|y| y.0)
+                    .or_else(|| $cfg.scroll_factor.map(|y| y.0))
+                    .unwrap_or(1.);
+                (h_factor, v_factor)
+            }};
+        }
+
+        let (horizontal_factor, vertical_factor) = match source {
+            AxisSource::Wheel => get_scroll_factors!(&self.niri.config.borrow().input.mouse),
+            AxisSource::Finger => get_scroll_factors!(&self.niri.config.borrow().input.touchpad),
+            _ => (1., 1.),
         };
-        let scroll_factor = scroll_factor.map(|x| x.0).unwrap_or(1.);
 
         let window_scroll_factor = pointer
             .current_focus()
             .map(|focused| self.niri.find_root_shell_surface(&focused))
             .and_then(|root| self.niri.layout.find_window_and_output(&root).unzip().0)
             .and_then(|window| window.rules().scroll_factor);
-        let scroll_factor = scroll_factor * window_scroll_factor.unwrap_or(1.);
+
+        let window_factor = window_scroll_factor.unwrap_or(1.);
+        let horizontal_factor = horizontal_factor * window_factor;
+        let vertical_factor = vertical_factor * window_factor;
 
         let horizontal_amount = horizontal_amount.unwrap_or_else(|| {
             // Winit backend, discrete scrolling.
             horizontal_amount_v120.unwrap_or(0.0) / 120. * 15.
-        }) * scroll_factor;
+        }) * horizontal_factor;
+
         let vertical_amount = vertical_amount.unwrap_or_else(|| {
             // Winit backend, discrete scrolling.
             vertical_amount_v120.unwrap_or(0.0) / 120. * 15.
-        }) * scroll_factor;
+        }) * vertical_factor;
 
-        let horizontal_amount_v120 = horizontal_amount_v120.map(|x| x * scroll_factor);
-        let vertical_amount_v120 = vertical_amount_v120.map(|x| x * scroll_factor);
+        let horizontal_amount_v120 = horizontal_amount_v120.map(|x| x * horizontal_factor);
+        let vertical_amount_v120 = vertical_amount_v120.map(|x| x * vertical_factor);
 
         let mut frame = AxisFrame::new(event.time_msec()).source(source);
         if horizontal_amount != 0.0 {
