@@ -16,8 +16,8 @@ use knuffel::Decode as _;
 use layer_rule::LayerRule;
 use miette::{miette, Context, IntoDiagnostic};
 use niri_ipc::{
-    ColumnDisplay, ConfiguredMode, LayoutSwitchTarget, PositionChange, SizeChange, Transform,
-    WorkspaceReferenceArg,
+    ColumnDisplay, ConfiguredMode, FullscreenSetAction, LayoutSwitchTarget, PositionChange,
+    SizeChange, Transform, WorkspaceReferenceArg,
 };
 use smithay::backend::renderer::Color32F;
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
@@ -1716,9 +1716,9 @@ pub enum Action {
     CloseWindow,
     #[knuffel(skip)]
     CloseWindowById(u64),
-    FullscreenWindow,
+    FullscreenWindow(#[knuffel(argument, str, default)] FullscreenSetAction),
     #[knuffel(skip)]
-    FullscreenWindowById(u64),
+    FullscreenWindowById(u64, FullscreenSetAction),
     ToggleWindowedFullscreen,
     #[knuffel(skip)]
     ToggleWindowedFullscreenById(u64),
@@ -1954,8 +1954,13 @@ impl From<niri_ipc::Action> for Action {
             }
             niri_ipc::Action::CloseWindow { id: None } => Self::CloseWindow,
             niri_ipc::Action::CloseWindow { id: Some(id) } => Self::CloseWindowById(id),
-            niri_ipc::Action::FullscreenWindow { id: None } => Self::FullscreenWindow,
-            niri_ipc::Action::FullscreenWindow { id: Some(id) } => Self::FullscreenWindowById(id),
+            niri_ipc::Action::FullscreenWindow { id: None, action } => {
+                Self::FullscreenWindow(action)
+            }
+            niri_ipc::Action::FullscreenWindow {
+                id: Some(id),
+                action,
+            } => Self::FullscreenWindowById(id, action),
             niri_ipc::Action::ToggleWindowedFullscreen { id: None } => {
                 Self::ToggleWindowedFullscreen
             }
