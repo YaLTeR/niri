@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
-    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview, Request,
+    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, LayerConfigChanged, Overview, Request,
     Response, Transform, Window,
 };
 use serde_json::json;
@@ -25,6 +25,10 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::Action { action } => Request::Action(action.clone()),
         Msg::Output { output, action } => Request::Output {
             output: output.clone(),
+            action: action.clone(),
+        },
+        Msg::Layer { layer, action } => Request::Layer {
+            layer: layer.clone(),
             action: action.clone(),
         },
         Msg::Workspaces => Request::Workspaces,
@@ -322,6 +326,22 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             if response == OutputConfigChanged::OutputWasMissing {
                 println!("Output \"{output}\" is not connected.");
                 println!("The change will apply when it is connected.");
+            }
+        }
+        Msg::Layer { layer, .. } => {
+            let Response::LayerConfigChanged(response) = response else {
+                bail!("unexpected response: expected LayerConfigChanged, got {response:?}");
+            };
+
+            if json {
+                let response =
+                    serde_json::to_string(&response).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+
+            if response == LayerConfigChanged::LayerNotFound {
+                println!("Layer \"{layer}\" was not found.");
             }
         }
         Msg::Workspaces => {
