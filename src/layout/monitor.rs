@@ -1570,7 +1570,11 @@ impl<W: LayoutElement> Monitor<W> {
 
         let scale = self.scale.fractional_scale();
         let zoom = self.overview_zoom();
-        let overview_clamped_progress = self.overview_progress.as_ref().map(|p| p.clamped_value());
+        let overview_clamped_progress = self
+            .workspace_switch
+            .is_some()
+            .then_some(1.0)
+            .or(self.overview_progress.as_ref().map(|p| p.clamped_value()));
 
         self.workspaces_with_render_geo()
             .flat_map(move |(ws, geo)| {
