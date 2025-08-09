@@ -28,6 +28,10 @@ use smithay::reexports::input;
 pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.25, 0.25, 0.25, 1.]);
 pub const DEFAULT_BACKDROP_COLOR: Color = Color::from_array_unpremul([0.15, 0.15, 0.15, 1.]);
 
+/// Delay before the window focus is considered to be locked-in for Window
+/// MRU ordering. For now the delay is not configurable.
+pub const DEFAULT_MRU_COMMIT_MS: u64 = 750;
+
 pub mod layer_rule;
 
 mod utils;
@@ -81,6 +85,8 @@ pub struct Config {
     pub debug: DebugConfig,
     #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
+    #[knuffel(child, default)]
+    pub recent_windows: RecentWindows,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -1077,6 +1083,10 @@ pub struct Animations {
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
     #[knuffel(child, default)]
     pub overview_open_close: OverviewOpenCloseAnim,
+    #[knuffel(child, default)]
+    pub window_mru_ui_open_close: WindowMruUiOpenCloseAnim,
+    #[knuffel(child, default)]
+    pub thumbnail_select: ThumbnailSelectAnim,
 }
 
 impl Default for Animations {
@@ -1093,6 +1103,8 @@ impl Default for Animations {
             config_notification_open_close: Default::default(),
             screenshot_ui_open: Default::default(),
             overview_open_close: Default::default(),
+            window_mru_ui_open_close: Default::default(),
+            thumbnail_select: ThumbnailSelectAnim::default(),
         }
     }
 }
@@ -1244,6 +1256,38 @@ impl Default for ScreenshotUiOpenAnim {
 pub struct OverviewOpenCloseAnim(pub Animation);
 
 impl Default for OverviewOpenCloseAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowMruUiOpenCloseAnim(pub Animation);
+
+impl Default for WindowMruUiOpenCloseAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThumbnailSelectAnim(pub Animation);
+
+impl Default for ThumbnailSelectAnim {
     fn default() -> Self {
         Self(Animation {
             off: false,
@@ -1613,6 +1657,15 @@ pub enum RelativeTo {
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds(pub Vec<Bind>);
 
+impl<'a> IntoIterator for &'a Binds {
+    type Item = &'a Bind;
+    type IntoIter = std::slice::Iter<'a, Bind>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {
     pub key: Key,
@@ -1677,6 +1730,33 @@ pub struct SwitchBinds {
 pub struct SwitchAction {
     #[knuffel(child, unwrap(arguments))]
     pub spawn: Vec<String>,
+}
+
+#[derive(knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
+pub enum MruDirection {
+    #[default]
+    Forward, // From most recently used to least
+    Backward, // From least recently used to most
+}
+
+#[derive(knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
+pub enum MruScope {
+    /// Consider all windows
+    #[default]
+    All,
+    /// Consider windows on the active output
+    Output,
+    /// Consider windows on the active workspace
+    Workspace,
+}
+
+#[derive(knuffel::DecodeScalar, Clone, Copy, Debug, Default, PartialEq)]
+pub enum MruFilter {
+    /// No filter
+    #[default]
+    None,
+    /// Windows with the same AppId as the active window
+    AppId,
 }
 
 // Remember to add new actions to the CLI enum too.
@@ -1926,6 +2006,23 @@ pub enum Action {
     UnsetWindowUrgent(u64),
     #[knuffel(skip)]
     LoadConfigFile,
+    MruAdvance(
+        #[knuffel(argument)] MruDirection,
+        #[knuffel(property(name = "scope"))] Option<MruScope>,
+        #[knuffel(property(name = "filter"))] Option<MruFilter>,
+    ),
+    #[knuffel(skip)]
+    MruClose,
+    #[knuffel(skip)]
+    MruCancel,
+    #[knuffel(skip)]
+    MruCloseCurrent,
+    #[knuffel(skip)]
+    MruFirst,
+    #[knuffel(skip)]
+    MruLast,
+    #[knuffel(skip)]
+    MruChangeScope(#[knuffel(argument)] MruScope),
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -2481,6 +2578,23 @@ impl ConfigPath {
             .with_context(|| format!("error writing default config to {path:?}"))?;
 
         Ok(())
+    }
+}
+
+#[derive(knuffel::Decode, Debug, PartialEq)]
+pub struct RecentWindows {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child, unwrap(argument, str), default = Self::default().mod_key)]
+    pub mod_key: ModKey,
+}
+
+impl Default for RecentWindows {
+    fn default() -> Self {
+        RecentWindows {
+            off: false,
+            mod_key: ModKey::Alt,
+        }
     }
 }
 
@@ -3317,6 +3431,36 @@ where
 }
 
 impl<S> knuffel::Decode<S> for OverviewOpenCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for WindowMruUiOpenCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for ThumbnailSelectAnim
 where
     S: knuffel::traits::ErrorSpan,
 {
@@ -4307,6 +4451,11 @@ mod tests {
             }
             workspace "workspace-2"
             workspace "workspace-3"
+
+            recent-windows {
+                off
+                mod-key "Alt"
+            }
             "##,
         );
 
@@ -4870,6 +5019,30 @@ mod tests {
                     },
                 ),
                 overview_open_close: OverviewOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                window_mru_ui_open_close: WindowMruUiOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                thumbnail_select: ThumbnailSelectAnim(
                     Animation {
                         off: false,
                         kind: Spring(
@@ -5477,6 +5650,10 @@ mod tests {
                     open_on_output: None,
                 },
             ],
+            recent_windows: RecentWindows {
+                off: true,
+                mod_key: Alt,
+            },
         }
         "#);
     }

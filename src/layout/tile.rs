@@ -106,6 +106,10 @@ pub struct Tile<W: LayoutElement> {
     /// Scale of the output the tile is on (and rounds its sizes to).
     scale: f64,
 
+    /// Indication that the tile shouldn't be rendered. Used when a thumbnail
+    /// for the tile is rendered instead.
+    pub(crate) skip_render: bool,
+
     /// Clock for driving animations.
     pub(super) clock: Clock,
 
@@ -193,6 +197,7 @@ impl<W: LayoutElement> Tile<W> {
             rounded_corner_damage: Default::default(),
             view_size,
             scale,
+            skip_render: false,
             clock,
             options,
         }
@@ -1070,46 +1075,50 @@ impl<W: LayoutElement> Tile<W> {
 
         self.window().set_offscreen_data(None);
 
-        if let Some(open) = &self.open_animation {
-            let renderer = renderer.as_gles_renderer();
-            let elements = self.render_inner(renderer, Point::from((0., 0.)), focus_ring, target);
-            let elements = elements.collect::<Vec<TileRenderElement<_>>>();
-            match open.render(
-                renderer,
-                &elements,
-                self.animated_tile_size(),
-                location,
-                scale,
-                tile_alpha,
-            ) {
-                Ok((elem, data)) => {
-                    self.window().set_offscreen_data(Some(data));
-                    open_anim_elem = Some(elem.into());
+        if !self.skip_render || target == RenderTarget::Offscreen {
+            if let Some(open) = &self.open_animation {
+                let renderer = renderer.as_gles_renderer();
+                let elements =
+                    self.render_inner(renderer, Point::from((0., 0.)), focus_ring, target);
+                let elements = elements.collect::<Vec<TileRenderElement<_>>>();
+                match open.render(
+                    renderer,
+                    &elements,
+                    self.animated_tile_size(),
+                    location,
+                    scale,
+                    tile_alpha,
+                ) {
+                    Ok((elem, data)) => {
+                        self.window().set_offscreen_data(Some(data));
+                        open_anim_elem = Some(elem.into());
+                    }
+                    Err(err) => {
+                        warn!("error rendering window opening animation: {err:?}");
+                    }
                 }
-                Err(err) => {
-                    warn!("error rendering window opening animation: {err:?}");
+            } else if let Some(alpha) = &self.alpha_animation {
+                let renderer = renderer.as_gles_renderer();
+                let elements =
+                    self.render_inner(renderer, Point::from((0., 0.)), focus_ring, target);
+                let elements = elements.collect::<Vec<TileRenderElement<_>>>();
+                match alpha.offscreen.render(renderer, scale, &elements) {
+                    Ok((elem, _sync, data)) => {
+                        let offset = elem.offset();
+                        let elem = elem.with_alpha(tile_alpha).with_offset(location + offset);
+
+                        self.window().set_offscreen_data(Some(data));
+                        alpha_anim_elem = Some(elem.into());
+                    }
+                    Err(err) => {
+                        warn!("error rendering tile to offscreen for alpha animation: {err:?}");
+                    }
                 }
             }
-        } else if let Some(alpha) = &self.alpha_animation {
-            let renderer = renderer.as_gles_renderer();
-            let elements = self.render_inner(renderer, Point::from((0., 0.)), focus_ring, target);
-            let elements = elements.collect::<Vec<TileRenderElement<_>>>();
-            match alpha.offscreen.render(renderer, scale, &elements) {
-                Ok((elem, _sync, data)) => {
-                    let offset = elem.offset();
-                    let elem = elem.with_alpha(tile_alpha).with_offset(location + offset);
 
-                    self.window().set_offscreen_data(Some(data));
-                    alpha_anim_elem = Some(elem.into());
-                }
-                Err(err) => {
-                    warn!("error rendering tile to offscreen for alpha animation: {err:?}");
-                }
+            if open_anim_elem.is_none() && alpha_anim_elem.is_none() {
+                window_elems = Some(self.render_inner(renderer, location, focus_ring, target));
             }
-        }
-
-        if open_anim_elem.is_none() && alpha_anim_elem.is_none() {
-            window_elems = Some(self.render_inner(renderer, location, focus_ring, target));
         }
 
         open_anim_elem
