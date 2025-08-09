@@ -439,10 +439,12 @@ impl State {
 
                     let mru_ui_bindings =
                         mru_ui_enabled.then_some(this.niri.window_mru_ui.bindings());
+
                     let bindings = bindings
                         .into_iter()
                         .flatten()
                         .chain(mru_ui_bindings.into_iter().flatten());
+
                     should_intercept_key(
                         &mut this.niri.suppressed_keys,
                         bindings,

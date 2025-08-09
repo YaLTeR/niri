@@ -880,6 +880,8 @@ impl WindowMruUi {
             bind
         };
 
+        let is_open = self.is_open();
+
         let bindings = self
             .cached_bindings
             .get_or_insert(MRU_UI_BINDINGS.iter().cloned().map(apply_modkey).collect());
@@ -892,7 +894,12 @@ impl WindowMruUi {
                 .collect(),
         );
 
-        bindings.iter().chain(opened_bindings.iter())
+        bindings.iter().chain(
+            is_open
+                .then_some(opened_bindings.iter())
+                .into_iter()
+                .flatten(),
+        )
     }
 }
 
