@@ -5,7 +5,7 @@ use std::sync::mpsc;
 use std::time::{Duration, SystemTime};
 use std::{io, thread};
 
-use niri_config::ConfigPath;
+use niri_config::{Config, ConfigPath};
 use smithay::reexports::calloop::channel::SyncSender;
 
 use crate::niri::State;
@@ -137,10 +137,17 @@ pub fn setup(state: &mut State, config_path: &ConfigPath) {
     state
         .niri
         .event_loop
-        .insert_source(rx, |event, _, state| match event {
-            calloop::channel::Event::Msg(config) => state.reload_config(config),
-            calloop::channel::Event::Closed => (),
-        })
+        .insert_source(
+            rx,
+            |event: calloop::channel::Event<Result<Config, ()>>, _, state| match event {
+                calloop::channel::Event::Msg(config) => {
+                    let failed = config.is_err();
+                    state.reload_config(config);
+                    state.ipc_config_reloaded(failed);
+                }
+                calloop::channel::Event::Closed => (),
+            },
+        )
         .unwrap();
 
     state.niri.config_file_watcher = Some(Watcher::new(config_path.clone(), process, tx));

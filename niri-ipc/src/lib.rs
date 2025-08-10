@@ -1399,6 +1399,11 @@ pub enum Event {
         /// The new state of the overview.
         is_open: bool,
     },
+    /// The configuration is reloaded
+    ConfigReloaded {
+        /// Whether the operation failed or not
+        failed: bool,
+    },
 }
 
 impl FromStr for WorkspaceReferenceArg {
