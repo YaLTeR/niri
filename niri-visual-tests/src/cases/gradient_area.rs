@@ -25,6 +25,9 @@ impl GradientArea {
             inactive_color: Color::default(),
             active_gradient: None,
             inactive_gradient: None,
+            rainbow_enabled: false,
+            rainbow_speed: Default::default(),
+            rainbow_focus_only: false,
         });
 
         Self {

@@ -25,17 +25,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="7357a20f-4ae3-4a02-bab6-099076da6bb7" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/cat-activity.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/cat-activity.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/discord.xml" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/niri-config/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/niri-config/src/lib.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/animation/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/animation/mod.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/backend/tty.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/backend/tty.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/niri-visual-tests/src/cases/gradient_area.rs" beforeDir="false" afterPath="$PROJECT_DIR$/niri-visual-tests/src/cases/gradient_area.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/layout/focus_ring.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/layout/focus_ring.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/layout/insert_hint_element.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/layout/insert_hint_element.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/render_helpers/border.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/render_helpers/border.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/render_helpers/shaders/open_prelude.frag" beforeDir="false" afterPath="$PROJECT_DIR$/src/render_helpers/shaders/open_prelude.frag" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -280,7 +274,9 @@
       <workItem from="1753595689877" duration="8000" />
       <workItem from="1753997924578" duration="235000" />
       <workItem from="1754007177055" duration="62000" />
-      <workItem from="1754427572199" duration="4282000" />
+      <workItem from="1754427572199" duration="5300000" />
+      <workItem from="1754787773711" duration="301000" />
+      <workItem from="1754788999978" duration="1159000" />
     </task>
     <servers />
   </component>

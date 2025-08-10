@@ -20,7 +20,6 @@ use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 /// * sub- or super-rect of an angled linear gradient like CSS linear-gradient(angle, a, b).
 /// * corner rounding.
 /// * as a background rectangle and as parts of a border line.
-/// * animated rainbow borders with clockwise rotation.
 #[derive(Debug, Clone)]
 pub struct BorderRenderElement {
     inner: ShaderRenderElement,
@@ -41,10 +40,6 @@ struct Parameters {
     // Should only be used for visual improvements, i.e. corner radius anti-aliasing.
     scale: f32,
     alpha: f32,
-    // Rainbow animation parameters
-    animation_time: f32,
-    rainbow_speed: f32,
-    enable_rainbow: bool,
 }
 
 impl BorderRenderElement {
@@ -77,50 +72,6 @@ impl BorderRenderElement {
                 corner_radius,
                 scale,
                 alpha,
-                animation_time: 0.0,
-                rainbow_speed: 1.0,
-                enable_rainbow: false,
-            },
-        };
-        rv.update_inner();
-        rv
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_animation(
-        size: Size<f64, Logical>,
-        gradient_area: Rectangle<f64, Logical>,
-        gradient_format: GradientInterpolation,
-        color_from: Color,
-        color_to: Color,
-        angle: f32,
-        geometry: Rectangle<f64, Logical>,
-        border_width: f32,
-        corner_radius: CornerRadius,
-        scale: f32,
-        alpha: f32,
-        animation_time: f32,
-        rainbow_speed: f32,
-        enable_rainbow: bool,
-    ) -> Self {
-        let inner = ShaderRenderElement::empty(ProgramType::Border, Kind::Unspecified);
-        let mut rv = Self {
-            inner,
-            params: Parameters {
-                size,
-                gradient_area,
-                gradient_format,
-                color_from,
-                color_to,
-                angle,
-                geometry,
-                border_width,
-                corner_radius,
-                scale,
-                alpha,
-                animation_time,
-                rainbow_speed,
-                enable_rainbow,
             },
         };
         rv.update_inner();
@@ -143,9 +94,6 @@ impl BorderRenderElement {
                 corner_radius: Default::default(),
                 scale: 1.,
                 alpha: 1.,
-                animation_time: 0.0,
-                rainbow_speed: 1.0,
-                enable_rainbow: false,
             },
         }
     }
@@ -181,10 +129,6 @@ impl BorderRenderElement {
             corner_radius,
             scale,
             alpha,
-            // Keep existing animation parameters
-            animation_time: self.params.animation_time,
-            rainbow_speed: self.params.rainbow_speed,
-            enable_rainbow: self.params.enable_rainbow,
         };
         if self.params == params {
             return;
@@ -192,79 +136,6 @@ impl BorderRenderElement {
 
         self.params = params;
         self.update_inner();
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn update_with_animation(
-        &mut self,
-        size: Size<f64, Logical>,
-        gradient_area: Rectangle<f64, Logical>,
-        gradient_format: GradientInterpolation,
-        color_from: Color,
-        color_to: Color,
-        angle: f32,
-        geometry: Rectangle<f64, Logical>,
-        border_width: f32,
-        corner_radius: CornerRadius,
-        scale: f32,
-        alpha: f32,
-        animation_time: f32,
-        rainbow_speed: f32,
-        enable_rainbow: bool,
-    ) {
-        let params = Parameters {
-            size,
-            gradient_area,
-            gradient_format,
-            color_from,
-            color_to,
-            angle,
-            geometry,
-            border_width,
-            corner_radius,
-            scale,
-            alpha,
-            animation_time,
-            rainbow_speed,
-            enable_rainbow,
-        };
-        if self.params == params {
-            return;
-        }
-
-        self.params = params;
-        self.update_inner();
-    }
-
-    pub fn update_animation_time(&mut self, animation_time: f32) {
-        if (self.params.animation_time - animation_time).abs() < f32::EPSILON {
-            return;
-        }
-
-        self.params.animation_time = animation_time;
-        if self.params.enable_rainbow {
-            self.update_inner();
-        }
-    }
-
-    pub fn set_rainbow_enabled(&mut self, enabled: bool) {
-        if self.params.enable_rainbow == enabled {
-            return;
-        }
-
-        self.params.enable_rainbow = enabled;
-        self.update_inner();
-    }
-
-    pub fn set_rainbow_speed(&mut self, speed: f32) {
-        if (self.params.rainbow_speed - speed).abs() < f32::EPSILON {
-            return;
-        }
-
-        self.params.rainbow_speed = speed;
-        if self.params.enable_rainbow {
-            self.update_inner();
-        }
     }
 
     fn update_inner(&mut self) {
@@ -280,9 +151,6 @@ impl BorderRenderElement {
             corner_radius,
             scale,
             alpha,
-            animation_time,
-            rainbow_speed,
-            enable_rainbow,
         } = self.params;
 
         let grad_offset = geometry.loc - gradient_area.loc;
@@ -341,10 +209,6 @@ impl BorderRenderElement {
                 Uniform::new("geo_size", geo_size.to_array()),
                 Uniform::new("outer_radius", <[f32; 4]>::from(corner_radius)),
                 Uniform::new("border_width", border_width),
-                // Rainbow animation uniforms
-                Uniform::new("animation_time", animation_time),
-                Uniform::new("rainbow_speed", rainbow_speed),
-                Uniform::new("enable_rainbow", if enable_rainbow { 1.0 } else { 0.0 }),
             ],
             HashMap::new(),
         );
@@ -359,18 +223,6 @@ impl BorderRenderElement {
         Shaders::get(renderer)
             .program(ProgramType::Border)
             .is_some()
-    }
-
-    pub fn is_rainbow_enabled(&self) -> bool {
-        self.params.enable_rainbow
-    }
-
-    pub fn rainbow_speed(&self) -> f32 {
-        self.params.rainbow_speed
-    }
-
-    pub fn animation_time(&self) -> f32 {
-        self.params.animation_time
     }
 }
 
