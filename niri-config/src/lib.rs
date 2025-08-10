@@ -2006,6 +2006,7 @@ pub enum Action {
     UnsetWindowUrgent(u64),
     #[knuffel(skip)]
     LoadConfigFile,
+    #[knuffel(skip)]
     MruAdvance(
         #[knuffel(argument)] MruDirection,
         #[knuffel(property(name = "scope"))] Option<MruScope>,
