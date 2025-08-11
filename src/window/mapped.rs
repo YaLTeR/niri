@@ -303,7 +303,7 @@ impl Mapped {
         self.credentials.as_ref()
     }
 
-    pub fn offscreen_data(&self) -> Ref<Option<OffscreenData>> {
+    pub fn offscreen_data(&self) -> Ref<'_, Option<OffscreenData>> {
         self.offscreen_data.borrow()
     }
 

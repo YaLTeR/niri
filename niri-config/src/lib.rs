@@ -157,7 +157,7 @@ pub struct Xkb {
 }
 
 impl Xkb {
-    pub fn to_xkb_config(&self) -> XkbConfig {
+    pub fn to_xkb_config(&self) -> XkbConfig<'_> {
         XkbConfig {
             rules: &self.rules,
             model: &self.model,
