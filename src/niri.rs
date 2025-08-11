@@ -4850,6 +4850,7 @@ impl Niri {
                 subpixel: Subpixel::Unknown,
                 make: String::new(),
                 model: String::new(),
+                serial_number: String::new(),
             },
         );
         let output = &output;
