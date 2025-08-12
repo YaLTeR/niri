@@ -24,6 +24,8 @@ struct TestWindowInner {
     bbox: Cell<Rectangle<i32, Logical>>,
     initial_bbox: Rectangle<i32, Logical>,
     requested_size: Cell<Option<Size<i32, Logical>>>,
+    // Emulates the window ignoring the compositor-provided size.
+    forced_size: Cell<Option<Size<i32, Logical>>>,
     min_size: Size<i32, Logical>,
     max_size: Size<i32, Logical>,
     pending_fullscreen: Cell<bool>,
@@ -71,6 +73,7 @@ impl TestWindow {
             bbox: Cell::new(params.bbox),
             initial_bbox: params.bbox,
             requested_size: Cell::new(None),
+            forced_size: Cell::new(None),
             min_size: params.min_max_size.0,
             max_size: params.min_max_size.1,
             pending_fullscreen: Cell::new(false),
@@ -86,7 +89,8 @@ impl TestWindow {
     fn communicate(&self) -> bool {
         let mut changed = false;
 
-        if let Some(size) = self.0.requested_size.get() {
+        let size = self.0.forced_size.get().or(self.0.requested_size.get());
+        if let Some(size) = size {
             assert!(size.w >= 0);
             assert!(size.h >= 0);
 
@@ -282,6 +286,10 @@ impl LayoutElement for TestWindow {
     fn is_urgent(&self) -> bool {
         false
     }
+}
+
+fn arbitrary_size() -> impl Strategy<Value = Size<i32, Logical>> {
+    any::<(u16, u16)>().prop_map(|(w, h)| Size::from((w.max(1).into(), h.max(1).into())))
 }
 
 fn arbitrary_bbox() -> impl Strategy<Value = Rectangle<i32, Logical>> {
@@ -591,6 +599,12 @@ enum Op {
         id: usize,
         #[proptest(strategy = "prop::option::of(1..=5usize)")]
         new_parent_id: Option<usize>,
+    },
+    SetForcedSize {
+        #[proptest(strategy = "1..=5usize")]
+        id: usize,
+        #[proptest(strategy = "proptest::option::of(arbitrary_size())")]
+        size: Option<Size<i32, Logical>>,
     },
     Communicate(#[proptest(strategy = "1..=5usize")] usize),
     Refresh {
@@ -1312,6 +1326,14 @@ impl Op {
                 if update {
                     if let Some(new_parent_id) = new_parent_id {
                         layout.descendants_added(&new_parent_id);
+                    }
+                }
+            }
+            Op::SetForcedSize { id, size } => {
+                for (_mon, win) in layout.windows() {
+                    if win.0.id == id {
+                        win.0.forced_size.set(size);
+                        return;
                     }
                 }
             }
