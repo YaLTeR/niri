@@ -1174,10 +1174,6 @@ impl LayoutElement for Mapped {
         &self.rules
     }
 
-    fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot> {
-        self.animation_snapshot.as_ref()
-    }
-
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
         self.animation_snapshot.take()
     }

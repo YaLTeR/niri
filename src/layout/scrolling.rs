@@ -4041,14 +4041,12 @@ impl<W: LayoutElement> Column<W> {
             .find(|(_, tile)| tile.window().id() == window)
             .unwrap();
 
-        let height = f64::from(tile.window().size().h);
-        let offset = tile
-            .window()
-            .animation_snapshot()
-            .map_or(0., |from| from.size.h - height);
+        let prev_height = self.data[tile_idx].size.h;
 
         tile.update_window();
         self.data[tile_idx].update(tile);
+
+        let offset = prev_height - self.data[tile_idx].size.h;
 
         let is_tabbed = self.display_mode == ColumnDisplay::Tabbed;
 
