@@ -1479,24 +1479,24 @@ impl Op {
 }
 
 #[track_caller]
-fn check_ops(ops: &[Op]) -> Layout<TestWindow> {
-    let mut layout = Layout::default();
+fn check_ops_on_layout(layout: &mut Layout<TestWindow>, ops: &[Op]) {
     for op in ops {
-        op.apply(&mut layout);
+        op.apply(layout);
         layout.verify_invariants();
     }
+}
+
+#[track_caller]
+fn check_ops(ops: &[Op]) -> Layout<TestWindow> {
+    let mut layout = Layout::default();
+    check_ops_on_layout(&mut layout, ops);
     layout
 }
 
 #[track_caller]
 fn check_ops_with_options(options: Options, ops: &[Op]) -> Layout<TestWindow> {
     let mut layout = Layout::with_options(Clock::with_time(Duration::ZERO), options);
-
-    for op in ops {
-        op.apply(&mut layout);
-        layout.verify_invariants();
-    }
-
+    check_ops_on_layout(&mut layout, ops);
     layout
 }
 
