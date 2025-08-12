@@ -4056,12 +4056,35 @@ impl<W: LayoutElement> Column<W> {
         // windows in the column, so they should all be animated. How should this interact with
         // animated vs. non-animated resizes? For example, an animated +20 resize followed by two
         // non-animated -10 resizes.
-        if !is_tabbed && tile.resize_animation().is_some() && offset != 0. {
-            for tile in &mut self.tiles[tile_idx + 1..] {
-                tile.animate_move_y_from_with_config(
-                    offset,
-                    self.options.animations.window_resize.anim,
-                );
+        if !is_tabbed && offset != 0. {
+            if tile.resize_animation().is_some() {
+                // If there's a resize animation (that may have just started in
+                // tile.update_window()), then the apparent size change is smooth with no sudden
+                // jumps. This corresponds to adding an Y animation to tiles below.
+                for tile in &mut self.tiles[tile_idx + 1..] {
+                    tile.animate_move_y_from_with_config(
+                        offset,
+                        self.options.animations.window_resize.anim,
+                    );
+                }
+            } else {
+                // There's no resize animation, but the offset is nonzero. This could happen for
+                // example:
+                // - if the window resized on its own, which we don't animate
+                // - if the window resized by less than 10 px (the resize threshold)
+                //
+                // The latter case could also cancel an ongoing resize animation.
+                //
+                // Now, stationary tiles below shouldn't react to this offset change in any way,
+                // i.e. their apparent Y position should jump together with the resize. However,
+                // tiles below that are already animating an Y movement should offset their
+                // animations to avoid the jump.
+                //
+                // Notably, this is necessary to fix the animation jump when resizing height back
+                // and forth in quick succession (in a way that cancels the resize animation).
+                for tile in &mut self.tiles[tile_idx + 1..] {
+                    tile.offset_move_y_anim_current(offset);
+                }
             }
         }
     }

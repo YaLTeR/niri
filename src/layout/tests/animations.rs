@@ -269,14 +269,20 @@ fn height_resize_and_cancel() {
     ];
     check_ops_on_layout(&mut layout, &ops);
 
-    // Since the resize animation is cancelled, the height goes to the new value immediately, and
-    // the Y position should also go to 100 immediately, cancelling the movement.
-    //
-    // FIXME: right now, the Y position jumps to 5 and will continue animating to 100 from there
-    // because cancelling the resize anim doesn't cancel the induced Y movement.
+    // Since the resize animation is cancelled, the height goes to the new value immediately. The Y
+    // position doesn't jump, instead the animation is offset to preserve the current position.
     assert_snapshot!(format_tiles(&layout), @r"
     100 × 100 at x:  0 y:  0
-    200 × 200 at x:  0 y:  5
+    200 × 200 at x:  0 y:105
+    ");
+
+    // Advance to the end of the move animation.
+    Op::AdvanceAnimations { msec_delta: 950 }.apply(&mut layout);
+
+    // Final state.
+    assert_snapshot!(format_tiles(&layout), @r"
+    100 × 100 at x:  0 y:  0
+    200 × 200 at x:  0 y:100
     ");
 }
 
@@ -506,23 +512,30 @@ fn height_resize_and_cancel_during_another_y_anim() {
     ];
     check_ops_on_layout(&mut layout, &ops);
 
-    // Since the resize anim was cancelled, second window's Y should jump a little to go back to
-    // its original trajectory.
-    //
-    // FIXME: right now, the Y position jumps and will continue to animate from there because
-    // cancelling the resize anim doesn't cancel the induced Y movement.
+    // Since the resize anim was cancelled, second window's Y anim is adjusted to preserve the
+    // current position while targeting the new final position.
     assert_snapshot!(format_tiles(&layout), @r"
     100 × 100 at x:  0 y:  0
-    200 × 200 at x: 45 y:-43
+    200 × 200 at x: 45 y: 58
     ");
 
     // Advance the time to complete the consume movement.
     Op::AdvanceAnimations { msec_delta: 450 }.apply(&mut layout);
 
-    // Final state. Y should be at 100 since the resize-induced Y anim was cancelled.
+    // Since we don't cancel the resize-induced part of the anim (in fact the move Y anim isn't
+    // split into parts, so there's no way to tell), it keeps going still.
     assert_snapshot!(format_tiles(&layout), @r"
     100 × 100 at x:  0 y:  0
-    200 × 200 at x:  0 y: 25
+    200 × 200 at x:  0 y: 78
+    ");
+
+    // Advance the time to complete the resize-induced anim.
+    Op::AdvanceAnimations { msec_delta: 550 }.apply(&mut layout);
+
+    // Final state.
+    assert_snapshot!(format_tiles(&layout), @r"
+    100 × 100 at x:  0 y:  0
+    200 × 200 at x:  0 y:100
     ");
 }
 
@@ -723,14 +736,10 @@ fn height_resize_before_another_y_anim_then_cancel() {
     ];
     check_ops_on_layout(&mut layout, &ops);
 
-    // This should cause the second window's trajectory to readjust to the new final position at
-    // 100px. Ideally without big jumps because even though the first window's actual size changed
-    // from 200 px to 100 px, the cancelled resize only shifted it from 104 px to 100 px.
-    //
-    // FIXME: currently causes a 100 px jump due to the change in the actual window size.
+    // The second window's trajectory readjusts to the new final position at 100 px, without jumps.
     assert_snapshot!(format_tiles(&layout), @r"
     100 × 100 at x:  0 y:  0
-    200 × 200 at x: 98 y:-96
+    200 × 200 at x: 98 y:  4
     ");
 
     // Advance the time to complete the consume movement.
@@ -791,13 +800,10 @@ fn clientside_height_change_during_another_y_anim() {
     ];
     check_ops_on_layout(&mut layout, &ops);
 
-    // This should cause the second window's trajectory to readjust to the new final position at
-    // 200px. Ideally without big jumps.
-    //
-    // FIXME: currently causes a 100 px jump due to the change in the window size.
+    // The second window's trajectory readjusts to the new final position at 200 px, without jumps.
     assert_snapshot!(format_tiles(&layout), @r"
     100 × 200 at x:  0 y:  0
-    200 × 200 at x: 80 y:120
+    200 × 200 at x: 80 y: 20
     ");
 
     // Advance the time to complete the consume movement.
