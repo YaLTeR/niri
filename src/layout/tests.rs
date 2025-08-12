@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, OnceCell, RefCell};
 
 use niri_config::{
     FloatOrInt, OutputName, TabIndicatorLength, TabIndicatorPosition, WorkspaceName,
@@ -31,6 +31,8 @@ struct TestWindowInner {
     is_fullscreen: Cell<bool>,
     is_windowed_fullscreen: Cell<bool>,
     is_pending_windowed_fullscreen: Cell<bool>,
+    animate_next_configure: Cell<bool>,
+    animation_snapshot: RefCell<Option<LayoutElementRenderSnapshot>>,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +78,8 @@ impl TestWindow {
             is_fullscreen: Cell::new(false),
             is_windowed_fullscreen: Cell::new(false),
             is_pending_windowed_fullscreen: Cell::new(false),
+            animate_next_configure: Cell::new(false),
+            animation_snapshot: RefCell::new(None),
         }))
     }
 
@@ -95,10 +99,23 @@ impl TestWindow {
             }
 
             if self.0.bbox.get() != new_bbox {
+                if self.0.animate_next_configure.get() {
+                    self.0.animation_snapshot.replace(Some(RenderSnapshot {
+                        contents: Vec::new(),
+                        blocked_out_contents: Vec::new(),
+                        block_out_from: None,
+                        size: self.0.bbox.get().size.to_f64(),
+                        texture: OnceCell::new(),
+                        blocked_out_texture: OnceCell::new(),
+                    }));
+                }
+
                 self.0.bbox.set(new_bbox);
                 changed = true;
             }
         }
+
+        self.0.animate_next_configure.set(false);
 
         if self.0.is_fullscreen.get() != self.0.pending_fullscreen.get() {
             self.0.is_fullscreen.set(self.0.pending_fullscreen.get());
@@ -153,7 +170,11 @@ impl LayoutElement for TestWindow {
         _animate: bool,
         _transaction: Option<Transaction>,
     ) {
-        self.0.requested_size.set(Some(size));
+        if self.0.requested_size.get() != Some(size) {
+            self.0.requested_size.set(Some(size));
+            self.0.animate_next_configure.set(true);
+        }
+
         self.0.pending_fullscreen.set(is_fullscreen);
 
         if is_fullscreen {
@@ -245,7 +266,7 @@ impl LayoutElement for TestWindow {
     }
 
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
-        None
+        self.0.animation_snapshot.take()
     }
 
     fn set_interactive_resize(&mut self, _data: Option<InteractiveResizeData>) {}
