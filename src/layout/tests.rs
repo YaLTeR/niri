@@ -614,6 +614,7 @@ enum Op {
         #[proptest(strategy = "arbitrary_msec_delta()")]
         msec_delta: i32,
     },
+    CompleteAnimations,
     MoveWorkspaceToOutput(#[proptest(strategy = "1..=5usize")] usize),
     ViewOffsetGestureBegin {
         #[proptest(strategy = "1..=5usize")]
@@ -1400,6 +1401,11 @@ impl Op {
                 }
                 layout.clock.set_unadjusted(now);
                 layout.advance_animations();
+            }
+            Op::CompleteAnimations => {
+                layout.clock.set_complete_instantly(true);
+                layout.advance_animations();
+                layout.clock.set_complete_instantly(false);
             }
             Op::MoveWorkspaceToOutput(id) => {
                 let name = format!("output{id}");
