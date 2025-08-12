@@ -11,6 +11,8 @@ use smithay::utils::Rectangle;
 
 use super::*;
 
+mod animations;
+
 impl<W: LayoutElement> Default for Layout<W> {
     fn default() -> Self {
         Self::with_options(Clock::with_time(Duration::ZERO), Default::default())
