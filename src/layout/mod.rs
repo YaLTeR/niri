@@ -270,7 +270,6 @@ pub trait LayoutElement {
     /// Runs periodic clean-up tasks.
     fn refresh(&self);
 
-    fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot>;
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot>;
 
     fn set_interactive_resize(&mut self, data: Option<InteractiveResizeData>);
