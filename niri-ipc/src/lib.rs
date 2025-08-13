@@ -97,6 +97,17 @@ pub enum Request {
         /// Configuration to apply.
         action: OutputAction,
     },
+    /// Change layer configuration temporarily.
+    ///
+    /// The configuration is changed temporarily and not saved into the config file. If the layer
+    /// configuration subsequently changes in the config file, these temporary changes will be
+    /// forgotten.
+    Layer {
+        /// Layer name.
+        layer: String,
+        /// Configuration to apply.
+        action: LayerAction,
+    },
     /// Start continuously receiving events from the compositor.
     ///
     /// The compositor should reply with `Reply::Ok(Response::Handled)`, then continuously send
@@ -158,6 +169,8 @@ pub enum Response {
     PickedColor(Option<PickedColor>),
     /// Output configuration change result.
     OutputConfigChanged(OutputConfigChanged),
+    /// Layer configuration change result.
+    LayerConfigChanged(LayerConfigChanged),
     /// Information about the overview.
     OverviewState(Overview),
 }
@@ -905,6 +918,22 @@ pub enum ColumnDisplay {
     Tabbed,
 }
 
+/// Layer actions that niri can perform.
+// Variants in this enum should match the spelling of the ones in niri-config. Most thigs from
+// niri-config should be present here.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "ACTION"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Actions"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum LayerAction {
+    /// Set the layer opacity
+    Opacity {
+        /// Opacity to set. Must be between 0.0 and 1.0
+        opacity: f32,
+    }
+}
+
 /// Output actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most thigs from
 // niri-config should be present here.
@@ -1155,6 +1184,16 @@ pub struct Window {
     pub is_floating: bool,
     /// Whether this window requests your attention.
     pub is_urgent: bool,
+}
+
+/// Layer configuration change result.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum LayerConfigChanged {
+    /// The change was applied to the target layer.
+    Applied,
+    /// The target layer was not found
+    LayerNotFound,
 }
 
 /// Output configuration change result.

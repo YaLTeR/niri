@@ -118,6 +118,10 @@ impl MappedLayer {
         &self.rules
     }
 
+    pub fn rules_mut(&mut self) -> &mut ResolvedLayerRules {
+        &mut self.rules
+    }
+
     /// Recomputes the resolved layer rules and returns whether they changed.
     pub fn recompute_layer_rules(&mut self, rules: &[LayerRule], is_at_startup: bool) -> bool {
         let new_rules = ResolvedLayerRules::compute(rules, &self.surface, is_at_startup);
