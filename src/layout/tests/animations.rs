@@ -989,16 +989,14 @@ fn width_resize_and_cancel() {
     check_ops_on_layout(&mut layout, &ops);
 
     // Since the resize animation is cancelled, the width goes to the new value immediately. The X
-    // position doesn't jump, instead the animation is offset to preserve the current position.
-    //
-    // FIXME: this is not currently the case!
+    // position doesn't jump, instead the animation is restarted to preserve the current position.
     assert_snapshot!(format_tiles(&layout), @r"
     100 × 100 at x:  0 y:  0
-    200 × 200 at x:  5 y:  0
+    200 × 200 at x:105 y:  0
     ");
 
     // Advance to the end of the move animation.
-    Op::AdvanceAnimations { msec_delta: 950 }.apply(&mut layout);
+    Op::AdvanceAnimations { msec_delta: 1000 }.apply(&mut layout);
 
     // Final state.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -1081,16 +1079,14 @@ fn width_resize_and_cancel_of_column_to_the_left() {
     check_ops_on_layout(&mut layout, &ops);
 
     // Since the resize animation is cancelled, the width goes to the new value immediately. The X
-    // position doesn't jump, instead the animation is offset to preserve the current position.
-    //
-    // FIXME: this is not currently the case!
+    // position doesn't jump, instead the animation is restarted to preserve the current position.
     assert_snapshot!(format_tiles(&layout), @r"
-    100 × 100 at x: 95 y:  0
+    100 × 100 at x: -5 y:  0
     200 × 200 at x:100 y:  0
     ");
 
     // Advance to the end of the move animation.
-    Op::AdvanceAnimations { msec_delta: 950 }.apply(&mut layout);
+    Op::AdvanceAnimations { msec_delta: 1000 }.apply(&mut layout);
 
     // Final state.
     assert_snapshot!(format_tiles(&layout), @r"
