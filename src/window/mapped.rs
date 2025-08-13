@@ -587,7 +587,7 @@ impl LayoutElement for Mapped {
                     (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
                     scale,
                     alpha,
-                    Kind::Unspecified,
+                    Kind::ScanoutCandidate,
                 ));
             }
 
@@ -597,7 +597,7 @@ impl LayoutElement for Mapped {
                 buf_pos.to_physical_precise_round(scale),
                 scale,
                 alpha,
-                Kind::Unspecified,
+                Kind::ScanoutCandidate,
             );
         }
 
@@ -627,7 +627,7 @@ impl LayoutElement for Mapped {
                 buf_pos.to_physical_precise_round(scale),
                 scale,
                 alpha,
-                Kind::Unspecified,
+                Kind::ScanoutCandidate,
             )
         }
     }
@@ -656,7 +656,7 @@ impl LayoutElement for Mapped {
                     (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
                     scale,
                     alpha,
-                    Kind::Unspecified,
+                    Kind::ScanoutCandidate,
                 ));
             }
 
