@@ -1249,22 +1249,47 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let offset = prev_width - self.data[col_idx].width;
 
         // Move other columns in tandem with resizing.
-        let started_resize_anim =
-            column.tiles[tile_idx].resize_animation().is_some() && offset != 0.;
-        if started_resize_anim {
+        let ongoing_resize_anim = column.tiles[tile_idx].resize_animation().is_some();
+        if offset != 0. {
             if self.active_column_idx <= col_idx {
                 for col in &mut self.columns[col_idx + 1..] {
-                    col.animate_move_from_with_config(
-                        offset,
-                        self.options.animations.window_resize.anim,
-                    );
+                    // If there's a resize animation on the tile (that may have just started in
+                    // column.update_window()), then the apparent size change is smooth with no
+                    // sudden jumps. This corresponds to adding an X animation to adjacent columns.
+                    //
+                    // There could also be no resize animation with nonzero offset. This could
+                    // happen for example:
+                    // - if the window resized on its own, which we don't animate
+                    // - if the window resized by less than 10 px (the resize threshold)
+                    //
+                    // The latter case could also cancel an ongoing resize animation.
+                    //
+                    // Now, stationary columns shouldn't react to this offset change in any way,
+                    // i.e. their apparent X position should jump together with the resize.
+                    // However, adjacent columns that are already animating an X movement should
+                    // offset their animations to avoid the jump.
+                    //
+                    // Notably, this is necessary to fix the animation jump when resizing width back
+                    // and forth in quick succession (in a way that cancels the resize animation).
+                    if ongoing_resize_anim {
+                        col.animate_move_from_with_config(
+                            offset,
+                            self.options.animations.window_resize.anim,
+                        );
+                    } else {
+                        col.offset_move_anim_current(offset);
+                    }
                 }
             } else {
                 for col in &mut self.columns[..=col_idx] {
-                    col.animate_move_from_with_config(
-                        -offset,
-                        self.options.animations.window_resize.anim,
-                    );
+                    if ongoing_resize_anim {
+                        col.animate_move_from_with_config(
+                            -offset,
+                            self.options.animations.window_resize.anim,
+                        );
+                    } else {
+                        col.offset_move_anim_current(-offset);
+                    }
                 }
             }
         }
@@ -1323,7 +1348,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
                 // Synchronize the horizontal view movement with the resize so that it looks nice.
                 // This is especially important for always-centered view.
-                let config = if started_resize_anim {
+                let config = if ongoing_resize_anim {
                     self.options.animations.window_resize.anim
                 } else {
                     self.options.animations.horizontal_view_movement.0
@@ -3979,6 +4004,17 @@ impl<W: LayoutElement> Column<W> {
             anim,
             from: from_x_offset + current_offset,
         });
+    }
+
+    pub fn offset_move_anim_current(&mut self, offset: f64) {
+        if let Some(move_) = self.move_animation.as_mut() {
+            // If the anim is almost done, there's little point trying to offset it; we can let
+            // things jump. If it turns out like a bad idea, we could restart the anim intead.
+            let value = move_.anim.value();
+            if value > 0.001 {
+                move_.from += offset / value;
+            }
+        }
     }
 
     pub fn contains(&self, window: &W::Id) -> bool {
