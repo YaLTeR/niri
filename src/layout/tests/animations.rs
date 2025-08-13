@@ -913,3 +913,188 @@ fn height_resize_cancel_with_stationary_second_window() {
     200 × 200 at x:  0 y:100
     ");
 }
+
+#[test]
+fn width_resize_and_cancel() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::FocusColumnLeft,
+        Op::SetForcedSize {
+            id: 1,
+            size: Some(Size::new(100, 100)),
+        },
+        Op::SetForcedSize {
+            id: 2,
+            size: Some(Size::new(200, 200)),
+        },
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+    let mut layout = check_ops_with_options(make_options(), &ops);
+
+    // The initial state.
+    assert_snapshot!(format_tiles(&layout), @r"
+    100 × 100 at x:  0 y:  0
+    200 × 200 at x:100 y:  0
+    ");
+
+    let ops = [
+        // Issue a resize.
+        Op::SetWindowWidth {
+            id: None,
+            change: SizeChange::SetFixed(200),
+        },
+        // The left window grows in response.
+        Op::SetForcedSize {
+            id: 1,
+            size: Some(Size::new(200, 100)),
+        },
+        // This starts the resize animation.
+        Op::Communicate(1),
+        Op::Communicate(2),
+        // Advance the time slightly.
+        Op::AdvanceAnimations { msec_delta: 50 },
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // Left window is half-resized at 105 px wide, right window is at x=105 matching it.
+    assert_snapshot!(format_tiles(&layout), @r"
+    105 × 100 at x:  0 y:  0
+    200 × 200 at x:105 y:  0
+    ");
+
+    let ops = [
+        // Issue a resize back.
+        Op::SetWindowWidth {
+            id: None,
+            change: SizeChange::SetFixed(100),
+        },
+        // The top window shrinks in response.
+        Op::SetForcedSize {
+            id: 1,
+            size: Some(Size::new(100, 100)),
+        },
+        // This cancels the resize animation since the change of 5 px is less than the resize
+        // animation threshold.
+        Op::Communicate(1),
+        Op::Communicate(2),
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // Since the resize animation is cancelled, the width goes to the new value immediately. The X
+    // position doesn't jump, instead the animation is offset to preserve the current position.
+    //
+    // FIXME: this is not currently the case!
+    assert_snapshot!(format_tiles(&layout), @r"
+    100 × 100 at x:  0 y:  0
+    200 × 200 at x:  5 y:  0
+    ");
+
+    // Advance to the end of the move animation.
+    Op::AdvanceAnimations { msec_delta: 950 }.apply(&mut layout);
+
+    // Final state.
+    assert_snapshot!(format_tiles(&layout), @r"
+    100 × 100 at x:  0 y:  0
+    200 × 200 at x:100 y:  0
+    ");
+}
+
+#[test]
+fn width_resize_and_cancel_of_column_to_the_left() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::SetForcedSize {
+            id: 1,
+            size: Some(Size::new(100, 100)),
+        },
+        Op::SetForcedSize {
+            id: 2,
+            size: Some(Size::new(200, 200)),
+        },
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+    let mut layout = check_ops_with_options(make_options(), &ops);
+
+    // The initial state.
+    assert_snapshot!(format_tiles(&layout), @r"
+    100 × 100 at x:  0 y:  0
+    200 × 200 at x:100 y:  0
+    ");
+
+    let ops = [
+        // Issue a resize.
+        Op::SetWindowWidth {
+            id: Some(1),
+            change: SizeChange::SetFixed(200),
+        },
+        // The left window grows in response.
+        Op::SetForcedSize {
+            id: 1,
+            size: Some(Size::new(200, 100)),
+        },
+        // This starts the resize animation.
+        Op::Communicate(1),
+        Op::Communicate(2),
+        // Advance the time slightly.
+        Op::AdvanceAnimations { msec_delta: 50 },
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // Left window is half-resized at 105 px wide, it's at x=-5 matching the right edge position.
+    assert_snapshot!(format_tiles(&layout), @r"
+    105 × 100 at x: -5 y:  0
+    200 × 200 at x:100 y:  0
+    ");
+
+    let ops = [
+        // Issue a resize back.
+        Op::SetWindowWidth {
+            id: Some(1),
+            change: SizeChange::SetFixed(100),
+        },
+        // The top window shrinks in response.
+        Op::SetForcedSize {
+            id: 1,
+            size: Some(Size::new(100, 100)),
+        },
+        // This cancels the resize animation since the change of 5 px is less than the resize
+        // animation threshold.
+        Op::Communicate(1),
+        Op::Communicate(2),
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // Since the resize animation is cancelled, the width goes to the new value immediately. The X
+    // position doesn't jump, instead the animation is offset to preserve the current position.
+    //
+    // FIXME: this is not currently the case!
+    assert_snapshot!(format_tiles(&layout), @r"
+    100 × 100 at x: 95 y:  0
+    200 × 200 at x:100 y:  0
+    ");
+
+    // Advance to the end of the move animation.
+    Op::AdvanceAnimations { msec_delta: 950 }.apply(&mut layout);
+
+    // Final state.
+    assert_snapshot!(format_tiles(&layout), @r"
+    100 × 100 at x:  0 y:  0
+    200 × 200 at x:100 y:  0
+    ");
+}
