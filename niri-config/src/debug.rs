@@ -15,6 +15,8 @@ pub struct DebugConfig {
     #[knuffel(child)]
     pub disable_direct_scanout: bool,
     #[knuffel(child)]
+    pub keep_max_bpc_unchanged: bool,
+    #[knuffel(child)]
     pub restrict_primary_scanout_to_matching_format: bool,
     #[knuffel(child, unwrap(argument))]
     pub render_drm_device: Option<PathBuf>,
@@ -59,6 +61,9 @@ impl DebugConfig {
         }
         if other.disable_direct_scanout {
             self.disable_direct_scanout = true;
+        }
+        if other.keep_max_bpc_unchanged {
+            self.keep_max_bpc_unchanged = true;
         }
         if other.restrict_primary_scanout_to_matching_format {
             self.restrict_primary_scanout_to_matching_format = true;
