@@ -297,7 +297,7 @@ pub fn set_custom_open_program(renderer: &mut GlesRenderer, src: Option<&str>) {
     }
 }
 
-pub fn mat3_uniform(name: &str, mat: Mat3) -> Uniform {
+pub fn mat3_uniform(name: &str, mat: Mat3) -> Uniform<'_> {
     Uniform::new(
         name,
         UniformValue::Matrix3x3 {

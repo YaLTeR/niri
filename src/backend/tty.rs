@@ -857,10 +857,13 @@ impl Tty {
         }
         debug!("picking mode: {mode:?}");
 
-        // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to run.
-        match set_max_bpc(&device.drm, connector.handle(), 8) {
-            Ok(bpc) => debug!("set max bpc to {bpc}"),
-            Err(err) => debug!("error setting max bpc: {err:?}"),
+        if !niri.config.borrow().debug.keep_max_bpc_unchanged {
+            // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to
+            // run.
+            match set_max_bpc(&device.drm, connector.handle(), 8) {
+                Ok(bpc) => debug!("set max bpc to {bpc}"),
+                Err(err) => debug!("error setting max bpc: {err:?}"),
+            }
         }
 
         let mut gamma_props = GammaProps::new(&device.drm, crtc)
@@ -920,6 +923,11 @@ impl Tty {
                 subpixel: connector.subpixel().into(),
                 model: output_name.model.as_deref().unwrap_or("Unknown").to_owned(),
                 make: output_name.make.as_deref().unwrap_or("Unknown").to_owned(),
+                serial_number: output_name
+                    .serial
+                    .as_deref()
+                    .unwrap_or("Unknown")
+                    .to_owned(),
             },
         );
 

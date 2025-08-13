@@ -23,8 +23,7 @@ use niri::utils::spawning::{
     spawn, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV, REMOVE_ENV_RUST_BACKTRACE,
     REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
-use niri::utils::watcher::Watcher;
-use niri::utils::{cause_panic, version, xwayland, IS_SYSTEMD_SERVICE};
+use niri::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
 use niri_config::ConfigPath;
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
@@ -230,27 +229,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Set up config file watcher.
-    let _watcher = {
-        // Parsing the config actually takes > 20 ms on my beefy machine, so let's do it on the
-        // watcher thread.
-        let process = |path: &ConfigPath| {
-            path.load().map_err(|err| {
-                warn!("{err:?}");
-            })
-        };
-
-        let (tx, rx) = calloop::channel::sync_channel(1);
-        let watcher = Watcher::new(config_path.clone(), process, tx);
-        event_loop
-            .handle()
-            .insert_source(rx, |event, _, state| match event {
-                calloop::channel::Event::Msg(config) => state.reload_config(config),
-                calloop::channel::Event::Closed => (),
-            })
-            .unwrap();
-        watcher
-    };
+    watcher::setup(&mut state, &config_path);
 
     // Spawn commands from cli and auto-start.
     spawn(cli.command, None);

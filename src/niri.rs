@@ -164,6 +164,7 @@ use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
+use crate::utils::watcher::Watcher;
 use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
@@ -189,6 +190,8 @@ pub struct Niri {
     /// reloading the config from disk to determine if the output configuration should be reloaded
     /// (and transient changes dropped).
     pub config_file_output_config: niri_config::Outputs,
+
+    pub config_file_watcher: Option<Watcher>,
 
     pub event_loop: LoopHandle<'static, State>,
     pub scheduler: Scheduler<()>,
@@ -2531,6 +2534,7 @@ impl Niri {
         let mut niri = Self {
             config,
             config_file_output_config,
+            config_file_watcher: None,
 
             event_loop,
             scheduler,
@@ -3746,7 +3750,7 @@ impl Niri {
                 pointer_pos,
                 output_scale,
                 1.,
-                Kind::Unspecified,
+                Kind::ScanoutCandidate,
             ));
         }
 
@@ -4143,7 +4147,7 @@ impl Niri {
                     (0, 0),
                     output_scale,
                     1.,
-                    Kind::Unspecified,
+                    Kind::ScanoutCandidate,
                 ));
             }
 
@@ -4849,6 +4853,7 @@ impl Niri {
                 subpixel: Subpixel::Unknown,
                 make: String::new(),
                 model: String::new(),
+                serial_number: String::new(),
             },
         );
         let output = &output;

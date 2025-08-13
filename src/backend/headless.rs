@@ -45,6 +45,7 @@ impl Headless {
                 subpixel: Subpixel::Unknown,
                 make: make.clone(),
                 model: model.clone(),
+                serial_number: serial.clone(),
             },
         );
 
