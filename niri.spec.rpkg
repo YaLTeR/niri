@@ -76,6 +76,8 @@ BuildRequires:  pango-devel
 BuildRequires:  cairo-gobject-devel
 # Needed for pipewire-rs
 BuildRequires:  clang
+# Needed for some tests with a surfaceless EGL renderer
+BuildRequires:  mesa-libEGL
 
 Requires:       mesa-dri-drivers
 Requires:       mesa-libEGL
