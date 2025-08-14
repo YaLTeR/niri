@@ -316,11 +316,11 @@ impl Tty {
 
         let mut node_path = String::new();
         if let Some(path) = primary_render_node.dev_path() {
-            write!(node_path, "{:?}", path).unwrap();
+            write!(node_path, "{path:?}").unwrap();
         } else {
-            write!(node_path, "{}", primary_render_node).unwrap();
+            write!(node_path, "{primary_render_node}").unwrap();
         }
-        info!("using as the render node: {}", node_path);
+        info!("using as the render node: {node_path}");
 
         Ok(Self {
             config,
@@ -857,10 +857,13 @@ impl Tty {
         }
         debug!("picking mode: {mode:?}");
 
-        // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to run.
-        match set_max_bpc(&device.drm, connector.handle(), 8) {
-            Ok(bpc) => debug!("set max bpc to {bpc}"),
-            Err(err) => debug!("error setting max bpc: {err:?}"),
+        if !niri.config.borrow().debug.keep_max_bpc_unchanged {
+            // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to
+            // run.
+            match set_max_bpc(&device.drm, connector.handle(), 8) {
+                Ok(bpc) => debug!("set max bpc to {bpc}"),
+                Err(err) => debug!("error setting max bpc: {err:?}"),
+            }
         }
 
         let mut gamma_props = GammaProps::new(&device.drm, crtc)
@@ -920,6 +923,11 @@ impl Tty {
                 subpixel: connector.subpixel().into(),
                 model: output_name.model.as_deref().unwrap_or("Unknown").to_owned(),
                 make: output_name.make.as_deref().unwrap_or("Unknown").to_owned(),
+                serial_number: output_name
+                    .serial
+                    .as_deref()
+                    .unwrap_or("Unknown")
+                    .to_owned(),
             },
         );
 
@@ -972,7 +980,7 @@ impl Tty {
             surface,
             None,
             allocator.clone(),
-            GbmFramebufferExporter::new(device.gbm.clone(), Some(device.render_node)),
+            GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
             SUPPORTED_COLOR_FORMATS,
             // This is only used to pick a good internal format, so it can use the surface's render
             // formats, even though we only ever render on the primary GPU.
@@ -1002,7 +1010,7 @@ impl Tty {
                     surface,
                     None,
                     allocator,
-                    GbmFramebufferExporter::new(device.gbm.clone(), Some(device.render_node)),
+                    GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
                     SUPPORTED_COLOR_FORMATS,
                     render_formats,
                     device.drm.cursor_size(),

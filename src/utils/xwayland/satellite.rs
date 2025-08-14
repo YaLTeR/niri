@@ -163,27 +163,29 @@ fn setup_watch(state: &mut State) {
         event_loop.remove(token);
     }
 
-    let fd = satellite.x11.abstract_fd.try_clone().unwrap();
-    let fd = clear_out_pending_connections(fd);
-    let source = Generic::new(fd, Interest::READ, Mode::Level);
-    let token = event_loop
-        .insert_source(source, move |_, _, state| {
-            if let Some(satellite) = &mut state.niri.satellite {
-                // Remove the other source.
-                if let Some(token) = satellite.unix_token.take() {
-                    state.niri.event_loop.remove(token);
-                }
-                // Clear this source.
-                satellite.abstract_token = None;
+    if let Some(fd) = &satellite.x11.abstract_fd {
+        let fd = fd.try_clone().unwrap();
+        let fd = clear_out_pending_connections(fd);
+        let source = Generic::new(fd, Interest::READ, Mode::Level);
+        let token = event_loop
+            .insert_source(source, move |_, _, state| {
+                if let Some(satellite) = &mut state.niri.satellite {
+                    // Remove the other source.
+                    if let Some(token) = satellite.unix_token.take() {
+                        state.niri.event_loop.remove(token);
+                    }
+                    // Clear this source.
+                    satellite.abstract_token = None;
 
-                debug!("connection to X11 abstract socket; spawning xwayland-satellite");
-                let path = state.niri.config.borrow().xwayland_satellite.path.clone();
-                spawn(path, satellite);
-            }
-            Ok(PostAction::Remove)
-        })
-        .unwrap();
-    satellite.abstract_token = Some(token);
+                    debug!("connection to X11 abstract socket; spawning xwayland-satellite");
+                    let path = state.niri.config.borrow().xwayland_satellite.path.clone();
+                    spawn(path, satellite);
+                }
+                Ok(PostAction::Remove)
+            })
+            .unwrap();
+        satellite.abstract_token = Some(token);
+    }
 
     let fd = satellite.x11.unix_fd.try_clone().unwrap();
     let fd = clear_out_pending_connections(fd);
@@ -211,7 +213,11 @@ fn setup_watch(state: &mut State) {
 fn spawn(path: String, xwl: &Satellite) {
     let _span = tracy_client::span!("satellite::spawn");
 
-    let abstract_fd = xwl.x11.abstract_fd.try_clone().unwrap();
+    let abstract_fd = xwl
+        .x11
+        .abstract_fd
+        .as_ref()
+        .map(|fd| fd.try_clone().unwrap());
     let unix_fd = xwl.x11.unix_fd.try_clone().unwrap();
     let to_main = xwl.to_main.clone();
 
@@ -238,6 +244,8 @@ fn spawn(path: String, xwl: &Satellite) {
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
+    unsafe { process.pre_exec(crate::utils::signals::unblock_all) };
+
     // Spawning and waiting takes some milliseconds, so do it in a thread.
     let res = thread::Builder::new()
         .name("Xwl-s Spawner".to_owned())
@@ -255,15 +263,20 @@ fn spawn(path: String, xwl: &Satellite) {
     }
 }
 
-fn spawn_and_wait(path: &Path, mut process: Command, abstract_fd: OwnedFd, unix_fd: OwnedFd) {
-    let abstract_raw = abstract_fd.as_raw_fd();
+fn spawn_and_wait(
+    path: &Path,
+    mut process: Command,
+    abstract_fd: Option<OwnedFd>,
+    unix_fd: OwnedFd,
+) {
+    let abstract_raw = abstract_fd.as_ref().map(|fd| fd.as_raw_fd());
     let unix_raw = unix_fd.as_raw_fd();
 
-    process
-        .arg("-listenfd")
-        .arg(abstract_raw.to_string())
-        .arg("-listenfd")
-        .arg(unix_raw.to_string());
+    process.arg("-listenfd").arg(unix_raw.to_string());
+
+    if let Some(abstract_raw) = abstract_raw {
+        process.arg("-listenfd").arg(abstract_raw.to_string());
+    }
 
     unsafe {
         process.pre_exec(move || {
@@ -271,11 +284,13 @@ fn spawn_and_wait(path: &Path, mut process: Command, abstract_fd: OwnedFd, unix_
             // that we want to pass it.
 
             // We're not dropping these until after spawn().
-            let abstract_fd = BorrowedFd::borrow_raw(abstract_raw);
             let unix_fd = BorrowedFd::borrow_raw(unix_raw);
-
-            fcntl_setfd(abstract_fd, FdFlags::empty())?;
             fcntl_setfd(unix_fd, FdFlags::empty())?;
+
+            if let Some(abstract_raw) = abstract_raw {
+                let abstract_fd = BorrowedFd::borrow_raw(abstract_raw);
+                fcntl_setfd(abstract_fd, FdFlags::empty())?;
+            }
 
             Ok(())
         })

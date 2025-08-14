@@ -332,7 +332,7 @@ pub enum Action {
     FocusWindowUpOrColumnLeft {},
     /// Focus the window above or the column to the right.
     FocusWindowUpOrColumnRight {},
-    /// Focus the window or the workspace above.
+    /// Focus the window or the workspace below.
     FocusWindowOrWorkspaceDown {},
     /// Focus the window or the workspace above.
     FocusWindowOrWorkspaceUp {},
@@ -840,6 +840,11 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
+    /// Reload the config file.
+    ///
+    /// Can be useful for scripts changing the config file, to avoid waiting the small duration for
+    /// niri's config file watcher to notice the changes.
+    LoadConfigFile {},
 }
 
 /// Change in window or column size.

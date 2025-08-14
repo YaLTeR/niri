@@ -21,7 +21,6 @@ debug {
     force-pipewire-invalid-modifier
     dbus-interfaces-in-non-session-instances
     wait-for-frame-completion-before-queueing
-    wait-for-frame-completion-in-pipewire
     emulate-zero-presentation-time
     disable-resize-throttling
     disable-transactions
@@ -31,6 +30,7 @@ debug {
     honor-xdg-activation-with-invalid-serial
     skip-cursor-only-updates-during-vrr
     deactivate-unfocused-windows
+    keep-max-bpc-unchanged
 }
 
 binds {
@@ -152,22 +152,6 @@ Useful for diagnosing certain synchronization and performance problems.
 ```kdl
 debug {
     wait-for-frame-completion-before-queueing
-}
-```
-
-### `wait-for-frame-completion-in-pipewire`
-
-<sup>Since: 25.05</sup>
-
-Wait until every screencast frame is done rendering before handing it over to PipeWire.
-
-Sometimes helps on NVIDIA to prevent glitched frames when screencasting.
-
-This debug flag will eventually be removed once we handle this properly (via explicit sync in PipeWire).
-
-```kdl
-debug {
-    wait-for-frame-completion-in-pipewire
 }
 ```
 
@@ -306,6 +290,23 @@ It will cause niri to drop the Activated state for all unfocused windows.
 ```kdl
 debug {
     deactivate-unfocused-windows
+}
+```
+
+### `keep-max-bpc-unchanged`
+
+<sup>Since: next release</sup>
+
+When connecting monitors, niri sets their max bpc to 8 in order to reduce display bandwidth and to potentially allow more monitors to be connected at once.
+Restricting bpc to 8 is not a problem since we don't support HDR or color management yet and can't really make use of higher bpc.
+
+Apparently, setting max bpc to 8 breaks some displays driven by AMDGPU.
+If this happens to you, set this debug flag, which will prevent niri from changing max bpc.
+AMDGPU bug report: https://gitlab.freedesktop.org/drm/amd/-/issues/4487.
+
+```kdl
+debug {
+    keep-max-bpc-unchanged
 }
 ```
 

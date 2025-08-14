@@ -120,7 +120,7 @@ impl ScreenCast {
 
         static NUMBER: AtomicUsize = AtomicUsize::new(0);
         let session_id = NUMBER.fetch_add(1, Ordering::SeqCst);
-        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{}", session_id);
+        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{session_id}");
         let path = OwnedObjectPath::try_from(path).unwrap();
 
         let session = Session::new(session_id, self.ipc_outputs.clone(), self.to_niri.clone());

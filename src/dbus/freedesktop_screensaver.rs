@@ -1,6 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::Context;
@@ -13,11 +13,12 @@ use zbus::{interface, Task};
 
 use super::Start;
 
+#[derive(Clone)]
 pub struct ScreenSaver {
     is_inhibited: Arc<AtomicBool>,
     is_broken: Arc<AtomicBool>,
     inhibitors: Arc<Mutex<HashMap<u32, OwnedUniqueName>>>,
-    counter: u32,
+    counter: Arc<AtomicU32>,
     monitor_task: Arc<OnceLock<Task<()>>>,
 }
 
@@ -43,16 +44,16 @@ impl ScreenSaver {
 
         let mut cookie = None;
         for _ in 0..3 {
-            // Start from 1 because some clients don't like 0.
-            self.counter = self.counter.wrapping_add(1);
-            if self.counter == 0 {
-                self.counter += 1;
+            let mut inhibitor_key = self.counter.fetch_add(1, Ordering::SeqCst);
+            if inhibitor_key == 0 {
+                // Some clients don't like 0, add one more.
+                inhibitor_key = self.counter.fetch_add(1, Ordering::SeqCst);
             }
 
-            if let Entry::Vacant(entry) = inhibitors.entry(self.counter) {
+            if let Entry::Vacant(entry) = inhibitors.entry(inhibitor_key) {
                 entry.insert(name);
                 self.is_inhibited.store(true, Ordering::SeqCst);
-                cookie = Some(self.counter);
+                let _ = cookie.insert(inhibitor_key);
                 break;
             }
         }
@@ -83,7 +84,8 @@ impl ScreenSaver {
             is_inhibited,
             is_broken: Arc::new(AtomicBool::new(false)),
             inhibitors: Arc::new(Mutex::new(HashMap::new())),
-            counter: 0,
+            // Start from 1 because some clients don't like 0.
+            counter: Arc::new(AtomicU32::new(1)),
             monitor_task: Arc::new(OnceLock::new()),
         }
     }
@@ -138,8 +140,15 @@ impl Start for ScreenSaver {
             | RequestNameFlags::ReplaceExisting
             | RequestNameFlags::DoNotQueue;
 
-        conn.object_server()
-            .at("/org/freedesktop/ScreenSaver", self)?;
+        let org_fd_ss_registered = conn
+            .object_server()
+            .at("/org/freedesktop/ScreenSaver", self.clone())?;
+        let ss_registered = conn.object_server().at("/ScreenSaver", self)?;
+
+        if !org_fd_ss_registered && !ss_registered {
+            anyhow::bail!("failed to register any org.freedesktop.ScreenSaver interface")
+        }
+
         conn.request_name_with_flags("org.freedesktop.ScreenSaver", flags)?;
 
         let async_conn = conn.inner();

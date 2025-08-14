@@ -1,5 +1,4 @@
 use std::os::fd::OwnedFd;
-use std::os::linux::net::SocketAddrExt;
 use std::os::unix::net::{SocketAddr, UnixListener};
 
 use anyhow::{anyhow, ensure, Context as _};
@@ -17,7 +16,8 @@ const X11_TMP_UNIX_DIR: &str = "/tmp/.X11-unix";
 
 struct X11Connection {
     display_name: String,
-    abstract_fd: OwnedFd,
+    // Optional because there are no abstract sockets on FreeBSD.
+    abstract_fd: Option<OwnedFd>,
     unix_fd: OwnedFd,
     _unix_guard: Unlink,
     _lock_guard: Unlink,
@@ -82,7 +82,10 @@ fn bind_to_socket(addr: &SocketAddr) -> anyhow::Result<UnixListener> {
     Ok(listener)
 }
 
+#[cfg(target_os = "linux")]
 fn bind_to_abstract_socket(display: u32) -> anyhow::Result<UnixListener> {
+    use std::os::linux::net::SocketAddrExt;
+
     let name = format!("/tmp/.X11-unix/X{display}");
     let addr = SocketAddr::from_abstract_name(name).unwrap();
     bind_to_socket(&addr)
@@ -97,8 +100,14 @@ fn bind_to_unix_socket(display: u32) -> anyhow::Result<(UnixListener, Unlink)> {
     bind_to_socket(&addr).map(|listener| (listener, guard))
 }
 
-fn open_display_sockets(display: u32) -> anyhow::Result<(UnixListener, UnixListener, Unlink)> {
-    let a = bind_to_abstract_socket(display).context("error binding to abstract socket")?;
+fn open_display_sockets(
+    display: u32,
+) -> anyhow::Result<(Option<UnixListener>, UnixListener, Unlink)> {
+    #[cfg(target_os = "linux")]
+    let a = Some(bind_to_abstract_socket(display).context("error binding to abstract socket")?);
+    #[cfg(not(target_os = "linux"))]
+    let a = None;
+
     let (u, g) = bind_to_unix_socket(display).context("error binding to unix socket")?;
     Ok((a, u, g))
 }
@@ -138,7 +147,7 @@ fn setup_connection() -> anyhow::Result<X11Connection> {
     };
 
     let display_name = format!(":{display}");
-    let abstract_fd = OwnedFd::from(a);
+    let abstract_fd = a.map(OwnedFd::from);
     let unix_fd = OwnedFd::from(u);
 
     Ok(X11Connection {

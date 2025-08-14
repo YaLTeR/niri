@@ -143,6 +143,34 @@ input {
 > }
 > ```
 
+> [!NOTE]
+>
+> <sup>Since: next release</sup>
+>
+> If the `xkb` section is empty (like it is by default), niri will fetch xkb settings from systemd-localed at `org.freedesktop.locale1` over D-Bus.
+> This way, for example, system installers can dynamically set the niri keyboard layout.
+> You can see this layout in `localectl` and change it with `localectl set-x11-keymap`, for example:
+>
+> ```sh
+> $ localectl set-x11-keymap "us" "" "colemak_dh_ortho" "compose:ralt,ctrl:nocaps"
+> $ localectl
+> System Locale: LANG=en_US.UTF-8
+>                LC_NUMERIC=ru_RU.UTF-8
+>                LC_TIME=ru_RU.UTF-8
+>                LC_MONETARY=ru_RU.UTF-8
+>                LC_PAPER=ru_RU.UTF-8
+>                LC_MEASUREMENT=ru_RU.UTF-8
+>     VC Keymap: us-colemak_dh_ortho
+>    X11 Layout: us
+>   X11 Variant: colemak_dh_ortho
+>   X11 Options: compose:ralt,ctrl:nocaps
+> ```
+>
+> By default, `localectl` will set the TTY keymap to the closest match of the XKB keymap.
+> You can prevent that with a `--no-convert` flag, for example: `localectl set-x11-keymap --no-convert "us,ru"`.
+>
+> These settings are picked up by some other programs too, like GDM.
+
 When using multiple layouts, niri can remember the current layout globally (the default) or per-window.
 You can control this with the `track-layout` option.
 

@@ -176,7 +176,7 @@ pub struct Column<W: LayoutElement> {
     tab_indicator: TabIndicator,
 
     /// Animation of the render offset during window swapping.
-    move_animation: Option<Animation>,
+    move_animation: Option<MoveAnimation>,
 
     /// Latest known view size for this column's workspace.
     view_size: Size<f64, Logical>,
@@ -252,6 +252,12 @@ pub enum WindowHeight {
 pub enum ScrollDirection {
     Left,
     Right,
+}
+
+#[derive(Debug)]
+struct MoveAnimation {
+    anim: Animation,
+    from: f64,
 }
 
 impl<W: LayoutElement> ScrollingSpace<W> {
@@ -1244,22 +1250,47 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let offset = prev_width - self.data[col_idx].width;
 
         // Move other columns in tandem with resizing.
-        let started_resize_anim =
-            column.tiles[tile_idx].resize_animation().is_some() && offset != 0.;
-        if started_resize_anim {
+        let ongoing_resize_anim = column.tiles[tile_idx].resize_animation().is_some();
+        if offset != 0. {
             if self.active_column_idx <= col_idx {
                 for col in &mut self.columns[col_idx + 1..] {
-                    col.animate_move_from_with_config(
-                        offset,
-                        self.options.animations.window_resize.anim,
-                    );
+                    // If there's a resize animation on the tile (that may have just started in
+                    // column.update_window()), then the apparent size change is smooth with no
+                    // sudden jumps. This corresponds to adding an X animation to adjacent columns.
+                    //
+                    // There could also be no resize animation with nonzero offset. This could
+                    // happen for example:
+                    // - if the window resized on its own, which we don't animate
+                    // - if the window resized by less than 10 px (the resize threshold)
+                    //
+                    // The latter case could also cancel an ongoing resize animation.
+                    //
+                    // Now, stationary columns shouldn't react to this offset change in any way,
+                    // i.e. their apparent X position should jump together with the resize.
+                    // However, adjacent columns that are already animating an X movement should
+                    // offset their animations to avoid the jump.
+                    //
+                    // Notably, this is necessary to fix the animation jump when resizing width back
+                    // and forth in quick succession (in a way that cancels the resize animation).
+                    if ongoing_resize_anim {
+                        col.animate_move_from_with_config(
+                            offset,
+                            self.options.animations.window_resize.anim,
+                        );
+                    } else {
+                        col.offset_move_anim_current(offset);
+                    }
                 }
             } else {
                 for col in &mut self.columns[..=col_idx] {
-                    col.animate_move_from_with_config(
-                        -offset,
-                        self.options.animations.window_resize.anim,
-                    );
+                    if ongoing_resize_anim {
+                        col.animate_move_from_with_config(
+                            -offset,
+                            self.options.animations.window_resize.anim,
+                        );
+                    } else {
+                        col.offset_move_anim_current(-offset);
+                    }
                 }
             }
         }
@@ -1318,7 +1349,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
                 // Synchronize the horizontal view movement with the resize so that it looks nice.
                 // This is especially important for always-centered view.
-                let config = if started_resize_anim {
+                let config = if ongoing_resize_anim {
                     self.options.animations.window_resize.anim
                 } else {
                     self.options.animations.horizontal_view_movement.0
@@ -3892,8 +3923,8 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn advance_animations(&mut self) {
-        if let Some(anim) = &mut self.move_animation {
-            if anim.is_done() {
+        if let Some(move_) = &mut self.move_animation {
+            if move_.anim.is_done() {
                 self.move_animation = None;
             }
         }
@@ -3971,8 +4002,8 @@ impl<W: LayoutElement> Column<W> {
     pub fn render_offset(&self) -> Point<f64, Logical> {
         let mut offset = Point::from((0., 0.));
 
-        if let Some(anim) = &self.move_animation {
-            offset.x += anim.value();
+        if let Some(move_) = &self.move_animation {
+            offset.x += move_.from * move_.anim.value();
         }
 
         offset
@@ -3990,15 +4021,27 @@ impl<W: LayoutElement> Column<W> {
         from_x_offset: f64,
         config: niri_config::Animation,
     ) {
-        let current_offset = self.move_animation.as_ref().map_or(0., Animation::value);
+        let current_offset = self
+            .move_animation
+            .as_ref()
+            .map_or(0., |move_| move_.from * move_.anim.value());
 
-        self.move_animation = Some(Animation::new(
-            self.clock.clone(),
-            from_x_offset + current_offset,
-            0.,
-            0.,
-            config,
-        ));
+        let anim = Animation::new(self.clock.clone(), 1., 0., 0., config);
+        self.move_animation = Some(MoveAnimation {
+            anim,
+            from: from_x_offset + current_offset,
+        });
+    }
+
+    pub fn offset_move_anim_current(&mut self, offset: f64) {
+        if let Some(move_) = self.move_animation.as_mut() {
+            // If the anim is almost done, there's little point trying to offset it; we can let
+            // things jump. If it turns out like a bad idea, we could restart the anim intead.
+            let value = move_.anim.value();
+            if value > 0.001 {
+                move_.from += offset / value;
+            }
+        }
     }
 
     pub fn contains(&self, window: &W::Id) -> bool {
@@ -4074,17 +4117,16 @@ impl<W: LayoutElement> Column<W> {
             .find(|(_, tile)| tile.window().id() == window)
             .unwrap();
 
-        let offset = if tile.prefer_expected_size {
-            0.
-        } else {
-            let height = f64::from(tile.window().size().h);
-            tile.window()
-                .animation_snapshot()
-                .map_or(0., |from| from.size.h - height)
-        };
+        let prev_height = self.data[tile_idx].size.h;
 
         tile.update_window();
         self.data[tile_idx].update(tile);
+
+        let offset = if tile.prefer_expected_size {
+            0.
+        } else {
+            prev_height - self.data[tile_idx].size.h
+        };
 
         let is_tabbed = self.display_mode == ColumnDisplay::Tabbed;
 
@@ -4094,12 +4136,35 @@ impl<W: LayoutElement> Column<W> {
         // windows in the column, so they should all be animated. How should this interact with
         // animated vs. non-animated resizes? For example, an animated +20 resize followed by two
         // non-animated -10 resizes.
-        if !is_tabbed && tile.resize_animation().is_some() && offset != 0. {
-            for tile in &mut self.tiles[tile_idx + 1..] {
-                tile.animate_move_y_from_with_config(
-                    offset,
-                    self.options.animations.window_resize.anim,
-                );
+        if !is_tabbed && offset != 0. {
+            if tile.resize_animation().is_some() {
+                // If there's a resize animation (that may have just started in
+                // tile.update_window()), then the apparent size change is smooth with no sudden
+                // jumps. This corresponds to adding an Y animation to tiles below.
+                for tile in &mut self.tiles[tile_idx + 1..] {
+                    tile.animate_move_y_from_with_config(
+                        offset,
+                        self.options.animations.window_resize.anim,
+                    );
+                }
+            } else {
+                // There's no resize animation, but the offset is nonzero. This could happen for
+                // example:
+                // - if the window resized on its own, which we don't animate
+                // - if the window resized by less than 10 px (the resize threshold)
+                //
+                // The latter case could also cancel an ongoing resize animation.
+                //
+                // Now, stationary tiles below shouldn't react to this offset change in any way,
+                // i.e. their apparent Y position should jump together with the resize. However,
+                // tiles below that are already animating an Y movement should offset their
+                // animations to avoid the jump.
+                //
+                // Notably, this is necessary to fix the animation jump when resizing height back
+                // and forth in quick succession (in a way that cancels the resize animation).
+                for tile in &mut self.tiles[tile_idx + 1..] {
+                    tile.offset_move_y_anim_current(offset);
+                }
             }
         }
     }

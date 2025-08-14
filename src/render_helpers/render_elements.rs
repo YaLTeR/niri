@@ -113,7 +113,7 @@ macro_rules! niri_render_elements {
                 }
             }
 
-            fn underlying_storage(&self, renderer: &mut smithay::backend::renderer::gles::GlesRenderer) -> Option<smithay::backend::renderer::element::UnderlyingStorage> {
+            fn underlying_storage(&self, renderer: &mut smithay::backend::renderer::gles::GlesRenderer) -> Option<smithay::backend::renderer::element::UnderlyingStorage<'_>> {
                 match self {
                     $($name::$variant(elem) => elem.underlying_storage(renderer)),+
                 }
@@ -141,7 +141,7 @@ macro_rules! niri_render_elements {
             fn underlying_storage(
                 &self,
                 renderer: &mut $crate::backend::tty::TtyRenderer<'render>,
-            ) -> Option<smithay::backend::renderer::element::UnderlyingStorage> {
+            ) -> Option<smithay::backend::renderer::element::UnderlyingStorage<'_>> {
                 match self {
                     $($name::$variant(elem) => elem.underlying_storage(renderer)),+
                 }

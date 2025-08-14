@@ -56,7 +56,7 @@ pub enum Sub {
     /// Cause a panic to check if the backtraces are good.
     Panic,
     /// Generate shell completions.
-    Completions { shell: Shell },
+    Completions { shell: CompletionShell },
 }
 
 #[derive(Subcommand)]
@@ -107,4 +107,29 @@ pub enum Msg {
     RequestError,
     /// Print the overview state.
     OverviewState,
+}
+
+#[derive(Clone, Debug, clap::ValueEnum)]
+pub enum CompletionShell {
+    Bash,
+    Elvish,
+    Fish,
+    PowerShell,
+    Zsh,
+    Nushell,
+}
+
+impl TryFrom<CompletionShell> for Shell {
+    type Error = &'static str;
+
+    fn try_from(shell: CompletionShell) -> Result<Self, Self::Error> {
+        match shell {
+            CompletionShell::Bash => Ok(Shell::Bash),
+            CompletionShell::Elvish => Ok(Shell::Elvish),
+            CompletionShell::Fish => Ok(Shell::Fish),
+            CompletionShell::PowerShell => Ok(Shell::PowerShell),
+            CompletionShell::Zsh => Ok(Shell::Zsh),
+            CompletionShell::Nushell => Err("Nushell should be handled separately"),
+        }
+    }
 }
