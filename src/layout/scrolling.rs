@@ -176,7 +176,7 @@ pub struct Column<W: LayoutElement> {
     tab_indicator: TabIndicator,
 
     /// Animation of the render offset during window swapping.
-    move_animation: Option<Animation>,
+    move_animation: Option<MoveAnimation>,
 
     /// Latest known view size for this column's workspace.
     view_size: Size<f64, Logical>,
@@ -252,6 +252,12 @@ pub enum WindowHeight {
 pub enum ScrollDirection {
     Left,
     Right,
+}
+
+#[derive(Debug)]
+struct MoveAnimation {
+    anim: Animation,
+    from: f64,
 }
 
 impl<W: LayoutElement> ScrollingSpace<W> {
@@ -3878,8 +3884,8 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn advance_animations(&mut self) {
-        if let Some(anim) = &mut self.move_animation {
-            if anim.is_done() {
+        if let Some(move_) = &mut self.move_animation {
+            if move_.anim.is_done() {
                 self.move_animation = None;
             }
         }
@@ -3944,8 +3950,8 @@ impl<W: LayoutElement> Column<W> {
     pub fn render_offset(&self) -> Point<f64, Logical> {
         let mut offset = Point::from((0., 0.));
 
-        if let Some(anim) = &self.move_animation {
-            offset.x += anim.value();
+        if let Some(move_) = &self.move_animation {
+            offset.x += move_.from * move_.anim.value();
         }
 
         offset
@@ -3963,15 +3969,16 @@ impl<W: LayoutElement> Column<W> {
         from_x_offset: f64,
         config: niri_config::Animation,
     ) {
-        let current_offset = self.move_animation.as_ref().map_or(0., Animation::value);
+        let current_offset = self
+            .move_animation
+            .as_ref()
+            .map_or(0., |move_| move_.from * move_.anim.value());
 
-        self.move_animation = Some(Animation::new(
-            self.clock.clone(),
-            from_x_offset + current_offset,
-            0.,
-            0.,
-            config,
-        ));
+        let anim = Animation::new(self.clock.clone(), 1., 0., 0., config);
+        self.move_animation = Some(MoveAnimation {
+            anim,
+            from: from_x_offset + current_offset,
+        });
     }
 
     pub fn contains(&self, window: &W::Id) -> bool {
