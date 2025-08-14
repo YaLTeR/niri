@@ -309,7 +309,15 @@ mod tests {
         }
     }
 
+    // All tests are currently ignored because they are flaky. Presumably, this is because the
+    // watcher thread sleeps can align with test thread runs in such a way that the watcher wakes
+    // up in the middle between operations and ends up reporting a change one more time than
+    // expected, leading to test failures on the final unchanged check.
+    //
+    // https://github.com/YaLTeR/niri/issues/2226
+
     #[test]
+    #[ignore]
     fn change_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -323,6 +331,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn overwrite_but_dont_change_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -336,6 +345,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn touch_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -349,6 +359,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn create_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.create_dir("niri"))
@@ -362,6 +373,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn create_dir_and_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .without_setup()
@@ -374,6 +386,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn change_linked_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| {
@@ -390,6 +403,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn change_file_in_linked_dir() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| {
@@ -406,6 +420,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn remove_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -419,6 +434,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn remove_dir() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -432,6 +448,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn recreate_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -446,6 +463,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn recreate_dir() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| {
@@ -463,6 +481,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn swap_dir() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -478,6 +497,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn swap_dir_link() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| {
@@ -510,6 +530,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn swap_just_link() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup_any(|sh| {
@@ -534,6 +555,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn swap_many_regular() -> Result {
         TestPath::Regular {
             user_path: "user-niri/config.kdl",
@@ -568,6 +590,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn swap_many_links_regular_like_nix() -> Result {
         TestPath::Regular {
             user_path: "user-niri/config.kdl",
