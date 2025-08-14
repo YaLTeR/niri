@@ -67,7 +67,7 @@ impl RenderElement<GlesRenderer> for PrimaryGpuTextureRenderElement {
         Ok(())
     }
 
-    fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage> {
+    fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
         // If scanout for things other than Wayland buffers is implemented, this will need to take
         // the target GPU into account.
         None
@@ -91,7 +91,7 @@ impl<'render> RenderElement<TtyRenderer<'render>> for PrimaryGpuTextureRenderEle
     fn underlying_storage(
         &self,
         _renderer: &mut TtyRenderer<'render>,
-    ) -> Option<UnderlyingStorage> {
+    ) -> Option<UnderlyingStorage<'_>> {
         // If scanout for things other than Wayland buffers is implemented, this will need to take
         // the target GPU into account.
         None

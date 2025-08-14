@@ -3824,7 +3824,7 @@ impl Niri {
                 pointer_pos,
                 output_scale,
                 1.,
-                Kind::Unspecified,
+                Kind::ScanoutCandidate,
             ));
         }
 
@@ -4238,7 +4238,7 @@ impl Niri {
                     (0, 0),
                     output_scale,
                     1.,
-                    Kind::Unspecified,
+                    Kind::ScanoutCandidate,
                 ));
             }
 
@@ -4972,6 +4972,7 @@ impl Niri {
                 subpixel: Subpixel::Unknown,
                 make: String::new(),
                 model: String::new(),
+                serial_number: String::new(),
             },
         );
         let output = &output;

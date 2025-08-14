@@ -307,7 +307,7 @@ impl Mapped {
         self.credentials.as_ref()
     }
 
-    pub fn offscreen_data(&self) -> Ref<Option<OffscreenData>> {
+    pub fn offscreen_data(&self) -> Ref<'_, Option<OffscreenData>> {
         self.offscreen_data.borrow()
     }
 
@@ -599,7 +599,7 @@ impl LayoutElement for Mapped {
                     (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
                     scale,
                     alpha,
-                    Kind::Unspecified,
+                    Kind::ScanoutCandidate,
                 ));
             }
 
@@ -609,7 +609,7 @@ impl LayoutElement for Mapped {
                 buf_pos.to_physical_precise_round(scale),
                 scale,
                 alpha,
-                Kind::Unspecified,
+                Kind::ScanoutCandidate,
             );
         }
 
@@ -639,7 +639,7 @@ impl LayoutElement for Mapped {
                 buf_pos.to_physical_precise_round(scale),
                 scale,
                 alpha,
-                Kind::Unspecified,
+                Kind::ScanoutCandidate,
             )
         }
     }
@@ -668,7 +668,7 @@ impl LayoutElement for Mapped {
                     (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
                     scale,
                     alpha,
-                    Kind::Unspecified,
+                    Kind::ScanoutCandidate,
                 ));
             }
 
@@ -1184,10 +1184,6 @@ impl LayoutElement for Mapped {
 
     fn rules(&self) -> &ResolvedWindowRules {
         &self.rules
-    }
-
-    fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot> {
-        self.animation_snapshot.as_ref()
     }
 
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {

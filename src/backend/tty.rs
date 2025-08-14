@@ -923,6 +923,11 @@ impl Tty {
                 subpixel: connector.subpixel().into(),
                 model: output_name.model.as_deref().unwrap_or("Unknown").to_owned(),
                 make: output_name.make.as_deref().unwrap_or("Unknown").to_owned(),
+                serial_number: output_name
+                    .serial
+                    .as_deref()
+                    .unwrap_or("Unknown")
+                    .to_owned(),
             },
         );
 
