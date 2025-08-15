@@ -10,94 +10,73 @@ use smithay::reexports::calloop::channel::SyncSender;
 
 use crate::niri::State;
 
+const POLLING_INTERVAL: Duration = Duration::from_millis(500);
+
 pub struct Watcher {
     load_config: mpsc::Sender<()>,
+}
+
+struct WatcherInner {
+    /// The paths we're watching.
+    path: ConfigPath,
+
+    /// Last observed props of the watched file.
+    ///
+    /// Equality on this means the file did not change.
+    ///
+    /// We store the absolute path in addition to mtime to account for symlinked configs where the
+    /// symlink target may change without mtime. This is common on nix where everything is a
+    /// symlink to /nix/store, which keeps no mtime (= 1970-01-01).
+    last_props: Option<(SystemTime, PathBuf)>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum CheckResult {
+    Missing,
+    Unchanged,
+    Changed,
 }
 
 impl Watcher {
     pub fn new<T: Send + 'static>(
         path: ConfigPath,
-        process: impl FnMut(&ConfigPath) -> T + Send + 'static,
-        changed: SyncSender<T>,
-    ) -> Self {
-        let interval = Duration::from_millis(500);
-        Self::with_start_notification(path, process, changed, None, interval)
-    }
-
-    pub fn with_start_notification<T: Send + 'static>(
-        config_path: ConfigPath,
         mut process: impl FnMut(&ConfigPath) -> T + Send + 'static,
         changed: SyncSender<T>,
-        started: Option<mpsc::SyncSender<()>>,
-        polling_interval: Duration,
     ) -> Self {
         let (load_config, load_config_rx) = mpsc::channel();
 
         thread::Builder::new()
-            .name(format!("Filesystem Watcher for {config_path:?}"))
+            .name(format!("Filesystem Watcher for {path:?}"))
             .spawn(move || {
-                // this "should" be as simple as storing the last seen mtime,
-                // and if the contents change without updating mtime, we ignore it.
-                //
-                // but that breaks if the config is a symlink, and its target
-                // changes but the new target and old target have identical mtimes.
-                // in which case we should *not* ignore it; this is an entirely different file.
-                //
-                // in practice, this edge case does not occur on systems other than nix.
-                // because, on nix, everything is a symlink to /nix/store
-                // and /nix/store keeps no mtime (= 1970-01-01)
-                // so, symlink targets change frequently when mtime doesn't.
-                //
-                // therefore, we must also store the canonical path, along with its mtime
-
-                fn see_path(path: &Path) -> io::Result<(SystemTime, PathBuf)> {
-                    let canon = path.canonicalize()?;
-                    let mtime = canon.metadata()?.modified()?;
-                    Ok((mtime, canon))
-                }
-
-                fn see(config_path: &ConfigPath) -> io::Result<(SystemTime, PathBuf)> {
-                    match config_path {
-                        ConfigPath::Explicit(path) => see_path(path),
-                        ConfigPath::Regular {
-                            user_path,
-                            system_path,
-                        } => see_path(user_path).or_else(|_| see_path(system_path)),
-                    }
-                }
-
-                let mut last_props = see(&config_path).ok();
-
-                if let Some(started) = started {
-                    let _ = started.send(());
-                }
+                let mut inner = WatcherInner::new(path);
 
                 loop {
-                    let mut should_load = match load_config_rx.recv_timeout(polling_interval) {
+                    let mut should_load = match load_config_rx.recv_timeout(POLLING_INTERVAL) {
                         Ok(()) => true,
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
                         Err(mpsc::RecvTimeoutError::Timeout) => false,
                     };
 
-                    if let Ok(new_props) = see(&config_path) {
-                        if last_props.as_ref() != Some(&new_props) {
-                            last_props = Some(new_props);
+                    match inner.check() {
+                        CheckResult::Missing => continue,
+                        CheckResult::Unchanged => (),
+                        CheckResult::Changed => {
                             trace!("config file changed");
                             should_load = true;
                         }
+                    }
 
-                        if should_load {
-                            let rv = process(&config_path);
+                    if should_load {
+                        let rv = process(&inner.path);
 
-                            if let Err(err) = changed.send(rv) {
-                                warn!("error sending change notification: {err:?}");
-                                break;
-                            }
+                        if let Err(err) = changed.send(rv) {
+                            warn!("error sending change notification: {err:?}");
+                            break;
                         }
                     }
                 }
 
-                debug!("exiting watcher thread for {config_path:?}");
+                debug!("exiting watcher thread for {:?}", inner.path);
             })
             .unwrap();
 
@@ -106,6 +85,42 @@ impl Watcher {
 
     pub fn load_config(&self) {
         let _ = self.load_config.send(());
+    }
+}
+
+fn see_path(path: &Path) -> io::Result<(SystemTime, PathBuf)> {
+    let canon = path.canonicalize()?;
+    let mtime = canon.metadata()?.modified()?;
+    Ok((mtime, canon))
+}
+
+fn see(config_path: &ConfigPath) -> io::Result<(SystemTime, PathBuf)> {
+    match config_path {
+        ConfigPath::Explicit(path) => see_path(path),
+        ConfigPath::Regular {
+            user_path,
+            system_path,
+        } => see_path(user_path).or_else(|_| see_path(system_path)),
+    }
+}
+
+impl WatcherInner {
+    pub fn new(path: ConfigPath) -> Self {
+        let last_props = see(&path).ok();
+        Self { path, last_props }
+    }
+
+    pub fn check(&mut self) -> CheckResult {
+        if let Ok(new_props) = see(&self.path) {
+            if self.last_props.as_ref() != Some(&new_props) {
+                self.last_props = Some(new_props);
+                CheckResult::Changed
+            } else {
+                CheckResult::Unchanged
+            }
+        } else {
+            CheckResult::Missing
+        }
     }
 }
 
@@ -137,8 +152,6 @@ mod tests {
     use std::fs::{self, File, FileTimes};
     use std::io::Write;
 
-    use calloop::channel::{sync_channel, Event};
-    use calloop::EventLoop;
     use xshell::{cmd, Shell, TempDir};
 
     use super::*;
@@ -234,29 +247,9 @@ mod tests {
                 sh, config_path, ..
             } = self;
 
-            let (tx, rx) = sync_channel(1);
-            let (started_tx, started_rx) = mpsc::sync_channel(1);
-
-            let _watcher = Watcher::with_start_notification(
-                config_path,
-                |config_path| canon(config_path).clone(),
-                tx,
-                Some(started_tx),
-                Duration::from_millis(100),
-            );
-
-            started_rx.recv()?;
-
-            let event_loop = EventLoop::try_new()?;
-            event_loop
-                .handle()
-                .insert_source(rx, |event, (), latest_path| {
-                    if let Event::Msg(path) = event {
-                        *latest_path = Some(path);
-                    }
-                })?;
-
-            let mut test = TestUtil { event_loop };
+            let mut test = TestUtil {
+                watcher: WatcherInner::new(config_path),
+            };
 
             // don't trigger before we start
             test.assert_unchanged();
@@ -272,22 +265,23 @@ mod tests {
         }
     }
 
-    struct TestUtil<'a> {
-        event_loop: EventLoop<'a, Option<PathBuf>>,
+    struct TestUtil {
+        watcher: WatcherInner,
     }
 
-    impl<'a> TestUtil<'a> {
+    impl TestUtil {
+        // Ensures that mtime is different between writes in the tests.
         fn pass_time(&self) {
             thread::sleep(Duration::from_millis(50));
         }
 
         fn assert_unchanged(&mut self) {
-            let mut new_path = None;
-            self.event_loop
-                .dispatch(Duration::from_millis(150), &mut new_path)
-                .unwrap();
-            assert_eq!(
-                new_path, None,
+            let res = self.watcher.check();
+
+            // This may be Missing or Unchanged, both are fine.
+            assert_ne!(
+                res,
+                CheckResult::Changed,
                 "watcher should not have noticed any changes"
             );
 
@@ -295,29 +289,22 @@ mod tests {
         }
 
         fn assert_changed_to(&mut self, expected: &str) {
-            let mut new_path = None;
-            self.event_loop
-                .dispatch(Duration::from_millis(150), &mut new_path)
-                .unwrap();
-            let Some(new_path) = new_path else {
-                panic!("watcher should have noticed a change, but it didn't");
-            };
-            let actual = fs::read_to_string(&new_path).unwrap();
-            assert_eq!(actual, expected, "watcher gave the wrong file");
+            let res = self.watcher.check();
+            assert_eq!(
+                res,
+                CheckResult::Changed,
+                "watcher should have noticed a change, but it didn't"
+            );
+
+            let new_path = canon(&self.watcher.path);
+            let actual = fs::read_to_string(new_path).unwrap();
+            assert_eq!(actual, expected, "wrong file contents");
 
             self.pass_time();
         }
     }
 
-    // All tests are currently ignored because they are flaky. Presumably, this is because the
-    // watcher thread sleeps can align with test thread runs in such a way that the watcher wakes
-    // up in the middle between operations and ends up reporting a change one more time than
-    // expected, leading to test failures on the final unchanged check.
-    //
-    // https://github.com/YaLTeR/niri/issues/2226
-
     #[test]
-    #[ignore]
     fn change_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -331,7 +318,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn overwrite_but_dont_change_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -345,7 +331,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn touch_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -359,7 +344,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn create_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.create_dir("niri"))
@@ -373,7 +357,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn create_dir_and_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .without_setup()
@@ -386,7 +369,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn change_linked_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| {
@@ -403,7 +385,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn change_file_in_linked_dir() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| {
@@ -420,7 +401,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn remove_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -434,7 +414,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn remove_dir() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -448,7 +427,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn recreate_file() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -463,7 +441,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn recreate_dir() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| {
@@ -481,7 +458,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn swap_dir() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| sh.write_file("niri/config.kdl", "a"))
@@ -497,7 +473,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn swap_dir_link() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup(|sh| {
@@ -530,7 +505,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn swap_just_link() -> Result {
         TestPath::Explicit("niri/config.kdl")
             .setup_any(|sh| {
@@ -555,7 +529,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn swap_many_regular() -> Result {
         TestPath::Regular {
             user_path: "user-niri/config.kdl",
@@ -590,7 +563,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn swap_many_links_regular_like_nix() -> Result {
         TestPath::Regular {
             user_path: "user-niri/config.kdl",
