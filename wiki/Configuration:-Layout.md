@@ -8,6 +8,7 @@ Here are the contents of this section at a glance:
 layout {
     gaps 16
     center-focused-column "never"
+    new-column-location "right-of-active"
     always-center-single-column
     empty-workspace-above-first
     default-column-display "tabbed"
@@ -120,6 +121,22 @@ This can be set to:
 ```kdl
 layout {
     center-focused-column "always"
+}
+```
+
+### `new-column-location`
+
+Where to spawn a new column.
+This can be set to:
+
+- `"right-of-active"`: the new column will be placed after the current focused column. This is the default.
+- `"left-of-active"`, the new column will be placed before the current focused column.
+- `"first-of-workspace"`, the new column will be the first column in workspace.
+- `"last-of-workspace"`, the new column will be the last column in workspace.
+
+```kdl
+layout {
+    new-column-location "left-of-active"
 }
 ```
 
