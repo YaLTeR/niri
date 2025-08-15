@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, OnceCell, RefCell};
 
 use niri_config::{
     FloatOrInt, OutputName, TabIndicatorLength, TabIndicatorPosition, WorkspaceName,
@@ -10,6 +10,8 @@ use smithay::output::{Mode, PhysicalProperties, Subpixel};
 use smithay::utils::Rectangle;
 
 use super::*;
+
+mod animations;
 
 impl<W: LayoutElement> Default for Layout<W> {
     fn default() -> Self {
@@ -24,6 +26,8 @@ struct TestWindowInner {
     bbox: Cell<Rectangle<i32, Logical>>,
     initial_bbox: Rectangle<i32, Logical>,
     requested_size: Cell<Option<Size<i32, Logical>>>,
+    // Emulates the window ignoring the compositor-provided size.
+    forced_size: Cell<Option<Size<i32, Logical>>>,
     min_size: Size<i32, Logical>,
     max_size: Size<i32, Logical>,
     pending_fullscreen: Cell<bool>,
@@ -31,6 +35,8 @@ struct TestWindowInner {
     is_fullscreen: Cell<bool>,
     is_windowed_fullscreen: Cell<bool>,
     is_pending_windowed_fullscreen: Cell<bool>,
+    animate_next_configure: Cell<bool>,
+    animation_snapshot: RefCell<Option<LayoutElementRenderSnapshot>>,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +75,7 @@ impl TestWindow {
             bbox: Cell::new(params.bbox),
             initial_bbox: params.bbox,
             requested_size: Cell::new(None),
+            forced_size: Cell::new(None),
             min_size: params.min_max_size.0,
             max_size: params.min_max_size.1,
             pending_fullscreen: Cell::new(false),
@@ -76,13 +83,16 @@ impl TestWindow {
             is_fullscreen: Cell::new(false),
             is_windowed_fullscreen: Cell::new(false),
             is_pending_windowed_fullscreen: Cell::new(false),
+            animate_next_configure: Cell::new(false),
+            animation_snapshot: RefCell::new(None),
         }))
     }
 
     fn communicate(&self) -> bool {
         let mut changed = false;
 
-        if let Some(size) = self.0.requested_size.get() {
+        let size = self.0.forced_size.get().or(self.0.requested_size.get());
+        if let Some(size) = size {
             assert!(size.w >= 0);
             assert!(size.h >= 0);
 
@@ -95,10 +105,23 @@ impl TestWindow {
             }
 
             if self.0.bbox.get() != new_bbox {
+                if self.0.animate_next_configure.get() {
+                    self.0.animation_snapshot.replace(Some(RenderSnapshot {
+                        contents: Vec::new(),
+                        blocked_out_contents: Vec::new(),
+                        block_out_from: None,
+                        size: self.0.bbox.get().size.to_f64(),
+                        texture: OnceCell::new(),
+                        blocked_out_texture: OnceCell::new(),
+                    }));
+                }
+
                 self.0.bbox.set(new_bbox);
                 changed = true;
             }
         }
+
+        self.0.animate_next_configure.set(false);
 
         if self.0.is_fullscreen.get() != self.0.pending_fullscreen.get() {
             self.0.is_fullscreen.set(self.0.pending_fullscreen.get());
@@ -153,7 +176,11 @@ impl LayoutElement for TestWindow {
         _animate: bool,
         _transaction: Option<Transaction>,
     ) {
-        self.0.requested_size.set(Some(size));
+        if self.0.requested_size.get() != Some(size) {
+            self.0.requested_size.set(Some(size));
+            self.0.animate_next_configure.set(true);
+        }
+
         self.0.pending_fullscreen.set(is_fullscreen);
 
         if is_fullscreen {
@@ -244,12 +271,8 @@ impl LayoutElement for TestWindow {
         &EMPTY
     }
 
-    fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot> {
-        None
-    }
-
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
-        None
+        self.0.animation_snapshot.take()
     }
 
     fn set_interactive_resize(&mut self, _data: Option<InteractiveResizeData>) {}
@@ -265,6 +288,10 @@ impl LayoutElement for TestWindow {
     fn is_urgent(&self) -> bool {
         false
     }
+}
+
+fn arbitrary_size() -> impl Strategy<Value = Size<i32, Logical>> {
+    any::<(u16, u16)>().prop_map(|(w, h)| Size::from((w.max(1).into(), h.max(1).into())))
 }
 
 fn arbitrary_bbox() -> impl Strategy<Value = Rectangle<i32, Logical>> {
@@ -575,6 +602,12 @@ enum Op {
         #[proptest(strategy = "prop::option::of(1..=5usize)")]
         new_parent_id: Option<usize>,
     },
+    SetForcedSize {
+        #[proptest(strategy = "1..=5usize")]
+        id: usize,
+        #[proptest(strategy = "proptest::option::of(arbitrary_size())")]
+        size: Option<Size<i32, Logical>>,
+    },
     Communicate(#[proptest(strategy = "1..=5usize")] usize),
     Refresh {
         is_active: bool,
@@ -583,6 +616,7 @@ enum Op {
         #[proptest(strategy = "arbitrary_msec_delta()")]
         msec_delta: i32,
     },
+    CompleteAnimations,
     MoveWorkspaceToOutput(#[proptest(strategy = "1..=5usize")] usize),
     ViewOffsetGestureBegin {
         #[proptest(strategy = "1..=5usize")]
@@ -1298,6 +1332,14 @@ impl Op {
                     }
                 }
             }
+            Op::SetForcedSize { id, size } => {
+                for (_mon, win) in layout.windows() {
+                    if win.0.id == id {
+                        win.0.forced_size.set(size);
+                        return;
+                    }
+                }
+            }
             Op::Communicate(id) => {
                 let mut update = false;
 
@@ -1361,6 +1403,11 @@ impl Op {
                 }
                 layout.clock.set_unadjusted(now);
                 layout.advance_animations();
+            }
+            Op::CompleteAnimations => {
+                layout.clock.set_complete_instantly(true);
+                layout.advance_animations();
+                layout.clock.set_complete_instantly(false);
             }
             Op::MoveWorkspaceToOutput(id) => {
                 let name = format!("output{id}");
@@ -1483,24 +1530,24 @@ impl Op {
 }
 
 #[track_caller]
-fn check_ops(ops: &[Op]) -> Layout<TestWindow> {
-    let mut layout = Layout::default();
+fn check_ops_on_layout(layout: &mut Layout<TestWindow>, ops: &[Op]) {
     for op in ops {
-        op.apply(&mut layout);
+        op.apply(layout);
         layout.verify_invariants();
     }
+}
+
+#[track_caller]
+fn check_ops(ops: &[Op]) -> Layout<TestWindow> {
+    let mut layout = Layout::default();
+    check_ops_on_layout(&mut layout, ops);
     layout
 }
 
 #[track_caller]
 fn check_ops_with_options(options: Options, ops: &[Op]) -> Layout<TestWindow> {
     let mut layout = Layout::with_options(Clock::with_time(Duration::ZERO), options);
-
-    for op in ops {
-        op.apply(&mut layout);
-        layout.verify_invariants();
-    }
-
+    check_ops_on_layout(&mut layout, ops);
     layout
 }
 
