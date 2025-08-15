@@ -3,7 +3,7 @@ use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
@@ -45,7 +45,9 @@ use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _, Options};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
-use crate::ui::window_mru_ui::{ThumbnailSelectionAnimation, WindowMru};
+use crate::ui::window_mru_ui::{
+    ThumbnailSelectionAnimation, WindowMru, THUMBNAIL_SELECT_ANIMATION_THRESHOLD,
+};
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
@@ -2164,41 +2166,47 @@ impl State {
                 if !self.niri.config.borrow().recent_windows.off
                     && self.niri.window_mru_ui.is_open()
                 {
-                    if let Some(thumb) = self.niri.window_mru_ui.close() {
+                    if let Some((thumb, open_ts)) = self.niri.window_mru_ui.close() {
                         let id = thumb.id;
                         if let Some(window) = self.niri.find_window_by_id(id) {
-                            // Setup the thumbnail selection animation.
-                            let mut tsa = self.niri.layout.active_monitor_ref().map(|mon| {
-                                let config =
-                                    self.niri.config.borrow().animations.thumbnail_select.0;
-                                ThumbnailSelectionAnimation::new(
-                                    thumb,
-                                    mon,
-                                    self.niri.clock.clone(),
-                                    config,
-                                )
-                            });
+                            if Instant::now() - open_ts >= THUMBNAIL_SELECT_ANIMATION_THRESHOLD {
+                                // Setup the thumbnail selection animation if the UI stayed open for longer than the threshold.
+                                let mut tsa = self.niri.layout.active_monitor_ref().map(|mon| {
+                                    let config =
+                                        self.niri.config.borrow().animations.thumbnail_select.0;
+                                    ThumbnailSelectionAnimation::new(
+                                        thumb,
+                                        mon,
+                                        self.niri.clock.clone(),
+                                        config,
+                                    )
+                                });
 
-                            // Transfer focus to the selected window id
+                                std::mem::swap(
+                                    &mut self.niri.thumbnail_selection_animation,
+                                    &mut tsa,
+                                );
+
+                                // If there was another thumbnail selection animation in progress,
+                                // mark the corresponding tile for regular rendering.
+                                if let Some(old_tile) = tsa
+                                    .and_then(|tsa| self.niri.find_window_by_id(tsa.id))
+                                    .and_then(|window| {
+                                        self.niri.layout.find_tile_by_id_mut(&window)
+                                    })
+                                {
+                                    old_tile.skip_render = false;
+                                }
+
+                                // Mark the tile corresponding to the thumbnail as to-be-skipped
+                                // during regular Tile rendering.
+                                if let Some(tile) = self.niri.layout.find_tile_by_id_mut(&window) {
+                                    tile.skip_render = true;
+                                }
+                            }
+                            // Transfer focus to the selected window id.
                             self.focus_window(&window);
-
-                            std::mem::swap(&mut self.niri.thumbnail_selection_animation, &mut tsa);
-
-                            // If there was another thumbnail selection animation in progress,
-                            // mark the corresponding tile for regular rendering.
-                            if let Some(old_tile) = tsa
-                                .and_then(|tsa| self.niri.find_window_by_id(tsa.id))
-                                .and_then(|window| self.niri.layout.find_tile_by_id_mut(&window))
-                            {
-                                old_tile.skip_render = false;
-                            }
-
-                            // Mark the tile corresponding to the thumbnail as to-be-skipped during
-                            // regular Tile rendering.
-                            if let Some(tile) = self.niri.layout.find_tile_by_id_mut(&window) {
-                                tile.skip_render = true;
-                            }
-                        };
+                        }
                     }
                     // FIXME: granular
                     self.niri.queue_redraw_all();

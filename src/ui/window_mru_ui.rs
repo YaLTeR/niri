@@ -36,7 +36,7 @@ use std::cell::RefCell;
 use std::ops::ControlFlow;
 use std::rc::Rc;
 use std::str::FromStr;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::{iter, mem};
 
 use niri_config::{
@@ -87,6 +87,10 @@ const BACKGROUND: Color32F = Color32F::new(0., 0., 0., 0.7);
 
 // Font used to render window titles
 const FONT: &str = "sans 14px";
+
+// Minimum duration the MRU UI needs to have stayed opened for the Thumbnail
+// selection animation to be triggered
+pub const THUMBNAIL_SELECT_ANIMATION_THRESHOLD: Duration = Duration::from_millis(250);
 
 #[derive(Debug)]
 struct Thumbnail {
@@ -280,7 +284,7 @@ impl WindowMru {
         self.thumbnails.get(self.current)
     }
 
-    /// Returns the total width of all the thumbnails with leading and trailing margins.
+    /// Returns the total width of all the thumbnails with leading and trailing margins included.
     fn strip_width(&self) -> f64 {
         self.thumbnails
             .last()
@@ -333,6 +337,9 @@ pub struct Inner {
 
     /// Configurable properties of the layout.
     options: Rc<Options>,
+
+    /// Timestamp when the UI was opened
+    open_timestamp: Instant,
 }
 
 // Taken from Tile.rs,
@@ -469,25 +476,27 @@ impl WindowMruUi {
             open_animation: open_anim,
             move_animation: None,
             clock,
+            open_timestamp: Instant::now(),
         };
 
         self.state = WindowMruUiState::Open(Box::new(inner));
         self.advance(dir);
     }
 
-    pub fn close(&mut self) -> Option<SelectedThumbnail> {
+    pub fn close(&mut self) -> Option<(SelectedThumbnail, Instant)> {
         let WindowMruUiState::Open(ref inner) = self.state else {
             return None;
         };
         let thumb = inner.select_thumbnail();
         let clock = inner.clock.clone();
         let config = inner.options.animations.window_mru_ui_open_close.0;
+        let open_ts = inner.open_timestamp;
 
         self.state = WindowMruUiState::Closed {
             close_animation: Some(Animation::new(clock, 1., 0., 0., config)),
         };
 
-        thumb
+        thumb.map(|t| (t, open_ts))
     }
 
     pub fn update_config(&mut self, config: &niri_config::Config) {
