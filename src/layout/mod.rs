@@ -42,7 +42,7 @@ use niri_config::{
     CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
     Workspace as WorkspaceConfig, WorkspaceReference,
 };
-use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
+use niri_ipc::{ColumnDisplay, FullscreenSetAction, PositionChange, SizeChange};
 use scrolling::{Column, ColumnWidth};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
@@ -3800,6 +3800,14 @@ impl<W: LayoutElement> Layout<W> {
                 ws.toggle_fullscreen(id);
                 return;
             }
+        }
+    }
+
+    pub fn set_fullscreen_by_action(&mut self, id: &W::Id, action: FullscreenSetAction) {
+        match action {
+            FullscreenSetAction::Toggle => self.toggle_fullscreen(id),
+            FullscreenSetAction::Normal => self.set_fullscreen(id, false),
+            FullscreenSetAction::Fullscreen => self.set_fullscreen(id, true),
         }
     }
 
