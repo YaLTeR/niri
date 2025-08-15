@@ -2170,7 +2170,8 @@ impl State {
                         let id = thumb.id;
                         if let Some(window) = self.niri.find_window_by_id(id) {
                             if Instant::now() - open_ts >= THUMBNAIL_SELECT_ANIMATION_THRESHOLD {
-                                // Setup the thumbnail selection animation if the UI stayed open for longer than the threshold.
+                                // Setup the thumbnail selection animation if the UI stayed open for
+                                // longer than the threshold.
                                 let mut tsa = self.niri.layout.active_monitor_ref().map(|mon| {
                                     let config =
                                         self.niri.config.borrow().animations.thumbnail_select.0;
