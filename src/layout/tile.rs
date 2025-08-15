@@ -2,6 +2,7 @@ use core::f64;
 use std::rc::Rc;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation};
+use smithay::backend::renderer::element::surface::WaylandSurfaceTexture;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
@@ -978,14 +979,50 @@ impl<W: LayoutElement> Tile<W> {
                     if clip_to_geometry {
                         if let Some(shader) = clip_shader.clone() {
                             if ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius) {
-                                return ClippedSurfaceRenderElement::new(
-                                    elem,
-                                    scale,
-                                    geo,
-                                    shader.clone(),
-                                    radius,
-                                )
-                                .into();
+                                match elem.texture() {
+                                    WaylandSurfaceTexture::Texture(_) => {
+                                        return ClippedSurfaceRenderElement::new(
+                                            elem,
+                                            scale,
+                                            geo,
+                                            shader.clone(),
+                                            radius,
+                                        )
+                                        .into();
+                                    }
+                                    WaylandSurfaceTexture::SolidColor(color32_f) => {
+                                        // In this branch we're rendering a solid color texture
+                                        // which smithay will render using a solid program shader.
+                                        // `ClippedSurfaceElement` is implemented by overriding the
+                                        // default texture program shader that smithay uses. This
+                                        // strategy won't work for solid color textures because
+                                        // smithay doesn't provide a way to override the solid
+                                        // program shader. To work around this, we can use a
+                                        // `BorderRenderElement` when we detect that we need to clip
+                                        // a solid color texture.
+                                        let elem_geo =
+                                            elem.geometry(scale).to_f64().to_logical(scale);
+                                        if let Some(shader_geo) = geo.intersection(elem_geo) {
+                                            return BorderRenderElement::new(
+                                                shader_geo.size,
+                                                Rectangle::from_size(shader_geo.size),
+                                                GradientInterpolation::default(),
+                                                // color32_f uses premultiplied alpha which matches
+                                                // what `BorderRenderElement` expects
+                                                Color::from_color32f(*color32_f),
+                                                Color::from_color32f(*color32_f),
+                                                0.,
+                                                Rectangle::new(geo.loc - shader_geo.loc, geo.size),
+                                                0.,
+                                                radius,
+                                                scale.x as f32,
+                                                1.,
+                                            )
+                                            .with_location(shader_geo.loc)
+                                            .into();
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
