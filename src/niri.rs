@@ -18,7 +18,7 @@ use niri_config::{
     WarpMouseToFocusMode, WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::input::Keycode;
+use smithay::backend::input::{KeyState, Keycode};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::surface::{
@@ -45,6 +45,8 @@ use smithay::desktop::{
     find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
+use smithay::input::keyboard::xkb::ModMask;
+use smithay::input::keyboard::KeyboardHandle;
 use smithay::input::keyboard::Layout as KeyboardLayout;
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
@@ -106,7 +108,7 @@ use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::TabletManagerState;
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
-use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
+use smithay::wayland::virtual_keyboard::{VirtualKeyboardHandler, VirtualKeyboardManagerState};
 use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 
@@ -6265,6 +6267,28 @@ fn scale_relocate_crop<E: Element>(
     let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
     let elem = RelocateRenderElement::from_element(elem, ws_geo.loc, Relocate::Relative);
     CropRenderElement::from_element(elem, output_scale, ws_geo)
+}
+
+impl VirtualKeyboardHandler for State {
+    fn on_keyboard_event(
+        &mut self,
+        keycode: Keycode,
+        state: KeyState,
+        time: u32,
+        keyboard: KeyboardHandle<Self>,
+    ) {
+        self.on_keyboard_real(keycode, state, time, keyboard);
+    }
+
+    /// We handle modifiers when the key event is sent
+    fn on_keyboard_modifiers(
+        &mut self,
+        _depressed_mods: ModMask,
+        _latched_mods: ModMask,
+        _locked_mods: ModMask,
+        _keyboard: KeyboardHandle<Self>,
+    ) {
+    }
 }
 
 niri_render_elements! {
