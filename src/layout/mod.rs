@@ -42,7 +42,7 @@ use niri_config::{
     CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
     Workspace as WorkspaceConfig, WorkspaceReference,
 };
-use niri_ipc::{ColumnDisplay, PositionChange, SizeChange};
+use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use scrolling::{Column, ColumnWidth};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
@@ -1742,25 +1742,30 @@ impl<W: LayoutElement> Layout<W> {
         moving_window.chain(mon_windows)
     }
 
-    pub fn with_windows(&self, mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>)) {
+    pub fn with_windows(
+        &self,
+        mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>, WindowLayout),
+    ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            f(move_.tile.window(), Some(&move_.output), None);
+            // We don't fill any positions for interactively moved windows.
+            let layout = move_.tile.ipc_layout_template();
+            f(move_.tile.window(), Some(&move_.output), None, layout);
         }
 
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mon.workspaces {
-                        for win in ws.windows() {
-                            f(win, Some(&mon.output), Some(ws.id()));
+                        for (tile, layout) in ws.tiles_with_ipc_layouts() {
+                            f(tile.window(), Some(&mon.output), Some(ws.id()), layout);
                         }
                     }
                 }
             }
             MonitorSet::NoOutputs { workspaces } => {
                 for ws in workspaces {
-                    for win in ws.windows() {
-                        f(win, None, Some(ws.id()));
+                    for (tile, layout) in ws.tiles_with_ipc_layouts() {
+                        f(tile.window(), None, Some(ws.id()), layout);
                     }
                 }
             }

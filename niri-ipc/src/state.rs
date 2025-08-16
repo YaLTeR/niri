@@ -189,6 +189,13 @@ impl EventStreamStatePart for WindowsState {
                     }
                 }
             }
+            Event::WindowLayoutsChanged { changes } => {
+                for (id, update) in changes {
+                    let win = self.windows.get_mut(&id);
+                    let win = win.expect("changed window was missing from the map");
+                    win.layout = update;
+                }
+            }
             event => return Some(event),
         }
         None
