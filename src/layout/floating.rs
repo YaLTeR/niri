@@ -323,7 +323,13 @@ impl<W: LayoutElement> FloatingSpace<W> {
     }
 
     pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
-        self.tiles_with_render_positions().map(move |(tile, pos)| {
+        let scale = self.scale;
+        self.tiles_with_offsets().map(move |(tile, offset)| {
+            // Do not include animated render offset here to avoid IPC spam.
+            let pos = offset;
+            // Round to physical pixels.
+            let pos = pos.to_physical_precise_round(scale).to_logical(scale);
+
             let layout = WindowLayout {
                 tile_pos_in_workspace_view: Some(pos.into()),
                 ..tile.ipc_layout_template()
