@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::iter::zip;
 use std::num::NonZeroU64;
-use std::os::fd::AsFd;
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -793,6 +793,24 @@ impl Tty {
 
         self.gpu_manager.as_mut().remove_node(&device.render_node);
         niri.event_loop.remove(device.token);
+
+        let device_fd = device.drm.device_fd().device_fd();
+        {
+            // calls api.enumerate(), refreshes GbmGlesDevice list
+            // drops references to DrmDeviceFd
+            let _devices = self.gpu_manager.devices();
+
+            // drop output device, releasing DrmDeviceFd
+            let _dev = device;
+        }
+        match <DeviceFd as TryInto<OwnedFd>>::try_into(device_fd) {
+            Ok(fd) => {
+                let _ = self.session.close(fd);
+            }
+            Err(err) => {
+                error!("failed to unwrap DeviceFd {}", err.as_fd().as_raw_fd());
+            }
+        }
 
         self.refresh_ipc_outputs(niri);
     }
