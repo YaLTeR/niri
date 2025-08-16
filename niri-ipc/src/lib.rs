@@ -1161,11 +1161,20 @@ pub struct Window {
 
 /// Position- and size-related properties of a [`Window`].
 ///
-/// Optional properties will be unset for some windows, do not rely on them always being present.
+/// Optional properties will be unset for some windows, do not rely on them being present. Whether
+/// some optional properties are present or absent for certain window types may change across niri
+/// releases.
 ///
 /// All sizes and positions are in *logical pixels* unless stated otherwise. Logical sizes may be
 /// fractional. For example, at 1.25 monitor scale, a 2-physical-pixel-wide window border is 1.6
 /// logical pixels wide.
+///
+/// This struct contains positions and sizes both for full tiles ([`Self::tile_size`],
+/// [`Self::tile_pos_in_workspace_view`]) and the window geometry ([`Self::window_size`],
+/// [`Self::window_offset_in_tile`]). For visual displays, use the tile properties, as they
+/// correspond to what the user visually considers "window". The window properties on the other
+/// hand are mainly useful when you need to know the underlying Wayland window sizes, e.g. for
+/// application debugging.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WindowLayout {
@@ -1185,12 +1194,12 @@ pub struct WindowLayout {
     ///
     /// This is the same "workspace view" as in gradients' `relative-to` in the niri config.
     pub tile_pos_in_workspace_view: Option<(f64, f64)>,
-    /// Window position within the current view of the workspace.
+    /// Location of the window's visual geometry within its tile.
     ///
-    /// Unlike `tile_pos_in_workspace_view`, this is the position of the window contents, excluding
-    /// borders and other decorations. You probably want to use `tile_pos_in_workspace_view`
-    /// instead, since borders are a part of the window, as far as the user is concerned.
-    pub window_pos_in_workspace_view: Option<(f64, f64)>,
+    /// This includes things like border sizes. For fullscreened fixed-size windows this includes
+    /// the distance from the corner of the black backdrop to the corner of the (centered) window
+    /// contents.
+    pub window_offset_in_tile: (f64, f64),
 }
 
 /// Output configuration change result.

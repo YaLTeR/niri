@@ -1416,7 +1416,7 @@ impl<W: LayoutElement> Workspace<W> {
                     tile_size: tile.tile_size().into(),
                     window_size: tile.window().size().into(),
                     tile_pos_in_workspace_view: None,
-                    window_pos_in_workspace_view: None,
+                    window_offset_in_tile: tile.window_loc().into(),
                 },
             )
         });
@@ -1430,7 +1430,7 @@ impl<W: LayoutElement> Workspace<W> {
                     tile_size: tile.tile_size().into(),
                     window_size: tile.window().size().into(),
                     tile_pos_in_workspace_view: Some(pos.into()),
-                    window_pos_in_workspace_view: Some((pos + tile.window_loc()).into()),
+                    window_offset_in_tile: tile.window_loc().into(),
                 },
             )
         });

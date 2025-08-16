@@ -1756,7 +1756,7 @@ impl<W: LayoutElement> Layout<W> {
                     tile_size: move_.tile.tile_size().into(),
                     window_size: move_.tile.window().size().into(),
                     tile_pos_in_workspace_view: None,
-                    window_pos_in_workspace_view: None,
+                    window_offset_in_tile: move_.tile.window_loc().into(),
                 },
             );
         }
