@@ -2451,7 +2451,21 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn overview_zoom(&self) -> f64 {
         let progress = self.overview_progress.as_ref().map(|p| p.value());
-        compute_overview_zoom(&self.options, progress)
+
+        let workspace_count = match &self.monitor_set {
+            MonitorSet::Normal { monitors, active_monitor_idx, .. } => {
+                monitors[*active_monitor_idx]
+                    .workspaces
+                    .iter()
+                    .filter(|ws| ws.has_windows())
+                    .count()
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                workspaces.iter().filter(|ws| ws.has_windows()).count()
+            }
+        };
+
+        compute_overview_zoom(&self.options, progress, workspace_count)
     }
 
     #[cfg(test)]
@@ -5268,9 +5282,12 @@ impl<W: LayoutElement> Default for MonitorSet<W> {
     }
 }
 
-fn compute_overview_zoom(options: &Options, overview_progress: Option<f64>) -> f64 {
-    // Clamp to some sane values.
-    let zoom = options.overview.zoom.0.clamp(0.0001, 0.75);
+fn compute_overview_zoom(options: &Options, overview_progress: Option<f64>, workspace_count: usize) -> f64 {
+    let config_min_zoom = options.overview.zoom.min.0;
+    let config_max_zoom = options.overview.zoom.max.0;
+
+    let dynamic_zoom = 1.0 / (workspace_count.max(1) as f64);
+    let zoom = dynamic_zoom.clamp(config_min_zoom, config_max_zoom).clamp(0.0001, 0.75);
 
     if let Some(p) = overview_progress {
         (1. - p * (1. - zoom)).max(0.0001)
