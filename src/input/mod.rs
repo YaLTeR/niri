@@ -46,6 +46,7 @@ use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
+use smithay::input::keyboard::KeyboardHandle;
 
 pub mod backend_ext;
 pub mod move_grab;
@@ -333,12 +334,17 @@ impl State {
             .is_some_and(KeyboardShortcutsInhibitor::is_active)
     }
 
-    fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
+    pub fn on_keyboard_real(
+        &mut self,
+        key: Keycode,
+        state: KeyState,
+        time: u32,
+        keyboard: KeyboardHandle<Self>,
+    ) {
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
         let serial = SERIAL_COUNTER.next_serial();
-        let time = Event::time_msec(&event);
-        let pressed = event.state() == KeyState::Pressed;
+        let pressed = state == KeyState::Pressed;
 
         // Stop bind key repeat on any release. This won't work 100% correctly in cases like:
         // 1. Press Mod
@@ -362,22 +368,13 @@ impl State {
         // Accessibility modifier grabs should override XKB state changes (e.g. Caps Lock), so we
         // need to process them before keyboard.input() below.
         #[cfg(feature = "dbus")]
-        if self.a11y_process_key(
-            Duration::from_millis(u64::from(time)),
-            event.key_code(),
-            event.state(),
-        ) {
+        if self.a11y_process_key(Duration::from_millis(u64::from(time)), key, state) {
             return;
         }
 
-        let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
-            self,
-            event.key_code(),
-            event.state(),
-            serial,
-            time,
-            |this, mods, keysym| {
-                let key_code = event.key_code();
+        let Some(Some(bind)) =
+            keyboard.input(self, key, state, serial, time, |this, mods, keysym| {
+                let key_code = key;
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
 
@@ -438,8 +435,8 @@ impl State {
                 }
 
                 res
-            },
-        ) else {
+            })
+        else {
             return;
         };
 
@@ -450,6 +447,15 @@ impl State {
         self.handle_bind(bind.clone());
 
         self.start_key_repeat(bind);
+    }
+
+    fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
+        self.on_keyboard_real(
+            event.key_code(),
+            event.state(),
+            Event::time_msec(&event),
+            self.niri.seat.get_keyboard().unwrap(),
+        );
     }
 
     fn start_key_repeat(&mut self, bind: Bind) {
