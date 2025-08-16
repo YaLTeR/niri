@@ -69,6 +69,25 @@ When this happens, you usually see a black screen when trying to start niri from
 
 Also, on Intel graphics, you may need a workaround described [here](https://nixos.wiki/wiki/Intel_Graphics).
 
+To run Niri on NixOS is as simple as editing your configuration.nix to add
+
+```nix
+{
+    programs.niri.enable = true;
+}
+```
+
+For your Electron-based apps to not fail it is highly recommendable you also add on that file
+
+```
+{
+  environment = {
+    sessionVariables.NIXOS_OZONE_WL = "1";
+    sessionVariables.ELECTRON_OZONE_PLATFORM_HINT = "auto";
+  };
+}
+```
+
 ### Virtual Machines
 
 To run niri in a VM, make sure to enable 3D acceleration.
