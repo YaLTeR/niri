@@ -640,6 +640,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     self.compute_new_view_offset_for_column_centered(target_x, idx)
                 }
             }
+	    CenterFocusedColumn::Enclosed => {
+		if idx > 0 && idx < self.columns.len()-1 {
+		    self.compute_new_view_offset_for_column_centered(target_x, idx)
+		} else {
+		    self.compute_new_view_offset_for_column_fit(target_x, idx)
+		}
+	    }
             CenterFocusedColumn::Never => {
                 self.compute_new_view_offset_for_column_fit(target_x, idx)
             }
