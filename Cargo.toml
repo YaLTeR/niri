@@ -110,6 +110,7 @@ features = [
     "renderer_multi",
     "use_system_lib",
     "wayland_frontend",
+    "virtual_keyboard_not_use_default_handler",
 ]
 
 [dev-dependencies]
