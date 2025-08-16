@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::iter::zip;
 use std::num::NonZeroU64;
-use std::os::fd::AsFd;
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -44,6 +44,7 @@ use smithay::reexports::drm::control::{
 use smithay::reexports::gbm::Modifier;
 use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
+use smithay::reexports::rustix::path::Arg;
 use smithay::reexports::wayland_protocols;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::DeviceFd;
@@ -496,6 +497,19 @@ impl Tty {
     ) -> anyhow::Result<()> {
         debug!("device added: {device_id} {path:?}");
 
+        // skip /dev/dri/render* node
+        match path.as_str() {
+            Ok(str) => {
+                if str.contains("render") {
+                    return Ok(());
+                }
+            }
+            Err(err) => {
+                error!("invalid path: {}", err);
+                return Ok(());
+            }
+        }
+
         let node = DrmNode::from_dev_id(device_id)?;
 
         let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
@@ -793,6 +807,24 @@ impl Tty {
 
         self.gpu_manager.as_mut().remove_node(&device.render_node);
         niri.event_loop.remove(device.token);
+
+        let device_fd = device.drm.device_fd().device_fd();
+        {
+            // calls api.enumerate(), refreshes GbmGlesDevice list
+            // drops references to DrmDeviceFd
+            let _devices = self.gpu_manager.devices();
+
+            // drop output device, releasing DrmDeviceFd
+            let _dev = device;
+        }
+        match <DeviceFd as TryInto<OwnedFd>>::try_into(device_fd) {
+            Ok(fd) => {
+                let _ = self.session.close(fd);
+            }
+            Err(err) => {
+                error!("failed to unwrap DeviceFd {}", err.as_fd().as_raw_fd());
+            }
+        }
 
         self.refresh_ipc_outputs(niri);
     }
