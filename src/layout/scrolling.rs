@@ -735,11 +735,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         )
     }
 
-    fn activate_column(&mut self, idx: usize) {
+    fn activate_column(&mut self, idx: usize, skip_animation: bool) {
         self.activate_column_with_anim_config(
             idx,
-            self.options.animations.horizontal_view_movement.0,
-        );
+            if skip_animation {
+                Default::default()
+            } else {
+                self.options.animations.horizontal_view_movement.0
+            },
+        )
     }
 
     fn activate_column_with_anim_config(&mut self, idx: usize, config: niri_config::Animation) {
@@ -888,7 +892,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if activate {
             target_column.activate_idx(tile_idx);
             if self.active_column_idx != col_idx {
-                self.activate_column(col_idx);
+                let SKIP_ANIMATION = false;
+                self.activate_column(col_idx, SKIP_ANIMATION);
             }
         }
 
@@ -1394,7 +1399,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let column = &mut self.columns[column_idx];
 
         column.activate_window(window);
-        self.activate_column(column_idx);
+        let SKIP_ANIMATION = false;
+        self.activate_column(column_idx, SKIP_ANIMATION);
 
         true
     }
@@ -1502,25 +1508,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .any(|col| col.start_open_animation(id))
     }
 
-    pub fn focus_left(&mut self) -> bool {
+    pub fn focus_left(&mut self, skip_animation: bool) -> bool {
         if self.active_column_idx == 0 {
             return false;
         }
-        self.activate_column(self.active_column_idx - 1);
+        self.activate_column(self.active_column_idx - 1, skip_animation);
         true
     }
 
-    pub fn focus_right(&mut self) -> bool {
+    pub fn focus_right(&mut self, skip_animation: bool) -> bool {
         if self.active_column_idx + 1 >= self.columns.len() {
             return false;
         }
 
-        self.activate_column(self.active_column_idx + 1);
+        self.activate_column(self.active_column_idx + 1, skip_animation);
         true
     }
 
     pub fn focus_column_first(&mut self) {
-        self.activate_column(0);
+        let SKIP_ANIMATION = false;
+        self.activate_column(0, SKIP_ANIMATION);
     }
 
     pub fn focus_column_last(&mut self) {
@@ -1528,7 +1535,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        self.activate_column(self.columns.len() - 1);
+        let SKIP_ANIMATION = false;
+        self.activate_column(self.columns.len() - 1, SKIP_ANIMATION);
     }
 
     pub fn focus_column(&mut self, index: usize) {
@@ -1536,7 +1544,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        self.activate_column(index.saturating_sub(1).min(self.columns.len() - 1));
+        let SKIP_ANIMATION = false;
+        self.activate_column(
+            index.saturating_sub(1).min(self.columns.len() - 1),
+            SKIP_ANIMATION,
+        );
     }
 
     pub fn focus_window_in_column(&mut self, index: u8) {
@@ -1563,25 +1575,25 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.columns[self.active_column_idx].focus_up()
     }
 
-    pub fn focus_down_or_left(&mut self) {
+    pub fn focus_down_or_left(&mut self, skip_animation: bool) {
         if self.columns.is_empty() {
             return;
         }
 
         let column = &mut self.columns[self.active_column_idx];
         if !column.focus_down() {
-            self.focus_left();
+            self.focus_left(skip_animation);
         }
     }
 
-    pub fn focus_down_or_right(&mut self) {
+    pub fn focus_down_or_right(&mut self, skip_animation: bool) {
         if self.columns.is_empty() {
             return;
         }
 
         let column = &mut self.columns[self.active_column_idx];
         if !column.focus_down() {
-            self.focus_right();
+            self.focus_right(skip_animation);
         }
     }
 
@@ -1592,7 +1604,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let column = &mut self.columns[self.active_column_idx];
         if !column.focus_up() {
-            self.focus_left();
+            let SKIP_ANIMATION = false;
+            self.focus_left(SKIP_ANIMATION);
         }
     }
 
@@ -1603,7 +1616,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let column = &mut self.columns[self.active_column_idx];
         if !column.focus_up() {
-            self.focus_right();
+            let SKIP_ANIMATION = false;
+            self.focus_right(SKIP_ANIMATION);
         }
     }
 
@@ -2108,7 +2122,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .animate_move_from(target_pt - source_pt);
         self.columns[source_column_idx].tiles[source_tile_idx].ensure_alpha_animates_to_1();
 
-        self.activate_column(target_column_idx);
+        let SKIP_ANIMATION = false;
+        self.activate_column(target_column_idx, SKIP_ANIMATION);
     }
 
     pub fn toggle_column_tabbed_display(&mut self) {

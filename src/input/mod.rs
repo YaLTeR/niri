@@ -902,8 +902,8 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
-            Action::FocusColumnLeft => {
-                self.niri.layout.focus_left();
+            Action::FocusColumnLeft(skip_animation) => {
+                self.niri.layout.focus_left(skip_animation);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
@@ -916,14 +916,15 @@ impl State {
                         let mut workspaces = self.niri.layout.workspaces_mut();
                         workspaces.find(|ws| ws.id() == ws_id).unwrap()
                     };
-                    ws.focus_left();
+                    let SKIP_ANIMATION = false;
+                    ws.focus_left(SKIP_ANIMATION);
                     self.maybe_warp_cursor_to_focus();
                     self.niri.layer_shell_on_demand_focus = None;
                     self.niri.queue_redraw(&output);
                 }
             }
-            Action::FocusColumnRight => {
-                self.niri.layout.focus_right();
+            Action::FocusColumnRight(skip_animation) => {
+                self.niri.layout.focus_right(skip_animation);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
@@ -936,7 +937,8 @@ impl State {
                         let mut workspaces = self.niri.layout.workspaces_mut();
                         workspaces.find(|ws| ws.id() == ws_id).unwrap()
                     };
-                    ws.focus_right();
+                    let SKIP_ANIMATION = false;
+                    ws.focus_right(SKIP_ANIMATION);
                     self.maybe_warp_cursor_to_focus();
                     self.niri.layer_shell_on_demand_focus = None;
                     self.niri.queue_redraw(&output);
@@ -1013,9 +1015,12 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusColumnOrMonitorLeft => {
+            Action::FocusColumnOrMonitorLeft(skip_animation) => {
                 if let Some(output) = self.niri.output_left() {
-                    if self.niri.layout.focus_column_left_or_output(&output)
+                    if self
+                        .niri
+                        .layout
+                        .focus_column_left_or_output(&output, skip_animation)
                         && !self.maybe_warp_cursor_to_focus_centered()
                     {
                         self.move_cursor_to_output(&output);
@@ -1023,7 +1028,7 @@ impl State {
                         self.maybe_warp_cursor_to_focus();
                     }
                 } else {
-                    self.niri.layout.focus_left();
+                    self.niri.layout.focus_left(skip_animation);
                     self.maybe_warp_cursor_to_focus();
                 }
                 self.niri.layer_shell_on_demand_focus = None;
@@ -1031,9 +1036,12 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusColumnOrMonitorRight => {
+            Action::FocusColumnOrMonitorRight(skip_animation) => {
                 if let Some(output) = self.niri.output_right() {
-                    if self.niri.layout.focus_column_right_or_output(&output)
+                    if self
+                        .niri
+                        .layout
+                        .focus_column_right_or_output(&output, skip_animation)
                         && !self.maybe_warp_cursor_to_focus_centered()
                     {
                         self.move_cursor_to_output(&output);
@@ -1041,7 +1049,7 @@ impl State {
                         self.maybe_warp_cursor_to_focus();
                     }
                 } else {
-                    self.niri.layout.focus_right();
+                    self.niri.layout.focus_right(skip_animation);
                     self.maybe_warp_cursor_to_focus();
                 }
                 self.niri.layer_shell_on_demand_focus = None;
@@ -1063,15 +1071,15 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWindowDownOrColumnLeft => {
-                self.niri.layout.focus_down_or_left();
+            Action::FocusWindowDownOrColumnLeft(skip_animation) => {
+                self.niri.layout.focus_down_or_left(skip_animation);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWindowDownOrColumnRight => {
-                self.niri.layout.focus_down_or_right();
+            Action::FocusWindowDownOrColumnRight(skip_animation) => {
+                self.niri.layout.focus_down_or_right(skip_animation);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
@@ -1091,15 +1099,19 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWindowOrWorkspaceDown => {
-                self.niri.layout.focus_window_or_workspace_down();
+            Action::FocusWindowOrWorkspaceDown(skip_animation) => {
+                self.niri
+                    .layout
+                    .focus_window_or_workspace_down(skip_animation);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWindowOrWorkspaceUp => {
-                self.niri.layout.focus_window_or_workspace_up();
+            Action::FocusWindowOrWorkspaceUp(skip_animation) => {
+                self.niri
+                    .layout
+                    .focus_window_or_workspace_up(skip_animation);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
@@ -1287,8 +1299,8 @@ impl State {
                 // FIXME: granular
                 self.niri.queue_redraw_all();
             }
-            Action::FocusWorkspaceDown => {
-                self.niri.layout.switch_workspace_down();
+            Action::FocusWorkspaceDown(skip_animation) => {
+                self.niri.layout.switch_workspace_down(skip_animation);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
@@ -1297,15 +1309,16 @@ impl State {
             Action::FocusWorkspaceDownUnderMouse => {
                 if let Some(output) = self.niri.output_under_cursor() {
                     if let Some(mon) = self.niri.layout.monitor_for_output_mut(&output) {
-                        mon.switch_workspace_down();
+                        let SKIP_ANIMATION = false;
+                        mon.switch_workspace_down(SKIP_ANIMATION);
                         self.maybe_warp_cursor_to_focus();
                         self.niri.layer_shell_on_demand_focus = None;
                         self.niri.queue_redraw(&output);
                     }
                 }
             }
-            Action::FocusWorkspaceUp => {
-                self.niri.layout.switch_workspace_up();
+            Action::FocusWorkspaceUp(skip_animation) => {
+                self.niri.layout.switch_workspace_up(skip_animation);
                 self.maybe_warp_cursor_to_focus();
                 self.niri.layer_shell_on_demand_focus = None;
                 // FIXME: granular
@@ -1314,7 +1327,8 @@ impl State {
             Action::FocusWorkspaceUpUnderMouse => {
                 if let Some(output) = self.niri.output_under_cursor() {
                     if let Some(mon) = self.niri.layout.monitor_for_output_mut(&output) {
-                        mon.switch_workspace_up();
+                        let SKIP_ANIMATION = false;
+                        mon.switch_workspace_up(SKIP_ANIMATION);
                         self.maybe_warp_cursor_to_focus();
                         self.niri.layer_shell_on_demand_focus = None;
                         self.niri.queue_redraw(&output);
@@ -4242,10 +4256,10 @@ fn hardcoded_overview_bind(raw: Keysym, mods: ModifiersState) -> Option<Bind> {
             repeat = false;
             Action::ToggleOverview
         }
-        Keysym::Left => Action::FocusColumnLeft,
-        Keysym::Right => Action::FocusColumnRight,
-        Keysym::Up => Action::FocusWindowOrWorkspaceUp,
-        Keysym::Down => Action::FocusWindowOrWorkspaceDown,
+        Keysym::Left => Action::FocusColumnLeft(false),
+        Keysym::Right => Action::FocusColumnRight(false),
+        Keysym::Up => Action::FocusWindowOrWorkspaceUp(false),
+        Keysym::Down => Action::FocusWindowOrWorkspaceDown(false),
         _ => {
             return None;
         }
@@ -4809,7 +4823,7 @@ mod tests {
                     trigger: Trigger::Keysym(Keysym::h),
                     modifiers: Modifiers::SUPER,
                 },
-                action: Action::FocusColumnLeft,
+                action: Action::FocusColumnLeft(false),
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
@@ -4845,7 +4859,7 @@ mod tests {
                     trigger: Trigger::Keysym(Keysym::l),
                     modifiers: Modifiers::SUPER | Modifiers::ALT,
                 },
-                action: Action::FocusColumnRight,
+                action: Action::FocusColumnRight(false),
                 repeat: true,
                 cooldown: None,
                 allow_when_locked: false,
