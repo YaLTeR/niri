@@ -1,0 +1,14 @@
+[project]
+name = "niri-docs"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "markdown-callouts>=0.4.0",
+    "mkdocs-material>=9.6.15",
+    "pygments",
+]
+
+# for KDL highlighting support
+# TODO: use the official pygments package once https://github.com/pygments/pygments/pull/2936 is merged
+[tool.uv.sources]
+pygments = { git = "https://github.com/chinatsu/pygments", rev = "8a108c7b2071179d5959d7144b7ffdc062265838" }
