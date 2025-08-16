@@ -1412,7 +1412,7 @@ impl<W: LayoutElement> Workspace<W> {
             (
                 tile,
                 WindowLayout {
-                    tile_pos_in_scrolling_layout: Some(pos),
+                    pos_in_scrolling_layout: Some(pos),
                     tile_size: tile.tile_size().into(),
                     window_size: tile.window().size().into(),
                     tile_pos_in_workspace_view: None,
@@ -1426,7 +1426,7 @@ impl<W: LayoutElement> Workspace<W> {
             (
                 tile,
                 WindowLayout {
-                    tile_pos_in_scrolling_layout: None,
+                    pos_in_scrolling_layout: None,
                     tile_size: tile.tile_size().into(),
                     window_size: tile.window().size().into(),
                     tile_pos_in_workspace_view: Some(pos.into()),

@@ -151,15 +151,6 @@ impl EventStreamStatePart for WindowsState {
             Event::WindowsChanged { windows } => {
                 self.windows = windows.into_iter().map(|win| (win.id, win)).collect();
             }
-            Event::WindowLayoutsChanged { changes } => {
-                for (id, update) in changes {
-                    let w = self
-                        .windows
-                        .get_mut(&id)
-                        .expect("changed window was missing from the map");
-                    w.location = update;
-                }
-            }
             Event::WindowOpenedOrChanged { window } => {
                 let (id, is_focused) = match self.windows.entry(window.id) {
                     Entry::Occupied(mut entry) => {
@@ -196,6 +187,13 @@ impl EventStreamStatePart for WindowsState {
                         win.is_urgent = urgent;
                         break;
                     }
+                }
+            }
+            Event::WindowLayoutsChanged { changes } => {
+                for (id, update) in changes {
+                    let win = self.windows.get_mut(&id);
+                    let win = win.expect("changed window was missing from the map");
+                    win.layout = update;
                 }
             }
             event => return Some(event),

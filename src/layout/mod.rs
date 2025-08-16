@@ -1742,13 +1742,6 @@ impl<W: LayoutElement> Layout<W> {
         moving_window.chain(mon_windows)
     }
 
-    pub fn current_interactive_move_tile(&self) -> Option<&Tile<W>> {
-        match &self.interactive_move {
-            Some(InteractiveMoveState::Moving(move_)) => Some(&move_.tile),
-            _ => None,
-        }
-    }
-
     pub fn with_windows(
         &self,
         mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>, WindowLayout),
@@ -1759,7 +1752,7 @@ impl<W: LayoutElement> Layout<W> {
                 Some(&move_.output),
                 None,
                 WindowLayout {
-                    tile_pos_in_scrolling_layout: None,
+                    pos_in_scrolling_layout: None,
                     tile_size: move_.tile.tile_size().into(),
                     window_size: move_.tile.window().size().into(),
                     tile_pos_in_workspace_view: None,

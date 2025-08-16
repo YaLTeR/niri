@@ -1156,12 +1156,16 @@ pub struct Window {
     /// Whether this window requests your attention.
     pub is_urgent: bool,
     /// Position- and size-related properties of the window.
-    pub location: WindowLayout,
+    pub layout: WindowLayout,
 }
 
 /// Position- and size-related properties of a [`Window`].
 ///
 /// Optional properties will be unset for some windows, do not rely on them always being present.
+///
+/// All sizes and positions are in *logical pixels* unless stated otherwise. Logical sizes may be
+/// fractional. For example, at 1.25 monitor scale, a 2-physical-pixel-wide window border is 1.6
+/// logical pixels wide.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WindowLayout {
@@ -1170,9 +1174,12 @@ pub struct WindowLayout {
     pub pos_in_scrolling_layout: Option<(usize, usize)>,
     /// Size of the tile this window is in, including decorations like borders.
     pub tile_size: (f64, f64),
-    /// Size of the window itself.
+    /// Size of the window's visual geometry itself.
     ///
-    /// Note that Wayland windows can only be integer sized.
+    /// Does not include niri decorations like borders.
+    ///
+    /// Currently, Wayland toplevel windows can only be integer-sized in logical pixels, even
+    /// though it doesn't necessarily align to physical pixels.
     pub window_size: (i32, i32),
     /// Tile position within the current view of the workspace.
     ///
