@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger};
+use niri_config::{
+    Action, Bind, Binds, HotCorners, Key, ModKey, Modifiers, OutputName, SwitchBinds, Trigger,
+};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -45,7 +47,7 @@ use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::spawn;
-use crate::utils::{center, get_monotonic_time, ResizeEdge};
+use crate::utils::{center, get_monotonic_time, output_size, ResizeEdge};
 
 pub mod backend_ext;
 pub mod move_grab;
@@ -2304,13 +2306,21 @@ impl State {
 
         // contents_under() will return no surface when the hot corner should trigger.
         let hot_corners = self.niri.config.borrow().gestures.hot_corners;
-        if !hot_corners.off
+        if hot_corners.is_enabled()
             && pointer.current_focus().is_none()
             && !self.niri.screenshot_ui.is_open()
         {
-            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-            if let Some((_, pos_within_output)) = self.niri.output_under(pos) {
-                let inside_hot_corner = hot_corner.contains(pos_within_output);
+            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+                // Prioritize monitor specific hot corners
+                let config = self.niri.config.borrow();
+                let hot_corners = output
+                    .user_data()
+                    .get::<OutputName>()
+                    .and_then(|name| config.outputs.find(name))
+                    .and_then(|c| c.hot_corners)
+                    .unwrap_or(config.gestures.hot_corners);
+                let inside_hot_corner =
+                    is_inside_hot_corner(&hot_corners, output, pos_within_output);
                 if inside_hot_corner && !was_inside_hot_corner {
                     self.niri.layout.toggle_overview();
                 }
@@ -2393,13 +2403,21 @@ impl State {
 
         // contents_under() will return no surface when the hot corner should trigger.
         let hot_corners = self.niri.config.borrow().gestures.hot_corners;
-        if !hot_corners.off
+        if hot_corners.is_enabled()
             && pointer.current_focus().is_none()
             && !self.niri.screenshot_ui.is_open()
         {
-            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-            if let Some((_, pos_within_output)) = self.niri.output_under(pos) {
-                let inside_hot_corner = hot_corner.contains(pos_within_output);
+            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+                // Prioritize monitor specific hot corners
+                let config = self.niri.config.borrow();
+                let hot_corners = output
+                    .user_data()
+                    .get::<OutputName>()
+                    .and_then(|name| config.outputs.find(name))
+                    .and_then(|c| c.hot_corners)
+                    .unwrap_or(config.gestures.hot_corners);
+                let inside_hot_corner =
+                    is_inside_hot_corner(&hot_corners, output, pos_within_output);
                 if inside_hot_corner && !was_inside_hot_corner {
                     self.niri.layout.toggle_overview();
                 }
@@ -3986,6 +4004,38 @@ fn should_intercept_key(
         }
         (None, true) => FilterResult::Forward,
     }
+}
+
+pub fn is_inside_hot_corner(
+    hot_corners: &HotCorners,
+    output: &Output,
+    pos: Point<f64, Logical>,
+) -> bool {
+    let output_size = output_size(output);
+    let transform = output.current_transform();
+    let size = transform.transform_size(output_size);
+
+    if hot_corners.top_left
+        && Rectangle::new(Point::new(0., 0.), Size::from((1., 1.))).contains(pos)
+    {
+        return true;
+    }
+    if hot_corners.top_right
+        && Rectangle::new(Point::new(size.w - 1., 0.), Size::from((1., 1.))).contains(pos)
+    {
+        return true;
+    }
+    if hot_corners.bottom_left
+        && Rectangle::new(Point::new(0., size.h - 1.), Size::from((1., 1.))).contains(pos)
+    {
+        return true;
+    }
+    if hot_corners.bottom_right
+        && Rectangle::new(Point::new(size.w - 1., size.h - 1.), Size::from((1., 1.))).contains(pos)
+    {
+        return true;
+    }
+    false
 }
 
 fn find_bind(

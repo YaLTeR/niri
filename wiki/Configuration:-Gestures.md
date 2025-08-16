@@ -23,6 +23,10 @@ gestures {
 
     hot-corners {
         // off
+  top-left
+  // top-right
+  // bottom-left
+  // bottom-right
     }
 }
 ```
@@ -38,9 +42,9 @@ The options are:
 
 - `trigger-width`: size of the area near the monitor edge that will trigger the scrolling, in logical pixels.
 - `delay-ms`: delay in milliseconds before the scrolling starts.
-Avoids unwanted scrolling when dragging things across monitors.
+  Avoids unwanted scrolling when dragging things across monitors.
 - `max-speed`: maximum scrolling speed in logical pixels per second.
-The scrolling speed increases linearly as you move your mouse cursor from `trigger-width` to the very edge of the monitor.
+  The scrolling speed increases linearly as you move your mouse cursor from `trigger-width` to the very edge of the monitor.
 
 ```kdl
 gestures {
@@ -63,9 +67,9 @@ The options are:
 
 - `trigger-height`: size of the area near the monitor edge that will trigger the scrolling, in logical pixels.
 - `delay-ms`: delay in milliseconds before the scrolling starts.
-Avoids unwanted scrolling when dragging things across monitors.
+  Avoids unwanted scrolling when dragging things across monitors.
 - `max-speed`: maximum scrolling speed; 1500 corresponds to one screen height per second.
-The scrolling speed increases linearly as you move your mouse cursor from `trigger-width` to the very edge of the monitor.
+  The scrolling speed increases linearly as you move your mouse cursor from `trigger-width` to the very edge of the monitor.
 
 ```kdl
 gestures {
@@ -81,16 +85,31 @@ gestures {
 
 <sup>Since: 25.05</sup>
 
-Put your mouse at the very top-left corner of a monitor to toggle the overview.
+Put your mouse at a corner of your monitor (by default, top-left) to toggle the overview.
 Also works during drag-and-dropping something.
 
-`off` disables the hot corners.
+- `off` disables the hot corners.
+- `top-left` enables the top left hot corner.
+- `top-right` enables the top right hot corner.
+- `bottom-left` enables the bottom left hot corner.
+- `bottom-right` enables the bottom right hot corner.
 
 ```kdl
 // Disable the hot corners.
 gestures {
     hot-corners {
         off
+        top-left
+    }
+}
+```
+
+```kdl
+// enable bottom right and top right hot corners
+gestures {
+    hot-corners {
+        top-right
+        bottom-right
     }
 }
 ```

@@ -464,6 +464,8 @@ pub struct Output {
     pub background_color: Option<Color>,
     #[knuffel(child)]
     pub backdrop_color: Option<Color>,
+    #[knuffel(child)]
+    pub hot_corners: Option<HotCorners>,
 }
 
 impl Output {
@@ -493,6 +495,7 @@ impl Default for Output {
             variable_refresh_rate: None,
             background_color: None,
             backdrop_color: None,
+            hot_corners: None,
         }
     }
 }
@@ -1339,10 +1342,36 @@ impl Default for DndEdgeWorkspaceSwitch {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct HotCorners {
     #[knuffel(child)]
     pub off: bool,
+    #[knuffel(child)]
+    pub top_left: bool,
+    #[knuffel(child)]
+    pub top_right: bool,
+    #[knuffel(child)]
+    pub bottom_left: bool,
+    #[knuffel(child)]
+    pub bottom_right: bool,
+}
+
+impl HotCorners {
+    pub fn is_enabled(&self) -> bool {
+        !self.off && (self.top_left || self.top_right || self.bottom_left || self.bottom_right)
+    }
+}
+
+impl Default for HotCorners {
+    fn default() -> Self {
+        Self {
+            off: false,
+            top_left: true,
+            top_right: false,
+            bottom_left: false,
+            bottom_right: false,
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -4136,6 +4165,13 @@ mod tests {
                 mode "1920x1080@144"
                 variable-refresh-rate on-demand=true
                 background-color "rgba(25, 25, 102, 1.0)"
+                hot-corners {
+                    off
+                    top-left
+                    top-right
+                    bottom-left
+                    bottom-right
+                }
             }
 
             layout {
@@ -4512,6 +4548,15 @@ mod tests {
                             },
                         ),
                         backdrop_color: None,
+                        hot_corners: Some(
+                            HotCorners {
+                                off: true,
+                                top_left: true,
+                                top_right: true,
+                                bottom_left: true,
+                                bottom_right: true,
+                            },
+                        ),
                     },
                 ],
             ),
@@ -4903,6 +4948,10 @@ mod tests {
                 },
                 hot_corners: HotCorners {
                     off: false,
+                    top_left: true,
+                    top_right: false,
+                    bottom_left: false,
+                    bottom_right: false,
                 },
             },
             overview: Overview {
