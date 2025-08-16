@@ -12,6 +12,7 @@ use smithay::wayland::shell::xdg::PopupSurface;
 
 use crate::layer::{MappedLayer, ResolvedLayerRules};
 use crate::niri::State;
+use crate::render_helpers::blur::EffectsFramebuffers;
 use crate::utils::{is_mapped, output_size, send_scale_transform};
 
 impl WlrLayerShellHandler for State {
@@ -23,7 +24,7 @@ impl WlrLayerShellHandler for State {
         &mut self,
         surface: WlrLayerSurface,
         wl_output: Option<WlOutput>,
-        _layer: Layer,
+        wlr_layer: Layer,
         namespace: String,
     ) {
         let output = if let Some(wl_output) = &wl_output {
@@ -40,6 +41,11 @@ impl WlrLayerShellHandler for State {
         let wl_surface = surface.wl_surface().clone();
         let is_new = self.niri.unmapped_layer_surfaces.insert(wl_surface);
         assert!(is_new);
+
+        if matches!(wlr_layer, Layer::Background | Layer::Bottom) {
+            // the optimized blur buffer has been dirtied, re-render
+            EffectsFramebuffers::set_dirty(&output);
+        }
 
         let mut map = layer_map_for_output(&output);
         map.map_layer(&LayerSurface::new(surface, namespace))
@@ -61,6 +67,12 @@ impl WlrLayerShellHandler for State {
             }) {
             map.unmap_layer(&layer);
             self.niri.mapped_layer_surfaces.remove(&layer);
+
+            if matches!(layer.layer(), Layer::Background | Layer::Bottom) {
+                // the optimized blur buffer has been dirtied, re-render on next State::dispatch
+                EffectsFramebuffers::set_dirty(&output);
+            }
+
             Some(output)
         } else {
             None
