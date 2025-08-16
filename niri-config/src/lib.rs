@@ -44,8 +44,6 @@ pub struct Config {
     #[knuffel(child, default)]
     pub layout: Layout,
     #[knuffel(child, default)]
-    pub no_failed_config_reloaded_notification: bool,
-    #[knuffel(child, default)]
     pub prefer_no_csd: bool,
     #[knuffel(child, default)]
     pub cursor: Cursor,
@@ -61,6 +59,8 @@ pub struct Config {
     pub clipboard: Clipboard,
     #[knuffel(child, default)]
     pub hotkey_overlay: HotkeyOverlay,
+    #[knuffel(child, default)]
+    pub config_notification: ConfigNotification,
     #[knuffel(child, default)]
     pub animations: Animations,
     #[knuffel(child, default)]
@@ -1047,6 +1047,12 @@ pub struct HotkeyOverlay {
     pub skip_at_startup: bool,
     #[knuffel(child)]
     pub hide_not_bound: bool,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ConfigNotification {
+    #[knuffel(child)]
+    pub disable_failed: bool,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -4752,7 +4758,6 @@ mod tests {
                     a: 1.0,
                 },
             },
-            no_failed_config_reloaded_notification: false,
             prefer_no_csd: true,
             cursor: Cursor {
                 xcursor_theme: "breeze_cursors",
@@ -4771,6 +4776,9 @@ mod tests {
             hotkey_overlay: HotkeyOverlay {
                 skip_at_startup: true,
                 hide_not_bound: false,
+            },
+            config_notification: ConfigNotification {
+                disable_failed: false,
             },
             animations: Animations {
                 off: false,

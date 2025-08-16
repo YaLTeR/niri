@@ -79,8 +79,7 @@ impl ConfigErrorNotification {
 
     pub fn show(&mut self) {
         let c = self.config.borrow();
-
-        if c.no_failed_config_reloaded_notification {
+        if c.config_notification.disable_failed {
             return;
         }
 

@@ -10,8 +10,6 @@ prefer-no-csd
 
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 
-no-failed-config-reloaded-notification
-
 environment {
     QT_QPA_PLATFORM "wayland"
     DISPLAY null
@@ -50,6 +48,10 @@ clipboard {
 hotkey-overlay {
     skip-at-startup
     hide-not-bound
+}
+
+config-notification {
+    disable-failed
 }
 ```
 
@@ -107,10 +109,6 @@ You can also set this option to `null` to disable saving screenshots to disk.
 ```kdl
 screenshot-path null
 ```
-
-### `no-failed-config-reloaded-notification`
-
-Prevent Niri from displaying the built-in notification window when it fail to hot reload the configuration.
 
 ### `environment`
 
@@ -283,3 +281,18 @@ hotkey-overlay {
 ```
 
 You can customize which binds the hotkey overlay shows using the [`hotkey-overlay-title` property](./Configuration:-Key-Bindings.md#custom-hotkey-overlay-titles).
+
+### `config-notification`
+
+<sup>Since: next release</sup>
+
+Settings for the config created/failed notification.
+
+Set the `disable-failed` flag to disable the "Failed to parse the config file" notification.
+For example, if you have a custom one.
+
+```kdl
+config-notification {
+    disable-failed
+}
+```
