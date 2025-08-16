@@ -59,6 +59,9 @@ pub struct ResolvedWindowRules {
     /// Whether the window should open full-width.
     pub open_maximized: Option<bool>,
 
+    /// Whether the window should open full-width if alone on the workspace.
+    pub open_maximized_if_alone: Option<bool>,
+
     /// Whether the window should open fullscreen.
     pub open_fullscreen: Option<bool>,
 
@@ -178,6 +181,7 @@ impl ResolvedWindowRules {
             open_on_output: None,
             open_on_workspace: None,
             open_maximized: None,
+            open_maximized_if_alone: None,
             open_fullscreen: None,
             open_floating: None,
             open_focused: None,
@@ -296,6 +300,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_maximized {
                     resolved.open_maximized = Some(x);
+                }
+
+                if let Some(x) = rule.open_maximized_if_alone {
+                    resolved.open_maximized_if_alone = Some(x);
                 }
 
                 if let Some(x) = rule.open_fullscreen {
