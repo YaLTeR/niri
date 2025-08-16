@@ -54,6 +54,7 @@
 
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
@@ -1155,6 +1156,8 @@ pub struct Window {
     pub is_floating: bool,
     /// Whether this window requests your attention.
     pub is_urgent: bool,
+    /// Timestamp for the most recent focus event
+    pub focus_timestamp: Option<SystemTime>,
 }
 
 /// Output configuration change result.
