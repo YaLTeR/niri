@@ -1178,8 +1178,11 @@ pub struct Window {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct WindowLayout {
-    /// Location of a tiled window within a workspace in terms of (column index, tile index in
-    /// column).
+    /// Location of a tiled window within a workspace: (column index, tile index in column).
+    ///
+    /// The indices are 1-based, i.e. the leftmost column is at index 1 and the topmost tile in a
+    /// column is at index 1. This is consistent with [`Action::FocusColumn`] and
+    /// [`Action::FocusWindowInColumn`].
     pub pos_in_scrolling_layout: Option<(usize, usize)>,
     /// Size of the tile this window is in, including decorations like borders.
     pub tile_size: (f64, f64),
