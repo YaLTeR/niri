@@ -459,6 +459,14 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::OverviewOpenedOrClosed { is_open: opened } => {
                         println!("Overview toggled: {opened}");
                     }
+                    Event::ConfigReloaded { failed } => {
+                        let status = if failed {
+                            "successfully"
+                        } else {
+                            "with an error"
+                        };
+                        println!("Config reloaded {status}");
+                    }
                 }
             }
         }
