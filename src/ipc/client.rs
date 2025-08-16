@@ -460,7 +460,12 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                         println!("Overview toggled: {opened}");
                     }
                     Event::ConfigReloaded { failed } => {
-                        println!("Config reloaded: {failed}");
+                        let status = if failed {
+                            "with an error"
+                        } else {
+                            "successfully"
+                        };
+                        println!("Config reloaded {status}");
                     }
                 }
             }

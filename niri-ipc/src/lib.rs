@@ -1399,9 +1399,11 @@ pub enum Event {
         /// The new state of the overview.
         is_open: bool,
     },
-    /// The configuration is reloaded
+    /// The configuration was reloaded.
     ConfigReloaded {
-        /// Whether the operation failed or not
+        /// Whether the reloading failed.
+        ///
+        /// For example, the new config file couldn't be parsed.
         failed: bool,
     },
 }
