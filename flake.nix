@@ -118,8 +118,7 @@
           checkFlags = [
             # These tests require the ability to access a "valid EGL Display", but that won't work
             # inside the Nix sandbox
-            "--skip=tests::animations::clientside_height_change_doesnt_animate"
-            "--skip=tests::animations::height_resize_animates_next_y"
+            "--skip=tests::animations
           ];
 
           postInstall =
