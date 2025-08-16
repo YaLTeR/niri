@@ -44,6 +44,7 @@ use smithay::reexports::drm::control::{
 use smithay::reexports::gbm::Modifier;
 use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
+use smithay::reexports::rustix::path::Arg;
 use smithay::reexports::wayland_protocols;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::DeviceFd;
@@ -495,6 +496,19 @@ impl Tty {
         niri: &mut Niri,
     ) -> anyhow::Result<()> {
         debug!("device added: {device_id} {path:?}");
+
+        // skip /dev/dri/render* node
+        match path.as_str() {
+            Ok(str) => {
+                if str.contains("render") {
+                    return Ok(());
+                }
+            }
+            Err(err) => {
+                error!("invalid path: {}", err);
+                return Ok(());
+            }
+        }
 
         let node = DrmNode::from_dev_id(device_id)?;
 
