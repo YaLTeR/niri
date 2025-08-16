@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, PresetSize, Struts};
-use niri_ipc::{ColumnDisplay, SizeChange};
+use niri_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
@@ -2323,19 +2323,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         zip(columns, offsets)
     }
 
-    pub fn tiles_with_workspace_positions(
-        &self,
-    ) -> impl Iterator<Item = (&Tile<W>, (usize, usize))> {
-        self.columns
-            .iter()
-            .enumerate()
-            .flat_map(move |(col_i, col)| {
-                col.tiles()
-                    .enumerate()
-                    .map(move |(tile_i, (tile, _))| (tile, (col_i, tile_i)))
-            })
-    }
-
     pub fn tiles_with_render_positions(
         &self,
     ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>, bool)> {
@@ -2376,6 +2363,21 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                         }
                         (tile, pos)
                     })
+            })
+    }
+
+    pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
+        self.columns
+            .iter()
+            .enumerate()
+            .flat_map(move |(col_idx, col)| {
+                col.tiles().enumerate().map(move |(tile_idx, (tile, _))| {
+                    let layout = WindowLayout {
+                        pos_in_scrolling_layout: Some((col_idx, tile_idx)),
+                        ..tile.ipc_layout_template()
+                    };
+                    (tile, layout)
+                })
             })
     }
 

@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::rc::Rc;
 
 use niri_config::{PresetSize, RelativeTo};
-use niri_ipc::{PositionChange, SizeChange};
+use niri_ipc::{PositionChange, SizeChange, WindowLayout};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
@@ -319,6 +319,16 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 pos = pos.to_physical_precise_round(scale).to_logical(scale);
             }
             (tile, pos)
+        })
+    }
+
+    pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
+        self.tiles_with_render_positions().map(move |(tile, pos)| {
+            let layout = WindowLayout {
+                tile_pos_in_workspace_view: Some(pos.into()),
+                ..tile.ipc_layout_template()
+            };
+            (tile, layout)
         })
     }
 

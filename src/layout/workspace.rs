@@ -1406,38 +1406,6 @@ impl<W: LayoutElement> Workspace<W> {
         self.windows_mut().find(|win| win.is_wl_surface(wl_surface))
     }
 
-    pub fn tiles_with_window_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
-        let scrolling = self.scrolling.tiles_with_workspace_positions();
-        let scrolling = scrolling.map(move |(tile, pos)| {
-            (
-                tile,
-                WindowLayout {
-                    pos_in_scrolling_layout: Some(pos),
-                    tile_size: tile.tile_size().into(),
-                    window_size: tile.window().size().into(),
-                    tile_pos_in_workspace_view: None,
-                    window_offset_in_tile: tile.window_loc().into(),
-                },
-            )
-        });
-
-        let floating = self.floating.tiles_with_render_positions();
-        let floating = floating.map(move |(tile, pos)| {
-            (
-                tile,
-                WindowLayout {
-                    pos_in_scrolling_layout: None,
-                    tile_size: tile.tile_size().into(),
-                    window_size: tile.window().size().into(),
-                    tile_pos_in_workspace_view: Some(pos.into()),
-                    window_offset_in_tile: tile.window_loc().into(),
-                },
-            )
-        });
-
-        floating.chain(scrolling)
-    }
-
     pub fn tiles_with_render_positions(
         &self,
     ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>, bool)> {
@@ -1456,6 +1424,12 @@ impl<W: LayoutElement> Workspace<W> {
     ) -> impl Iterator<Item = (&mut Tile<W>, Point<f64, Logical>)> {
         let scrolling = self.scrolling.tiles_with_render_positions_mut(round);
         let floating = self.floating.tiles_with_render_positions_mut(round);
+        floating.chain(scrolling)
+    }
+
+    pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
+        let scrolling = self.scrolling.tiles_with_ipc_layouts();
+        let floating = self.floating.tiles_with_ipc_layouts();
         floating.chain(scrolling)
     }
 

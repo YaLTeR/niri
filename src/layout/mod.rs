@@ -1747,41 +1747,25 @@ impl<W: LayoutElement> Layout<W> {
         mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>, WindowLayout),
     ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            f(
-                move_.tile.window(),
-                Some(&move_.output),
-                None,
-                WindowLayout {
-                    pos_in_scrolling_layout: None,
-                    tile_size: move_.tile.tile_size().into(),
-                    window_size: move_.tile.window().size().into(),
-                    tile_pos_in_workspace_view: None,
-                    window_offset_in_tile: move_.tile.window_loc().into(),
-                },
-            );
+            // We don't fill any positions for interactively moved windows.
+            let layout = move_.tile.ipc_layout_template();
+            f(move_.tile.window(), Some(&move_.output), None, layout);
         }
 
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mon.workspaces {
-                        // for (tile, cell) in ws.tiles_with_workspace_positions() {
-                        for (tile, window_layout) in ws.tiles_with_window_layouts() {
-                            f(
-                                tile.window(),
-                                Some(&mon.output),
-                                Some(ws.id()),
-                                window_layout,
-                            );
+                        for (tile, layout) in ws.tiles_with_ipc_layouts() {
+                            f(tile.window(), Some(&mon.output), Some(ws.id()), layout);
                         }
                     }
                 }
             }
             MonitorSet::NoOutputs { workspaces } => {
                 for ws in workspaces {
-                    // for (tile, cell) in ws.tiles_with_workspace_positions() {
-                    for (tile, window_layout) in ws.tiles_with_window_layouts() {
-                        f(tile.window(), None, Some(ws.id()), window_layout);
+                    for (tile, layout) in ws.tiles_with_ipc_layouts() {
+                        f(tile.window(), None, Some(ws.id()), layout);
                     }
                 }
             }
