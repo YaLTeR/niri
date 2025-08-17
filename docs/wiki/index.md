@@ -4,7 +4,7 @@ Feel free to look through usage and [Getting started](./Getting-Started.md).
 If you're looking for ways to configure niri, check out the [introduction to configuration](./Configuration:-Introduction.md).
 If you want to contribute to niri, look at the development section and [how to develop niri](./Development:-Developing-niri.md).
 
-If you're not already here, check out [our new documentation pages](https://yalter.github.io/niri/)!
+If you're not already here, check out our new wiki website! https://yalter.github.io/niri/
 
 ---
 
