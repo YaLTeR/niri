@@ -1399,6 +1399,16 @@ pub enum Event {
         /// The new state of the overview.
         is_open: bool,
     },
+    /// The configuration was reloaded.
+    ///
+    /// You will always receive this event when connecting to the event stream, indicating the last
+    /// config load attempt.
+    ConfigLoaded {
+        /// Whether the loading failed.
+        ///
+        /// For example, the config file couldn't be parsed.
+        failed: bool,
+    },
 }
 
 impl FromStr for WorkspaceReferenceArg {
