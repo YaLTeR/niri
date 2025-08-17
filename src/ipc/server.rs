@@ -763,13 +763,13 @@ impl State {
         server.send_event(event);
     }
 
-    pub fn ipc_config_reloaded(&mut self, failed: bool) {
+    pub fn ipc_config_loaded(&mut self, failed: bool) {
         let Some(server) = &self.niri.ipc_server else {
             return;
         };
         let mut state = server.event_stream_state.borrow_mut();
 
-        let event = Event::ConfigReloaded { failed };
+        let event = Event::ConfigLoaded { failed };
         state.apply(event.clone());
         server.send_event(event);
     }

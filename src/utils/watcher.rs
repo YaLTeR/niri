@@ -143,7 +143,7 @@ pub fn setup(state: &mut State, config_path: &ConfigPath) {
                 calloop::channel::Event::Msg(config) => {
                     let failed = config.is_err();
                     state.reload_config(config);
-                    state.ipc_config_reloaded(failed);
+                    state.ipc_config_loaded(failed);
                 }
                 calloop::channel::Event::Closed => (),
             },
