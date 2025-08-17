@@ -2119,8 +2119,11 @@ impl State {
                 }
             }
             Action::SetPointerLocation(niri_ipc::Point { x, y }) => {
-                let pointer = &self.niri.seat.get_pointer().unwrap();
-                pointer.set_location(Point::new(x, y));
+                let new_pos = self.clamp_pointer_location_to_existing_output(Point::new(x, y));
+                self.on_synthetic_pointer_motion_absolute(
+                    new_pos,
+                    get_monotonic_time().as_millis() as u32,
+                );
             }
         }
     }
@@ -2319,10 +2322,6 @@ impl State {
         &mut self,
         event: I::PointerMotionAbsoluteEvent,
     ) {
-        let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
-        // Any of the early returns here mean that the pointer is not inside the hot corner.
-        self.niri.pointer_inside_hot_corner = false;
-
         let Some(pos) = self.compute_absolute_location(&event, None).or_else(|| {
             self.global_bounding_rectangle().map(|output_geo| {
                 event.position_transformed(output_geo.size) + output_geo.loc.to_f64()
@@ -2330,6 +2329,14 @@ impl State {
         }) else {
             return;
         };
+
+        self.on_synthetic_pointer_motion_absolute(pos, event.time_msec());
+    }
+
+    fn on_synthetic_pointer_motion_absolute(&mut self, pos: Point<f64, Logical>, time: u32) {
+        let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
+        // Any of the early returns here mean that the pointer is not inside the hot corner.
+        self.niri.pointer_inside_hot_corner = false;
 
         let serial = SERIAL_COUNTER.next_serial();
 
@@ -2362,7 +2369,7 @@ impl State {
             &MotionEvent {
                 location: pos,
                 serial,
-                time: event.time_msec(),
+                time,
             },
         );
 
