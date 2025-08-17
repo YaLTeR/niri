@@ -1,4 +1,4 @@
-niri's documentation files are found in `docs/wiki/` and should be viewable and [browsable](#browsable) in at least three systems:
+niri's documentation files are found in `docs/wiki/` and should be viewable and browsable in at least three systems:
 
 - The GitHub repo's markdown file preview
 - [The GitHub repo's wiki](https://github.com/YaLTeR/niri/wiki)
@@ -19,6 +19,8 @@ To set up and run the documentation site locally, it is recommended to use [uv](
 
 ### Serving the site locally with uv
 
+In the `docs/` subdirectory:
+
 - `uv sync`
 - `uv run mkdocs serve`
 
@@ -30,7 +32,7 @@ Changes made to the documentation while the development server is running will c
 > Images may not be visible, as they are stored on Git LFS.
 > If this is the case, run `git lfs pull`.
 
-## Browsable
+## Elements
 
 Elements such as links, admonitions, images, and snippets should work as expected in markdown file previews on GitHub, the GitHub repo's wiki, and in the documentation site.
 
