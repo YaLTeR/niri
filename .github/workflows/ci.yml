@@ -303,6 +303,7 @@ jobs:
         with:
           lfs: true
           show-progress: false
+
       - uses: Andrew-Chen-Wang/github-wiki-action@b7e552d7cb0fa7f83e459012ffc6840fd87bcb83
         with:
           path: docs/wiki/
@@ -319,22 +320,29 @@ jobs:
         with:
           lfs: true
           show-progress: false
+
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
             enable-cache: true
+
       - name: Install the project
         run: uv sync --locked --all-extras --dev
         working-directory: docs/
+
       - name: Generate niri documentation
         run: uv run mkdocs build
         working-directory: docs/
+
       - uses: dtolnay/rust-toolchain@stable
+
       - name: Generate rustdoc documentation
         run: cargo doc --no-deps -p niri-ipc
+
       - run: mkdir -p publish/niri_ipc
       - run: cp -r ./target/doc/* ./publish/
       - run: cp -r ./docs/site/* ./publish/
+
       - name: Deploy documentation
         if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
