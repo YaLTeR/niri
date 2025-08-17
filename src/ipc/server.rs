@@ -18,7 +18,8 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response, Workspace,
+    Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response, WindowLayout,
+    Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -478,7 +479,11 @@ async fn handle_event_stream_client(client: EventStreamClient) -> anyhow::Result
     Ok(())
 }
 
-fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_ipc::Window {
+fn make_ipc_window(
+    mapped: &Mapped,
+    workspace_id: Option<WorkspaceId>,
+    layout: WindowLayout,
+) -> niri_ipc::Window {
     with_toplevel_role(mapped.toplevel(), |role| niri_ipc::Window {
         id: mapped.id().get(),
         title: role.title.clone(),
@@ -488,6 +493,7 @@ fn make_ipc_window(mapped: &Mapped, workspace_id: Option<WorkspaceId>) -> niri_i
         is_focused: mapped.is_focused(),
         is_floating: mapped.is_floating(),
         is_urgent: mapped.is_urgent(),
+        layout,
         focus_timestamp: mapped
             .get_focus_timestamp()
             .map(|t| SystemTime::now() - (Instant::now() - t)),
@@ -661,10 +667,12 @@ impl State {
         let mut events = Vec::new();
         let layout = &self.niri.layout;
 
+        let mut batch_change_layouts: Vec<(u64, WindowLayout)> = Vec::new();
+
         // Check for window changes.
         let mut seen = HashSet::new();
         let mut focused_id = None;
-        layout.with_windows(|mapped, _, ws_id| {
+        layout.with_windows(|mapped, _, ws_id, window_layout| {
             let id = mapped.id().get();
             seen.insert(id);
 
@@ -673,7 +681,7 @@ impl State {
             }
 
             let Some(ipc_win) = state.windows.get(&id) else {
-                let window = make_ipc_window(mapped, ws_id);
+                let window = make_ipc_window(mapped, ws_id, window_layout);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
             };
@@ -687,9 +695,13 @@ impl State {
             });
 
             if changed {
-                let window = make_ipc_window(mapped, ws_id);
+                let window = make_ipc_window(mapped, ws_id, window_layout);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
+            }
+
+            if ipc_win.layout != window_layout {
+                batch_change_layouts.push((id, window_layout));
             }
 
             if mapped.is_focused() && !ipc_win.is_focused {
@@ -701,6 +713,17 @@ impl State {
                 events.push(Event::WindowUrgencyChanged { id, urgent })
             }
         });
+
+        // It might make sense to push layout changes after closed windows (since windows about to
+        // be closed will occupy the same column/tile positions as the window that moved into this
+        // vacated space), but also we are already pushing some layout changes in
+        // WindowOpenedOrChanged above, meaning that the receiving end has to handle this case
+        // anyway.
+        if !batch_change_layouts.is_empty() {
+            events.push(Event::WindowLayoutsChanged {
+                changes: batch_change_layouts,
+            });
+        }
 
         // Check for closed windows.
         let mut ipc_focused_id = None;
@@ -740,6 +763,17 @@ impl State {
         }
 
         let event = Event::OverviewOpenedOrClosed { is_open };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
+
+    pub fn ipc_config_loaded(&mut self, failed: bool) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let mut state = server.event_stream_state.borrow_mut();
+
+        let event = Event::ConfigLoaded { failed };
         state.apply(event.clone());
         server.send_event(event);
     }
