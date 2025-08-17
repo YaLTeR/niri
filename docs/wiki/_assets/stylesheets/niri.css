@@ -1,8 +1,9 @@
 
 
 :root  > * {
-  --md-primary-fg-color:        #1e97b5;
-  --md-primary-fg-color--dark:  #135566;
+  --md-primary-fg-color: #1e97b5;
+  --md-primary-fg-color--dark: color-mix(in srgb, var(--md-primary-fg-color), black 20%);
+  --md-accent-fg-color: var(--md-primary-fg-color--dark);
 }
 
 /* could also rotate the hue a bit if we'd like */
