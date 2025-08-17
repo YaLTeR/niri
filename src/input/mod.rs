@@ -2142,7 +2142,7 @@ impl State {
         let pos = pointer.current_location();
 
         // We have an output, so we can compute the new location and focus.
-        let mut new_pos = pos + event.delta();
+        let new_pos = self.clamp_pointer_location_to_existing_output(pos + event.delta());
 
         // We received an event for the regular pointer, so show it now.
         self.niri.pointer_visibility = PointerVisibility::Visible;
@@ -2199,33 +2199,6 @@ impl State {
                 // I guess a redraw to hide the tablet cursor could be nice? Doesn't matter too
                 // much here I think.
                 return;
-            }
-        }
-
-        if self
-            .niri
-            .global_space
-            .output_under(new_pos)
-            .next()
-            .is_none()
-        {
-            // We ended up outside the outputs and need to clip the movement.
-            if let Some(output) = self.niri.global_space.output_under(pos).next() {
-                // The pointer was previously on some output. Clip the movement against its
-                // boundaries.
-                let geom = self.niri.global_space.output_geometry(output).unwrap();
-                new_pos.x = new_pos
-                    .x
-                    .clamp(geom.loc.x as f64, (geom.loc.x + geom.size.w - 1) as f64);
-                new_pos.y = new_pos
-                    .y
-                    .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64);
-            } else {
-                // The pointer was not on any output in the first place. Find one for it.
-                // Let's do the simple thing and just put it on the first output.
-                let output = self.niri.global_space.outputs().next().unwrap();
-                let geom = self.niri.global_space.output_geometry(output).unwrap();
-                new_pos = center(geom).to_f64();
             }
         }
 
@@ -3901,6 +3874,45 @@ impl State {
         if let Some(action) = action {
             self.do_action(action, true);
         }
+    }
+
+    fn clamp_pointer_location_to_existing_output(
+        &mut self,
+        new_pos: Point<f64, Logical>,
+    ) -> Point<f64, Logical> {
+        let pointer = &self.niri.seat.get_pointer().unwrap();
+        let pos = pointer.current_location();
+
+        if self
+            .niri
+            .global_space
+            .output_under(new_pos)
+            .next()
+            .is_none()
+        {
+            // We ended up outside the outputs and need to clip the movement.
+            if let Some(output) = self.niri.global_space.output_under(pos).next() {
+                // The pointer was previously on some output. Clip the movement against its
+                // boundaries.
+                let geom = self.niri.global_space.output_geometry(output).unwrap();
+                return Point::new(
+                    new_pos
+                        .x
+                        .clamp(geom.loc.x as f64, (geom.loc.x + geom.size.w - 1) as f64),
+                    new_pos
+                        .y
+                        .clamp(geom.loc.y as f64, (geom.loc.y + geom.size.h - 1) as f64),
+                );
+            } else {
+                // The pointer was not on any output in the first place. Find one for it.
+                // Let's do the simple thing and just put it on the first output.
+                let output = self.niri.global_space.outputs().next().unwrap();
+                let geom = self.niri.global_space.output_geometry(output).unwrap();
+                return center(geom).to_f64();
+            }
+        }
+
+        new_pos
     }
 }
 
