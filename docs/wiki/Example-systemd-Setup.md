@@ -18,7 +18,7 @@ Unlike [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup),
     So we will make our own.
     Create `~/.config/systemd/user/swaybg.service` with the following contents:
 
-    ```
+    ```systemd
     [Unit]
     PartOf=graphical-session.target
     After=graphical-session.target
@@ -43,7 +43,7 @@ Unlike [`spawn-at-startup`](./Configuration:-Miscellaneous.md#spawn-at-startup),
 4. `swayidle` similarly does not provide a service, so we will also make our own.
     Create `~/.config/systemd/user/swayidle.service` with the following contents:
 
-    ```
+    ```systemd
     [Unit]
     PartOf=graphical-session.target
     After=graphical-session.target
