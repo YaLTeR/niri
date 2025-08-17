@@ -1177,7 +1177,8 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn overview_zoom(&self) -> f64 {
         let progress = self.overview_progress.as_ref().map(|p| p.value());
-        compute_overview_zoom(&self.options, progress)
+        let workspace_count = self.workspaces.iter().filter(|ws| ws.has_windows()).count();
+        compute_overview_zoom(&self.options, progress, workspace_count)
     }
 
     pub(super) fn set_overview_progress(&mut self, progress: Option<&super::OverviewProgress>) {
@@ -1256,7 +1257,7 @@ impl<W: LayoutElement> Monitor<W> {
                 // - first_y = to * from_height - switch_anim.value() * from_height - to * current_height
                 // - first_y = -switch_anim.value() * from_height + to * (from_height - current_height)
                 let from = progress_anim.from();
-                let from_zoom = compute_overview_zoom(&self.options, Some(from));
+                let from_zoom = compute_overview_zoom(&self.options, Some(from), self.workspaces.len());
                 let from_ws_height_with_gap = self.workspace_size_with_gap(from_zoom).h;
 
                 let zoom = self.overview_zoom();

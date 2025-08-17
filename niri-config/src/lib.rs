@@ -1353,10 +1353,82 @@ pub struct HotCorners {
     pub off: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZoomRange {
+    pub min: FloatOrInt<0, 1>,
+    pub max: FloatOrInt<0, 1>,
+}
+
+impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for ZoomRange {
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, knuffel::errors::DecodeError<S>> {
+        if let Some(type_name) = &node.type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+
+        let mut iter_args = node.arguments.iter();
+
+        let first = iter_args
+            .next()
+            .ok_or_else(|| DecodeError::missing(node, "at least one argument is required"))?;
+
+        let min = <FloatOrInt<0, 1> as knuffel::DecodeScalar<S>>::decode(first, ctx)?;
+
+        let max = if let Some(second) = iter_args.next() {
+            <FloatOrInt<0, 1> as knuffel::DecodeScalar<S>>::decode(second, ctx)?
+        } else {
+            min
+        };
+
+        if max.0 < min.0 {
+            return Err(DecodeError::conversion(
+                node,
+                format!(
+                    "max zoom ({}) must be greater than or equal to min zoom ({})",
+                    max.0, min.0
+                ),
+            ));
+        }
+
+        if let Some(arg) = iter_args.next() {
+            ctx.emit_error(DecodeError::unexpected(
+                &arg.literal,
+                "argument",
+                "expected at most 2 arguments",
+            ));
+        }
+
+        for name in node.properties.keys() {
+            ctx.emit_error(DecodeError::unexpected(
+                name,
+                "property",
+                format!("unexpected property `{}`", name.escape_default()),
+            ));
+        }
+
+        for child in node.children.as_ref().map(|lst| &lst[..]).unwrap_or(&[]) {
+            ctx.emit_error(DecodeError::unexpected(
+                child,
+                "node",
+                format!("unexpected node `{}`", child.node_name.escape_default()),
+            ));
+        }
+
+        Ok(ZoomRange { min, max })
+    }
+}
+
+
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct Overview {
-    #[knuffel(child, unwrap(argument), default = Self::default().zoom)]
-    pub zoom: FloatOrInt<0, 1>,
+    #[knuffel(child, default = Self::default().zoom)]
+    pub zoom: ZoomRange,
     #[knuffel(child, default = Self::default().backdrop_color)]
     pub backdrop_color: Color,
     #[knuffel(child, default)]
@@ -1366,7 +1438,10 @@ pub struct Overview {
 impl Default for Overview {
     fn default() -> Self {
         Self {
-            zoom: FloatOrInt(0.5),
+            zoom: ZoomRange {
+                min: FloatOrInt(0.5),
+                max: FloatOrInt(0.5),
+            },
             backdrop_color: DEFAULT_BACKDROP_COLOR,
             workspace_shadow: WorkspaceShadow::default(),
         }
