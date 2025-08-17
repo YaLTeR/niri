@@ -39,6 +39,7 @@ markdown_extensions:
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite
+  - pymdownx.magiclink
   - pymdownx.snippets
   - pymdownx.superfences
   - pymdownx.keys
