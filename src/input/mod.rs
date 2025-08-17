@@ -3086,37 +3086,37 @@ impl State {
 
         self.update_pointer_contents();
 
-        macro_rules! get_scroll_factors {
-            ($cfg:expr) => {{
-                let h_factor = $cfg
-                    .scroll_factor_horizontal
-                    .map(|x| x.0)
-                    .or_else(|| $cfg.scroll_factor.map(|x| x.0))
-                    .unwrap_or(1.);
-                let v_factor = $cfg
-                    .scroll_factor_vertical
-                    .map(|y| y.0)
-                    .or_else(|| $cfg.scroll_factor.map(|y| y.0))
-                    .unwrap_or(1.);
-                (h_factor, v_factor)
-            }};
-        }
-
-        let (horizontal_factor, vertical_factor) = match source {
-            AxisSource::Wheel => get_scroll_factors!(&self.niri.config.borrow().input.mouse),
-            AxisSource::Finger => get_scroll_factors!(&self.niri.config.borrow().input.touchpad),
-            _ => (1., 1.),
+        let device_scroll_factor = {
+            let config = self.niri.config.borrow();
+            match source {
+                AxisSource::Wheel => config.input.mouse.scroll_factor.clone(),
+                AxisSource::Finger => config.input.touchpad.scroll_factor.clone(),
+                _ => None,
+            }
         };
 
+        // Get window-specific scroll factor
         let window_scroll_factor = pointer
             .current_focus()
             .map(|focused| self.niri.find_root_shell_surface(&focused))
             .and_then(|root| self.niri.layout.find_window_and_output(&root).unzip().0)
-            .and_then(|window| window.rules().scroll_factor);
+            .and_then(|window| window.rules().scroll_factor)
+            .unwrap_or(1.);
 
-        let window_factor = window_scroll_factor.unwrap_or(1.);
-        let horizontal_factor = horizontal_factor * window_factor;
-        let vertical_factor = vertical_factor * window_factor;
+        // Determine final scroll factors based on configuration
+        let (horizontal_factor, vertical_factor) = if let Some(ref sf) = device_scroll_factor {
+            if sf.has_per_axis_override() {
+                // Per-axis settings override everything, including window factor
+                sf.get_factors(1.)
+            } else {
+                // Combined setting multiplies with window factor
+                let (h, v) = sf.get_factors(1.);
+                (h * window_scroll_factor, v * window_scroll_factor)
+            }
+        } else {
+            // No device scroll factor, just use window factor
+            (window_scroll_factor, window_scroll_factor)
+        };
 
         let horizontal_amount = horizontal_amount.unwrap_or_else(|| {
             // Winit backend, discrete scrolling.
