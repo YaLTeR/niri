@@ -6,13 +6,6 @@
   --md-accent-fg-color: var(--md-primary-fg-color--dark);
 }
 
-/* could also rotate the hue a bit if we'd like */
-/*
-[data-md-color-scheme="slate"] {
-  --md-hue: 210; 
-}
-*/
-
 .md-nav--primary .md-nav__title {
   box-shadow: none;
 }
