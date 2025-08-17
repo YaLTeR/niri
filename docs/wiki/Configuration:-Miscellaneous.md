@@ -49,6 +49,10 @@ hotkey-overlay {
     skip-at-startup
     hide-not-bound
 }
+
+config-notification {
+    disable-failed
+}
 ```
 
 ### `spawn-at-startup`
@@ -277,3 +281,18 @@ hotkey-overlay {
 ```
 
 You can customize which binds the hotkey overlay shows using the [`hotkey-overlay-title` property](./Configuration:-Key-Bindings.md#custom-hotkey-overlay-titles).
+
+### `config-notification`
+
+<sup>Since: next release</sup>
+
+Settings for the config created/failed notification.
+
+Set the `disable-failed` flag to disable the "Failed to parse the config file" notification.
+For example, if you have a custom one.
+
+```kdl
+config-notification {
+    disable-failed
+}
+```

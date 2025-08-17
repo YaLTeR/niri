@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, PresetSize, Struts};
-use niri_ipc::{ColumnDisplay, SizeChange};
+use niri_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
@@ -2339,6 +2339,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                         }
                         (tile, pos)
                     })
+            })
+    }
+
+    pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
+        self.columns
+            .iter()
+            .enumerate()
+            .flat_map(move |(col_idx, col)| {
+                col.tiles().enumerate().map(move |(tile_idx, (tile, _))| {
+                    let layout = WindowLayout {
+                        // Our indices are 1-based, consistent with the actions.
+                        pos_in_scrolling_layout: Some((col_idx + 1, tile_idx + 1)),
+                        ..tile.ipc_layout_template()
+                    };
+                    (tile, layout)
+                })
             })
     }
 

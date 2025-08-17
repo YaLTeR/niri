@@ -119,7 +119,9 @@ Here are some other projects which implement a similar workflow:
 
 ## Contact
 
-We have a Matrix chat, feel free to join and ask a question: https://matrix.to/#/#niri:matrix.org
+Our main communication channel is a Matrix chat, feel free to join and ask a question: https://matrix.to/#/#niri:matrix.org
+
+We also have a community Discord server: https://discord.gg/vT8Sfjy7sx
 
 [PaperWM]: https://github.com/paperwm/PaperWM
 [waybar]: https://github.com/Alexays/Waybar

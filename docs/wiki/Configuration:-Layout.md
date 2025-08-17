@@ -249,7 +249,7 @@ The difference is that the focus ring is drawn only around the active window, wh
 
 | Focus Ring                | Border                |
 | ------------------------- | --------------------- |
-| ![](./img/focus-ring.png) | ![](./img/border.png) |
+| ![Screenshot showing a focused image in the center row using focus ring](./img/focus-ring.png) | ![Screenshot showing a focused image in the center row using border, while top and bottom windows have the inactive color](./img/border.png) |
 
 > [!TIP]
 > By default, focus ring and border are rendered as a solid background rectangle behind windows.
@@ -338,7 +338,7 @@ Here's a visual example:
 
 | Default                          | `relative-to="workspace-view"`                      |
 | -------------------------------- | --------------------------------------------------- |
-| ![](./img/gradients-default.png) | ![](./img/gradients-relative-to-workspace-view.png) |
+| ![Screenshot displaying 4 windows, each with individual gradient borders](./img/gradients-default.png) | ![Screenshot displaying 4 windows, with a shared gradient across their borders](./img/gradients-relative-to-workspace-view.png) |
 
 ```kdl
 layout {
@@ -360,7 +360,7 @@ Supported color spaces are:
 They are rendered the same as CSS.
 For example, `active-gradient from="#f00f" to="#0f05" angle=45 in="oklch longer hue"` will look the same as CSS `linear-gradient(45deg in oklch longer hue, #f00f, #0f05)`.
 
-![](./img/gradients-oklch.png)
+![Screenshot showing a window with a border using a gradient in the oklch color space](./img/gradients-oklch.png)
 
 ```kdl
 layout {
@@ -516,7 +516,7 @@ layout {
 }
 ```
 
-![](./img/struts.png)
+![A screenshot illustrating the effects of struts, as explained in the second paragraph in this section](./img/struts.png)
 
 <sup>Since: 0.1.8</sup> You can use negative values.
 They will push the windows outwards, even outside the edges of the screen.

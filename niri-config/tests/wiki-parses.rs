@@ -56,7 +56,7 @@ fn extract_kdl_from_file(file_contents: &str, filename: &str) -> Vec<KdlCodeBloc
 
 #[test]
 fn wiki_docs_parses() {
-    let wiki_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../wiki");
+    let wiki_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/wiki");
 
     let code_blocks = fs::read_dir(wiki_dir)
         .unwrap()

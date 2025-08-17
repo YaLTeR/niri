@@ -2,6 +2,7 @@ use core::f64;
 use std::rc::Rc;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation};
+use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
@@ -695,6 +696,19 @@ impl<W: LayoutElement> Tile<W> {
         loc += self.window_loc();
         loc += self.window.buf_loc().to_f64();
         loc
+    }
+
+    /// Returns a partially-filled [`WindowLayout`].
+    ///
+    /// Only the sizing properties that a [`Tile`] can fill are filled.
+    pub fn ipc_layout_template(&self) -> WindowLayout {
+        WindowLayout {
+            pos_in_scrolling_layout: None,
+            tile_size: self.tile_size().into(),
+            window_size: self.window().size().into(),
+            tile_pos_in_workspace_view: None,
+            window_offset_in_tile: self.window_loc().into(),
+        }
     }
 
     fn is_in_input_region(&self, mut point: Point<f64, Logical>) -> bool {

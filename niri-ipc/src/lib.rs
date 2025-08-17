@@ -1155,6 +1155,54 @@ pub struct Window {
     pub is_floating: bool,
     /// Whether this window requests your attention.
     pub is_urgent: bool,
+    /// Position- and size-related properties of the window.
+    pub layout: WindowLayout,
+}
+
+/// Position- and size-related properties of a [`Window`].
+///
+/// Optional properties will be unset for some windows, do not rely on them being present. Whether
+/// some optional properties are present or absent for certain window types may change across niri
+/// releases.
+///
+/// All sizes and positions are in *logical pixels* unless stated otherwise. Logical sizes may be
+/// fractional. For example, at 1.25 monitor scale, a 2-physical-pixel-wide window border is 1.6
+/// logical pixels wide.
+///
+/// This struct contains positions and sizes both for full tiles ([`Self::tile_size`],
+/// [`Self::tile_pos_in_workspace_view`]) and the window geometry ([`Self::window_size`],
+/// [`Self::window_offset_in_tile`]). For visual displays, use the tile properties, as they
+/// correspond to what the user visually considers "window". The window properties on the other
+/// hand are mainly useful when you need to know the underlying Wayland window sizes, e.g. for
+/// application debugging.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct WindowLayout {
+    /// Location of a tiled window within a workspace: (column index, tile index in column).
+    ///
+    /// The indices are 1-based, i.e. the leftmost column is at index 1 and the topmost tile in a
+    /// column is at index 1. This is consistent with [`Action::FocusColumn`] and
+    /// [`Action::FocusWindowInColumn`].
+    pub pos_in_scrolling_layout: Option<(usize, usize)>,
+    /// Size of the tile this window is in, including decorations like borders.
+    pub tile_size: (f64, f64),
+    /// Size of the window's visual geometry itself.
+    ///
+    /// Does not include niri decorations like borders.
+    ///
+    /// Currently, Wayland toplevel windows can only be integer-sized in logical pixels, even
+    /// though it doesn't necessarily align to physical pixels.
+    pub window_size: (i32, i32),
+    /// Tile position within the current view of the workspace.
+    ///
+    /// This is the same "workspace view" as in gradients' `relative-to` in the niri config.
+    pub tile_pos_in_workspace_view: Option<(f64, f64)>,
+    /// Location of the window's visual geometry within its tile.
+    ///
+    /// This includes things like border sizes. For fullscreened fixed-size windows this includes
+    /// the distance from the corner of the black backdrop to the corner of the (centered) window
+    /// contents.
+    pub window_offset_in_tile: (f64, f64),
 }
 
 /// Output configuration change result.
@@ -1331,6 +1379,11 @@ pub enum Event {
         /// The new urgency state of the window.
         urgent: bool,
     },
+    /// The layout of one or more windows has changed.
+    WindowLayoutsChanged {
+        /// Pairs consisting of a window id and new layout information for the window.
+        changes: Vec<(u64, WindowLayout)>,
+    },
     /// The configured keyboard layouts have changed.
     KeyboardLayoutsChanged {
         /// The new keyboard layout configuration.
@@ -1345,6 +1398,16 @@ pub enum Event {
     OverviewOpenedOrClosed {
         /// The new state of the overview.
         is_open: bool,
+    },
+    /// The configuration was reloaded.
+    ///
+    /// You will always receive this event when connecting to the event stream, indicating the last
+    /// config load attempt.
+    ConfigLoaded {
+        /// Whether the loading failed.
+        ///
+        /// For example, the config file couldn't be parsed.
+        failed: bool,
     },
 }
 

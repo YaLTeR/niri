@@ -2208,7 +2208,7 @@ impl State {
             },
         );
 
-        self.niri.layout.with_windows(|mapped, _, _| {
+        self.niri.layout.with_windows(|mapped, _, _, _| {
             let id = mapped.id().get();
             let props = with_toplevel_role(mapped.toplevel(), |role| {
                 gnome_shell_introspect::WindowProperties {
@@ -3998,7 +3998,7 @@ impl Niri {
         let mut seen = HashSet::new();
         let mut output_changed = vec![];
 
-        self.layout.with_windows(|mapped, output, _| {
+        self.layout.with_windows(|mapped, output, _, _| {
             seen.insert(mapped.window.clone());
 
             let Some(output) = output else {
