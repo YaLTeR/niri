@@ -25,6 +25,7 @@ The way it's handled in niri is:
     It's important to understand that they remain fractional numbers in the logical space, but these numbers correspond to an integer number of pixels in the physical space.
     The rounding looks something like: `(logical_size * scale).round() / scale`.
     Whenever a workspace moves to an output with a different scale (or the output scale changes), all sizes are re-rounded from their original configured values to align with the new physical space.
+
 2. The view offset and individual column/tile render offsets are *not* rounded to physical pixels, but:
 3. `tiles_with_render_positions()` rounds tile positions to physical pixels as it returns them,
 4. Custom shaders like opening, closing and resizing windows, are also careful to keep positions and sizes rounded to the physical pixels.
