@@ -291,6 +291,14 @@ impl WindowMru {
             .map(|t| t.offset + t.size.w + SPACING)
             .unwrap_or(0.)
     }
+
+    fn first(&mut self) {
+        self.current = 0;
+    }
+
+    fn last(&mut self) {
+        self.current = self.thumbnails.len().saturating_sub(1);
+    }
 }
 
 type MruTexture = TextureBuffer<GlesTexture>;
@@ -697,14 +705,14 @@ impl WindowMruUi {
         let WindowMruUiState::Open(ref mut inner) = self.state else {
             return;
         };
-        inner.wmru.current = 0;
+        inner.wmru.first();
     }
 
     pub fn last(&mut self) {
         let WindowMruUiState::Open(ref mut inner) = self.state else {
             return;
         };
-        inner.wmru.current = inner.wmru.thumbnails.len().saturating_sub(1);
+        inner.wmru.last();
     }
 
     pub fn current_window_id(&self) -> Option<MappedId> {
@@ -1675,3 +1683,48 @@ static MRU_UI_BINDINGS: &[Bind] = &[
         hotkey_overlay_title: None,
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_wmru(size: usize, scope: Option<MruScope>, filter: Option<MruFilter>) -> WindowMru {
+        let clock = Clock::with_time(Duration::ZERO);
+        let thumbnails = (0..size)
+            .map(|_| Thumbnail {
+                id: MappedId::next(),
+                timestamp: None,
+                size: Size::from((0., 0.)),
+                offset: 0.,
+                clock: clock.clone(),
+                open_animation: None,
+                move_animation: None,
+            })
+            .collect::<Vec<_>>();
+        WindowMru {
+            thumbnails,
+            current: 0,
+            scope: scope.unwrap_or(MruScope::All),
+            filter: filter.unwrap_or(MruFilter::None),
+        }
+    }
+
+    #[track_caller]
+    fn check_base_mru_behavior(wmru: &mut WindowMru) {
+        wmru.last();
+        wmru.forward();
+        assert_eq!(0, wmru.current);
+
+        wmru.first();
+        wmru.backward();
+        assert_eq!(wmru.thumbnails.len().saturating_sub(1), wmru.current)
+    }
+
+    #[test]
+    fn wrap_around() {
+        for l in 0..3 {
+            let mut wmru = new_wmru(l, None, None);
+            check_base_mru_behavior(&mut wmru);
+        }
+    }
+}
