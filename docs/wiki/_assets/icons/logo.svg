@@ -7,7 +7,7 @@
    viewBox="0 0 135.46667 135.46668"
    version="1.1"
    id="svg1"
-   sodipodi:docname="logo.svg"
+   sodipodi:docname="icon.svg"
    inkscape:version="1.4.2 (ebf0e940d0, 2025-05-08)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -19,18 +19,15 @@
      inkscape:showpageshadow="0"
      inkscape:pageopacity="0"
      inkscape:pagecheckerboard="1"
-     inkscape:zoom="1.6061818"
-     inkscape:cx="151.29047"
-     inkscape:cy="174.63777"
-     inkscape:window-width="2542"
-     inkscape:window-height="1372"
+     inkscape:zoom="0.8030909"
+     inkscape:cx="26.14897"
+     inkscape:cy="535.43129"
+     inkscape:window-width="2528"
+     inkscape:window-height="1408"
      inkscape:window-x="0"
      inkscape:window-y="0"
      inkscape:window-maximized="0"
-     inkscape:current-layer="layer2"
-     pagecolor="#ffffff"
-     bordercolor="#666666"
-     inkscape:deskcolor="#d1d1d1" />
+     inkscape:current-layer="g71" />
   <defs
      id="defs1">
     <filter
@@ -179,10 +176,10 @@
     <filter
        style="color-interpolation-filters:sRGB"
        id="filter70"
-       x="-0.44225678"
-       y="-0.3197549"
-       width="1.8841637"
-       height="1.6395177">
+       x="-0.43159762"
+       y="-0.3122953"
+       width="1.8631952"
+       height="1.6245906">
       <feGaussianBlur
          stdDeviation="18.461288"
          id="feGaussianBlur70" />
@@ -353,10 +350,6 @@
     </filter>
   </defs>
   <g
-     inkscape:groupmode="layer"
-     id="layer2"
-     inkscape:label="Layer 1" />
-  <g
      id="layer1"
      transform="translate(255.60477,-19.034522)">
     <g
@@ -403,7 +396,7 @@
          id="path3"
          inkscape:label="FLAME" />
       <path
-         style="display:inline;mix-blend-mode:normal;fill:#3ba8bc;fill-opacity:0.151125;stroke:#103e48;stroke-width:2.11667;stroke-linecap:square;stroke-opacity:1;paint-order:stroke fill markers;filter:url(#filter70)"
+         style="display:inline;mix-blend-mode:normal;fill:#3ba8bc;fill-opacity:0.151125;stroke:none;stroke-width:2.11667;stroke-linecap:square;stroke-opacity:1;paint-order:stroke fill markers;filter:url(#filter70)"
          d="m 101.6,42.333334 c 16.93334,0 84.66667,50.800005 84.66667,93.133336 0,28.57209 -13.39181,41.07402 -25.11117,46.54433 -8.87807,4.14406 -11.33775,-1.382 -6.3999,-9.88879 3.31767,-5.71559 6.11107,-12.63293 6.11107,-19.72221 0,-12.7 -4.23333,-21.16666 -12.7,-29.63333 -8.46667,-8.46667 -19.34216,-12.70001 -25.4,-12.7 -8.46666,1e-5 -12.7,24.8856 -12.7,38.1 0,10.52973 3.14292,20.01182 6.30176,26.88277 2.97912,6.48004 0.48516,10.93086 -6.19604,8.47352 -7.29956,-2.68477 -16.052373,-7.98293 -21.272388,-18.42296 -8.466666,-16.93333 -4.233333,-41.3022 -4.233333,-63.5 0,-33.866665 -7e-6,-59.266666 16.933331,-59.266666 z"
          id="path67"
          inkscape:label="GLOW" />
