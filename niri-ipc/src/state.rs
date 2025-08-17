@@ -43,6 +43,9 @@ pub struct EventStreamState {
 
     /// State of the overview.
     pub overview: OverviewState,
+
+    /// State of the config.
+    pub config: ConfigState,
 }
 
 /// The workspaces state communicated over the event stream.
@@ -73,6 +76,13 @@ pub struct OverviewState {
     pub is_open: bool,
 }
 
+/// The config state communicated over the event stream.
+#[derive(Debug, Default)]
+pub struct ConfigState {
+    /// Whether the last config load attempt had failed.
+    pub failed: bool,
+}
+
 impl EventStreamStatePart for EventStreamState {
     fn replicate(&self) -> Vec<Event> {
         let mut events = Vec::new();
@@ -80,6 +90,7 @@ impl EventStreamStatePart for EventStreamState {
         events.extend(self.windows.replicate());
         events.extend(self.keyboard_layouts.replicate());
         events.extend(self.overview.replicate());
+        events.extend(self.config.replicate());
         events
     }
 
@@ -88,6 +99,7 @@ impl EventStreamStatePart for EventStreamState {
         let event = self.windows.apply(event)?;
         let event = self.keyboard_layouts.apply(event)?;
         let event = self.overview.apply(event)?;
+        let event = self.config.apply(event)?;
         Some(event)
     }
 }
@@ -189,6 +201,13 @@ impl EventStreamStatePart for WindowsState {
                     }
                 }
             }
+            Event::WindowLayoutsChanged { changes } => {
+                for (id, update) in changes {
+                    let win = self.windows.get_mut(&id);
+                    let win = win.expect("changed window was missing from the map");
+                    win.layout = update;
+                }
+            }
             event => return Some(event),
         }
         None
@@ -231,6 +250,24 @@ impl EventStreamStatePart for OverviewState {
         match event {
             Event::OverviewOpenedOrClosed { is_open } => {
                 self.is_open = is_open;
+            }
+            event => return Some(event),
+        }
+        None
+    }
+}
+
+impl EventStreamStatePart for ConfigState {
+    fn replicate(&self) -> Vec<Event> {
+        vec![Event::ConfigLoaded {
+            failed: self.failed,
+        }]
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::ConfigLoaded { failed } => {
+                self.failed = failed;
             }
             event => return Some(event),
         }

@@ -7,7 +7,7 @@ use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
     Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview, Request,
-    Response, Transform, Window,
+    Response, Transform, Window, WindowLayout,
 };
 use serde_json::json;
 
@@ -447,6 +447,9 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowUrgencyChanged { id, urgent } => {
                         println!("Window {id}: urgency changed to {urgent}");
                     }
+                    Event::WindowLayoutsChanged { changes } => {
+                        println!("Window layouts changed: {changes:?}");
+                    }
                     Event::KeyboardLayoutsChanged { keyboard_layouts } => {
                         println!("Keyboard layouts changed: {keyboard_layouts:?}");
                     }
@@ -455,6 +458,14 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                     }
                     Event::OverviewOpenedOrClosed { is_open: opened } => {
                         println!("Overview toggled: {opened}");
+                    }
+                    Event::ConfigLoaded { failed } => {
+                        let status = if failed {
+                            "with an error"
+                        } else {
+                            "successfully"
+                        };
+                        println!("Config loaded {status}");
                     }
                 }
             }
@@ -611,5 +622,66 @@ fn print_window(window: &Window) {
         println!("  Workspace ID: {workspace_id}");
     } else {
         println!("  Workspace ID: (none)");
+    }
+
+    let WindowLayout {
+        pos_in_scrolling_layout,
+        tile_size,
+        window_size,
+        tile_pos_in_workspace_view,
+        window_offset_in_tile,
+    } = window.layout;
+
+    println!("  Layout:");
+    println!(
+        "    Tile size: {} x {}",
+        fmt_rounded(tile_size.0),
+        fmt_rounded(tile_size.1)
+    );
+
+    if let Some(pos) = pos_in_scrolling_layout {
+        println!("    Scrolling position: column {}, tile {}", pos.0, pos.1);
+    }
+
+    if let Some(pos) = tile_pos_in_workspace_view {
+        println!(
+            "    Workspace-view position: {}, {}",
+            fmt_rounded(pos.0),
+            fmt_rounded(pos.1)
+        );
+    }
+
+    println!("    Window size: {} x {}", window_size.0, window_size.1);
+    println!(
+        "    Window offset in tile: {} x {}",
+        fmt_rounded(window_offset_in_tile.0),
+        fmt_rounded(window_offset_in_tile.1)
+    );
+}
+
+fn fmt_rounded(x: f64) -> String {
+    let r = x.round();
+    if (r - x).abs() <= 0.005 {
+        format!("{r}")
+    } else {
+        format!("{x:.2}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_snapshot;
+
+    use super::*;
+
+    #[test]
+    fn test_fmt_rounded() {
+        assert_snapshot!(fmt_rounded(1.9), @"1.90");
+        assert_snapshot!(fmt_rounded(1.994), @"1.99");
+        assert_snapshot!(fmt_rounded(1.996), @"2");
+        assert_snapshot!(fmt_rounded(2.0), @"2");
+        assert_snapshot!(fmt_rounded(2.004), @"2");
+        assert_snapshot!(fmt_rounded(2.006), @"2.01");
+        assert_snapshot!(fmt_rounded(2.1), @"2.10");
     }
 }

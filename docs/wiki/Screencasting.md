@@ -66,7 +66,11 @@ You can also use these actions from the command line, for example to interactive
 $ niri msg action set-dynamic-cast-window --id $(niri msg --json pick-window | jq .id)
 ```
 
+<video controls src="https://github.com/user-attachments/assets/c617a9d6-7d5e-4f1f-b8cc-9301182d9634">
+
 https://github.com/user-attachments/assets/c617a9d6-7d5e-4f1f-b8cc-9301182d9634
+
+</video>
 
 If the cast target disappears (e.g. the target window closes), the stream goes back to empty.
 

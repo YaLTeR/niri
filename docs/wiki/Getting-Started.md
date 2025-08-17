@@ -53,7 +53,7 @@ You will likely have one `render` device and two `card` devices.
 
 Open the niri config file at `~/.config/niri/config.kdl` and put your `render` device path like this:
 
-```
+```kdl
 debug {
     render-drm-device "/dev/dri/renderD128"
 }
@@ -159,7 +159,7 @@ We have a community-maintained flake which provides a devshell with required dep
 
 If you're not on NixOS, you may need [NixGL](https://github.com/nix-community/nixGL) to run the resulting binary:
 
-```
+```sh
 nix run --impure github:guibou/nixGL -- ./results/bin/niri
 ```
 

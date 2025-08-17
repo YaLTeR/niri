@@ -30,6 +30,7 @@ debug {
     honor-xdg-activation-with-invalid-serial
     skip-cursor-only-updates-during-vrr
     deactivate-unfocused-windows
+    keep-max-bpc-unchanged
 }
 
 binds {
@@ -289,6 +290,23 @@ It will cause niri to drop the Activated state for all unfocused windows.
 ```kdl
 debug {
     deactivate-unfocused-windows
+}
+```
+
+### `keep-max-bpc-unchanged`
+
+<sup>Since: next release</sup>
+
+When connecting monitors, niri sets their max bpc to 8 in order to reduce display bandwidth and to potentially allow more monitors to be connected at once.
+Restricting bpc to 8 is not a problem since we don't support HDR or color management yet and can't really make use of higher bpc.
+
+Apparently, setting max bpc to 8 breaks some displays driven by AMDGPU.
+If this happens to you, set this debug flag, which will prevent niri from changing max bpc.
+AMDGPU bug report: https://gitlab.freedesktop.org/drm/amd/-/issues/4487.
+
+```kdl
+debug {
+    keep-max-bpc-unchanged
 }
 ```
 

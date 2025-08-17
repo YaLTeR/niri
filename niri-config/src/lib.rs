@@ -60,6 +60,8 @@ pub struct Config {
     #[knuffel(child, default)]
     pub hotkey_overlay: HotkeyOverlay,
     #[knuffel(child, default)]
+    pub config_notification: ConfigNotification,
+    #[knuffel(child, default)]
     pub animations: Animations,
     #[knuffel(child, default)]
     pub gestures: Gestures,
@@ -157,7 +159,7 @@ pub struct Xkb {
 }
 
 impl Xkb {
-    pub fn to_xkb_config(&self) -> XkbConfig {
+    pub fn to_xkb_config(&self) -> XkbConfig<'_> {
         XkbConfig {
             rules: &self.rules,
             model: &self.model,
@@ -1048,6 +1050,12 @@ pub struct HotkeyOverlay {
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ConfigNotification {
+    #[knuffel(child)]
+    pub disable_failed: bool,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Clipboard {
     #[knuffel(child)]
     pub disable_primary: bool,
@@ -1924,6 +1932,8 @@ pub enum Action {
     SetWindowUrgent(u64),
     #[knuffel(skip)]
     UnsetWindowUrgent(u64),
+    #[knuffel(skip)]
+    LoadConfigFile,
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -2199,6 +2209,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
+            niri_ipc::Action::LoadConfigFile {} => Self::LoadConfigFile,
         }
     }
 }
@@ -2338,6 +2349,8 @@ pub struct DebugConfig {
     pub disable_cursor_plane: bool,
     #[knuffel(child)]
     pub disable_direct_scanout: bool,
+    #[knuffel(child)]
+    pub keep_max_bpc_unchanged: bool,
     #[knuffel(child)]
     pub restrict_primary_scanout_to_matching_format: bool,
     #[knuffel(child, unwrap(argument))]
@@ -4764,6 +4777,9 @@ mod tests {
                 skip_at_startup: true,
                 hide_not_bound: false,
             },
+            config_notification: ConfigNotification {
+                disable_failed: false,
+            },
             animations: Animations {
                 off: false,
                 slowdown: FloatOrInt(
@@ -5434,6 +5450,7 @@ mod tests {
                 enable_overlay_planes: false,
                 disable_cursor_plane: false,
                 disable_direct_scanout: false,
+                keep_max_bpc_unchanged: false,
                 restrict_primary_scanout_to_matching_format: false,
                 render_drm_device: Some(
                     "/dev/dri/renderD129",

@@ -76,6 +76,8 @@ BuildRequires:  pango-devel
 BuildRequires:  cairo-gobject-devel
 # Needed for pipewire-rs
 BuildRequires:  clang
+# Needed for some tests with a surfaceless EGL renderer
+BuildRequires:  mesa-libEGL
 
 Requires:       mesa-dri-drivers
 Requires:       mesa-libEGL
@@ -136,7 +138,7 @@ install -Dm644 -t %{buildroot}%{_userunitdir} ./resources/niri-shutdown.target
 %license LICENSE
 %doc README.md
 %doc resources/default-config.kdl
-%doc wiki
+%doc docs/wiki
 %{_bindir}/niri
 %{_bindir}/niri-session
 %{_datadir}/wayland-sessions/niri.desktop

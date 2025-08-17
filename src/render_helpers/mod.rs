@@ -105,7 +105,7 @@ impl<E> IntoIterator for SplitElements<E> {
 }
 
 impl<E> SplitElements<E> {
-    pub fn iter(&self) -> std::iter::Chain<std::slice::Iter<E>, std::slice::Iter<E>> {
+    pub fn iter(&self) -> std::iter::Chain<std::slice::Iter<'_, E>, std::slice::Iter<'_, E>> {
         self.popups.iter().chain(&self.normal)
     }
 

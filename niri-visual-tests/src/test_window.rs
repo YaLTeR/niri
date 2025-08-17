@@ -255,10 +255,6 @@ impl LayoutElement for TestWindow {
         &EMPTY
     }
 
-    fn animation_snapshot(&self) -> Option<&LayoutElementRenderSnapshot> {
-        None
-    }
-
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
         None
     }
