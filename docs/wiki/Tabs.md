@@ -32,4 +32,4 @@ This is especially useful for thicker tab indicators, or when you have very smal
 
 | Default | `place-within-column` |
 | --- | --- |
-| ![](https://github.com/user-attachments/assets/c2f51f50-3d87-403a-8beb-cbbe5ec5c880) | ![](https://github.com/user-attachments/assets/f1797cd0-d518-4be6-95b4-3540523c4370) |
+| ![A screenshot showing 4 windows, with the middle column being focused. The tab indicator overflows onto the left column](https://github.com/user-attachments/assets/c2f51f50-3d87-403a-8beb-cbbe5ec5c880) | ![A screenshot showing 4 windows, with the middle column being focused. The tab indicator is contained within its respective column](https://github.com/user-attachments/assets/f1797cd0-d518-4be6-95b4-3540523c4370) |
