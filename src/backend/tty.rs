@@ -1382,7 +1382,8 @@ impl Tty {
         span.emit_text(&surface.name.connector);
 
         if !device.drm.is_active() {
-            warn!("device is inactive");
+            // This branch hits any time we try to render while the user had switched to a
+            // different VT, so don't print anything here.
             return rv;
         }
 
