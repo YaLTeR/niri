@@ -408,7 +408,7 @@ impl State {
                         modifiers_from_state(*mods).contains(mru_mod_key.to_modifiers());
                     if !mru_mod_key_down {
                         this.do_action(Action::MruClose, false);
-                        return FilterResult::Intercept(None);
+                        return FilterResult::Forward;
                     }
                 }
 
@@ -462,22 +462,24 @@ impl State {
                     )
                 };
                 if matches!(res, FilterResult::Forward) {
-                    // MRU UI prevents interaction with regular windows
-                    if mru_ui_enabled && this.niri.window_mru_ui.is_open() {
-                        return FilterResult::Intercept(None);
-                    } else if this.niri.keyboard_focus.is_overview() && pressed {
+                    if this.niri.keyboard_focus.is_overview() && pressed {
                         // If we didn't find any bind, try other hardcoded keys.
                         if let Some(bind) = raw.and_then(|raw| hardcoded_overview_bind(raw, *mods))
                         {
                             this.niri.suppressed_keys.insert(key_code);
                             return FilterResult::Intercept(Some(bind));
                         }
-                    } else {
-                        // Interaction with the active window, immediately update
-                        // the active window's focus timestamp without waiting for a
-                        // possible pending MRU lock-in delay.
-                        this.niri.mru_commit();
                     }
+                    if this.niri.window_mru_ui.is_open() {
+                        // Key events aren't sent to the focused application while the MRU UI is
+                        // open
+                        this.niri.suppressed_keys.insert(key_code);
+                        return FilterResult::Intercept(None);
+                    }
+                    // Interaction with the active window, immediately update
+                    // the active window's focus timestamp without waiting for a
+                    // possible pending MRU lock-in delay.
+                    this.niri.mru_commit();
                 }
                 res
             },
