@@ -6,6 +6,14 @@
   --md-accent-fg-color: var(--md-primary-fg-color--dark);
 }
 
+@media (prefers-color-scheme: dark) {
+  :root  > * {
+    --md-primary-fg-color: #167188;
+    --md-accent-fg-color: #1e97b5;
+    --md-typeset-a-color: color-mix(in srgb, var(--md-accent-fg-color), white 30%);
+  }
+}
+
 .md-nav--primary .md-nav__title {
   box-shadow: none;
 }
