@@ -317,7 +317,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
 
             if let Some(pointer) = pointer {
                 println!(
-                    "Pointer position: {} {}",
+                    "Pointer location: {} {}",
                     pointer.location.x, pointer.location.y
                 );
             } else {
