@@ -62,6 +62,18 @@ The above admonition is written like this:
 
 Images should have relative links to resources in `docs/wiki/img/`, and should contain sensible alt-text.
 
+### Videos
+
+For compatibility with both mkdocs and GitHub Wiki, videos need to be wrapped in a `<video>` tag (displayed by mkdocs) and have the video link again as fallback text (displayed by GitHub Wiki) padded with blank lines.
+
+```html
+<video controls src="https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995">
+
+https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995
+
+</video>
+```
+
 ### Snippets
 
 Configuration and code snippets in general should be annotated with a language.

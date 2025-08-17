@@ -5,7 +5,11 @@
 The Overview is a zoomed-out view of your workspaces and windows.
 It lets you see what's going on at a glance, navigate, and drag windows around.
 
+<video controls src="https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995">
+
 https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995
+
+</video>
 
 Open it with the `toggle-overview` bind, via the top-left hot corner, or using a touchpad four-finger swipe up.
 While in the overview, all keyboard shortcuts keep working, while pointing devices get easier:
@@ -23,11 +27,19 @@ While in the overview, all keyboard shortcuts keep working, while pointing devic
 Drag-and-drop will scroll the workspaces up/down in the overview, and will activate a workspace when holding it for a moment.
 Combined with the hot corner, this lets you do a mouse-only DnD across workspaces.
 
+<video controls src="https://github.com/user-attachments/assets/5f09c5b7-ff40-462b-8b9c-f1b8073a2cbb">
+
 https://github.com/user-attachments/assets/5f09c5b7-ff40-462b-8b9c-f1b8073a2cbb
+
+</video>
 
 You can also drag-and-drop a window to a new workspace above, below, or between existing workspaces.
 
+<video controls src="https://github.com/user-attachments/assets/b76d5349-aa20-4889-ab90-0a51554c789d">
+
 https://github.com/user-attachments/assets/b76d5349-aa20-4889-ab90-0a51554c789d
+
+</video>
 
 ### Configuration
 

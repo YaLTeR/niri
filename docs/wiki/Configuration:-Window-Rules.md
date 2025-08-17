@@ -881,7 +881,11 @@ window-rule {
 }
 ```
 
+<video controls src="https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509">
+
 https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509
+
+</video>
 
 #### Size Overrides
 
