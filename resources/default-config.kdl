@@ -1,11 +1,11 @@
 // This config is in the KDL format: https://kdl.dev
 // "/-" comments out the following node.
 // Check the wiki for a full description of the configuration:
-// https://github.com/YaLTeR/niri/wiki/Configuration:-Introduction
+// https://yalter.github.io/niri/Configuration:-Introduction
 
 // Input device configuration.
 // Find the full list of options on the wiki:
-// https://github.com/YaLTeR/niri/wiki/Configuration:-Input
+// https://yalter.github.io/niri/Configuration:-Input
 input {
     keyboard {
         xkb {
@@ -73,7 +73,7 @@ input {
 // by running `niri msg outputs` while inside a niri instance.
 // The built-in laptop monitor is usually called "eDP-1".
 // Find more information on the wiki:
-// https://github.com/YaLTeR/niri/wiki/Configuration:-Outputs
+// https://yalter.github.io/niri/Configuration:-Outputs
 // Remember to uncomment the node by removing "/-"!
 /-output "eDP-1" {
     // Uncomment this line to disable this output.
@@ -108,7 +108,7 @@ input {
 
 // Settings that influence how windows are positioned and sized.
 // Find more information on the wiki:
-// https://github.com/YaLTeR/niri/wiki/Configuration:-Layout
+// https://yalter.github.io/niri/Configuration:-Layout
 layout {
     // Set gaps around windows in logical pixels.
     gaps 16
@@ -292,7 +292,7 @@ screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 
 // Animation settings.
 // The wiki explains how to configure individual animations:
-// https://github.com/YaLTeR/niri/wiki/Configuration:-Animations
+// https://yalter.github.io/niri/Configuration:-Animations
 animations {
     // Uncomment to turn off all animations.
     // off
@@ -303,7 +303,7 @@ animations {
 
 // Window rules let you adjust behavior for individual windows.
 // Find more information on the wiki:
-// https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules
+// https://yalter.github.io/niri/Configuration:-Window-Rules
 
 // Work around WezTerm's initial configure bug
 // by setting an empty default-column-width.
