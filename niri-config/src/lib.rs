@@ -4089,8 +4089,32 @@ mod tests {
             "#,
         );
 
-        assert_debug_snapshot!(parsed.input.mouse.scroll_factor);
-        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor);
+        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r###"
+        Some(
+            ScrollFactor {
+                base: Some(
+                    FloatOrInt(
+                        2.0,
+                    ),
+                ),
+                horizontal: None,
+                vertical: None,
+            },
+        )
+        "###);
+        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r###"
+        Some(
+            ScrollFactor {
+                base: Some(
+                    FloatOrInt(
+                        1.5,
+                    ),
+                ),
+                horizontal: None,
+                vertical: None,
+            },
+        )
+        "###);
     }
 
     #[test]
@@ -4109,8 +4133,40 @@ mod tests {
             "#,
         );
 
-        assert_debug_snapshot!(parsed.input.mouse.scroll_factor);
-        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor);
+        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r###"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: Some(
+                    FloatOrInt(
+                        2.0,
+                    ),
+                ),
+                vertical: Some(
+                    FloatOrInt(
+                        -1.0,
+                    ),
+                ),
+            },
+        )
+        "###);
+        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r###"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: Some(
+                    FloatOrInt(
+                        -1.5,
+                    ),
+                ),
+                vertical: Some(
+                    FloatOrInt(
+                        0.5,
+                    ),
+                ),
+            },
+        )
+        "###);
     }
 
     #[test]
@@ -4129,8 +4185,32 @@ mod tests {
             "#,
         );
 
-        assert_debug_snapshot!(parsed.input.mouse.scroll_factor);
-        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor);
+        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r###"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: Some(
+                    FloatOrInt(
+                        2.0,
+                    ),
+                ),
+                vertical: None,
+            },
+        )
+        "###);
+        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r###"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: None,
+                vertical: Some(
+                    FloatOrInt(
+                        -1.5,
+                    ),
+                ),
+            },
+        )
+        "###);
     }
 
     #[test]
