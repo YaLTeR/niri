@@ -77,3 +77,9 @@ Not yet, follow/upvote [this issue](https://github.com/YaLTeR/niri/issues/932).
 
 You can emulate this with a script that uses the niri IPC.
 For example, [nirius](https://git.sr.ht/~tsdh/nirius) seems to have this feature (`toggle-follow-mode`).
+
+### How do I make the Bitwarden window in Firefox open as floating?
+
+Firefox seems to first open the Bitwarden window with a generic Firefox title, and only later change the window title to Bitwarden, so you can't effectively target it with an `open-floating` window rule.
+
+You'll need to use a script, for example [this one](https://github.com/YaLTeR/niri/discussions/1599) or other ones (search niri issues and discussions for Bitwarden).
