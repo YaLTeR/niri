@@ -2,7 +2,7 @@ niri's documentation files are found in `docs/wiki/` and should be viewable and 
 
 - The GitHub repo's markdown file preview
 - [The GitHub repo's wiki](https://github.com/YaLTeR/niri/wiki)
-- The documentation site
+- [The documentation site](https://yalter.github.io/niri/)
 
 ## The GitHub repo's wiki
 
