@@ -1,0 +1,15 @@
+---
+source: niri-config/src/lib.rs
+expression: parsed.input.touchpad.scroll_factor
+---
+Some(
+    ScrollFactor {
+        base: Some(
+            FloatOrInt(
+                1.5,
+            ),
+        ),
+        horizontal: None,
+        vertical: None,
+    },
+)

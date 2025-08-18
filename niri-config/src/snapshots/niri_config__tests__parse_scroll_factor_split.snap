@@ -1,0 +1,19 @@
+---
+source: niri-config/src/lib.rs
+expression: parsed.input.mouse.scroll_factor
+---
+Some(
+    ScrollFactor {
+        base: None,
+        horizontal: Some(
+            FloatOrInt(
+                2.0,
+            ),
+        ),
+        vertical: Some(
+            FloatOrInt(
+                -1.0,
+            ),
+        ),
+    },
+)
