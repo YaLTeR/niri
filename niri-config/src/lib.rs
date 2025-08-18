@@ -4319,14 +4319,24 @@ mod tests {
             horizontal: None,
             vertical: None,
         };
-        assert_eq!(sf.h_v_factors(), (2.0, 2.0));
+        assert_debug_snapshot!(sf.h_v_factors(), @r#"
+        (
+            2.0,
+            2.0,
+        )
+        "#);
 
         let sf = ScrollFactor {
             base: None,
             horizontal: Some(FloatOrInt(3.0)),
             vertical: Some(FloatOrInt(-1.0)),
         };
-        assert_eq!(sf.h_v_factors(), (3.0, -1.0));
+        assert_debug_snapshot!(sf.h_v_factors(), @r#"
+        (
+            3.0,
+            -1.0,
+        )
+        "#);
     }
 
     #[test]
