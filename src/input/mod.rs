@@ -3105,14 +3105,8 @@ impl State {
 
         // Determine final scroll factors based on configuration
         let (horizontal_factor, vertical_factor) = if let Some(sf) = device_scroll_factor {
-            if sf.has_per_axis_override() {
-                // Per-axis settings override window factor
-                sf.h_v_factors()
-            } else {
-                // Combined setting multiplies with window factor
-                let (h, v) = sf.h_v_factors();
-                (h * window_scroll_factor, v * window_scroll_factor)
-            }
+            let (h, v) = sf.h_v_factors();
+            (h * window_scroll_factor, v * window_scroll_factor)
         } else {
             // No device scroll factor, just use window factor
             (window_scroll_factor, window_scroll_factor)

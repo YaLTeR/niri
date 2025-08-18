@@ -208,10 +208,6 @@ impl ScrollFactor {
         let v = self.vertical.map(|f| f.0).unwrap_or(base_value);
         (h, v)
     }
-
-    pub fn has_per_axis_override(&self) -> bool {
-        self.horizontal.is_some() || self.vertical.is_some()
-    }
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -4226,14 +4222,12 @@ mod tests {
         assert_eq!(mouse_sf.base, Some(FloatOrInt(2.0))); // Base value
         assert_eq!(mouse_sf.horizontal, None); // Not overridden
         assert_eq!(mouse_sf.vertical, Some(FloatOrInt(-1.0))); // Overridden
-        assert!(mouse_sf.has_per_axis_override()); // Should be considered per-axis
 
         // Touchpad: base=1.5, horizontal overridden to 3.0
         let touchpad_sf = parsed.input.touchpad.scroll_factor.as_ref().unwrap();
         assert_eq!(touchpad_sf.base, Some(FloatOrInt(1.5))); // Base value
         assert_eq!(touchpad_sf.horizontal, Some(FloatOrInt(3.0))); // Overridden
         assert_eq!(touchpad_sf.vertical, None); // Not overridden
-        assert!(touchpad_sf.has_per_axis_override()); // Should be considered per-axis
     }
 
     #[test]
