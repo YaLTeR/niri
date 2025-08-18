@@ -4203,7 +4203,7 @@ mod tests {
 
     #[test]
     fn parse_scroll_factor_mixed() {
-        // Test mixed base + override syntax like YaLTeR's example
+        // Test mixed base + override syntax
         let parsed = do_parse(
             r#"
             input {
@@ -4217,22 +4217,19 @@ mod tests {
             "#,
         );
 
-        // Mouse: base=2.0, vertical overridden to -1.0
         let mouse_sf = parsed.input.mouse.scroll_factor.as_ref().unwrap();
-        assert_eq!(mouse_sf.base, Some(FloatOrInt(2.0))); // Base value
-        assert_eq!(mouse_sf.horizontal, None); // Not overridden
-        assert_eq!(mouse_sf.vertical, Some(FloatOrInt(-1.0))); // Overridden
+        assert_eq!(mouse_sf.base, Some(FloatOrInt(2.0)));
+        assert_eq!(mouse_sf.horizontal, None);
+        assert_eq!(mouse_sf.vertical, Some(FloatOrInt(-1.0)));
 
-        // Touchpad: base=1.5, horizontal overridden to 3.0
         let touchpad_sf = parsed.input.touchpad.scroll_factor.as_ref().unwrap();
-        assert_eq!(touchpad_sf.base, Some(FloatOrInt(1.5))); // Base value
-        assert_eq!(touchpad_sf.horizontal, Some(FloatOrInt(3.0))); // Overridden
-        assert_eq!(touchpad_sf.vertical, None); // Not overridden
+        assert_eq!(touchpad_sf.base, Some(FloatOrInt(1.5)));
+        assert_eq!(touchpad_sf.horizontal, Some(FloatOrInt(3.0)));
+        assert_eq!(touchpad_sf.vertical, None);
     }
 
     #[test]
     fn scroll_factor_h_v_factors() {
-        // Test h_v_factors() method with combined value
         let sf = ScrollFactor {
             base: Some(FloatOrInt(2.0)),
             horizontal: None,
@@ -4240,7 +4237,6 @@ mod tests {
         };
         assert_eq!(sf.h_v_factors(), (2.0, 2.0));
 
-        // Test with per-axis values
         let sf = ScrollFactor {
             base: None,
             horizontal: Some(FloatOrInt(3.0)),
