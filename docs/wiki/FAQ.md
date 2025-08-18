@@ -71,7 +71,7 @@ Not yet, follow/upvote [this issue](https://github.com/YaLTeR/niri/issues/54).
 There's also [a PR](https://github.com/YaLTeR/niri/pull/1634) adding blur to niri which you can build and run manually.
 Keep in mind that it's an experimental implementation that may have problems and performance concerns.
 
-### Can I make a window sticky/pinned/"always on top", appear on all workspaces?
+### Can I make a window sticky / pinned / always on top / appear on all workspaces?
 
 Not yet, follow/upvote [this issue](https://github.com/YaLTeR/niri/issues/932).
 
