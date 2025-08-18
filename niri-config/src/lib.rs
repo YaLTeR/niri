@@ -210,22 +210,17 @@ impl ScrollFactor {
         }
     }
 
-    pub fn get_factors(&self, default: f64) -> (f64, f64) {
-        // Priority: property overrides > base > default
-        let base_value = self.base.map(|f| f.0).unwrap_or(default);
+    pub fn h_v_factors(&self) -> (f64, f64) {
+        let base_value = self.base.map(|f| f.0).unwrap_or(1.0);
         let h = self.horizontal.map(|f| f.0).unwrap_or(base_value);
         let v = self.vertical.map(|f| f.0).unwrap_or(base_value);
         (h, v)
     }
-    
+
     pub fn has_per_axis_override(&self) -> bool {
-        // Per-axis override means:
-        // 1. We have properties set (horizontal/vertical)
-        // 2. They differ from base, or only one is set
         self.horizontal.is_some() || self.vertical.is_some()
     }
 }
-
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Touchpad {
@@ -4173,7 +4168,6 @@ mod tests {
 
     #[test]
     fn scroll_factor_snapshot() {
-        // Test ScrollFactor struct serialization with snapshot testing
         let parsed = do_parse(
             r#"
             input {
@@ -4187,8 +4181,36 @@ mod tests {
             "#,
         );
 
-        assert_debug_snapshot!(parsed.input.mouse.scroll_factor);
-        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor);
+        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: Some(
+                    FloatOrInt(
+                        2.0,
+                    ),
+                ),
+                horizontal: None,
+                vertical: None,
+            },
+        )
+        "#);
+        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: Some(
+                    FloatOrInt(
+                        1.5,
+                    ),
+                ),
+                vertical: Some(
+                    FloatOrInt(
+                        -1.0,
+                    ),
+                ),
+            },
+        )
+        "#);
     }
 
     #[test]
@@ -4222,152 +4244,19 @@ mod tests {
         assert!(touchpad_sf.has_per_axis_override()); // Should be considered per-axis
     }
 
-    // === ScrollFactor behavior tests (moved from src/tests/scroll_factor.rs as requested by YaLTeR) ===
-
-    // Helper function to extract scroll factors from ScrollFactor, matching runtime implementation
-    fn extract_scroll_factors(sf: Option<&ScrollFactor>) -> (f64, f64) {
-        sf.map(|s| s.get_factors(1.0)).unwrap_or((1.0, 1.0))
-    }
-
-    fn create_mouse_config(scroll_factor: Option<ScrollFactor>) -> Mouse {
-        Mouse {
-            off: false,
-            natural_scroll: false,
-            accel_speed: Default::default(),
-            accel_profile: None,
-            scroll_method: None,
-            scroll_button: None,
-            scroll_button_lock: false,
-            left_handed: false,
-            middle_emulation: false,
-            scroll_factor,
-        }
-    }
-
-    fn create_touchpad_config(scroll_factor: Option<ScrollFactor>) -> Touchpad {
-        Touchpad {
-            off: false,
-            tap: false,
-            dwt: false,
-            dwtp: false,
-            drag: None,
-            drag_lock: false,
-            natural_scroll: false,
-            click_method: None,
-            accel_speed: Default::default(),
-            accel_profile: None,
-            scroll_method: None,
-            scroll_button: None,
-            scroll_button_lock: false,
-            tap_button_map: None,
-            left_handed: false,
-            disabled_on_external_mouse: false,
-            middle_emulation: false,
-            scroll_factor,
-        }
-    }
-
     #[test]
-    fn scroll_factor_behavior_defaults() {
-        let config = create_mouse_config(None);
-        let (h_factor, v_factor) = extract_scroll_factors(config.scroll_factor.as_ref());
-        assert_eq!(h_factor, 1.0);
-        assert_eq!(v_factor, 1.0);
-    }
-
-    #[test]
-    fn scroll_factor_behavior_combined() {
+    fn scroll_factor_h_v_factors() {
+        // Test h_v_factors() method with combined value
         let sf = ScrollFactor::new(2.0);
-        let config = create_mouse_config(Some(sf));
-        let (h_factor, v_factor) = extract_scroll_factors(config.scroll_factor.as_ref());
-        assert_eq!(h_factor, 2.0);
-        assert_eq!(v_factor, 2.0);
-    }
+        assert_eq!(sf.h_v_factors(), (2.0, 2.0));
 
-    #[test]
-    fn scroll_factor_behavior_split() {
+        // Test with per-axis values
         let sf = ScrollFactor {
             base: None,
             horizontal: Some(FloatOrInt(3.0)),
             vertical: Some(FloatOrInt(-1.0)),
         };
-        let config = create_mouse_config(Some(sf));
-        let (h_factor, v_factor) = extract_scroll_factors(config.scroll_factor.as_ref());
-        assert_eq!(h_factor, 3.0);
-        assert_eq!(v_factor, -1.0);
-    }
-
-    #[test]
-    fn scroll_factor_behavior_partial_horizontal() {
-        let sf = ScrollFactor {
-            base: None,
-            horizontal: Some(FloatOrInt(2.5)),
-            vertical: None,
-        };
-        let config = create_mouse_config(Some(sf));
-        let (h_factor, v_factor) = extract_scroll_factors(config.scroll_factor.as_ref());
-        assert_eq!(h_factor, 2.5);
-        assert_eq!(v_factor, 1.0); // Default when not specified
-    }
-
-    #[test]
-    fn scroll_factor_behavior_partial_vertical() {
-        let sf = ScrollFactor {
-            base: None,
-            horizontal: None,
-            vertical: Some(FloatOrInt(0.5)),
-        };
-        let config = create_mouse_config(Some(sf));
-        let (h_factor, v_factor) = extract_scroll_factors(config.scroll_factor.as_ref());
-        assert_eq!(h_factor, 1.0); // Default when not specified
-        assert_eq!(v_factor, 0.5);
-    }
-
-    #[test]
-    fn scroll_factor_behavior_touchpad() {
-        let sf = ScrollFactor::new(1.5);
-        let config = create_touchpad_config(Some(sf));
-        let (h_factor, v_factor) = extract_scroll_factors(config.scroll_factor.as_ref());
-        assert_eq!(h_factor, 1.5);
-        assert_eq!(v_factor, 1.5);
-    }
-
-    #[test]
-    fn scroll_factor_behavior_negative_values() {
-        let sf = ScrollFactor {
-            base: None,
-            horizontal: Some(FloatOrInt(-2.0)),
-            vertical: Some(FloatOrInt(-1.5)),
-        };
-        let config = create_touchpad_config(Some(sf));
-        let (h_factor, v_factor) = extract_scroll_factors(config.scroll_factor.as_ref());
-        assert_eq!(h_factor, -2.0);
-        assert_eq!(v_factor, -1.5);
-    }
-
-    #[test]
-    fn scroll_factor_behavior_edge_cases() {
-        // Test zero values
-        let sf = ScrollFactor {
-            base: None,
-            horizontal: Some(FloatOrInt(0.0)),
-            vertical: Some(FloatOrInt(0.0)),
-        };
-        let config = create_mouse_config(Some(sf));
-        let (h_factor, v_factor) = extract_scroll_factors(config.scroll_factor.as_ref());
-        assert_eq!(h_factor, 0.0);
-        assert_eq!(v_factor, 0.0);
-
-        // Test large values
-        let sf = ScrollFactor {
-            base: None,
-            horizontal: Some(FloatOrInt(100.0)),
-            vertical: Some(FloatOrInt(-100.0)),
-        };
-        let config = create_touchpad_config(Some(sf));
-        let (h_factor, v_factor) = extract_scroll_factors(config.scroll_factor.as_ref());
-        assert_eq!(h_factor, 100.0);
-        assert_eq!(v_factor, -100.0);
+        assert_eq!(sf.h_v_factors(), (3.0, -1.0));
     }
 
     #[test]

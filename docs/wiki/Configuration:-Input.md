@@ -252,15 +252,9 @@ Settings specific to `touchpad`s:
 
 Settings specific to `touchpad` and `mouse`:
 
-- `scroll-factor`: <sup>Since: 0.1.10, enhanced in next release</sup> scales the scrolling speed. Can be set in multiple ways:
-  - Combined: `scroll-factor 2.0` sets both horizontal and vertical to the same value (multiplies with window-specific scroll factors)
-  - Split: `scroll-factor horizontal=2.0 vertical=-1.0` sets each axis independently (overrides window-specific scroll factors)
-  - Mixed: `scroll-factor 2.0 vertical=-1.0` uses 2.0 as base for both axes, but overrides vertical to -1.0 (overrides window-specific scroll factors)
-  - Negative values invert the scrolling direction for that axis
-  - Per-axis values (split/mixed forms) take precedence over window-specific scroll factors
-  - Combined values multiply with window-specific scroll factors for compatibility
+- `scroll-factor`: <sup>Since: 0.1.10</sup> scales the scrolling speed by this value.
 
-**Note**: `trackpoint` and `trackball` devices use mouse settings for scroll factors due to how libinput reports their axis sources. These devices use [button scrolling](https://wayland.freedesktop.org/libinput/doc/latest/trackpoints.html#button-scrolling-on-trackpoints) by default.
+    <sup>Since: next release</sup> You can also override horizontal and vertical scroll factor separately like so: `scroll-factor horizontal=2.0 vertical=-1.0`
 
 Settings specific to `tablet`s:
 

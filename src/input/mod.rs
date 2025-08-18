@@ -3089,8 +3089,8 @@ impl State {
         let device_scroll_factor = {
             let config = self.niri.config.borrow();
             match source {
-                AxisSource::Wheel => config.input.mouse.scroll_factor.clone(),
-                AxisSource::Finger => config.input.touchpad.scroll_factor.clone(),
+                AxisSource::Wheel => config.input.mouse.scroll_factor,
+                AxisSource::Finger => config.input.touchpad.scroll_factor,
                 _ => None,
             }
         };
@@ -3104,13 +3104,13 @@ impl State {
             .unwrap_or(1.);
 
         // Determine final scroll factors based on configuration
-        let (horizontal_factor, vertical_factor) = if let Some(ref sf) = device_scroll_factor {
+        let (horizontal_factor, vertical_factor) = if let Some(sf) = device_scroll_factor {
             if sf.has_per_axis_override() {
-                // Per-axis settings override everything, including window factor
-                sf.get_factors(1.)
+                // Per-axis settings override window factor
+                sf.h_v_factors()
             } else {
                 // Combined setting multiplies with window factor
-                let (h, v) = sf.get_factors(1.);
+                let (h, v) = sf.h_v_factors();
                 (h * window_scroll_factor, v * window_scroll_factor)
             }
         } else {
