@@ -64,7 +64,7 @@ validation:
 not_in_nav: |
   _Sidebar.md
   Configuration:-Overview.md
-  index.md
+  README.md
 # ah, wouldn't it be nice if we could autogenerate this with wiki/_Sidebar.md
 nav:
   - Usage:
