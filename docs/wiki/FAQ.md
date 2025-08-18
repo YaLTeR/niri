@@ -63,3 +63,10 @@ All in all, the situation works out in favor of avoiding Xwayland integration.
 Also, in the next release niri will have seamless built-in xwayland-satellite integration, that will solve the big rough edge of having to set it up manually.
 
 Besides, I wouldn't be too surprised if, down the road, xwayland-satellite becomes the standard way of integrating Xwayland into new compositors, since it takes on the bulk of the annoying work, and isolates the compositor from misbehaving clients.
+
+### Can I enable blur behind semitransparent windows?
+
+Not yet, follow/upvote [this issue](https://github.com/YaLTeR/niri/issues/54).
+
+There's also [a PR](https://github.com/YaLTeR/niri/pull/1634) adding blur to niri which you can build and run manually.
+Keep in mind that it's an experimental implementation that may have problems and performance concerns.
