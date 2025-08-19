@@ -3104,13 +3104,13 @@ impl State {
             .unwrap_or(1.);
 
         // Determine final scroll factors based on configuration
-        let (horizontal_factor, vertical_factor) = if let Some(sf) = device_scroll_factor {
-            let (h, v) = sf.h_v_factors();
-            (h * window_scroll_factor, v * window_scroll_factor)
-        } else {
-            // No device scroll factor, just use window factor
-            (window_scroll_factor, window_scroll_factor)
-        };
+        let (horizontal_factor, vertical_factor) = device_scroll_factor
+            .map(|x| x.h_v_factors())
+            .unwrap_or((1.0, 1.0));
+        let (horizontal_factor, vertical_factor) = (
+            horizontal_factor * window_scroll_factor,
+            vertical_factor * window_scroll_factor,
+        );
 
         let horizontal_amount = horizontal_amount.unwrap_or_else(|| {
             // Winit backend, discrete scrolling.

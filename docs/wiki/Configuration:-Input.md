@@ -37,7 +37,7 @@ input {
         // accel-speed 0.2
         // accel-profile "flat"
         // scroll-factor 1.0
-        // scroll-factor horizontal=1.0 vertical=1.0
+        // scroll-factor vertical=1.0 horizontal=-2.0
         // scroll-method "two-finger"
         // scroll-button 273
         // scroll-button-lock
@@ -54,7 +54,7 @@ input {
         // accel-speed 0.2
         // accel-profile "flat"
         // scroll-factor 1.0
-        // scroll-factor horizontal=1.0 vertical=1.0
+        // scroll-factor vertical=1.0 horizontal=-2.0
         // scroll-method "no-scroll"
         // scroll-button 273
         // scroll-button-lock

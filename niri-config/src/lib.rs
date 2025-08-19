@@ -4214,63 +4214,16 @@ mod tests {
     }
 
     #[test]
-    fn scroll_factor_snapshot() {
-        let parsed = do_parse(
-            r#"
-            input {
-                mouse {
-                    scroll-factor 2.0
-                }
-                touchpad {
-                    scroll-factor horizontal=1.5 vertical=-1.0
-                }
-            }
-            "#,
-        );
-
-        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r#"
-        Some(
-            ScrollFactor {
-                base: Some(
-                    FloatOrInt(
-                        2.0,
-                    ),
-                ),
-                horizontal: None,
-                vertical: None,
-            },
-        )
-        "#);
-        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r#"
-        Some(
-            ScrollFactor {
-                base: None,
-                horizontal: Some(
-                    FloatOrInt(
-                        1.5,
-                    ),
-                ),
-                vertical: Some(
-                    FloatOrInt(
-                        -1.0,
-                    ),
-                ),
-            },
-        )
-        "#);
-    }
-
-    #[test]
     fn parse_scroll_factor_mixed() {
         // Test mixed base + override syntax
         let parsed = do_parse(
             r#"
             input {
                 mouse {
-                    scroll-factor 2.0 vertical=-1.0
+                    scroll-factor 2 vertical=-1
                 }
                 touchpad {
-                    scroll-factor 1.5 horizontal=3.0
+                    scroll-factor 1.5 horizontal=3
                 }
             }
             "#,
@@ -4337,6 +4290,18 @@ mod tests {
             -1.0,
         )
         "#);
+
+        let sf = ScrollFactor {
+            base: Some(FloatOrInt(2.0)),
+            horizontal: Some(FloatOrInt(1.0)),
+            vertical: None,
+        };
+        assert_debug_snapshot!(sf.h_v_factors(), @r"
+        (
+            1.0,
+            2.0,
+        )
+        ");
     }
 
     #[test]
