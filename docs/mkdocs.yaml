@@ -43,6 +43,8 @@ markdown_extensions:
   - pymdownx.snippets
   - pymdownx.superfences
   - pymdownx.keys
+  - toc:
+      permalink: '#'
 plugins:
   - search
 hooks:
