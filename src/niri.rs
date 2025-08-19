@@ -6033,6 +6033,12 @@ impl Niri {
                     return;
                 }
 
+                if let Some(nsom) = ffm.not_scroll_on_maximized {
+                    if nsom && self.layout.is_active_column_full_width() {
+                        return;
+                    }
+                }
+
                 if let Some(threshold) = ffm.max_scroll_amount {
                     if self.layout.scroll_amount_to_activate(window) > threshold.0 {
                         return;

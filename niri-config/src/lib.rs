@@ -406,6 +406,8 @@ pub struct Touch {
 pub struct FocusFollowsMouse {
     #[knuffel(property, str)]
     pub max_scroll_amount: Option<Percent>,
+    #[knuffel(property)]
+    pub not_scroll_on_maximized: Option<bool>,
 }
 
 #[derive(knuffel::Decode, Debug, PartialEq, Eq, Clone, Copy)]
@@ -4731,6 +4733,7 @@ mod tests {
                 focus_follows_mouse: Some(
                     FocusFollowsMouse {
                         max_scroll_amount: None,
+                        not_scroll_on_maximized: None,
                     },
                 ),
                 workspace_auto_back_and_forth: true,

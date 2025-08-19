@@ -1553,6 +1553,14 @@ impl<W: LayoutElement> Layout<W> {
         0.
     }
 
+    pub fn is_active_column_full_width(&self) -> bool {
+        let Some(ws) = self.active_workspace() else {
+            return true;
+        };
+
+        return ws.is_active_column_full_width();
+    }
+
     pub fn should_trigger_focus_follows_mouse_on(&self, window: &W::Id) -> bool {
         // During an animation, it's easy to trigger focus-follows-mouse on the previous workspace,
         // especially when clicking to switch workspace on a bar of some kind. This cancels the
