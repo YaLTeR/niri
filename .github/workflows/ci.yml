@@ -8,25 +8,17 @@ on:
     - cron: '0 0 1 * *' # Monthly
 
 env:
-  RUN_SLOW_TESTS: 1
   DEPS_APT: curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
   DEPS_DNF: cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
   DEPS_APK: cargo clang-libclang eudev-dev glib-dev libdisplay-info-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pango-dev pipewire-dev tar
   DEPS_PKG: git curl rust llvm pkgconf pixman libudev-devd libdisplay-info seatd libinput libxkbcommon pipewire mesa-libs cairo devel/glib20 gettext-runtime harfbuzz pango
 
 jobs:
-  build:
+  test:
     strategy:
       fail-fast: false
 
-      matrix:
-        configuration: [debug, release]
-
-        include:
-          - configuration: release
-            release-flag: '--release'
-
-    name: test - ${{ matrix.configuration }}
+    name: test
     runs-on: ubuntu-24.04
 
     steps:
@@ -42,35 +34,54 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.configuration }}
-
-      - name: Check (no default features)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features
-
-      - name: Check (just dbus)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features --features dbus
-
-      - name: Check (just systemd)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features --features systemd
-
-      - name: Check (just dinit)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features --features dinit
-
-      - name: Check (just xdp-gnome-screencast)
-        run: cargo check ${{ matrix.release-flag }} --no-default-features --features xdp-gnome-screencast
-
-      - name: Check
-        run: cargo check ${{ matrix.release-flag }}
-
-      - name: Build (with profiling)
-        run: cargo build ${{ matrix.release-flag }} --features profile-with-tracy
 
       - name: Build tests
-        run: cargo test --no-run --all --exclude niri-visual-tests ${{ matrix.release-flag }}
+        run: cargo test --no-run --all --exclude niri-visual-tests
 
       - name: Test
-        run: cargo test --all --exclude niri-visual-tests ${{ matrix.release-flag }} -- --nocapture
+        run: cargo test --all --exclude niri-visual-tests -- --nocapture
+
+  build:
+    strategy:
+      fail-fast: false
+
+    name: check feature combinations
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ${{ env.DEPS_APT }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check (no default features)
+        run: cargo check --no-default-features
+
+      - name: Check (just dbus)
+        run: cargo check --no-default-features --features dbus
+
+      - name: Check (just systemd)
+        run: cargo check --no-default-features --features systemd
+
+      - name: Check (just dinit)
+        run: cargo check --no-default-features --features dinit
+
+      - name: Check (just xdp-gnome-screencast)
+        run: cargo check --no-default-features --features xdp-gnome-screencast
+
+      - name: Check
+        run: cargo check
+
+      - name: Build (with profiling)
+        run: cargo build --features profile-with-tracy
 
   build-musl:
     strategy:
@@ -93,15 +104,17 @@ jobs:
         run: cargo build --no-default-features --features dbus,xdp-gnome-screencast
 
   # Job that runs randomized tests for a longer period of time.
+  # Also runs normal slow tests.
   randomized-tests:
     strategy:
       fail-fast: false
 
-    name: randomized tests
+    name: randomized and slow tests
     runs-on: ubuntu-24.04
 
     env:
       RUST_BACKTRACE: 1
+      RUN_SLOW_TESTS: 1
       PROPTEST_CASES: 200000
       PROPTEST_MAX_LOCAL_REJECTS: 200000
       PROPTEST_MAX_GLOBAL_REJECTS: 200000
@@ -311,7 +324,7 @@ jobs:
   publish-docs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
-      - build
+      - test
     permissions:
       contents: write
     runs-on: ubuntu-24.04
