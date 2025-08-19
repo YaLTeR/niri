@@ -56,6 +56,7 @@ Many people are daily-driving niri, and are happy to help in our [Matrix channel
 Give it a try!
 Follow the instructions on the [Getting Started](https://yalter.github.io/niri/Getting-Started.html) page.
 Have your [waybar]s and [fuzzel]s ready: niri is not a complete desktop environment.
+Also check out [awesome-niri], a list of niri-related links and projects.
 
 Here are some points you may have questions about:
 
@@ -126,6 +127,7 @@ We also have a community Discord server: https://discord.gg/vT8Sfjy7sx
 [PaperWM]: https://github.com/paperwm/PaperWM
 [waybar]: https://github.com/Alexays/Waybar
 [fuzzel]: https://codeberg.org/dnkl/fuzzel
+[awesome-niri]: https://github.com/Vortriz/awesome-niri
 [karousel]: https://github.com/peterfajdiga/karousel
 [papersway]: https://spwhitton.name/tech/code/papersway/
 [hyprscrolling]: https://github.com/hyprwm/hyprland-plugins/tree/main/hyprscrolling
