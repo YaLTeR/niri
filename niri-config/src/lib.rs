@@ -191,6 +191,25 @@ pub enum TrackLayout {
     Window,
 }
 
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct ScrollFactor {
+    #[knuffel(argument)]
+    pub base: Option<FloatOrInt<0, 100>>,
+    #[knuffel(property)]
+    pub horizontal: Option<FloatOrInt<-100, 100>>,
+    #[knuffel(property)]
+    pub vertical: Option<FloatOrInt<-100, 100>>,
+}
+
+impl ScrollFactor {
+    pub fn h_v_factors(&self) -> (f64, f64) {
+        let base_value = self.base.map(|f| f.0).unwrap_or(1.0);
+        let h = self.horizontal.map(|f| f.0).unwrap_or(base_value);
+        let v = self.vertical.map(|f| f.0).unwrap_or(base_value);
+        (h, v)
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Touchpad {
     #[knuffel(child)]
@@ -227,8 +246,8 @@ pub struct Touchpad {
     pub disabled_on_external_mouse: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
-    #[knuffel(child, unwrap(argument))]
-    pub scroll_factor: Option<FloatOrInt<0, 100>>,
+    #[knuffel(child)]
+    pub scroll_factor: Option<ScrollFactor>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -251,8 +270,8 @@ pub struct Mouse {
     pub left_handed: bool,
     #[knuffel(child)]
     pub middle_emulation: bool,
-    #[knuffel(child, unwrap(argument))]
-    pub scroll_factor: Option<FloatOrInt<0, 100>>,
+    #[knuffel(child)]
+    pub scroll_factor: Option<ScrollFactor>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
@@ -4055,6 +4074,237 @@ mod tests {
     }
 
     #[test]
+    fn parse_scroll_factor_combined() {
+        // Test combined scroll-factor syntax
+        let parsed = do_parse(
+            r#"
+            input {
+                mouse {
+                    scroll-factor 2.0
+                }
+                touchpad {
+                    scroll-factor 1.5
+                }
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: Some(
+                    FloatOrInt(
+                        2.0,
+                    ),
+                ),
+                horizontal: None,
+                vertical: None,
+            },
+        )
+        "#);
+        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: Some(
+                    FloatOrInt(
+                        1.5,
+                    ),
+                ),
+                horizontal: None,
+                vertical: None,
+            },
+        )
+        "#);
+    }
+
+    #[test]
+    fn parse_scroll_factor_split() {
+        // Test split horizontal/vertical syntax
+        let parsed = do_parse(
+            r#"
+            input {
+                mouse {
+                    scroll-factor horizontal=2.0 vertical=-1.0
+                }
+                touchpad {
+                    scroll-factor horizontal=-1.5 vertical=0.5
+                }
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: Some(
+                    FloatOrInt(
+                        2.0,
+                    ),
+                ),
+                vertical: Some(
+                    FloatOrInt(
+                        -1.0,
+                    ),
+                ),
+            },
+        )
+        "#);
+        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: Some(
+                    FloatOrInt(
+                        -1.5,
+                    ),
+                ),
+                vertical: Some(
+                    FloatOrInt(
+                        0.5,
+                    ),
+                ),
+            },
+        )
+        "#);
+    }
+
+    #[test]
+    fn parse_scroll_factor_partial() {
+        // Test partial specification (only one axis)
+        let parsed = do_parse(
+            r#"
+            input {
+                mouse {
+                    scroll-factor horizontal=2.0
+                }
+                touchpad {
+                    scroll-factor vertical=-1.5
+                }
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: Some(
+                    FloatOrInt(
+                        2.0,
+                    ),
+                ),
+                vertical: None,
+            },
+        )
+        "#);
+        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: None,
+                vertical: Some(
+                    FloatOrInt(
+                        -1.5,
+                    ),
+                ),
+            },
+        )
+        "#);
+    }
+
+    #[test]
+    fn parse_scroll_factor_mixed() {
+        // Test mixed base + override syntax
+        let parsed = do_parse(
+            r#"
+            input {
+                mouse {
+                    scroll-factor 2 vertical=-1
+                }
+                touchpad {
+                    scroll-factor 1.5 horizontal=3
+                }
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: Some(
+                    FloatOrInt(
+                        2.0,
+                    ),
+                ),
+                horizontal: None,
+                vertical: Some(
+                    FloatOrInt(
+                        -1.0,
+                    ),
+                ),
+            },
+        )
+        "#);
+        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: Some(
+                    FloatOrInt(
+                        1.5,
+                    ),
+                ),
+                horizontal: Some(
+                    FloatOrInt(
+                        3.0,
+                    ),
+                ),
+                vertical: None,
+            },
+        )
+        "#);
+    }
+
+    #[test]
+    fn scroll_factor_h_v_factors() {
+        let sf = ScrollFactor {
+            base: Some(FloatOrInt(2.0)),
+            horizontal: None,
+            vertical: None,
+        };
+        assert_debug_snapshot!(sf.h_v_factors(), @r#"
+        (
+            2.0,
+            2.0,
+        )
+        "#);
+
+        let sf = ScrollFactor {
+            base: None,
+            horizontal: Some(FloatOrInt(3.0)),
+            vertical: Some(FloatOrInt(-1.0)),
+        };
+        assert_debug_snapshot!(sf.h_v_factors(), @r#"
+        (
+            3.0,
+            -1.0,
+        )
+        "#);
+
+        let sf = ScrollFactor {
+            base: Some(FloatOrInt(2.0)),
+            horizontal: Some(FloatOrInt(1.0)),
+            vertical: None,
+        };
+        assert_debug_snapshot!(sf.h_v_factors(), @r"
+        (
+            1.0,
+            2.0,
+        )
+        ");
+    }
+
+    #[test]
     fn parse() {
         let parsed = do_parse(
             r##"
@@ -4370,9 +4620,15 @@ mod tests {
                     disabled_on_external_mouse: true,
                     middle_emulation: false,
                     scroll_factor: Some(
-                        FloatOrInt(
-                            0.9,
-                        ),
+                        ScrollFactor {
+                            base: Some(
+                                FloatOrInt(
+                                    0.9,
+                                ),
+                            ),
+                            horizontal: None,
+                            vertical: None,
+                        },
                     ),
                 },
                 mouse: Mouse {
@@ -4394,9 +4650,15 @@ mod tests {
                     left_handed: false,
                     middle_emulation: true,
                     scroll_factor: Some(
-                        FloatOrInt(
-                            0.2,
-                        ),
+                        ScrollFactor {
+                            base: Some(
+                                FloatOrInt(
+                                    0.2,
+                                ),
+                            ),
+                            horizontal: None,
+                            vertical: None,
+                        },
                     ),
                 },
                 trackpoint: Trackpoint {

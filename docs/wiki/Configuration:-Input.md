@@ -37,6 +37,7 @@ input {
         // accel-speed 0.2
         // accel-profile "flat"
         // scroll-factor 1.0
+        // scroll-factor vertical=1.0 horizontal=-2.0
         // scroll-method "two-finger"
         // scroll-button 273
         // scroll-button-lock
@@ -53,6 +54,7 @@ input {
         // accel-speed 0.2
         // accel-profile "flat"
         // scroll-factor 1.0
+        // scroll-factor vertical=1.0 horizontal=-2.0
         // scroll-method "no-scroll"
         // scroll-button 273
         // scroll-button-lock
@@ -251,6 +253,8 @@ Settings specific to `touchpad`s:
 Settings specific to `touchpad` and `mouse`:
 
 - `scroll-factor`: <sup>Since: 0.1.10</sup> scales the scrolling speed by this value.
+
+    <sup>Since: next release</sup> You can also override horizontal and vertical scroll factor separately like so: `scroll-factor horizontal=2.0 vertical=-1.0`
 
 Settings specific to `tablet`s:
 
