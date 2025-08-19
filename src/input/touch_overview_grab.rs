@@ -60,6 +60,7 @@ impl TouchOverviewGrab {
     }
 
     fn on_ungrab(&mut self, state: &mut State) {
+        let mut should_close_mru_ui = false;
         let layout = &mut state.niri.layout;
         match self.gesture {
             GestureState::Recognizing => {
@@ -90,12 +91,17 @@ impl TouchOverviewGrab {
                     };
 
                     if let Some(ws_idx) = ws_idx {
+                        should_close_mru_ui = true;
                         layout.toggle_overview_to_workspace(ws_idx);
                     }
                 }
 
                 if let Some(window) = self.window.as_ref() {
                     layout.activate_window(window);
+                }
+
+                if should_close_mru_ui {
+                    state.niri.close_mru_ui();
                 }
             }
             GestureState::ViewOffset => {

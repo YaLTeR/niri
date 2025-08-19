@@ -1,5 +1,5 @@
 use std::cell::{Cell, Ref, RefCell};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
 use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
@@ -160,6 +160,9 @@ pub struct Mapped {
     /// These have been "sent" to the window in form of configures, but the window hadn't committed
     /// in response yet.
     uncommitted_windowed_fullscreen: Vec<(Serial, bool)>,
+
+    /// Most recent time the window had the focus.
+    most_recent_focus: Option<Instant>,
 }
 
 niri_render_elements! {
@@ -253,6 +256,7 @@ impl Mapped {
             is_windowed_fullscreen: false,
             is_pending_windowed_fullscreen: false,
             uncommitted_windowed_fullscreen: Vec::new(),
+            most_recent_focus: None,
         }
     }
 
@@ -482,6 +486,14 @@ impl Mapped {
 
             WindowCastRenderElements::from(elem)
         })
+    }
+
+    pub fn get_focus_timestamp(&self) -> Option<Instant> {
+        self.most_recent_focus
+    }
+
+    pub fn update_focus_timestamp(&mut self, timestamp: Instant) {
+        self.most_recent_focus.replace(timestamp);
     }
 
     pub fn send_frame<T, F>(
