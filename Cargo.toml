@@ -15,12 +15,12 @@ repository = "https://github.com/YaLTeR/niri"
 rust-version = "1.80.1"
 
 [workspace.dependencies]
-anyhow = "1.0.98"
-bitflags = "2.9.1"
-clap = { version = "4.5.43", features = ["derive"] }
+anyhow = "1.0.99"
+bitflags = "2.9.2"
+clap = { version = "4.5.45", features = ["derive"] }
 insta = "1.43.1"
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.142"
+serde_json = "1.0.143"
 tracing = { version = "0.1.41", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracy-client = { version = "0.18.2", default-features = false }
@@ -59,7 +59,7 @@ bitflags.workspace = true
 bytemuck = { version = "1.23.2", features = ["derive"] }
 calloop = { version = "0.14.3", features = ["executor", "futures-io", "signals"] }
 clap = { workspace = true, features = ["string"] }
-clap_complete = "4.5.56"
+clap_complete = "4.5.57"
 clap_complete_nushell = "4.5.8"
 directories = "6.0.0"
 drm-ffi = "0.9.0"
@@ -69,7 +69,7 @@ git-version = "0.3.9"
 glam = "0.30.5"
 input = { version = "0.9.1", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
-libc = "0.2.174"
+libc = "0.2.175"
 libdisplay-info = "0.2.2"
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "25.5.1", path = "niri-config" }
@@ -118,7 +118,7 @@ calloop-wayland-source = "0.4.0"
 insta.workspace = true
 proptest = "1.7.0"
 proptest-derive = { version = "0.6.0", features = ["boxed_union"] }
-rayon = "1.10.0"
+rayon = "1.11.0"
 wayland-client = "0.31.11"
 xshell = "0.2.7"
 
