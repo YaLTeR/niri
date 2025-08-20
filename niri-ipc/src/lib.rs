@@ -1155,6 +1155,10 @@ pub struct Window {
     pub is_floating: bool,
     /// Whether this window requests your attention.
     pub is_urgent: bool,
+    /// Whether this window is fullscreen
+    pub is_fullscreen: bool,
+    /// Whether this window is windowed fullscreen
+    pub is_windowed_fullscreen: bool,
     /// Position- and size-related properties of the window.
     pub layout: WindowLayout,
 }
