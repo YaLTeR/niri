@@ -122,6 +122,7 @@ use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospe
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
+use crate::focus::{KeyboardFocusTarget, PointerFocusTarget};
 use crate::frame_clock::FrameClock;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
 use crate::input::pick_color_grab::PickColorGrab;
@@ -161,7 +162,9 @@ use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
-use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
+use crate::ui::screenshot_ui::{
+    OutputScreenshot, ScreenshotUi, ScreenshotUiFocusTarget, ScreenshotUiRenderElement,
+};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
 use crate::utils::watcher::Watcher;
@@ -524,6 +527,7 @@ pub struct PointContents {
     // Can be `None` even when `window` is set, for example when the pointer is over the niri
     // border around the window.
     pub surface: Option<(WlSurface, Point<f64, Logical>)>,
+    pub target: Option<(PointerFocusTarget, Point<f64, Logical>)>,
     // If surface belongs to a window, this is that window.
     pub window: Option<(Window, HitType)>,
     // If surface belongs to a layer surface, this is that layer surface.
@@ -629,6 +633,18 @@ impl KeyboardFocus {
 
     pub fn is_overview(&self) -> bool {
         matches!(self, KeyboardFocus::Overview)
+    }
+
+    pub fn into_target(self) -> Option<KeyboardFocusTarget> {
+        match self {
+            KeyboardFocus::Layout { surface } => surface.map(KeyboardFocusTarget::Surface),
+            KeyboardFocus::LayerShell { surface } => Some(KeyboardFocusTarget::Surface(surface)),
+            KeyboardFocus::LockScreen { surface } => surface.map(KeyboardFocusTarget::Surface),
+            KeyboardFocus::ScreenshotUi => {
+                Some(KeyboardFocusTarget::ScreenshotUi(ScreenshotUiFocusTarget))
+            }
+            KeyboardFocus::Overview => Some(KeyboardFocusTarget::Overview),
+        }
     }
 }
 
@@ -787,7 +803,7 @@ impl State {
         let pointer = &self.niri.seat.get_pointer().unwrap();
         pointer.motion(
             self,
-            under.surface,
+            under.target,
             &MotionEvent {
                 location,
                 serial: SERIAL_COUNTER.next_serial(),
@@ -998,7 +1014,7 @@ impl State {
 
         pointer.motion(
             self,
-            under.surface,
+            under.target,
             &MotionEvent {
                 location,
                 serial: SERIAL_COUNTER.next_serial(),
@@ -1276,7 +1292,7 @@ impl State {
             }
 
             self.niri.keyboard_focus.clone_from(&focus);
-            keyboard.set_focus(self, focus.into_surface(), SERIAL_COUNTER.next_serial());
+            keyboard.set_focus(self, focus.into_target(), SERIAL_COUNTER.next_serial());
 
             // FIXME: can be more granular.
             self.niri.queue_redraw_all();
@@ -1810,9 +1826,6 @@ impl State {
                 .open(renderer, screenshots, default_output, show_pointer)
         });
 
-        self.niri
-            .cursor_manager
-            .set_cursor_image(CursorImageStatus::Named(CursorIcon::Crosshair));
         self.niri.queue_redraw_all();
     }
 
@@ -1851,9 +1864,6 @@ impl State {
         });
 
         self.niri.screenshot_ui.close();
-        self.niri
-            .cursor_manager
-            .set_cursor_image(CursorImageStatus::default_named());
         self.niri.queue_redraw_all();
     }
 
@@ -2997,8 +3007,6 @@ impl Niri {
         }
 
         if self.screenshot_ui.close() {
-            self.cursor_manager
-                .set_cursor_image(CursorImageStatus::default_named());
             self.queue_redraw_all();
         }
     }
@@ -3044,8 +3052,6 @@ impl Niri {
             // physical coordinates.
             if old_size != size || old_scale != scale || old_transform != transform {
                 self.screenshot_ui.close();
-                self.cursor_manager
-                    .set_cursor_image(CursorImageStatus::default_named());
                 self.queue_redraw_all();
                 return;
             }
@@ -3303,11 +3309,19 @@ impl Niri {
                     (pos_within_output + output_pos_in_global_space).to_f64(),
                 )
             });
+            rv.target = rv
+                .surface
+                .as_ref()
+                .map(|(surface, pos)| (PointerFocusTarget::Surface(surface.clone()), *pos));
 
             return rv;
         }
 
         if self.screenshot_ui.is_open() {
+            rv.target = Some((
+                PointerFocusTarget::ScreenshotUi(ScreenshotUiFocusTarget),
+                Point::new(0., 0.),
+            ));
             return rv;
         }
 
@@ -3417,6 +3431,10 @@ impl Niri {
                 .or_else(|| layer_popup_under(Layer::Top))
                 .or_else(|| layer_toplevel_under(Layer::Top));
 
+            if is_overview_open && under.is_none() {
+                rv.target = Some((PointerFocusTarget::Overview, Point::new(0., 0.)));
+            }
+
             under = under.or_else(interactive_moved_window_under);
 
             if !is_overview_open {
@@ -3445,6 +3463,12 @@ impl Niri {
         rv.surface = surface_and_pos;
         rv.window = window;
         rv.layer = layer;
+        if rv.target.is_none() {
+            rv.target = rv
+                .surface
+                .as_ref()
+                .map(|(surface, pos)| (PointerFocusTarget::Surface(surface.clone()), *pos));
+        }
         rv
     }
 
@@ -5686,8 +5710,6 @@ impl Niri {
         if self.output_state.is_empty() {
             // There are no outputs, lock the session right away.
             self.screenshot_ui.close();
-            self.cursor_manager
-                .set_cursor_image(CursorImageStatus::default_named());
 
             let lock = confirmation.ext_session_lock().clone();
             confirmation.lock();
@@ -5746,8 +5768,6 @@ impl Niri {
                 self.event_loop.remove(deadline_token);
 
                 self.screenshot_ui.close();
-                self.cursor_manager
-                    .set_cursor_image(CursorImageStatus::default_named());
 
                 if self.output_state.is_empty() {
                     // There are no outputs, lock the session right away.
@@ -5893,7 +5913,7 @@ impl Niri {
         };
 
         let pointer = self.seat.get_pointer().unwrap();
-        if Some(surface) != pointer.current_focus().as_ref() {
+        if Some(surface) != pointer.current_focus().as_ref().and_then(|x| x.surface()) {
             return;
         }
 

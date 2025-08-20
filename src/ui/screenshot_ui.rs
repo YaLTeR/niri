@@ -12,17 +12,20 @@ use niri_ipc::SizeChange;
 use pango::{Alignment, FontDescription};
 use pangocairo::cairo::{self, ImageSurface};
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::input::TouchSlot;
+use smithay::backend::input::{KeyState, TouchSlot};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ExportMem, Texture as _};
-use smithay::input::keyboard::{Keysym, ModifiersState};
+use smithay::input::keyboard::{KeyboardTarget, Keysym, KeysymHandle, ModifiersState};
+use smithay::input::pointer::{self, CursorIcon, CursorImageStatus, PointerTarget};
+use smithay::input::{Seat, SeatHandler};
 use smithay::output::{Output, WeakOutput};
-use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Buffer, IsAlive, Physical, Point, Rectangle, Scale, Serial, Size, Transform};
 
 use crate::animation::{Animation, Clock};
 use crate::layout::floating::DIRECTIONAL_MOVE_PX;
+use crate::niri::State;
 use crate::niri_render_elements;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -1203,4 +1206,134 @@ fn render_panel(
     )?;
 
     Ok(buffer)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScreenshotUiFocusTarget;
+
+impl IsAlive for ScreenshotUiFocusTarget {
+    fn alive(&self) -> bool {
+        true
+    }
+}
+
+impl KeyboardTarget<State> for ScreenshotUiFocusTarget {
+    fn enter(
+        &self,
+        seat: &Seat<State>,
+        data: &mut State,
+        keys: Vec<KeysymHandle<'_>>,
+        serial: Serial,
+    ) {
+    }
+
+    fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial) {}
+
+    fn key(
+        &self,
+        seat: &Seat<State>,
+        data: &mut State,
+        key: KeysymHandle<'_>,
+        state: KeyState,
+        serial: Serial,
+        time: u32,
+    ) {
+    }
+
+    fn modifiers(
+        &self,
+        seat: &Seat<State>,
+        data: &mut State,
+        modifiers: ModifiersState,
+        serial: Serial,
+    ) {
+    }
+}
+
+impl PointerTarget<State> for ScreenshotUiFocusTarget {
+    fn enter(&self, seat: &Seat<State>, data: &mut State, event: &pointer::MotionEvent) {
+        data.cursor_image(seat, CursorImageStatus::Named(CursorIcon::Crosshair));
+    }
+
+    fn motion(&self, seat: &Seat<State>, data: &mut State, event: &pointer::MotionEvent) {}
+
+    fn relative_motion(
+        &self,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::RelativeMotionEvent,
+    ) {
+    }
+
+    fn button(&self, seat: &Seat<State>, data: &mut State, event: &pointer::ButtonEvent) {}
+
+    fn axis(&self, seat: &Seat<State>, data: &mut State, frame: pointer::AxisFrame) {}
+
+    fn frame(&self, seat: &Seat<State>, data: &mut State) {}
+
+    fn gesture_swipe_begin(
+        &self,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GestureSwipeBeginEvent,
+    ) {
+    }
+
+    fn gesture_swipe_update(
+        &self,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GestureSwipeUpdateEvent,
+    ) {
+    }
+
+    fn gesture_swipe_end(
+        &self,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GestureSwipeEndEvent,
+    ) {
+    }
+
+    fn gesture_pinch_begin(
+        &self,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GesturePinchBeginEvent,
+    ) {
+    }
+
+    fn gesture_pinch_update(
+        &self,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GesturePinchUpdateEvent,
+    ) {
+    }
+
+    fn gesture_pinch_end(
+        &self,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GesturePinchEndEvent,
+    ) {
+    }
+
+    fn gesture_hold_begin(
+        &self,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GestureHoldBeginEvent,
+    ) {
+    }
+
+    fn gesture_hold_end(
+        &self,
+        seat: &Seat<State>,
+        data: &mut State,
+        event: &pointer::GestureHoldEndEvent,
+    ) {
+    }
+
+    fn leave(&self, seat: &Seat<State>, data: &mut State, serial: Serial, time: u32) {}
 }

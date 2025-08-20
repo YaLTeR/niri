@@ -40,6 +40,7 @@ use smithay::wayland::keyboard_shortcuts_inhibit::{
 };
 use smithay::wayland::output::OutputHandler;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler};
+use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::security_context::{
     SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
 };
@@ -75,6 +76,7 @@ use smithay::{
     delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation,
 };
 
+use crate::focus::{KeyboardFocusTarget, PointerFocusTarget};
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
 use crate::layout::workspace::WorkspaceId;
 use crate::layout::ActivateWindow;
@@ -102,8 +104,8 @@ use crate::{
 pub const XDG_ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl SeatHandler for State {
-    type KeyboardFocus = WlSurface;
-    type PointerFocus = WlSurface;
+    type KeyboardFocus = KeyboardFocusTarget;
+    type PointerFocus = PointerFocusTarget;
     type TouchFocus = WlSurface;
 
     fn seat_state(&mut self) -> &mut SeatState<State> {
@@ -111,19 +113,16 @@ impl SeatHandler for State {
     }
 
     fn cursor_image(&mut self, _seat: &Seat<Self>, mut image: CursorImageStatus) {
-        // FIXME: this hack should be removable once the screenshot UI is tracked with a
-        // PointerFocus properly.
-        if self.niri.screenshot_ui.is_open() {
-            image = CursorImageStatus::Named(CursorIcon::Crosshair);
-        }
         self.niri.cursor_manager.set_cursor_image(image);
         // FIXME: more granular
         self.niri.queue_redraw_all();
     }
 
-    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
+    fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&KeyboardFocusTarget>) {
         let dh = &self.niri.display_handle;
-        let client = focused.and_then(|s| dh.get_client(s.id()).ok());
+        let client = focused
+            .and_then(|t| t.wl_surface())
+            .and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, client.clone());
         set_primary_focus(dh, seat, client);
     }

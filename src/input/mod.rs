@@ -40,6 +40,7 @@ use touch_overview_grab::TouchOverviewGrab;
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
+use crate::focus::PointerFocusTarget;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
@@ -626,9 +627,6 @@ impl State {
                 }
 
                 self.niri.screenshot_ui.close();
-                self.niri
-                    .cursor_manager
-                    .set_cursor_image(CursorImageStatus::default_named());
                 self.niri.queue_redraw_all();
             }
             Action::ScreenshotTogglePointer => {
@@ -2152,14 +2150,16 @@ impl State {
         //
         // FIXME: ideally this should use the pointer focus with up-to-date global location.
         let mut pointer_confined = None;
-        if let Some(under) = &self.niri.pointer_contents.surface {
+        if let Some(under @ (PointerFocusTarget::Surface(surface), _)) =
+            &self.niri.pointer_contents.target
+        {
             // No need to check if the pointer focus surface matches, because here we're checking
             // for an already-active constraint, and the constraint is deactivated when the focused
             // surface changes.
             let pos_within_surface = pos - under.1;
 
             let mut pointer_locked = false;
-            with_pointer_constraint(&under.0, &pointer, |constraint| {
+            with_pointer_constraint(surface, &pointer, |constraint| {
                 let Some(constraint) = constraint else { return };
                 if !constraint.is_active() {
                     return;
@@ -2251,7 +2251,7 @@ impl State {
             let mut prevent = false;
 
             // Prevent the pointer from leaving the focused surface.
-            if Some(&focus_surface.0) != under.surface.as_ref().map(|(s, _)| s) {
+            if Some(&focus_surface.0) != under.target.as_ref().map(|(s, _)| s) {
                 prevent = true;
             }
 
@@ -2286,7 +2286,7 @@ impl State {
 
         pointer.motion(
             self,
-            under.surface.clone(),
+            under.target.clone(),
             &MotionEvent {
                 location: new_pos,
                 serial,
@@ -2296,7 +2296,7 @@ impl State {
 
         pointer.relative_motion(
             self,
-            under.surface,
+            under.target,
             &RelativeMotionEvent {
                 delta: event.delta(),
                 delta_unaccel: event.delta_unaccel(),
@@ -2385,7 +2385,7 @@ impl State {
 
         pointer.motion(
             self,
-            under.surface,
+            under.target,
             &MotionEvent {
                 location: pos,
                 serial,
@@ -2761,7 +2761,9 @@ impl State {
             // updating the pointer contents.
             pointer
                 .current_focus()
-                .map(|surface| self.niri.find_root_shell_surface(&surface))
+                .as_ref()
+                .and_then(|target| target.surface())
+                .map(|surface| self.niri.find_root_shell_surface(surface))
                 .map_or(true, |root| {
                     !self
                         .niri
@@ -3102,7 +3104,9 @@ impl State {
         // Get window-specific scroll factor
         let window_scroll_factor = pointer
             .current_focus()
-            .map(|focused| self.niri.find_root_shell_surface(&focused))
+            .as_ref()
+            .and_then(|target| target.surface())
+            .map(|focused| self.niri.find_root_shell_surface(focused))
             .and_then(|root| self.niri.layout.find_window_and_output(&root).unzip().0)
             .and_then(|window| window.rules().scroll_factor)
             .unwrap_or(1.);

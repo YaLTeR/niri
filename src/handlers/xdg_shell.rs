@@ -38,6 +38,7 @@ use smithay::{
 };
 use tracing::field::Empty;
 
+use crate::focus::KeyboardFocusTarget;
 use crate::input::move_grab::MoveGrab;
 use crate::input::resize_grab::ResizeGrab;
 use crate::input::touch_move_grab::TouchMoveGrab;
@@ -83,14 +84,16 @@ impl XdgShellHandler for State {
             if grab_serial == serial {
                 let start_data = grab.start_data();
                 if let Some((focus, _)) = &start_data.focus {
-                    if focus.id().same_client_as(&wl_surface.id()) {
-                        // Deny move requests from DnD grabs to work around
-                        // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
-                        let is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
+                    if let Some(focus) = focus.surface() {
+                        if focus.id().same_client_as(&wl_surface.id()) {
+                            // Deny move requests from DnD grabs to work around
+                            // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
+                            let is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
 
-                        if !is_dnd_grab {
-                            grab_start_data =
-                                Some(PointerOrTouchStartData::Pointer(start_data.clone()));
+                            if !is_dnd_grab {
+                                grab_start_data =
+                                    Some(PointerOrTouchStartData::Pointer(start_data.clone()));
+                            }
                         }
                     }
                 }
@@ -182,8 +185,10 @@ impl XdgShellHandler for State {
         if pointer.has_grab(serial) {
             if let Some(start_data) = pointer.grab_start_data() {
                 if let Some((focus, _)) = &start_data.focus {
-                    if focus.id().same_client_as(&wl_surface.id()) {
-                        grab_start_data = Some(PointerOrTouchStartData::Pointer(start_data));
+                    if let Some(focus) = focus.surface() {
+                        if focus.id().same_client_as(&wl_surface.id()) {
+                            grab_start_data = Some(PointerOrTouchStartData::Pointer(start_data));
+                        }
                     }
                 }
             }
@@ -372,11 +377,12 @@ impl XdgShellHandler for State {
         }
 
         let seat = &self.niri.seat;
-        let mut grab = match self
-            .niri
-            .popups
-            .grab_popup(root.clone(), popup, seat, serial)
-        {
+        let mut grab = match self.niri.popups.grab_popup(
+            KeyboardFocusTarget::Surface(root.clone()),
+            popup,
+            seat,
+            serial,
+        ) {
             Ok(grab) => grab,
             Err(err) => {
                 trace!("ignoring popup grab: {err:?}");
