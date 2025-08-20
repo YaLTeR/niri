@@ -270,7 +270,7 @@ fn render(
 
     // Add the spawn actions.
     for bind in binds.iter().filter(|bind| {
-        matches!(bind.action, Action::Spawn(_))
+        matches!(bind.action, Action::Spawn(_) | Action::SpawnSh(_))
             // Only show binds with Mod or Super to filter out stuff like volume up/down.
             && (bind.key.modifiers.contains(Modifiers::COMPOSITOR)
                 || bind.key.modifiers.contains(Modifiers::SUPER))
@@ -446,6 +446,11 @@ fn action_name(action: &Action) -> String {
         Action::Spawn(args) => format!(
             "Spawn <span face='monospace' bgcolor='#000000'>{}</span>",
             args.first().unwrap_or(&String::new())
+        ),
+        Action::SpawnSh(command) => format!(
+            "Spawn <span face='monospace' bgcolor='#000000'>{}</span>",
+            // Fairly crude but should get the job done in most cases.
+            command.split_ascii_whitespace().next().unwrap_or("")
         ),
         _ => String::from("FIXME: Unknown"),
     }

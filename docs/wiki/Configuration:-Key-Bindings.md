@@ -206,7 +206,8 @@ binds {
 > }
 > ```
 
-Currently, niri *does not* use a shell to run commands, which means that you need to manually separate arguments.
+For `spawn`, niri *does not* use a shell to run commands, which means that you need to manually separate arguments.
+See [`spawn-sh`](#spawn-sh) below for an action that uses a shell.
 
 ```kdl
 binds {
@@ -248,6 +249,37 @@ binds {
     Mod+T { spawn "~/scripts/do-something.sh"; }
 }
 ```
+
+#### `spawn-sh`
+
+<sup>Since: next release</sup>
+
+Run a command through the shell.
+
+The argument is a single string that is passed verbatim to `sh`.
+You can use shell variables, pipelines, `~` expansion, and everything else as expected.
+
+```kdl
+binds {
+    // Works with spawn-sh: all arguments in the same string.
+    Mod+D { spawn-sh "alacritty -e /usr/bin/fish"; }
+
+    // Works with spawn-sh: shell variable ($MAIN_OUTPUT), ~ expansion.
+    Mod+T { spawn-sh "grim -o $MAIN_OUTPUT ~/screenshot.png"; }
+
+    // Works with spawn-sh: process substitution.
+    Mod+Q { spawn-sh "notify-send clipboard \"$(wl-paste)\""; }
+
+    // Works with spawn-sh: multiple commands.
+    Super+Alt+S { spawn-sh "pkill orca || exec orca"; }
+}
+```
+
+`spawn-sh "some command"` is equivalent to `spawn "sh" "-c" "some command"`—it's just a less confusing shorthand.
+Keep in mind that going through the shell incurs a tiny performance penalty compared to directly `spawn`ing some binary.
+
+Using `sh` is hardcoded, consistent with other compositors.
+If you want a different shell, write it out using `spawn`, e.g. `spawn "fish" "-c" "some fish command"`.
 
 #### `quit`
 

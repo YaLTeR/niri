@@ -203,6 +203,12 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(last = true, required = true))]
         command: Vec<String>,
     },
+    /// Spawn a command through the shell.
+    SpawnSh {
+        /// Command to run.
+        #[cfg_attr(feature = "clap", arg(last = true, required = true))]
+        command: String,
+    },
     /// Do a screen transition.
     DoScreenTransition {
         /// Delay in milliseconds for the screen to freeze before starting the transition.

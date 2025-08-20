@@ -41,6 +41,8 @@ pub struct Config {
     pub outputs: Outputs,
     #[knuffel(children(name = "spawn-at-startup"))]
     pub spawn_at_startup: Vec<SpawnAtStartup>,
+    #[knuffel(children(name = "spawn-at-startup-sh"))]
+    pub spawn_at_startup_sh: Vec<SpawnAtStartupSh>,
     #[knuffel(child, default)]
     pub layout: Layout,
     #[knuffel(child, default)]
@@ -604,6 +606,12 @@ impl Default for Layout {
 pub struct SpawnAtStartup {
     #[knuffel(arguments)]
     pub command: Vec<String>,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
+pub struct SpawnAtStartupSh {
+    #[knuffel(argument)]
+    pub command: String,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -1719,6 +1727,7 @@ pub enum Action {
     DebugToggleOpaqueRegions,
     DebugToggleDamage,
     Spawn(#[knuffel(arguments)] Vec<String>),
+    SpawnSh(#[knuffel(argument)] String),
     DoScreenTransition(#[knuffel(property(name = "delay-ms"))] Option<u16>),
     #[knuffel(skip)]
     ConfirmScreenshot {
@@ -1962,6 +1971,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::PowerOffMonitors {} => Self::PowerOffMonitors,
             niri_ipc::Action::PowerOnMonitors {} => Self::PowerOnMonitors,
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
+            niri_ipc::Action::SpawnSh { command } => Self::SpawnSh(command),
             niri_ipc::Action::DoScreenTransition { delay_ms } => Self::DoScreenTransition(delay_ms),
             niri_ipc::Action::Screenshot { show_pointer } => Self::Screenshot(show_pointer),
             niri_ipc::Action::ScreenshotScreen {
@@ -3854,7 +3864,7 @@ where
             }
             match Action::decode_node(child, ctx) {
                 Ok(action) => {
-                    if !matches!(action, Action::Spawn(_)) {
+                    if !matches!(action, Action::Spawn(_) | Action::SpawnSh(_)) {
                         if let Some(node) = allow_when_locked_node {
                             ctx.emit_error(DecodeError::unexpected(
                                 node,
@@ -4453,6 +4463,7 @@ mod tests {
             }
 
             spawn-at-startup "alacritty" "-e" "fish"
+            spawn-at-startup-sh "qs -c ~/source/qs/MyAwesomeShell"
 
             prefer-no-csd
 
@@ -4549,6 +4560,7 @@ mod tests {
                 Mod+Shift+1 { focus-workspace "workspace-1"; }
                 Mod+Shift+E allow-inhibiting=false { quit skip-confirmation=true; }
                 Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
+                Super+Alt+S allow-when-locked=true { spawn-sh "pkill orca || exec orca"; }
             }
 
             switch-events {
@@ -4792,6 +4804,11 @@ mod tests {
                         "-e",
                         "fish",
                     ],
+                },
+            ],
+            spawn_at_startup_sh: [
+                SpawnAtStartupSh {
+                    command: "qs -c ~/source/qs/MyAwesomeShell",
                 },
             ],
             layout: Layout {
@@ -5678,6 +5695,24 @@ mod tests {
                             150ms,
                         ),
                         allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_s,
+                            ),
+                            modifiers: Modifiers(
+                                ALT | SUPER,
+                            ),
+                        },
+                        action: SpawnSh(
+                            "pkill orca || exec orca",
+                        ),
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: true,
                         allow_inhibiting: true,
                         hotkey_overlay_title: None,
                     },

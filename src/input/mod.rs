@@ -44,7 +44,7 @@ use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
-use crate::utils::spawning::spawn;
+use crate::utils::spawning::{spawn, spawn_sh};
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
 pub mod backend_ext;
@@ -594,6 +594,10 @@ impl State {
             Action::Spawn(command) => {
                 let (token, _) = self.niri.activation_state.create_external_token(None);
                 spawn(command, Some(token.clone()));
+            }
+            Action::SpawnSh(command) => {
+                let (token, _) = self.niri.activation_state.create_external_token(None);
+                spawn_sh(command, Some(token.clone()));
             }
             Action::DoScreenTransition(delay_ms) => {
                 self.backend.with_primary_renderer(|renderer| {
