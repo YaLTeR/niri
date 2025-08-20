@@ -151,7 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_default();
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
-    let spawn_at_startup_sh = mem::take(&mut config.spawn_at_startup_sh);
+    let spawn_sh_at_startup = mem::take(&mut config.spawn_sh_at_startup);
     *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
 
     store_and_increase_nofile_rlimit();
@@ -238,7 +238,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for elem in spawn_at_startup {
         spawn(elem.command, None);
     }
-    for elem in spawn_at_startup_sh {
+    for elem in spawn_sh_at_startup {
         spawn_sh(elem.command, None);
     }
 

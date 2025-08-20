@@ -270,8 +270,8 @@ layout {
 // This line starts waybar, a commonly used bar for Wayland compositors.
 spawn-at-startup "waybar"
 
-// To run a shell command (with variables, pipes, etc.), use spawn-at-startup-sh:
-// spawn-at-startup-sh "qs -c ~/source/qs/MyAwesomeShell"
+// To run a shell command (with variables, pipes, etc.), use spawn-sh-at-startup:
+// spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"
 
 hotkey-overlay {
     // Uncomment this line to disable the "Important Hotkeys" pop-up at startup.

@@ -41,8 +41,8 @@ pub struct Config {
     pub outputs: Outputs,
     #[knuffel(children(name = "spawn-at-startup"))]
     pub spawn_at_startup: Vec<SpawnAtStartup>,
-    #[knuffel(children(name = "spawn-at-startup-sh"))]
-    pub spawn_at_startup_sh: Vec<SpawnAtStartupSh>,
+    #[knuffel(children(name = "spawn-sh-at-startup"))]
+    pub spawn_sh_at_startup: Vec<SpawnShAtStartup>,
     #[knuffel(child, default)]
     pub layout: Layout,
     #[knuffel(child, default)]
@@ -609,7 +609,7 @@ pub struct SpawnAtStartup {
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
-pub struct SpawnAtStartupSh {
+pub struct SpawnShAtStartup {
     #[knuffel(argument)]
     pub command: String,
 }
@@ -4463,7 +4463,7 @@ mod tests {
             }
 
             spawn-at-startup "alacritty" "-e" "fish"
-            spawn-at-startup-sh "qs -c ~/source/qs/MyAwesomeShell"
+            spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"
 
             prefer-no-csd
 
@@ -4806,8 +4806,8 @@ mod tests {
                     ],
                 },
             ],
-            spawn_at_startup_sh: [
-                SpawnAtStartupSh {
+            spawn_sh_at_startup: [
+                SpawnShAtStartup {
                     command: "qs -c ~/source/qs/MyAwesomeShell",
                 },
             ],

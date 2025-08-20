@@ -5,7 +5,7 @@ Here are all of these options at a glance:
 ```kdl
 spawn-at-startup "waybar"
 spawn-at-startup "alacritty"
-spawn-at-startup-sh "qs -c ~/source/qs/MyAwesomeShell"
+spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"
 
 prefer-no-csd
 
@@ -72,7 +72,7 @@ spawn-at-startup "alacritty"
 Note that running niri as a systemd session supports xdg-desktop-autostart out of the box, which may be more convenient to use.
 Thanks to this, apps that you configured to autostart in GNOME will also "just work" in niri, without any manual `spawn-at-startup` configuration.
 
-### `spawn-at-startup-sh`
+### `spawn-sh-at-startup`
 
 <sup>Since: next release</sup>
 
@@ -85,7 +85,7 @@ See detailed description in the docs for the [`spawn-sh` key binding action](./C
 
 ```kdl
 // Pass all arguments in the same string.
-spawn-at-startup-sh "qs -c ~/source/qs/MyAwesomeShell"
+spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"
 ```
 
 ### `prefer-no-csd`
