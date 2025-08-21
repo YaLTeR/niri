@@ -93,3 +93,12 @@ window-rule {
     default-floating-position x=10 y=10 relative-to="bottom-right"
 }
 ```
+
+### Waybar and other GTK 3 components
+
+If you have rounded corners on your Waybar and they show up with black pixels in the corners, then set your Waybar opacity to 0.99, which should fix it.
+
+GTK 3 seems to have a bug where it reports a surface as fully opaque even if it has rounded corners.
+This leads to niri filling the transparent pixels inside the corners with black.
+
+Setting the surface opacity to something below 1 fixes the problem because then GTK no longer reports the surface as opaque.
