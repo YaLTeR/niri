@@ -116,12 +116,8 @@ impl State {
         let hide_hotkey_overlay =
             self.niri.hotkey_overlay.is_open() && should_hide_hotkey_overlay(&event);
 
-        let hide_exit_confirm_dialog = self
-            .niri
-            .exit_confirm_dialog
-            .as_ref()
-            .is_some_and(|d| d.is_open())
-            && should_hide_exit_confirm_dialog(&event);
+        let hide_exit_confirm_dialog =
+            self.niri.exit_confirm_dialog.is_open() && should_hide_exit_confirm_dialog(&event);
 
         use InputEvent::*;
         match event {
@@ -159,10 +155,8 @@ impl State {
             self.niri.queue_redraw_all();
         }
 
-        if let Some(dialog) = &mut self.niri.exit_confirm_dialog {
-            if hide_exit_confirm_dialog && dialog.hide() {
-                self.niri.queue_redraw_all();
-            }
+        if hide_exit_confirm_dialog && self.niri.exit_confirm_dialog.hide() {
+            self.niri.queue_redraw_all();
         }
     }
 
@@ -381,15 +375,14 @@ impl State {
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
 
-                if let Some(dialog) = &this.niri.exit_confirm_dialog {
-                    if dialog.is_open() && pressed && raw == Some(Keysym::Return) {
-                        info!("quitting after confirming exit dialog");
-                        this.niri.stop_signal.stop();
+                if this.niri.exit_confirm_dialog.is_open() && pressed && raw == Some(Keysym::Return)
+                {
+                    info!("quitting after confirming exit dialog");
+                    this.niri.stop_signal.stop();
 
-                        // Don't send this Enter press to any clients.
-                        this.niri.suppressed_keys.insert(key_code);
-                        return FilterResult::Intercept(None);
-                    }
+                    // Don't send this Enter press to any clients.
+                    this.niri.suppressed_keys.insert(key_code);
+                    return FilterResult::Intercept(None);
                 }
 
                 if pressed
@@ -552,13 +545,9 @@ impl State {
 
         match action {
             Action::Quit(skip_confirmation) => {
-                if !skip_confirmation {
-                    if let Some(dialog) = &mut self.niri.exit_confirm_dialog {
-                        if dialog.show() {
-                            self.niri.queue_redraw_all();
-                        }
-                        return;
-                    }
+                if !skip_confirmation && self.niri.exit_confirm_dialog.show() {
+                    self.niri.queue_redraw_all();
+                    return;
                 }
 
                 info!("quitting as requested");

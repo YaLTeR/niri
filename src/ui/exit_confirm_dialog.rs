@@ -27,23 +27,34 @@ pub struct ExitConfirmDialog {
 }
 
 impl ExitConfirmDialog {
-    pub fn new() -> anyhow::Result<Self> {
-        Ok(Self {
+    pub fn new() -> Self {
+        let buffer = match render(1.) {
+            Ok(x) => Some(x),
+            Err(err) => {
+                warn!("error creating the exit confirm dialog: {err:?}");
+                None
+            }
+        };
+
+        Self {
             is_open: false,
-            buffers: RefCell::new(HashMap::from([(
-                NotNan::new(1.).unwrap(),
-                Some(render(1.)?),
-            )])),
-        })
+            buffers: RefCell::new(HashMap::from([(NotNan::new(1.).unwrap(), buffer)])),
+        }
+    }
+
+    pub fn can_show(&self) -> bool {
+        let buffers = self.buffers.borrow();
+        let fallback = &buffers[&NotNan::new(1.).unwrap()];
+        fallback.is_some()
     }
 
     pub fn show(&mut self) -> bool {
-        if !self.is_open {
-            self.is_open = true;
-            true
-        } else {
-            false
+        if !self.can_show() {
+            return false;
         }
+
+        self.is_open = true;
+        true
     }
 
     pub fn hide(&mut self) -> bool {
@@ -72,7 +83,11 @@ impl ExitConfirmDialog {
         let output_size = output_size(output);
 
         let mut buffers = self.buffers.borrow_mut();
-        let fallback = buffers[&NotNan::new(1.).unwrap()].clone().unwrap();
+        let Some(fallback) = buffers[&NotNan::new(1.).unwrap()].clone() else {
+            error!("exit confirm dialog opened without fallback buffer");
+            return None;
+        };
+
         let buffer = buffers
             .entry(NotNan::new(scale).unwrap())
             .or_insert_with(|| render(scale).ok());

@@ -377,7 +377,7 @@ pub struct Niri {
     pub screenshot_ui: ScreenshotUi,
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
-    pub exit_confirm_dialog: Option<ExitConfirmDialog>,
+    pub exit_confirm_dialog: ExitConfirmDialog,
 
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
     pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
@@ -2450,13 +2450,7 @@ impl Niri {
             hotkey_overlay.show();
         }
 
-        let exit_confirm_dialog = match ExitConfirmDialog::new() {
-            Ok(x) => Some(x),
-            Err(err) => {
-                warn!("error creating the exit confirm dialog: {err:?}");
-                None
-            }
-        };
+        let exit_confirm_dialog = ExitConfirmDialog::new();
 
         event_loop
             .insert_source(
@@ -4123,10 +4117,8 @@ impl Niri {
         }
 
         // Next, the exit confirm dialog.
-        if let Some(dialog) = &self.exit_confirm_dialog {
-            if let Some(element) = dialog.render(renderer, output) {
-                elements.push(element.into());
-            }
+        if let Some(element) = self.exit_confirm_dialog.render(renderer, output) {
+            elements.push(element.into());
         }
 
         // Next, the config error notification too.
