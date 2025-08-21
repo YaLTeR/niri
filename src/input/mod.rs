@@ -29,7 +29,7 @@ use smithay::input::touch::{
 };
 use smithay::input::SeatHandler;
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle, Size, Transform, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::selection::data_device::DnDGrab;
@@ -2295,20 +2295,13 @@ impl State {
 
         pointer.frame(self);
 
-        // contents_under() will return no surface when the hot corner should trigger.
-        let hot_corners = self.niri.config.borrow().gestures.hot_corners;
-        if !hot_corners.off
-            && pointer.current_focus().is_none()
-            && !self.niri.screenshot_ui.is_open()
-        {
-            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-            if let Some((_, pos_within_output)) = self.niri.output_under(pos) {
-                let inside_hot_corner = hot_corner.contains(pos_within_output);
-                if inside_hot_corner && !was_inside_hot_corner {
-                    self.niri.layout.toggle_overview();
-                }
-                self.niri.pointer_inside_hot_corner = inside_hot_corner;
+        // contents_under() will return no surface when the hot corner should trigger, so
+        // pointer.motion() will set the current focus to None.
+        if under.hot_corner && pointer.current_focus().is_none() {
+            if !was_inside_hot_corner {
+                self.niri.layout.toggle_overview();
             }
+            self.niri.pointer_inside_hot_corner = true;
         }
 
         // Activate a new confinement if necessary.
@@ -2384,20 +2377,13 @@ impl State {
 
         pointer.frame(self);
 
-        // contents_under() will return no surface when the hot corner should trigger.
-        let hot_corners = self.niri.config.borrow().gestures.hot_corners;
-        if !hot_corners.off
-            && pointer.current_focus().is_none()
-            && !self.niri.screenshot_ui.is_open()
-        {
-            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-            if let Some((_, pos_within_output)) = self.niri.output_under(pos) {
-                let inside_hot_corner = hot_corner.contains(pos_within_output);
-                if inside_hot_corner && !was_inside_hot_corner {
-                    self.niri.layout.toggle_overview();
-                }
-                self.niri.pointer_inside_hot_corner = inside_hot_corner;
+        // contents_under() will return no surface when the hot corner should trigger, so
+        // pointer.motion() will set the current focus to None.
+        if under.hot_corner && pointer.current_focus().is_none() {
+            if !was_inside_hot_corner {
+                self.niri.layout.toggle_overview();
             }
+            self.niri.pointer_inside_hot_corner = true;
         }
 
         self.niri.maybe_activate_pointer_constraint();

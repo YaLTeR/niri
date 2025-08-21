@@ -528,6 +528,8 @@ pub struct PointContents {
     pub window: Option<(Window, HitType)>,
     // If surface belongs to a layer surface, this is that layer surface.
     pub layer: Option<LayerSurface>,
+    // Pointer is over a hot corner.
+    pub hot_corner: bool,
 }
 
 #[derive(Debug, Default)]
@@ -3403,6 +3405,7 @@ impl Niri {
             if !hot_corners.off {
                 let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
                 if hot_corner.contains(pos_within_output) {
+                    rv.hot_corner = true;
                     return rv;
                 }
             }
