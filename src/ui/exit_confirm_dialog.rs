@@ -23,8 +23,7 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::utils::{output_size, to_physical_precise_round};
 
-const TEXT: &str = "Are you sure you want to exit niri?\n\n\
-                    Press <span face='mono' bgcolor='#2C2C2C'> Enter </span> to confirm.";
+const KEY_NAME: &str = "Enter";
 const PADDING: i32 = 16;
 const FONT: &str = "sans 14px";
 const BORDER: i32 = 8;
@@ -228,6 +227,8 @@ impl ExitConfirmDialog {
 fn render(scale: f64) -> anyhow::Result<MemoryBuffer> {
     let _span = tracy_client::span!("exit_confirm_dialog::render");
 
+    let markup = text(true);
+
     let padding: i32 = to_physical_precise_round(scale, PADDING);
 
     let mut font = FontDescription::from_string(FONT);
@@ -239,7 +240,7 @@ fn render(scale: f64) -> anyhow::Result<MemoryBuffer> {
     layout.context().set_round_glyph_positions(false);
     layout.set_font_description(Some(&font));
     layout.set_alignment(Alignment::Center);
-    layout.set_markup(TEXT);
+    layout.set_markup(&markup);
 
     let (mut width, mut height) = layout.pixel_size();
     width += padding * 2;
@@ -255,7 +256,7 @@ fn render(scale: f64) -> anyhow::Result<MemoryBuffer> {
     layout.context().set_round_glyph_positions(false);
     layout.set_font_description(Some(&font));
     layout.set_alignment(Alignment::Center);
-    layout.set_markup(TEXT);
+    layout.set_markup(&markup);
 
     cr.set_source_rgb(1., 1., 1.);
     pangocairo::functions::show_layout(&cr, &layout);
@@ -281,4 +282,26 @@ fn render(scale: f64) -> anyhow::Result<MemoryBuffer> {
     );
 
     Ok(buffer)
+}
+
+fn text(markup: bool) -> String {
+    let key = if markup {
+        format!("<span face='mono' bgcolor='#2C2C2C'> {KEY_NAME} </span>")
+    } else {
+        String::from(KEY_NAME)
+    };
+
+    format!(
+        "Are you sure you want to exit niri?\n\n\
+         Press {key} to confirm."
+    )
+}
+
+#[cfg(feature = "dbus")]
+pub fn a11y_node() -> accesskit::Node {
+    let mut node = accesskit::Node::new(accesskit::Role::AlertDialog);
+    node.set_label("Exit niri");
+    node.set_description(text(false));
+    node.set_modal();
+    node
 }

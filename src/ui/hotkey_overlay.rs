@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::iter::zip;
 use std::rc::Rc;
 
@@ -122,6 +123,32 @@ impl HotkeyOverlay {
         );
 
         Some(PrimaryGpuTextureRenderElement(elem))
+    }
+
+    pub fn a11y_text(&self) -> String {
+        let config = self.config.borrow();
+        let actions = collect_actions(&config);
+
+        let mut buf = String::new();
+        writeln!(&mut buf, "{TITLE}").unwrap();
+
+        for action in actions {
+            let Some((key, action)) = format_bind(&config.binds.0, action) else {
+                continue;
+            };
+
+            let key = key.map(|key| key_name(true, self.mod_key, &key));
+            let key = key.as_deref().unwrap_or("not bound");
+
+            let action = match pango::parse_markup(&action, '\0') {
+                Ok((_attrs, text, _accel)) => text,
+                Err(_) => action.into(),
+            };
+
+            writeln!(&mut buf, "{key} {action}").unwrap();
+        }
+
+        buf
     }
 }
 
@@ -298,7 +325,7 @@ fn render(
         .into_iter()
         .filter_map(|action| format_bind(&config.binds.0, action))
         .map(|(key, action)| {
-            let key = key.map(|key| key_name(mod_key, &key));
+            let key = key.map(|key| key_name(false, mod_key, &key));
             let key = key.as_deref().unwrap_or("(not bound)");
             let key = format!(" {key} ");
             (key, action)
@@ -466,7 +493,7 @@ fn action_name(action: &Action) -> String {
     }
 }
 
-fn key_name(mod_key: ModKey, key: &Key) -> String {
+fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
     let mut name = String::new();
 
     let has_comp_mod = key.modifiers.contains(Modifiers::COMPOSITOR);
@@ -519,7 +546,7 @@ fn key_name(mod_key: ModKey, key: &Key) -> String {
     }
 
     let pretty = match key.trigger {
-        Trigger::Keysym(keysym) => prettify_keysym_name(&keysym_get_name(keysym)),
+        Trigger::Keysym(keysym) => prettify_keysym_name(screen_reader, &keysym_get_name(keysym)),
         Trigger::MouseLeft => String::from("Mouse Left"),
         Trigger::MouseRight => String::from("Mouse Right"),
         Trigger::MouseMiddle => String::from("Mouse Middle"),
@@ -539,16 +566,24 @@ fn key_name(mod_key: ModKey, key: &Key) -> String {
     name
 }
 
-fn prettify_keysym_name(name: &str) -> String {
+fn prettify_keysym_name(screen_reader: bool, name: &str) -> String {
+    let name = if screen_reader {
+        name
+    } else {
+        match name {
+            "slash" => "/",
+            "comma" => ",",
+            "period" => ".",
+            "minus" => "-",
+            "equal" => "=",
+            "grave" => "`",
+            "bracketleft" => "[",
+            "bracketright" => "]",
+            _ => name,
+        }
+    };
+
     let name = match name {
-        "slash" => "/",
-        "comma" => ",",
-        "period" => ".",
-        "minus" => "-",
-        "equal" => "=",
-        "grave" => "`",
-        "bracketleft" => "[",
-        "bracketright" => "]",
         "Next" => "Page Down",
         "Prior" => "Page Up",
         "Print" => "PrtSc",
@@ -574,7 +609,7 @@ mod tests {
     fn check(config: &str, action: Action) -> String {
         let config = Config::parse("test.kdl", config).unwrap();
         if let Some((key, title)) = format_bind(&config.binds.0, &action) {
-            let key = key.map(|key| key_name(ModKey::Super, &key));
+            let key = key.map(|key| key_name(false, ModKey::Super, &key));
             let key = key.as_deref().unwrap_or("(not bound)");
             format!(" {key} : {title}")
         } else {
