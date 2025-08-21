@@ -701,9 +701,7 @@ impl<W: LayoutElement> Monitor<W> {
         let new_id = self.workspaces[new_idx].id();
 
         let activate = activate.map_smart(|| {
-            window.map_or(true, |win| {
-                self.active_window().map(|win| win.id()) == Some(win)
-            })
+            window.is_none_or(|win| self.active_window().map(|win| win.id()) == Some(win))
         });
 
         let workspace = &mut self.workspaces[source_workspace_idx];
