@@ -1842,6 +1842,9 @@ impl State {
             Action::ShowHotkeyOverlay => {
                 if self.niri.hotkey_overlay.show() {
                     self.niri.queue_redraw_all();
+
+                    #[cfg(feature = "dbus")]
+                    self.niri.a11y_announce_hotkey_overlay();
                 }
             }
             Action::MoveWorkspaceToMonitorLeft => {

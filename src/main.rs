@@ -218,6 +218,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "dbus")]
     dbus::DBusServers::start(&mut state, cli.session);
 
+    #[cfg(feature = "dbus")]
+    if cli.session {
+        state.niri.a11y.start();
+    }
+
     if env::var_os("NIRI_DISABLE_SYSTEM_MANAGER_NOTIFY").map_or(true, |x| x != "1") {
         // Notify systemd we're ready.
         if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
