@@ -139,6 +139,9 @@ profile-with-tracy-allocations = ["profile-with-tracy"]
 # Enables dinit integration (global environment).
 dinit = []
 
+[lints.clippy]
+new_without_default = "allow"
+
 [profile.release]
 debug = "line-tables-only"
 overflow-checks = true
