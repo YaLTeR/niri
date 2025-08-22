@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 use arrayvec::ArrayVec;
 use ordered_float::NotNan;
@@ -8,12 +9,13 @@ use pangocairo::pango::{Alignment, FontDescription};
 use smithay::backend::renderer::element::Kind;
 use smithay::output::Output;
 use smithay::reexports::gbm::Format as Fourcc;
-use smithay::utils::Transform;
+use smithay::utils::{Point, Transform};
 
 use crate::niri_render_elements;
 use crate::render_helpers::memory::MemoryBuffer;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
+use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::utils::{output_size, to_physical_precise_round};
 
@@ -22,6 +24,7 @@ const TEXT: &str = "Are you sure you want to exit niri?\n\n\
 const PADDING: i32 = 16;
 const FONT: &str = "sans 14px";
 const BORDER: i32 = 8;
+const BACKDROP_COLOR: [f32; 4] = [0., 0., 0., 0.4];
 
 pub struct ExitConfirmDialog {
     is_open: bool,
@@ -31,7 +34,12 @@ pub struct ExitConfirmDialog {
 niri_render_elements! {
     ExitConfirmDialogRenderElement => {
         Texture = PrimaryGpuTextureRenderElement,
+        SolidColor = SolidColorRenderElement,
     }
+}
+
+struct OutputData {
+    backdrop: SolidColorBuffer,
 }
 
 impl ExitConfirmDialog {
@@ -82,7 +90,7 @@ impl ExitConfirmDialog {
         &self,
         renderer: &mut R,
         output: &Output,
-    ) -> ArrayVec<ExitConfirmDialogRenderElement, 1> {
+    ) -> ArrayVec<ExitConfirmDialogRenderElement, 2> {
         let mut rv = ArrayVec::new();
 
         if !self.is_open {
@@ -125,6 +133,23 @@ impl ExitConfirmDialog {
         rv.push(ExitConfirmDialogRenderElement::Texture(
             PrimaryGpuTextureRenderElement(elem),
         ));
+
+        // Backdrop.
+        let data = output.user_data().get_or_insert(|| {
+            Mutex::new(OutputData {
+                backdrop: SolidColorBuffer::new(output_size, BACKDROP_COLOR),
+            })
+        });
+        let mut data = data.lock().unwrap();
+        data.backdrop.resize(output_size);
+
+        let elem = SolidColorRenderElement::from_buffer(
+            &data.backdrop,
+            Point::new(0., 0.),
+            1.,
+            Kind::Unspecified,
+        );
+        rv.push(ExitConfirmDialogRenderElement::SolidColor(elem));
 
         rv
     }
