@@ -46,6 +46,10 @@ animations {
         spring damping-ratio=0.6 stiffness=1000 epsilon=0.001
     }
 
+    exit-confirmation-open-close {
+        spring damping-ratio=0.6 stiffness=500 epsilon=0.01
+    }
+
     screenshot-ui-open {
         duration-ms 200
         curve "ease-out-quad"
@@ -359,6 +363,22 @@ This one uses an underdamped spring by default (`damping-ratio=0.6`) which cause
 animations {
     config-notification-open-close {
         spring damping-ratio=0.6 stiffness=1000 epsilon=0.001
+    }
+}
+```
+
+#### `exit-confirmation-open-close`
+
+<sup>Since: next release</sup>
+
+The open/close animation of the exit confirmation dialog.
+
+This one uses an underdamped spring by default (`damping-ratio=0.6`) which causes a slight oscillation in the end.
+
+```kdl
+animations {
+    exit-confirmation-open-close {
+        spring damping-ratio=0.6 stiffness=500 epsilon=0.01
     }
 }
 ```

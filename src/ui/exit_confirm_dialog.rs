@@ -1,16 +1,20 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Mutex;
 
 use arrayvec::ArrayVec;
+use niri_config::Config;
 use ordered_float::NotNan;
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{Alignment, FontDescription};
+use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::output::Output;
 use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::{Point, Transform};
 
+use crate::animation::{Animation, Clock};
 use crate::niri_render_elements;
 use crate::render_helpers::memory::MemoryBuffer;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
@@ -27,13 +31,16 @@ const BORDER: i32 = 8;
 const BACKDROP_COLOR: [f32; 4] = [0., 0., 0., 0.4];
 
 pub struct ExitConfirmDialog {
-    is_open: bool,
+    state: State,
     buffers: RefCell<HashMap<NotNan<f64>, Option<MemoryBuffer>>>,
+
+    clock: Clock,
+    config: Rc<RefCell<Config>>,
 }
 
 niri_render_elements! {
     ExitConfirmDialogRenderElement => {
-        Texture = PrimaryGpuTextureRenderElement,
+        Texture = RescaleRenderElement<PrimaryGpuTextureRenderElement>,
         SolidColor = SolidColorRenderElement,
     }
 }
@@ -42,8 +49,15 @@ struct OutputData {
     backdrop: SolidColorBuffer,
 }
 
+enum State {
+    Hidden,
+    Showing(Animation),
+    Visible,
+    Hiding(Animation),
+}
+
 impl ExitConfirmDialog {
-    pub fn new() -> Self {
+    pub fn new(clock: Clock, config: Rc<RefCell<Config>>) -> Self {
         let buffer = match render(1.) {
             Ok(x) => Some(x),
             Err(err) => {
@@ -53,8 +67,10 @@ impl ExitConfirmDialog {
         };
 
         Self {
-            is_open: false,
+            state: State::Hidden,
             buffers: RefCell::new(HashMap::from([(NotNan::new(1.).unwrap(), buffer)])),
+            clock,
+            config,
         }
     }
 
@@ -64,26 +80,72 @@ impl ExitConfirmDialog {
         fallback.is_some()
     }
 
+    fn animation(&self, from: f64, to: f64) -> Animation {
+        let c = self.config.borrow();
+        Animation::new(
+            self.clock.clone(),
+            from,
+            to,
+            0.,
+            c.animations.exit_confirmation_open_close.0,
+        )
+    }
+
+    fn value(&self) -> f64 {
+        match &self.state {
+            State::Hidden => 0.,
+            State::Showing(anim) | State::Hiding(anim) => anim.value(),
+            State::Visible => 1.,
+        }
+    }
+
+    /// Returns true if the dialog will be shown (even if it is already shown).
     pub fn show(&mut self) -> bool {
         if !self.can_show() {
             return false;
         }
 
-        self.is_open = true;
+        if self.is_open() {
+            return true;
+        }
+
+        self.state = State::Showing(self.animation(self.value(), 1.));
         true
     }
 
+    /// Returns true if started the hide animation.
     pub fn hide(&mut self) -> bool {
-        if self.is_open {
-            self.is_open = false;
-            true
-        } else {
-            false
+        if !self.is_open() {
+            return false;
         }
+
+        self.state = State::Hiding(self.animation(self.value(), 0.));
+        true
     }
 
     pub fn is_open(&self) -> bool {
-        self.is_open
+        matches!(self.state, State::Showing(_) | State::Visible)
+    }
+
+    pub fn advance_animations(&mut self) {
+        match &mut self.state {
+            State::Hidden => (),
+            State::Showing(anim) => {
+                if anim.is_done() {
+                    self.state = State::Visible;
+                }
+            }
+            State::Visible => (),
+            State::Hiding(anim) => {
+                if anim.is_clamped_done() {
+                    self.state = State::Hidden;
+                }
+            }
+        }
+    }
+
+    pub fn are_animations_ongoing(&self) -> bool {
+        matches!(self.state, State::Showing(_) | State::Hiding(_))
     }
 
     pub fn render<R: NiriRenderer>(
@@ -93,9 +155,13 @@ impl ExitConfirmDialog {
     ) -> ArrayVec<ExitConfirmDialogRenderElement, 2> {
         let mut rv = ArrayVec::new();
 
-        if !self.is_open {
-            return rv;
-        }
+        let (value, clamped_value) = match &self.state {
+            State::Hidden => return rv,
+            State::Showing(anim) | State::Hiding(anim) => (anim.value(), anim.clamped_value()),
+            State::Visible => (1., 1.),
+        };
+        // Can be out of range when starting from past 0. or 1. from a spring bounce.
+        let clamped_value = clamped_value.clamp(0., 1.);
 
         let scale = output.current_scale().fractional_scale();
         let output_size = output_size(output);
@@ -117,7 +183,7 @@ impl ExitConfirmDialog {
             return rv;
         };
 
-        let location = (output_size.to_f64().to_point() - size.to_point()).downscale(2.);
+        let location = (output_size.to_point() - size.to_point()).downscale(2.);
         let mut location = location.to_physical_precise_round(scale).to_logical(scale);
         location.x = f64::max(0., location.x);
         location.y = f64::max(0., location.y);
@@ -125,14 +191,18 @@ impl ExitConfirmDialog {
         let elem = TextureRenderElement::from_texture_buffer(
             buffer,
             location,
-            1.,
+            clamped_value as f32,
             None,
             None,
             Kind::Unspecified,
         );
-        rv.push(ExitConfirmDialogRenderElement::Texture(
-            PrimaryGpuTextureRenderElement(elem),
-        ));
+        let elem = PrimaryGpuTextureRenderElement(elem);
+        let elem = RescaleRenderElement::from_element(
+            elem,
+            (location + size.downscale(2.)).to_physical_precise_round(scale),
+            value.max(0.) * 0.2 + 0.8,
+        );
+        rv.push(ExitConfirmDialogRenderElement::Texture(elem));
 
         // Backdrop.
         let data = output.user_data().get_or_insert(|| {
@@ -146,7 +216,7 @@ impl ExitConfirmDialog {
         let elem = SolidColorRenderElement::from_buffer(
             &data.backdrop,
             Point::new(0., 0.),
-            1.,
+            clamped_value as f32,
             Kind::Unspecified,
         );
         rv.push(ExitConfirmDialogRenderElement::SolidColor(elem));

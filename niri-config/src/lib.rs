@@ -1109,6 +1109,8 @@ pub struct Animations {
     #[knuffel(child, default)]
     pub config_notification_open_close: ConfigNotificationOpenCloseAnim,
     #[knuffel(child, default)]
+    pub exit_confirmation_open_close: ExitConfirmationOpenCloseAnim,
+    #[knuffel(child, default)]
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
     #[knuffel(child, default)]
     pub overview_open_close: OverviewOpenCloseAnim,
@@ -1126,6 +1128,7 @@ impl Default for Animations {
             window_close: Default::default(),
             window_resize: Default::default(),
             config_notification_open_close: Default::default(),
+            exit_confirmation_open_close: Default::default(),
             screenshot_ui_open: Default::default(),
             overview_open_close: Default::default(),
         }
@@ -1255,6 +1258,22 @@ impl Default for ConfigNotificationOpenCloseAnim {
                 damping_ratio: 0.6,
                 stiffness: 1000,
                 epsilon: 0.001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExitConfirmationOpenCloseAnim(pub Animation);
+
+impl Default for ExitConfirmationOpenCloseAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: AnimationKind::Spring(SpringParams {
+                damping_ratio: 0.6,
+                stiffness: 500,
+                epsilon: 0.01,
             }),
         })
     }
@@ -3338,6 +3357,21 @@ where
     }
 }
 
+impl<S> knuffel::Decode<S> for ExitConfirmationOpenCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
 impl<S> knuffel::Decode<S> for ScreenshotUiOpenAnim
 where
     S: knuffel::traits::ErrorSpan,
@@ -5144,6 +5178,18 @@ mod tests {
                                 damping_ratio: 0.6,
                                 stiffness: 1000,
                                 epsilon: 0.001,
+                            },
+                        ),
+                    },
+                ),
+                exit_confirmation_open_close: ExitConfirmationOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 0.6,
+                                stiffness: 500,
+                                epsilon: 0.01,
                             },
                         ),
                     },
