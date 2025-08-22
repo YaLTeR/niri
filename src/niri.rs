@@ -158,7 +158,7 @@ use crate::render_helpers::{
     render_to_texture, render_to_vec, shaders, RenderTarget, SplitElements,
 };
 use crate::ui::config_error_notification::ConfigErrorNotification;
-use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
+use crate::ui::exit_confirm_dialog::{ExitConfirmDialog, ExitConfirmDialogRenderElement};
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
@@ -4131,9 +4131,12 @@ impl Niri {
         }
 
         // Next, the exit confirm dialog.
-        if let Some(element) = self.exit_confirm_dialog.render(renderer, output) {
-            elements.push(element.into());
-        }
+        elements.extend(
+            self.exit_confirm_dialog
+                .render(renderer, output)
+                .into_iter()
+                .map(OutputRenderElements::from),
+        );
 
         // Next, the config error notification too.
         if let Some(element) = self.config_error_notification.render(renderer, output) {
@@ -6288,6 +6291,7 @@ niri_render_elements! {
             SolidColorRenderElement
         >>>,
         ScreenshotUi = ScreenshotUiRenderElement,
+        ExitConfirmDialog = ExitConfirmDialogRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,

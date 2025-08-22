@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+use arrayvec::ArrayVec;
 use ordered_float::NotNan;
 use pangocairo::cairo::{self, ImageSurface};
 use pangocairo::pango::{Alignment, FontDescription};
@@ -9,6 +10,7 @@ use smithay::output::Output;
 use smithay::reexports::gbm::Format as Fourcc;
 use smithay::utils::Transform;
 
+use crate::niri_render_elements;
 use crate::render_helpers::memory::MemoryBuffer;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -24,6 +26,12 @@ const BORDER: i32 = 8;
 pub struct ExitConfirmDialog {
     is_open: bool,
     buffers: RefCell<HashMap<NotNan<f64>, Option<MemoryBuffer>>>,
+}
+
+niri_render_elements! {
+    ExitConfirmDialogRenderElement => {
+        Texture = PrimaryGpuTextureRenderElement,
+    }
 }
 
 impl ExitConfirmDialog {
@@ -74,9 +82,11 @@ impl ExitConfirmDialog {
         &self,
         renderer: &mut R,
         output: &Output,
-    ) -> Option<PrimaryGpuTextureRenderElement> {
+    ) -> ArrayVec<ExitConfirmDialogRenderElement, 1> {
+        let mut rv = ArrayVec::new();
+
         if !self.is_open {
-            return None;
+            return rv;
         }
 
         let scale = output.current_scale().fractional_scale();
@@ -85,7 +95,7 @@ impl ExitConfirmDialog {
         let mut buffers = self.buffers.borrow_mut();
         let Some(fallback) = buffers[&NotNan::new(1.).unwrap()].clone() else {
             error!("exit confirm dialog opened without fallback buffer");
-            return None;
+            return rv;
         };
 
         let buffer = buffers
@@ -94,7 +104,10 @@ impl ExitConfirmDialog {
         let buffer = buffer.as_ref().unwrap_or(&fallback);
 
         let size = buffer.logical_size();
-        let buffer = TextureBuffer::from_memory_buffer(renderer.as_gles_renderer(), buffer).ok()?;
+        let Ok(buffer) = TextureBuffer::from_memory_buffer(renderer.as_gles_renderer(), buffer)
+        else {
+            return rv;
+        };
 
         let location = (output_size.to_f64().to_point() - size.to_point()).downscale(2.);
         let mut location = location.to_physical_precise_round(scale).to_logical(scale);
@@ -109,7 +122,11 @@ impl ExitConfirmDialog {
             None,
             Kind::Unspecified,
         );
-        Some(PrimaryGpuTextureRenderElement(elem))
+        rv.push(ExitConfirmDialogRenderElement::Texture(
+            PrimaryGpuTextureRenderElement(elem),
+        ));
+
+        rv
     }
 }
 
