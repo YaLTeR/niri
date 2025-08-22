@@ -17,8 +17,8 @@ It also lets you group together more related windows on the same workspace by ha
 
 In particular: windows opening, closing, and resizing to the left of the focused window should not cause it to visually move.
 
-This is the window you're working in.
-Stuff happening outside the view shouldn't mess with what you're focused on.
+The focused window is the window you're working in.
+And stuff happening outside the view shouldn't mess with what you're focused on.
 
 ### Actions should apply immediately.
 
