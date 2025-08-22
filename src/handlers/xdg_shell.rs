@@ -716,6 +716,20 @@ impl XdgShellHandler for State {
 
     fn title_changed(&mut self, toplevel: ToplevelSurface) {
         self.update_window_rules(&toplevel);
+
+        // Send IPC event for window title change
+        if let Some((mapped, _)) = self
+            .niri
+            .layout
+            .find_window_and_output(toplevel.wl_surface())
+        {
+            let id = mapped.id().get();
+            let title = crate::utils::with_toplevel_role(&toplevel, |role| {
+                role.title.clone().unwrap_or_default()
+            });
+
+            self.ipc_window_title_changed(id, title);
+        }
     }
 
     fn parent_changed(&mut self, toplevel: ToplevelSurface) {

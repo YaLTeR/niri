@@ -1385,6 +1385,13 @@ pub enum Event {
         /// The new urgency state of the window.
         urgent: bool,
     },
+    /// Window title changed.
+    WindowTitleChanged {
+        /// Id of the window.
+        id: u64,
+        /// The new title of the window.
+        title: String,
+    },
     /// The layout of one or more windows has changed.
     WindowLayoutsChanged {
         /// Pairs consisting of a window id and new layout information for the window.

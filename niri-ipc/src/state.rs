@@ -201,6 +201,14 @@ impl EventStreamStatePart for WindowsState {
                     }
                 }
             }
+            Event::WindowTitleChanged { id, title } => {
+                for win in self.windows.values_mut() {
+                    if win.id == id {
+                        win.title = Some(title);
+                        break;
+                    }
+                }
+            }
             Event::WindowLayoutsChanged { changes } => {
                 for (id, update) in changes {
                     let win = self.windows.get_mut(&id);

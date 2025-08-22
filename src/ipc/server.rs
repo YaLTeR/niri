@@ -773,4 +773,15 @@ impl State {
         state.apply(event.clone());
         server.send_event(event);
     }
+
+    pub fn ipc_window_title_changed(&mut self, id: u64, title: String) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let mut state = server.event_stream_state.borrow_mut();
+
+        let event = Event::WindowTitleChanged { id, title };
+        state.windows.apply(event.clone());
+        server.send_event(event);
+    }
 }
