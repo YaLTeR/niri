@@ -2250,12 +2250,15 @@ impl State {
                         let config = self.niri.config.borrow();
                         let wmru =
                             WindowMru::new(&self.niri, scope, filter, self.niri.clock.clone());
-                        self.niri.window_mru_ui.open(
-                            Rc::new(Options::from_config(&config)),
-                            self.niri.clock.clone(),
-                            wmru,
-                            dir,
-                        );
+                        if let Some(output) = self.niri.layout.active_output() {
+                            self.niri.window_mru_ui.open(
+                                Rc::new(Options::from_config(&config)),
+                                self.niri.clock.clone(),
+                                wmru,
+                                dir,
+                                output.clone(),
+                            );
+                        }
                     }
                     // FIXME: granular
                     self.niri.queue_redraw_all();

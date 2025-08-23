@@ -347,6 +347,9 @@ pub struct Inner {
 
     /// Timestamp when the UI was opened
     open_timestamp: Instant,
+
+    /// Output the UI was opened on
+    output: Output,
 }
 
 // Taken from Tile.rs,
@@ -449,6 +452,7 @@ impl WindowMruUi {
         clock: Clock,
         mut wmru: WindowMru,
         dir: MruDirection,
+        output: Output,
     ) {
         if self.is_open() {
             return;
@@ -484,6 +488,7 @@ impl WindowMruUi {
             move_animation: None,
             clock,
             open_timestamp: Instant::now(),
+            output,
         };
 
         self.state = WindowMruUiState::Open(Box::new(inner));
@@ -880,7 +885,9 @@ impl WindowMruUi {
                 close_animation: Some(ref close_animation),
             } => close_animation.clamped_value(),
             WindowMruUiState::Open(ref inner) => {
-                rv.extend(inner.render(niri, renderer, output_size));
+                if *output == inner.output {
+                    rv.extend(inner.render(niri, renderer, output_size));
+                }
                 inner.open_animation.clamped_value()
             }
         };

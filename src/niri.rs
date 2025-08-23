@@ -4298,12 +4298,11 @@ impl Niri {
         // the zooming thumbnail is rendered under the MRU UI's backdrop. This
         // can happen if the UI is dismissed and re-invoked in quick succession.
 
-        let mru_elements = (Some(output) == self.layout.active_output()).then(|| {
-            self.window_mru_ui
-                .render_output(self, output, renderer.as_gles_renderer())
-                .into_iter()
-                .map(OutputRenderElements::from)
-        });
+        let mru_elements = self
+            .window_mru_ui
+            .render_output(self, output, renderer.as_gles_renderer())
+            .into_iter()
+            .map(OutputRenderElements::from);
 
         let tsa_elements = self.thumbnail_selection_animation.as_ref().map(|tsa| {
             tsa.render_output(self, renderer.as_gles_renderer(), output)
@@ -4312,9 +4311,9 @@ impl Niri {
         });
 
         if self.window_mru_ui.is_open() {
-            elements.extend(mru_elements.into_iter().chain(tsa_elements).flatten());
+            elements.extend(mru_elements.chain(tsa_elements.into_iter().flatten()));
         } else {
-            elements.extend(tsa_elements.into_iter().chain(mru_elements).flatten());
+            elements.extend(tsa_elements.into_iter().flatten().chain(mru_elements));
         }
 
         // Draw the hotkey overlay on top.
