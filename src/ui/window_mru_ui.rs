@@ -601,7 +601,41 @@ impl WindowMruUi {
             let mut start_idx = 0;
 
             // View offset after the update.
-            let mut view_offset = None;
+            // It is calculated:
+            // - when `dir` is None and the `should_advance` is true, i.e. the current thumbnail is
+            //   present in both Mru lists, then the new view_offset is chosen so as to keep that
+            //   thumbnail in the same position in the view.
+            // - otherwise, the view_offset is chosen to make the first common thumbnail retain its
+            //   position
+            // - if there are no common thumbnails the view_offset eventually defaults to 0.
+            let mut view_offset = {
+                if let Some(vo) = inner.view_offset {
+                    if let Some((pt, t)) = if should_advance && dir.is_none() {
+                        prev_wmru
+                            .current()
+                            .and_then(|pt| wmru.current().map(|t| (pt, t)))
+                    } else {
+                        // look for the first visible thumbnail present in both lists
+                        prev_wmru
+                            .thumbnails
+                            .iter()
+                            .filter(|pt| pt.offset + pt.size.w >= vo)
+                            .filter_map(|pt| {
+                                wmru.thumbnails
+                                    .iter()
+                                    .find(|t| t.id == pt.id)
+                                    .map(|t| (pt, t))
+                            })
+                            .next()
+                    } {
+                        Some(t.offset - pt.offset + vo)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
 
             wmru.thumbnails.iter_mut().enumerate().for_each(|(idx, t)| {
                 match prev_wmru
@@ -625,9 +659,9 @@ impl WindowMruUi {
                         // replacement Mru list.
                         let pt = &prev_wmru.thumbnails[pidx];
 
-                        // If the new view_offset hasn't yet been determined,
-                        // derive it from the offset of the first thumbnail
-                        // present in both Mru lists to calculate it.
+                        // If the view_offset hasn't yet been determined, derive
+                        // it by matching the thumbnail's position in the previous
+                        // view and the new one.
                         if view_offset.is_none() && inner.view_offset.is_some() {
                             view_offset.replace(t.offset - pt.offset + inner.view_offset.unwrap());
                         };
