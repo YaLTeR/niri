@@ -1601,7 +1601,7 @@ static MRU_UI_OPENED_BINDINGS: &[Bind] = &[
     Bind {
         key: Key {
             trigger: Trigger::Keysym(Keysym::q),
-            modifiers: Modifiers::empty(),
+            modifiers: Modifiers::SHIFT,
         },
         action: Action::MruCloseCurrent,
         repeat: true,
