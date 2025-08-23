@@ -157,42 +157,41 @@ impl Thumbnail {
             PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
                 thumb_texture,
                 location,
-                1.0,
+                thumb_alpha,
                 None,
                 None,
                 Kind::Unspecified,
             ))
             .into()
         };
-        let mut rv: Vec<WindowMruUiRenderElement> = Vec::new();
 
-        rv.extend(
-            focus_ring
-                .map(|fr| fr.render(renderer, location).map(Into::into))
-                .into_iter()
-                .flatten(),
-        );
+        let fr_elem = focus_ring
+            .map(|fr| fr.render(renderer, location).map(Into::into))
+            .into_iter()
+            .flatten();
 
-        rv.extend(
-            title_texture
-                .map(|t| {
-                    let location = location
-                        + Point::from((
-                            thumb_size.w.saturating_sub(t.logical_size().w) / 2.,
-                            SPACING / 2. + thumb_size.h,
-                        ));
-                    PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
-                        t,
-                        location,
-                        thumb_alpha,
-                        None,
-                        None,
-                        Kind::Unspecified,
-                    ))
-                })
-                .map(Into::into),
-        );
-        Some(thumb_elem).into_iter().chain(rv)
+        let title_elem = title_texture
+            .map(|t| {
+                let location = location
+                    + Point::from((
+                        thumb_size.w.saturating_sub(t.logical_size().w) / 2.,
+                        SPACING / 2. + thumb_size.h,
+                    ));
+                PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                    t,
+                    location,
+                    thumb_alpha,
+                    None,
+                    None,
+                    Kind::Unspecified,
+                ))
+            })
+            .map(Into::into);
+
+        Some(thumb_elem)
+            .into_iter()
+            .chain(fr_elem)
+            .chain(title_elem)
     }
 }
 
