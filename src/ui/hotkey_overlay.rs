@@ -125,7 +125,7 @@ impl HotkeyOverlay {
     }
 }
 
-fn format_bind(binds: &[Bind], mod_key: ModKey, action: &Action) -> Option<(String, String)> {
+fn format_bind(binds: &[Bind], action: &Action) -> Option<(Option<Key>, String)> {
     let mut bind_with_non_null = None;
     let mut bind_with_custom_title = None;
     let mut found_null_title = false;
@@ -158,33 +158,16 @@ fn format_bind(binds: &[Bind], mod_key: ModKey, action: &Action) -> Option<(Stri
             title = Some(custom.clone());
         }
 
-        key_name(mod_key, &bind.key)
+        Some(bind.key)
     } else {
-        String::from("(not bound)")
+        None
     };
     let title = title.unwrap_or_else(|| action_name(action));
 
-    Some((format!(" {key} "), title))
+    Some((key, title))
 }
 
-fn render(
-    renderer: &mut GlesRenderer,
-    config: &Config,
-    mod_key: ModKey,
-    scale: f64,
-) -> anyhow::Result<RenderedOverlay> {
-    let _span = tracy_client::span!("hotkey_overlay::render");
-
-    // let margin = MARGIN * scale;
-    let padding: i32 = to_physical_precise_round(scale, PADDING);
-    let line_interval: i32 = to_physical_precise_round(scale, LINE_INTERVAL);
-
-    // FIXME: if it doesn't fit, try splitting in two columns or something.
-    // let mut target_size = output_size;
-    // target_size.w -= margin * 2;
-    // target_size.h -= margin * 2;
-    // anyhow::ensure!(target_size.w > 0 && target_size.h > 0);
-
+fn collect_actions(config: &Config) -> Vec<&Action> {
     let binds = &config.binds.0;
 
     // Collect actions that we want to show.
@@ -290,9 +273,36 @@ fn render(
         actions.retain(|&action| binds.iter().any(|bind| bind.action == *action))
     }
 
-    let strings = actions
+    actions
+}
+
+fn render(
+    renderer: &mut GlesRenderer,
+    config: &Config,
+    mod_key: ModKey,
+    scale: f64,
+) -> anyhow::Result<RenderedOverlay> {
+    let _span = tracy_client::span!("hotkey_overlay::render");
+
+    // let margin = MARGIN * scale;
+    let padding: i32 = to_physical_precise_round(scale, PADDING);
+    let line_interval: i32 = to_physical_precise_round(scale, LINE_INTERVAL);
+
+    // FIXME: if it doesn't fit, try splitting in two columns or something.
+    // let mut target_size = output_size;
+    // target_size.w -= margin * 2;
+    // target_size.h -= margin * 2;
+    // anyhow::ensure!(target_size.w > 0 && target_size.h > 0);
+
+    let strings = collect_actions(config)
         .into_iter()
-        .filter_map(|action| format_bind(binds, mod_key, action))
+        .filter_map(|action| format_bind(&config.binds.0, action))
+        .map(|(key, action)| {
+            let key = key.map(|key| key_name(mod_key, &key));
+            let key = key.as_deref().unwrap_or("(not bound)");
+            let key = format!(" {key} ");
+            (key, action)
+        })
         .collect::<Vec<_>>();
 
     let mut font = FontDescription::from_string(FONT);
@@ -563,8 +573,10 @@ mod tests {
     #[track_caller]
     fn check(config: &str, action: Action) -> String {
         let config = Config::parse("test.kdl", config).unwrap();
-        if let Some((key, title)) = format_bind(&config.binds.0, ModKey::Super, &action) {
-            format!("{key}: {title}")
+        if let Some((key, title)) = format_bind(&config.binds.0, &action) {
+            let key = key.map(|key| key_name(ModKey::Super, &key));
+            let key = key.as_deref().unwrap_or("(not bound)");
+            format!(" {key} : {title}")
         } else {
             String::from("None")
         }
