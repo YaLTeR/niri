@@ -1572,6 +1572,31 @@ static MRU_UI_OPENED_BINDINGS: &[Bind] = &[
         allow_inhibiting: true,
         hotkey_overlay_title: None,
     },
+    // and so can h and l can be used as well
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::l),
+            modifiers: Modifiers::empty(),
+        },
+        action: Action::MruAdvance(MruDirection::Forward, None, None),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::h),
+            modifiers: Modifiers::empty(),
+        },
+        action: Action::MruAdvance(MruDirection::Backward, None, None),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
     // And q can be used to close windows during navigation
     Bind {
         key: Key {
