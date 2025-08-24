@@ -11,7 +11,7 @@ repository.workspace = true
 bitflags.workspace = true
 csscolorparser = "0.7.2"
 knuffel = "3.2.0"
-miette = { version = "5.10.0", features = ["fancy-no-backtrace"] }
+miette = { version = "7.4.0", features = ["fancy-no-backtrace"] }
 niri-ipc = { version = "25.5.1", path = "../niri-ipc" }
 regex = "1.11.1"
 smithay = { workspace = true, features = ["backend_libinput"] }
