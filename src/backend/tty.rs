@@ -865,7 +865,7 @@ impl Tty {
 
         if let Ok(props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
             match reset_hdr(&props) {
-                Ok(()) => debug!("reset HDR properties"),
+                Ok(()) => (),
                 Err(err) => debug!("error resetting HDR properties: {err:?}"),
             }
 
@@ -873,7 +873,7 @@ impl Tty {
                 // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to
                 // run.
                 match set_max_bpc(&props, 8) {
-                    Ok(bpc) => debug!("set max bpc to {bpc}"),
+                    Ok(_bpc) => (),
                     Err(err) => debug!("error setting max bpc: {err:?}"),
                 }
             }
@@ -1842,9 +1842,7 @@ impl Tty {
 
                 if let Ok(props) = ConnectorProperties::try_new(&device.drm, surface.connector) {
                     match reset_hdr(&props) {
-                        Ok(()) => {
-                            debug!("output {:?}: reset HDR properties", surface.name.connector)
-                        }
+                        Ok(()) => (),
                         Err(err) => debug!(
                             "output {:?} HDR: error resetting HDR properties: {err:?}",
                             surface.name.connector
