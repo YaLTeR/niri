@@ -204,6 +204,7 @@
                   ];
                 }
               ))
+              pkgs.cargo-insta
             ];
 
             nativeBuildInputs = [
