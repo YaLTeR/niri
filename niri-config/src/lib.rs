@@ -1835,6 +1835,15 @@ pub enum Action {
     CenterWindow,
     #[knuffel(skip)]
     CenterWindowById(u64),
+    AlignWindowLeft,
+    #[knuffel(skip)]
+    AlignWindowLeftById(u64),
+    AlignWindowCenter,
+    #[knuffel(skip)]
+    AlignWindowCenterById(u64),
+    AlignWindowRight,
+    #[knuffel(skip)]
+    AlignWindowRightById(u64),
     CenterVisibleColumns,
     FocusWorkspaceDown,
     #[knuffel(skip)]
@@ -2082,6 +2091,12 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::CenterColumn {} => Self::CenterColumn,
             niri_ipc::Action::CenterWindow { id: None } => Self::CenterWindow,
             niri_ipc::Action::CenterWindow { id: Some(id) } => Self::CenterWindowById(id),
+            niri_ipc::Action::AlignWindowLeft { id: None } => Self::AlignWindowLeft,
+            niri_ipc::Action::AlignWindowLeft { id: Some(id) } => Self::AlignWindowLeftById(id),
+            niri_ipc::Action::AlignWindowCenter { id: None } => Self::AlignWindowCenter,
+            niri_ipc::Action::AlignWindowCenter { id: Some(id) } => Self::AlignWindowCenterById(id),
+            niri_ipc::Action::AlignWindowRight { id: None } => Self::AlignWindowRight,
+            niri_ipc::Action::AlignWindowRight { id: Some(id) } => Self::AlignWindowRightById(id),
             niri_ipc::Action::CenterVisibleColumns {} => Self::CenterVisibleColumns,
             niri_ipc::Action::FocusWorkspaceDown {} => Self::FocusWorkspaceDown,
             niri_ipc::Action::FocusWorkspaceUp {} => Self::FocusWorkspaceUp,

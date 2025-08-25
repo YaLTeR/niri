@@ -564,6 +564,42 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         -(self.working_area.size.w - width) / 2. - self.working_area.loc.x
     }
 
+    fn compute_new_view_offset_left_aligned(
+        &self,
+        target_x: Option<f64>,
+        col_x: f64,
+        width: f64,
+        is_fullscreen: bool,
+    ) -> f64 {
+        if is_fullscreen {
+            return self.compute_new_view_offset_fit(target_x, col_x, width, is_fullscreen);
+        }
+
+        // Account for gaps when left-aligning
+        -self.working_area.loc.x - self.options.gaps
+    }
+
+    fn compute_new_view_offset_right_aligned(
+        &self,
+        target_x: Option<f64>,
+        col_x: f64,
+        width: f64,
+        is_fullscreen: bool,
+    ) -> f64 {
+        if is_fullscreen {
+            return self.compute_new_view_offset_fit(target_x, col_x, width, is_fullscreen);
+        }
+
+        // Columns wider than the view are left-aligned (the fit code can deal with that).
+        if self.working_area.size.w <= width {
+            return self.compute_new_view_offset_fit(target_x, col_x, width, is_fullscreen);
+        }
+
+        // Account for gaps when right-aligning (similar to how they're handled in other calculations)
+        let available_width = self.working_area.size.w - self.options.gaps;
+        -(available_width - width) - self.working_area.loc.x
+    }
+
     fn compute_new_view_offset_for_column_fit(&self, target_x: Option<f64>, idx: usize) -> f64 {
         let col = &self.columns[idx];
         self.compute_new_view_offset_fit(
@@ -581,6 +617,34 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     ) -> f64 {
         let col = &self.columns[idx];
         self.compute_new_view_offset_centered(
+            target_x,
+            self.column_x(idx),
+            col.width(),
+            col.is_fullscreen,
+        )
+    }
+
+    fn compute_new_view_offset_for_column_left_aligned(
+        &self,
+        target_x: Option<f64>,
+        idx: usize,
+    ) -> f64 {
+        let col = &self.columns[idx];
+        self.compute_new_view_offset_left_aligned(
+            target_x,
+            self.column_x(idx),
+            col.width(),
+            col.is_fullscreen,
+        )
+    }
+
+    fn compute_new_view_offset_for_column_right_aligned(
+        &self,
+        target_x: Option<f64>,
+        idx: usize,
+    ) -> f64 {
+        let col = &self.columns[idx];
+        self.compute_new_view_offset_right_aligned(
             target_x,
             self.column_x(idx),
             col.width(),
@@ -707,6 +771,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         config: niri_config::Animation,
     ) {
         let new_view_offset = self.compute_new_view_offset_for_column_centered(target_x, idx);
+        self.animate_view_offset_with_config(idx, new_view_offset, config);
+    }
+
+    fn animate_view_offset_to_column_left_aligned(
+        &mut self,
+        target_x: Option<f64>,
+        idx: usize,
+        config: niri_config::Animation,
+    ) {
+        let new_view_offset = self.compute_new_view_offset_for_column_left_aligned(target_x, idx);
+        self.animate_view_offset_with_config(idx, new_view_offset, config);
+    }
+
+    fn animate_view_offset_to_column_right_aligned(
+        &mut self,
+        target_x: Option<f64>,
+        idx: usize,
+        config: niri_config::Animation,
+    ) {
+        let new_view_offset = self.compute_new_view_offset_for_column_right_aligned(target_x, idx);
         self.animate_view_offset_with_config(idx, new_view_offset, config);
     }
 
@@ -2164,6 +2248,36 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
+    pub fn left_align_column(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.animate_view_offset_to_column_left_aligned(
+            None,
+            self.active_column_idx,
+            self.options.animations.horizontal_view_movement.0,
+        );
+
+        let col = &mut self.columns[self.active_column_idx];
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+    }
+
+    pub fn right_align_column(&mut self) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        self.animate_view_offset_to_column_right_aligned(
+            None,
+            self.active_column_idx,
+            self.options.animations.horizontal_view_movement.0,
+        );
+
+        let col = &mut self.columns[self.active_column_idx];
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+    }
+
     pub fn center_window(&mut self, window: Option<&W::Id>) {
         if self.columns.is_empty() {
             return;
@@ -2184,6 +2298,50 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         self.center_column();
+    }
+
+    pub fn left_align_window(&mut self, window: Option<&W::Id>) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col_idx = if let Some(window) = window {
+            self.columns
+                .iter()
+                .position(|col| col.contains(window))
+                .unwrap()
+        } else {
+            self.active_column_idx
+        };
+
+        // We can reasonably left-align only the active column.
+        if col_idx != self.active_column_idx {
+            return;
+        }
+
+        self.left_align_column();
+    }
+
+    pub fn right_align_window(&mut self, window: Option<&W::Id>) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let col_idx = if let Some(window) = window {
+            self.columns
+                .iter()
+                .position(|col| col.contains(window))
+                .unwrap()
+        } else {
+            self.active_column_idx
+        };
+
+        // We can reasonably right-align only the active column.
+        if col_idx != self.active_column_idx {
+            return;
+        }
+
+        self.right_align_column();
     }
 
     pub fn center_visible_columns(&mut self) {

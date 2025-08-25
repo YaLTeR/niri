@@ -1472,6 +1472,48 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::AlignWindowLeft => {
+                self.niri.layout.left_align_window(None);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::AlignWindowLeftById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.left_align_window(Some(&window));
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::AlignWindowCenter => {
+                self.niri.layout.center_window(None);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::AlignWindowCenterById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.center_window(Some(&window));
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::AlignWindowRight => {
+                self.niri.layout.right_align_window(None);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::AlignWindowRightById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.right_align_window(Some(&window));
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::CenterVisibleColumns => {
                 self.niri.layout.center_visible_columns();
                 // FIXME: granular
