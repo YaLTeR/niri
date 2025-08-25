@@ -16,7 +16,7 @@ rust-version = "1.80.1"
 
 [workspace.dependencies]
 anyhow = "1.0.99"
-bitflags = "2.9.2"
+bitflags = "2.9.3"
 clap = { version = "4.5.45", features = ["derive"] }
 insta = "1.43.1"
 serde = { version = "1.0.219", features = ["derive"] }
