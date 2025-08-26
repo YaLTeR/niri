@@ -1,5 +1,6 @@
 use niri_ipc::{ConfiguredMode, Transform};
 
+use crate::gestures::HotCorners;
 use crate::{Color, FloatOrInt};
 
 #[derive(Debug, Default, Clone, PartialEq)]

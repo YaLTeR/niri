@@ -3443,7 +3443,6 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
-            // Prioritize monitor specific hot corners first
             let config = self.config.borrow();
             let hot_corners = output
                 .user_data()
@@ -3451,10 +3450,10 @@ impl Niri {
                 .and_then(|name| config.outputs.find(name))
                 .and_then(|c| c.hot_corners)
                 .unwrap_or(config.gestures.hot_corners);
-
             if hot_corners.is_enabled()
                 && is_inside_hot_corner(&hot_corners, output, pos_within_output)
             {
+                rv.hot_corner = true;
                 return rv;
             }
 

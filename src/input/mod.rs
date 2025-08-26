@@ -6,9 +6,8 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{
-    Action, Bind, Binds, HotCorners, Key, ModKey, Modifiers, OutputName, SwitchBinds, Trigger,
-};
+use niri_config::gestures::HotCorners;
+use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -31,7 +30,7 @@ use smithay::input::touch::{
 };
 use smithay::input::SeatHandler;
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, Size, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::selection::data_device::DnDGrab;
@@ -4029,11 +4028,6 @@ pub fn is_inside_hot_corner(
     let transform = output.current_transform();
     let size = transform.transform_size(output_size);
 
-    if hot_corners.top_left
-        && Rectangle::new(Point::new(0., 0.), Size::from((1., 1.))).contains(pos)
-    {
-        return true;
-    }
     if hot_corners.top_right
         && Rectangle::new(Point::new(size.w - 1., 0.), Size::from((1., 1.))).contains(pos)
     {
@@ -4046,6 +4040,12 @@ pub fn is_inside_hot_corner(
     }
     if hot_corners.bottom_right
         && Rectangle::new(Point::new(size.w - 1., size.h - 1.), Size::from((1., 1.))).contains(pos)
+    {
+        return true;
+    }
+    if (hot_corners.top_left
+        || !(hot_corners.top_right || hot_corners.bottom_right || hot_corners.bottom_left))
+        && Rectangle::new(Point::new(0., 0.), Size::from((1., 1.))).contains(pos)
     {
         return true;
     }
