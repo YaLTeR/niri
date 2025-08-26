@@ -119,11 +119,12 @@ impl State {
         let hide_exit_confirm_dialog =
             self.niri.exit_confirm_dialog.is_open() && should_hide_exit_confirm_dialog(&event);
 
+        let mut consumed_by_a11y = false;
         use InputEvent::*;
         match event {
             DeviceAdded { device } => self.on_device_added(device),
             DeviceRemoved { device } => self.on_device_removed(device),
-            Keyboard { event } => self.on_keyboard::<I>(event),
+            Keyboard { event } => self.on_keyboard::<I>(event, &mut consumed_by_a11y),
             PointerMotion { event } => self.on_pointer_motion::<I>(event),
             PointerMotionAbsolute { event } => self.on_pointer_motion_absolute::<I>(event),
             PointerButton { event } => self.on_pointer_button::<I>(event),
@@ -147,6 +148,12 @@ impl State {
             TouchFrame { event } => self.on_touch_frame::<I>(event),
             SwitchToggle { event } => self.on_switch_toggle::<I>(event),
             Special(_) => (),
+        }
+
+        // Don't hide overlays if consumed by a11y, so that you can use the screen reader
+        // navigation keys.
+        if consumed_by_a11y {
+            return;
         }
 
         // Do this last so that screenshot still gets it.
@@ -326,7 +333,11 @@ impl State {
             .is_some_and(KeyboardShortcutsInhibitor::is_active)
     }
 
-    fn on_keyboard<I: InputBackend>(&mut self, event: I::KeyboardKeyEvent) {
+    fn on_keyboard<I: InputBackend>(
+        &mut self,
+        event: I::KeyboardKeyEvent,
+        consumed_by_a11y: &mut bool,
+    ) {
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -360,6 +371,7 @@ impl State {
             event.key_code(),
             event.state(),
         ) {
+            *consumed_by_a11y = true;
             return;
         }
 
