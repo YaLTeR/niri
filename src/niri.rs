@@ -45,7 +45,7 @@ use smithay::desktop::{
     find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
-use smithay::input::keyboard::Layout as KeyboardLayout;
+use smithay::input::keyboard::{Layout as KeyboardLayout, XkbConfig};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
     GrabStartData as PointerGrabStartData, MotionEvent,
@@ -1326,6 +1326,22 @@ impl State {
         }
     }
 
+    fn set_xkb_config(&mut self, xkb: XkbConfig) {
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let num_lock = keyboard.modifier_state().num_lock;
+        if let Err(err) = keyboard.set_xkb_config(self, xkb) {
+            warn!("error updating xkb config: {err:?}");
+            return;
+        }
+
+        // Restore num lock to its previous value.
+        let mut mods_state = keyboard.modifier_state();
+        if mods_state.num_lock != num_lock {
+            mods_state.num_lock = num_lock;
+            keyboard.set_modifier_state(mods_state);
+        }
+    }
+
     pub fn reload_config(&mut self, config: Result<Config, ()>) {
         let _span = tracy_client::span!("State::reload_config");
 
@@ -1531,10 +1547,7 @@ impl State {
                     xkb = self.niri.xkb_from_locale1.clone().unwrap_or_default();
                 }
 
-                let keyboard = self.niri.seat.get_keyboard().unwrap();
-                if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
-                    warn!("error updating xkb config: {err:?}");
-                }
+                self.set_xkb_config(xkb.to_xkb_config());
             }
 
             self.ipc_keyboard_layouts_changed();
@@ -2271,11 +2284,7 @@ impl State {
         }
 
         let xkb = xkb.clone();
-        let keyboard = self.niri.seat.get_keyboard().unwrap();
-        if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
-            warn!("error updating xkb config: {err:?}");
-        }
-
+        self.set_xkb_config(xkb.to_xkb_config());
         self.ipc_keyboard_layouts_changed();
     }
 }
