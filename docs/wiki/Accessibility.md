@@ -1,5 +1,7 @@
 ## Screen readers
 
+<sup>Since: next release</sup>
+
 Niri has basic support for screen readers (specifically, [Orca](https://orca.gnome.org)).
 We implement the `org.freedesktop.a11y.KeyboardMonitor` D-Bus interface for Orca to listen and grab keyboard keys, and we expose the main niri UI elements via [AccessKit](https://accesskit.dev).
 
