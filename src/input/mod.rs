@@ -150,7 +150,6 @@ impl State {
         }
 
         // Do this last so that screenshot still gets it.
-        // FIXME: do this in a less cursed fashion somehow.
         if hide_hotkey_overlay && self.niri.hotkey_overlay.hide() {
             self.niri.queue_redraw_all();
         }
