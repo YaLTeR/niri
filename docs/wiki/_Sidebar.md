@@ -14,6 +14,7 @@
 * [Xwayland](./Xwayland.md)
 * [Gestures](./Gestures.md)
 * [Packaging niri](./Packaging-niri.md)
+* [Accessibility](./Accessibility.md)
 * [FAQ](./FAQ.md)
 
 ## Configuration
