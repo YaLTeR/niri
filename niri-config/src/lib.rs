@@ -1412,7 +1412,7 @@ pub struct HotCorners {
 
 impl HotCorners {
     pub fn is_enabled(&self) -> bool {
-        !self.off && (self.top_left || self.top_right || self.bottom_left || self.bottom_right)
+        !self.off
     }
 }
 
