@@ -12,6 +12,14 @@ Specifically, niri will announce:
 - whenever a config parse error occurs;
 - the important hotkeys list (for now, as one big announcement without tab navigation; appears on <kbd>Super</kbd><kbd>Shift</kbd><kbd>/</kbd> by default).
 
+Here's a demo video, watch with sound on.
+
+<video controls src="https://github.com/user-attachments/assets/afceba6f-79f1-47ec-b859-a0fcb7f8eae3">
+
+https://github.com/user-attachments/assets/afceba6f-79f1-47ec-b859-a0fcb7f8eae3
+
+</video>
+
 Make sure [Xwayland](./Xwayland.md) works, then run `orca`.
 The default config binds <kbd>Super</kbd><kbd>Alt</kbd><kbd>S</kbd> to toggle Orca, which is the standard key binding.
 
