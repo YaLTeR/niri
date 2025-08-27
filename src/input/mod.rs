@@ -605,21 +605,27 @@ impl State {
                     self.niri.do_screen_transition(renderer, delay_ms);
                 });
             }
-            Action::ScreenshotScreen(write_to_disk, show_pointer) => {
+            Action::ScreenshotScreen(write_to_disk, show_pointer, path) => {
                 let active = self.niri.layout.active_output().cloned();
                 if let Some(active) = active {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) =
-                            self.niri
-                                .screenshot(renderer, &active, write_to_disk, show_pointer)
-                        {
+                        if let Err(err) = self.niri.screenshot(
+                            renderer,
+                            &active,
+                            write_to_disk,
+                            show_pointer,
+                            path,
+                        ) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
                 }
             }
-            Action::ConfirmScreenshot { write_to_disk } => {
-                self.confirm_screenshot(write_to_disk);
+            Action::ConfirmScreenshot {
+                write_to_disk,
+                path,
+            } => {
+                self.confirm_screenshot(write_to_disk, path);
             }
             Action::CancelScreenshot => {
                 if !self.niri.screenshot_ui.is_open() {
@@ -636,32 +642,42 @@ impl State {
                 self.niri.screenshot_ui.toggle_pointer();
                 self.niri.queue_redraw_all();
             }
-            Action::Screenshot(show_cursor) => {
-                self.open_screenshot_ui(show_cursor);
+            Action::Screenshot(show_cursor, path) => {
+                self.open_screenshot_ui(show_cursor, path);
             }
-            Action::ScreenshotWindow(write_to_disk) => {
+            Action::ScreenshotWindow(write_to_disk, path) => {
                 let focus = self.niri.layout.focus_with_output();
                 if let Some((mapped, output)) = focus {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) =
-                            self.niri
-                                .screenshot_window(renderer, output, mapped, write_to_disk)
-                        {
+                        if let Err(err) = self.niri.screenshot_window(
+                            renderer,
+                            output,
+                            mapped,
+                            write_to_disk,
+                            path,
+                        ) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
                 }
             }
-            Action::ScreenshotWindowById { id, write_to_disk } => {
+            Action::ScreenshotWindowById {
+                id,
+                write_to_disk,
+                path,
+            } => {
                 let mut windows = self.niri.layout.windows();
                 let window = windows.find(|(_, m)| m.id().get() == id);
                 if let Some((Some(monitor), mapped)) = window {
                     let output = monitor.output();
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) =
-                            self.niri
-                                .screenshot_window(renderer, output, mapped, write_to_disk)
-                        {
+                        if let Err(err) = self.niri.screenshot_window(
+                            renderer,
+                            output,
+                            mapped,
+                            write_to_disk,
+                            path,
+                        ) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
@@ -2704,7 +2720,7 @@ impl State {
                 }
             } else if let Some(capture) = self.niri.screenshot_ui.pointer_up(None) {
                 if capture {
-                    self.confirm_screenshot(true);
+                    self.confirm_screenshot(true, None);
                 } else {
                     self.niri.queue_redraw_all();
                 }
@@ -3289,7 +3305,7 @@ impl State {
             TabletToolTipState::Up => {
                 if let Some(capture) = self.niri.screenshot_ui.pointer_up(None) {
                     if capture {
-                        self.confirm_screenshot(true);
+                        self.confirm_screenshot(true, None);
                     } else {
                         self.niri.queue_redraw_all();
                     }
@@ -3807,7 +3823,7 @@ impl State {
 
         if let Some(capture) = self.niri.screenshot_ui.pointer_up(Some(slot)) {
             if capture {
-                self.confirm_screenshot(true);
+                self.confirm_screenshot(true, None);
             } else {
                 self.niri.queue_redraw_all();
             }

@@ -63,6 +63,7 @@ pub enum ScreenshotUi {
         open_anim: Animation,
         clock: Clock,
         config: Rc<RefCell<Config>>,
+        path: Option<String>,
     },
 }
 
@@ -141,6 +142,7 @@ impl ScreenshotUi {
         screenshots: HashMap<Output, [OutputScreenshot; 3]>,
         default_output: Output,
         show_pointer: bool,
+        path: Option<String>,
     ) -> bool {
         if screenshots.is_empty() {
             return false;
@@ -235,6 +237,7 @@ impl ScreenshotUi {
             open_anim,
             clock: clock.clone(),
             config: config.clone(),
+            path,
         };
 
         self.update_buffers();
@@ -775,7 +778,12 @@ impl ScreenshotUi {
             return None;
         }
 
-        action(raw, mods)
+        let path = if let Self::Open { path, .. } = self {
+            path.clone()
+        } else {
+            None
+        };
+        action(raw, mods, path)
     }
 
     pub fn selection_output(&self) -> Option<&Output> {
@@ -1044,7 +1052,7 @@ impl OutputScreenshot {
     }
 }
 
-fn action(raw: Keysym, mods: ModifiersState) -> Option<Action> {
+fn action(raw: Keysym, mods: ModifiersState, path: Option<String>) -> Option<Action> {
     if raw == Keysym::Escape {
         return Some(Action::CancelScreenshot);
     }
@@ -1056,11 +1064,13 @@ fn action(raw: Keysym, mods: ModifiersState) -> Option<Action> {
     if !mods.ctrl && (raw == Keysym::space || raw == Keysym::Return) {
         return Some(Action::ConfirmScreenshot {
             write_to_disk: true,
+            path,
         });
     }
     if mods.ctrl && raw == Keysym::c {
         return Some(Action::ConfirmScreenshot {
             write_to_disk: false,
+            path,
         });
     }
 

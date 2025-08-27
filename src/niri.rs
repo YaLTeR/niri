@@ -1807,7 +1807,7 @@ impl State {
         self.niri.output_management_state.notify_changes(new_config);
     }
 
-    pub fn open_screenshot_ui(&mut self, show_pointer: bool) {
+    pub fn open_screenshot_ui(&mut self, show_pointer: bool, path: Option<String>) {
         if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
             return;
         }
@@ -1842,7 +1842,7 @@ impl State {
         self.backend.with_primary_renderer(|renderer| {
             self.niri
                 .screenshot_ui
-                .open(renderer, screenshots, default_output, show_pointer)
+                .open(renderer, screenshots, default_output, show_pointer, path)
         });
 
         self.niri
@@ -1867,7 +1867,7 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
-    pub fn confirm_screenshot(&mut self, write_to_disk: bool) {
+    pub fn confirm_screenshot(&mut self, write_to_disk: bool, path: Option<String>) {
         if !self.niri.screenshot_ui.is_open() {
             return;
         }
@@ -1875,7 +1875,7 @@ impl State {
         self.backend.with_primary_renderer(|renderer| {
             match self.niri.screenshot_ui.capture(renderer) {
                 Ok((size, pixels)) => {
-                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk) {
+                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk, path) {
                         warn!("error saving screenshot: {err:?}");
                     }
                 }
@@ -5459,6 +5459,7 @@ impl Niri {
         output: &Output,
         write_to_disk: bool,
         include_pointer: bool,
+        path: Option<String>,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot");
 
@@ -5485,7 +5486,7 @@ impl Niri {
             elements,
         )?;
 
-        self.save_screenshot(size, pixels, write_to_disk)
+        self.save_screenshot(size, pixels, write_to_disk, path)
             .context("error saving screenshot")
     }
 
@@ -5495,6 +5496,7 @@ impl Niri {
         output: &Output,
         mapped: &Mapped,
         write_to_disk: bool,
+        path: Option<String>,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_window");
 
@@ -5525,7 +5527,7 @@ impl Niri {
             elements,
         )?;
 
-        self.save_screenshot(geo.size, pixels, write_to_disk)
+        self.save_screenshot(geo.size, pixels, write_to_disk, path)
             .context("error saving screenshot")
     }
 
@@ -5534,9 +5536,10 @@ impl Niri {
         size: Size<i32, Physical>,
         pixels: Vec<u8>,
         write_to_disk: bool,
+        path: Option<String>,
     ) -> anyhow::Result<()> {
         let path = write_to_disk
-            .then(|| match make_screenshot_path(&self.config.borrow()) {
+            .then(|| match make_screenshot_path(path, &self.config.borrow()) {
                 Ok(path) => path,
                 Err(err) => {
                     warn!("error making screenshot path: {err:?}");
@@ -5651,7 +5654,7 @@ impl Niri {
             elements,
         )?;
 
-        let path = make_screenshot_path(&self.config.borrow())
+        let path = make_screenshot_path(None, &self.config.borrow())
             .ok()
             .flatten()
             .unwrap_or_else(|| {
