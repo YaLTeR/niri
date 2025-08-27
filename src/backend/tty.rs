@@ -1281,14 +1281,14 @@ impl Tty {
         trace!("vblank on {name} {meta:?}");
         span.emit_text(name);
 
+        let mut meta = meta;
+        if !matches!(meta.time, DrmEventTime::Monotonic(_)) {
+            meta.time = DrmEventTime::Monotonic(Duration::ZERO);
+        }
+
         let presentation_time = match meta.time {
             DrmEventTime::Monotonic(time) => time,
-            DrmEventTime::Realtime(_) => {
-                // Not supported.
-
-                // This value will be ignored in the frame clock code.
-                Duration::ZERO
-            }
+            DrmEventTime::Realtime(_) => unreachable!(),
         };
         let presentation_time = if niri.config.borrow().debug.emulate_zero_presentation_time {
             Duration::ZERO
