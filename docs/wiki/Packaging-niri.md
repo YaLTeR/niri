@@ -28,6 +28,8 @@ To do that, put files into the correct directories according to this table.
 
 Doing this will make niri appear in GDM and other display managers.
 
+See the [Integrating niri](./Integrating-niri.md) page for further information on distribution integration.
+
 ### Running tests
 
 A bulk of our tests spawn niri compositor instances and test Wayland clients.
