@@ -147,7 +147,7 @@ input {
 
 > [!NOTE]
 >
-> <sup>Since: next release</sup>
+> <sup>Since: 25.08</sup>
 >
 > If the `xkb` section is empty (like it is by default), niri will fetch xkb settings from systemd-localed at `org.freedesktop.locale1` over D-Bus.
 > This way, for example, system installers can dynamically set the niri keyboard layout.
@@ -235,7 +235,7 @@ A few settings are common between `touchpad`, `mouse`, `trackpoint`, and `trackb
 - `scroll-method`: when to generate scroll events instead of pointer motion events, can be `no-scroll`, `two-finger`, `edge`, or `on-button-down`.
   The default and supported methods vary depending on the device type.
 - `scroll-button`: <sup>Since: 0.1.10</sup> the button code used for the `on-button-down` scroll method. You can find it in `libinput debug-events`.
-- `scroll-button-lock`: <sup>Since: next release</sup> when enabled, the button does not need to be held down. Pressing once engages scrolling, pressing a second time disengages it, and double click acts as single click of the the underlying button.
+- `scroll-button-lock`: <sup>Since: 25.08</sup> when enabled, the button does not need to be held down. Pressing once engages scrolling, pressing a second time disengages it, and double click acts as single click of the the underlying button.
 - `left-handed`: if set, changes the device to left-handed mode.
 - `middle-emulation`: emulate a middle mouse click by pressing left and right mouse buttons at once.
 
@@ -254,7 +254,7 @@ Settings specific to `touchpad` and `mouse`:
 
 - `scroll-factor`: <sup>Since: 0.1.10</sup> scales the scrolling speed by this value.
 
-    <sup>Since: next release</sup> You can also override horizontal and vertical scroll factor separately like so: `scroll-factor horizontal=2.0 vertical=-1.0`
+    <sup>Since: 25.08</sup> You can also override horizontal and vertical scroll factor separately like so: `scroll-factor horizontal=2.0 vertical=-1.0`
 
 Settings specific to `tablet`s:
 

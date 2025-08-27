@@ -1,8 +1,6 @@
 ## Using xwayland-satellite
 
-<sup>Since: next release</sup>
-
-Niri integrates with [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) out of the box.
+<sup>Since: 25.08</sup> Niri integrates with [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) out of the box.
 Ensure xwayland-satellite >= 0.7 is installed and available in `$PATH`.
 With no further configuration, niri will create X11 sockets on disk, export `$DISPLAY`, and spawn xwayland-satellite on-demand when an X11 client connects.
 If xwayland-satellite dies, niri will automatically restart it.

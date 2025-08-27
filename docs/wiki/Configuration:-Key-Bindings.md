@@ -252,7 +252,7 @@ binds {
 
 #### `spawn-sh`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.08</sup>
 
 Run a command through the shell.
 

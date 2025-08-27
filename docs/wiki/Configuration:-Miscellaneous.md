@@ -74,7 +74,7 @@ Thanks to this, apps that you configured to autostart in GNOME will also "just w
 
 ### `spawn-sh-at-startup`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.08</sup>
 
 Add lines like this to run shell commands at niri startup.
 
@@ -235,7 +235,7 @@ overview {
 
 ### `xwayland-satellite`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.08</sup>
 
 Settings for integration with [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite).
 
@@ -286,7 +286,7 @@ hotkey-overlay {
 
 #### `hide-not-bound`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.08</sup>
 
 By default, niri will show the most important actions even if they aren't bound to any key, to prevent confusion.
 Set the `hide-not-bound` flag if you want to hide all actions not bound to any key.
@@ -301,7 +301,7 @@ You can customize which binds the hotkey overlay shows using the [`hotkey-overla
 
 ### `config-notification`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.08</sup>
 
 Settings for the config created/failed notification.
 

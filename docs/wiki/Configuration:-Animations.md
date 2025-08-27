@@ -91,7 +91,7 @@ You can get a feel for them on pages like [easings.net](https://easings.net/).
 - `ease-out-cubic`
 - `ease-out-expo`
 - `linear` <sup>Since: 0.1.6</sup>
-- `cubic-bezier` <sup>Since: next release</sup>
+- `cubic-bezier` <sup>Since: 25.08</sup>
     A custom [cubic Bézier curve](https://www.w3.org/TR/css-easing-1/#cubic-bezier-easing-functions). You need to set 4 numbers defining the control points of the curve, for example:
     ```kdl
     animations {
@@ -379,7 +379,7 @@ animations {
 
 #### `exit-confirmation-open-close`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.08</sup>
 
 The open/close animation of the exit confirmation dialog.
 
