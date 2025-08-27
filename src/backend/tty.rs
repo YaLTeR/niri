@@ -553,6 +553,9 @@ impl Tty {
             let display = unsafe { EGLDisplay::new(gbm.clone())? };
             let egl_device = EGLDevice::device_for_display(&display)?;
 
+            // NOTE: software EGL devices (e.g., llvmpipe/softpipe) are intentionally rejected.
+            // It's unclear if they have ever worked prior to this check. But noting here in case
+            // this needs to be referenced in the future.
             anyhow::ensure!(!egl_device.is_software(), "skipping software device");
 
             let render_node = egl_device
