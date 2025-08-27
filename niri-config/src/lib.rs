@@ -1477,6 +1477,8 @@ pub struct WindowRule {
     #[knuffel(child, unwrap(argument))]
     pub open_maximized: Option<bool>,
     #[knuffel(child, unwrap(argument))]
+    pub open_maximized_if_alone: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
     pub open_fullscreen: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub open_floating: Option<bool>,
@@ -4556,6 +4558,7 @@ mod tests {
 
                 open-on-output "eDP-1"
                 open-maximized true
+                open-maximized-if-alone true
                 open-fullscreen false
                 open-floating false
                 open-focused true
@@ -5367,6 +5370,9 @@ mod tests {
                     ),
                     open_on_workspace: None,
                     open_maximized: Some(
+                        true,
+                    ),
+                    open_maximized_if_alone: Some(
                         true,
                     ),
                     open_fullscreen: Some(

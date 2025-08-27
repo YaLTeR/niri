@@ -921,7 +921,8 @@ impl State {
         let mut floating_width = None;
         let mut height = None;
         let mut floating_height = None;
-        let is_full_width = rules.open_maximized.unwrap_or(false);
+        let wants_full_width = rules.open_maximized.unwrap_or(false);
+        let wants_full_width_if_alone = rules.open_maximized_if_alone.unwrap_or(false);
         let is_floating = rules.compute_open_floating(toplevel);
 
         // Tell the surface the preferred size and bounds for its likely output.
@@ -934,7 +935,7 @@ impl State {
                     .or_else(|| self.niri.layout.active_workspace())
             });
 
-        if let Some(ws) = ws {
+        let is_full_width = if let Some(ws) = ws {
             // Set a fullscreen state based on window request and window rule.
             if (wants_fullscreen.is_some() && rules.open_fullscreen.is_none())
                 || rules.open_fullscreen == Some(true)
@@ -948,6 +949,9 @@ impl State {
             floating_width = ws.resolve_default_width(rules.default_width, true);
             height = ws.resolve_default_height(rules.default_height, false);
             floating_height = ws.resolve_default_height(rules.default_height, true);
+
+            let is_full_width =
+                wants_full_width || (wants_full_width_if_alone && !ws.has_windows());
 
             let configure_width = if is_floating {
                 floating_width
@@ -964,7 +968,11 @@ impl State {
                 is_floating,
                 &rules,
             );
-        }
+
+            is_full_width
+        } else {
+            wants_full_width
+        };
 
         // Set the tiled state for the initial configure.
         update_tiled_state(toplevel, config.prefer_no_csd, rules.tiled_state);
