@@ -77,7 +77,7 @@ impl Animation {
         let start_time = self.start_time;
 
         match config.kind {
-            niri_config::AnimationKind::Spring(p) => {
+            niri_config::animations::Kind::Spring(p) => {
                 let params = SpringParams::new(p.damping_ratio, f64::from(p.stiffness), p.epsilon);
 
                 let spring = Spring {
@@ -88,7 +88,7 @@ impl Animation {
                 };
                 *self = Self::spring(self.clock.clone(), spring);
             }
-            niri_config::AnimationKind::Easing(p) => {
+            niri_config::animations::Kind::Easing(p) => {
                 *self = Self::ease(
                     self.clock.clone(),
                     self.from,
@@ -346,13 +346,13 @@ impl Curve {
     }
 }
 
-impl From<niri_config::AnimationCurve> for Curve {
-    fn from(value: niri_config::AnimationCurve) -> Self {
+impl From<niri_config::animations::Curve> for Curve {
+    fn from(value: niri_config::animations::Curve) -> Self {
         match value {
-            niri_config::AnimationCurve::Linear => Curve::Linear,
-            niri_config::AnimationCurve::EaseOutQuad => Curve::EaseOutQuad,
-            niri_config::AnimationCurve::EaseOutCubic => Curve::EaseOutCubic,
-            niri_config::AnimationCurve::EaseOutExpo => Curve::EaseOutExpo,
+            niri_config::animations::Curve::Linear => Curve::Linear,
+            niri_config::animations::Curve::EaseOutQuad => Curve::EaseOutQuad,
+            niri_config::animations::Curve::EaseOutCubic => Curve::EaseOutCubic,
+            niri_config::animations::Curve::EaseOutExpo => Curve::EaseOutExpo,
         }
     }
 }

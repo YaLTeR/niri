@@ -22,9 +22,7 @@ pub mod utils;
 pub mod window_rule;
 pub mod workspace;
 
-pub use crate::animations::{
-    Animation, AnimationCurve, AnimationKind, Animations, EasingParams, SpringParams,
-};
+pub use crate::animations::{Animation, Animations};
 pub use crate::appearance::*;
 pub use crate::binds::*;
 pub use crate::debug::DebugConfig;

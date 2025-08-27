@@ -54,11 +54,11 @@ impl Default for Animations {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Animation {
     pub off: bool,
-    pub kind: AnimationKind,
+    pub kind: Kind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AnimationKind {
+pub enum Kind {
     Easing(EasingParams),
     Spring(SpringParams),
 }
@@ -66,11 +66,11 @@ pub enum AnimationKind {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EasingParams {
     pub duration_ms: u32,
-    pub curve: AnimationCurve,
+    pub curve: Curve,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
-pub enum AnimationCurve {
+pub enum Curve {
     Linear,
     EaseOutQuad,
     EaseOutCubic,
@@ -91,7 +91,7 @@ impl Default for WorkspaceSwitchAnim {
     fn default() -> Self {
         Self(Animation {
             off: false,
-            kind: AnimationKind::Spring(SpringParams {
+            kind: Kind::Spring(SpringParams {
                 damping_ratio: 1.,
                 stiffness: 1000,
                 epsilon: 0.0001,
@@ -111,9 +111,9 @@ impl Default for WindowOpenAnim {
         Self {
             anim: Animation {
                 off: false,
-                kind: AnimationKind::Easing(EasingParams {
+                kind: Kind::Easing(EasingParams {
                     duration_ms: 150,
-                    curve: AnimationCurve::EaseOutExpo,
+                    curve: Curve::EaseOutExpo,
                 }),
             },
             custom_shader: None,
@@ -132,9 +132,9 @@ impl Default for WindowCloseAnim {
         Self {
             anim: Animation {
                 off: false,
-                kind: AnimationKind::Easing(EasingParams {
+                kind: Kind::Easing(EasingParams {
                     duration_ms: 150,
-                    curve: AnimationCurve::EaseOutQuad,
+                    curve: Curve::EaseOutQuad,
                 }),
             },
             custom_shader: None,
@@ -149,7 +149,7 @@ impl Default for HorizontalViewMovementAnim {
     fn default() -> Self {
         Self(Animation {
             off: false,
-            kind: AnimationKind::Spring(SpringParams {
+            kind: Kind::Spring(SpringParams {
                 damping_ratio: 1.,
                 stiffness: 800,
                 epsilon: 0.0001,
@@ -165,7 +165,7 @@ impl Default for WindowMovementAnim {
     fn default() -> Self {
         Self(Animation {
             off: false,
-            kind: AnimationKind::Spring(SpringParams {
+            kind: Kind::Spring(SpringParams {
                 damping_ratio: 1.,
                 stiffness: 800,
                 epsilon: 0.0001,
@@ -185,7 +185,7 @@ impl Default for WindowResizeAnim {
         Self {
             anim: Animation {
                 off: false,
-                kind: AnimationKind::Spring(SpringParams {
+                kind: Kind::Spring(SpringParams {
                     damping_ratio: 1.,
                     stiffness: 800,
                     epsilon: 0.0001,
@@ -203,7 +203,7 @@ impl Default for ConfigNotificationOpenCloseAnim {
     fn default() -> Self {
         Self(Animation {
             off: false,
-            kind: AnimationKind::Spring(SpringParams {
+            kind: Kind::Spring(SpringParams {
                 damping_ratio: 0.6,
                 stiffness: 1000,
                 epsilon: 0.001,
@@ -219,7 +219,7 @@ impl Default for ExitConfirmationOpenCloseAnim {
     fn default() -> Self {
         Self(Animation {
             off: false,
-            kind: AnimationKind::Spring(SpringParams {
+            kind: Kind::Spring(SpringParams {
                 damping_ratio: 0.6,
                 stiffness: 500,
                 epsilon: 0.01,
@@ -235,9 +235,9 @@ impl Default for ScreenshotUiOpenAnim {
     fn default() -> Self {
         Self(Animation {
             off: false,
-            kind: AnimationKind::Easing(EasingParams {
+            kind: Kind::Easing(EasingParams {
                 duration_ms: 200,
-                curve: AnimationCurve::EaseOutQuad,
+                curve: Curve::EaseOutQuad,
             }),
         })
     }
@@ -250,7 +250,7 @@ impl Default for OverviewOpenCloseAnim {
     fn default() -> Self {
         Self(Animation {
             off: false,
-            kind: AnimationKind::Spring(SpringParams {
+            kind: Kind::Spring(SpringParams {
                 damping_ratio: 1.,
                 stiffness: 800,
                 epsilon: 0.0001,
@@ -446,9 +446,9 @@ impl Animation {
     pub fn new_off() -> Self {
         Self {
             off: true,
-            kind: AnimationKind::Easing(EasingParams {
+            kind: Kind::Easing(EasingParams {
                 duration_ms: 0,
-                curve: AnimationCurve::Linear,
+                curve: Curve::Linear,
             }),
         }
     }
@@ -465,7 +465,7 @@ impl Animation {
         #[derive(Default, PartialEq)]
         struct OptionalEasingParams {
             duration_ms: Option<u32>,
-            curve: Option<AnimationCurve>,
+            curve: Option<Curve>,
         }
 
         expect_only_children(node, ctx);
@@ -556,24 +556,24 @@ impl Animation {
 
         let kind = if let Some(spring_params) = spring_params {
             // Configured spring.
-            AnimationKind::Spring(spring_params)
+            Kind::Spring(spring_params)
         } else if easing_params == OptionalEasingParams::default() {
             // Did not configure anything.
             default.kind
         } else {
             // Configured easing.
-            let default = if let AnimationKind::Easing(easing) = default.kind {
+            let default = if let Kind::Easing(easing) = default.kind {
                 easing
             } else {
                 // Generic fallback values for when the default animation is spring, but the user
                 // configured an easing animation.
                 EasingParams {
                     duration_ms: 250,
-                    curve: AnimationCurve::EaseOutCubic,
+                    curve: Curve::EaseOutCubic,
                 }
             };
 
-            AnimationKind::Easing(EasingParams {
+            Kind::Easing(EasingParams {
                 duration_ms: easing_params.duration_ms.unwrap_or(default.duration_ms),
                 curve: easing_params.curve.unwrap_or(default.curve),
             })

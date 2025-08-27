@@ -1,7 +1,7 @@
 use std::fmt::Write as _;
 
 use insta::assert_snapshot;
-use niri_config::{AnimationCurve, AnimationKind, EasingParams};
+use niri_config::animations::{Curve, EasingParams, Kind};
 
 use super::*;
 
@@ -23,9 +23,9 @@ fn format_tiles(layout: &Layout<TestWindow>) -> String {
 }
 
 fn make_options() -> Options {
-    const LINEAR: AnimationKind = AnimationKind::Easing(EasingParams {
+    const LINEAR: Kind = Kind::Easing(EasingParams {
         duration_ms: 1000,
-        curve: AnimationCurve::Linear,
+        curve: Curve::Linear,
     });
 
     let mut options = Options {
