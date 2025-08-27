@@ -489,7 +489,7 @@ impl<W: LayoutElement> Tile<W> {
     pub fn offset_move_y_anim_current(&mut self, offset: f64) {
         if let Some(move_) = self.move_y_animation.as_mut() {
             // If the anim is almost done, there's little point trying to offset it; we can let
-            // things jump. If it turns out like a bad idea, we could restart the anim intead.
+            // things jump. If it turns out like a bad idea, we could restart the anim instead.
             let value = move_.anim.value();
             if value > 0.001 {
                 move_.from += offset / value;

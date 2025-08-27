@@ -4809,7 +4809,7 @@ impl<W: LayoutElement> Layout<W> {
         let wsid = ws.id();
 
         // if `empty_workspace_above_first` is set and `ws` is the first
-        // worskpace on a monitor, another empty workspace needs to
+        // workspace on a monitor, another empty workspace needs to
         // be added before.
         // Conversely, if `ws` was the last workspace on a monitor, an
         // empty workspace needs to be added after.
