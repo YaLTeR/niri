@@ -92,7 +92,7 @@ impl OffscreenBuffer {
         let mut reason = "";
         if let Some(Inner {
             texture,
-            renderer_context_id,
+            renderer_context_id: renderer_id,
             ..
         }) = inner.as_mut()
         {
@@ -109,7 +109,7 @@ impl OffscreenBuffer {
                 reason = "not unique";
 
                 *inner = None;
-            } else if *renderer_context_id != renderer.context_id() {
+            } else if *renderer_id != renderer.context_id() {
                 reason = "renderer id changed";
 
                 *inner = None;
