@@ -124,7 +124,7 @@ fn set_up_two_in_column() -> (Fixture, ClientId, WlSurface, WlSurface) {
 }
 
 #[test]
-fn height_resize_animates_next_y() {
+fn egl_height_resize_animates_next_y() {
     let (mut f, id, surface1, surface2) = set_up_two_in_column();
 
     // Issue a resize.
@@ -171,7 +171,7 @@ fn height_resize_animates_next_y() {
 }
 
 #[test]
-fn clientside_height_change_doesnt_animate() {
+fn egl_clientside_height_change_doesnt_animate() {
     let (mut f, id, surface1, _surface2) = set_up_two_in_column();
 
     // The initial state.

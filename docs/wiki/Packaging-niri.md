@@ -44,6 +44,13 @@ $ export RAYON_NUM_THREADS=2
 
 Don't forget to exclude the development-only `niri-visual-tests` crate when running tests.
 
+Some tests require surfaceless EGL to be available at test time.
+If this is problematic, you can skip them like so:
+
+```
+$ cargo test -- --skip=::egl
+```
+
 You may also want to set the `RUN_SLOW_TESTS=1` environment variable to run the slower tests.
 
 ### Version string
