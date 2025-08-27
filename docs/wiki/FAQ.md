@@ -60,9 +60,9 @@ A combination of factors:
 
 All in all, the situation works out in favor of avoiding Xwayland integration.
 
-Also, in the next release niri will have seamless built-in xwayland-satellite integration, that will solve the big rough edge of having to set it up manually.
+<sup>Since: next release</sup> niri has seamless built-in xwayland-satellite integration that by and large works as well as built-in Xwayland in other compositors, solving the hurdle of having to set it up manually.
 
-Besides, I wouldn't be too surprised if, down the road, xwayland-satellite becomes the standard way of integrating Xwayland into new compositors, since it takes on the bulk of the annoying work, and isolates the compositor from misbehaving clients.
+I wouldn't be too surprised if, down the road, xwayland-satellite becomes the standard way of integrating Xwayland into new compositors, since it takes on the bulk of the annoying work, and isolates the compositor from misbehaving clients.
 
 ### Can I enable blur behind semitransparent windows?
 
