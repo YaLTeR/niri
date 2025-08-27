@@ -123,3 +123,8 @@ It contains the exact dependency versions that I used when testing the release.
 If you need to change the versions of some dependencies, pay extra attention to `smithay` and `smithay-drm-extras` commit hash.
 These crates don't currently have regular stable releases, so niri uses git snapshots.
 Upstream frequently has breaking changes (API and behavior), so you're strongly advised to use the exact commit hash from the niri release's `Cargo.lock`.
+
+### Shell completions
+
+You can generate shell completions for several shells via `niri completions <SHELL>`, i.e. `niri completions bash`.
+See `niri completions -h` for a full list.
