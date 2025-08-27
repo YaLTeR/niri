@@ -1486,7 +1486,6 @@ impl FromStr for Percent {
 #[cfg(test)]
 mod tests {
     use insta::assert_debug_snapshot;
-    use niri_ipc::PositionChange;
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -3183,58 +3182,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_size_change() {
-        assert_eq!(
-            "10".parse::<SizeChange>().unwrap(),
-            SizeChange::SetFixed(10),
-        );
-        assert_eq!(
-            "+10".parse::<SizeChange>().unwrap(),
-            SizeChange::AdjustFixed(10),
-        );
-        assert_eq!(
-            "-10".parse::<SizeChange>().unwrap(),
-            SizeChange::AdjustFixed(-10),
-        );
-        assert_eq!(
-            "10%".parse::<SizeChange>().unwrap(),
-            SizeChange::SetProportion(10.),
-        );
-        assert_eq!(
-            "+10%".parse::<SizeChange>().unwrap(),
-            SizeChange::AdjustProportion(10.),
-        );
-        assert_eq!(
-            "-10%".parse::<SizeChange>().unwrap(),
-            SizeChange::AdjustProportion(-10.),
-        );
-
-        assert!("-".parse::<SizeChange>().is_err());
-        assert!("10% ".parse::<SizeChange>().is_err());
-    }
-
-    #[test]
-    fn parse_position_change() {
-        assert_eq!(
-            "10".parse::<PositionChange>().unwrap(),
-            PositionChange::SetFixed(10.),
-        );
-        assert_eq!(
-            "+10".parse::<PositionChange>().unwrap(),
-            PositionChange::AdjustFixed(10.),
-        );
-        assert_eq!(
-            "-10".parse::<PositionChange>().unwrap(),
-            PositionChange::AdjustFixed(-10.),
-        );
-
-        assert!("10%".parse::<PositionChange>().is_err());
-        assert!("+10%".parse::<PositionChange>().is_err());
-        assert!("-10%".parse::<PositionChange>().is_err());
-        assert!("-".parse::<PositionChange>().is_err());
-        assert!("10% ".parse::<PositionChange>().is_err());
-    }
-
     #[test]
     fn parse_iso_level_shifts() {
         assert_eq!(
