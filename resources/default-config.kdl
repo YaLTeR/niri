@@ -389,14 +389,14 @@ binds {
 
     Mod+Q repeat=false { close-window; }
 
-    Mod+Left  { focus-column-left; }
+    Mod+Left  { focus-column-left {}; }
     Mod+Down  { focus-window-down; }
     Mod+Up    { focus-window-up; }
-    Mod+Right { focus-column-right; }
-    Mod+H     { focus-column-left; }
+    Mod+Right { focus-column-right {}; }
+    Mod+H     { focus-column-left {}; }
     Mod+J     { focus-window-down; }
     Mod+K     { focus-window-up; }
-    Mod+L     { focus-column-right; }
+    Mod+L     { focus-column-right {}; }
 
     Mod+Ctrl+Left  { move-column-left; }
     Mod+Ctrl+Down  { move-window-down; }
@@ -474,15 +474,15 @@ binds {
     Mod+Ctrl+WheelScrollDown cooldown-ms=150 { move-column-to-workspace-down; }
     Mod+Ctrl+WheelScrollUp   cooldown-ms=150 { move-column-to-workspace-up; }
 
-    Mod+WheelScrollRight      { focus-column-right; }
-    Mod+WheelScrollLeft       { focus-column-left; }
+    Mod+WheelScrollRight      { focus-column-right {}; }
+    Mod+WheelScrollLeft       { focus-column-left {}; }
     Mod+Ctrl+WheelScrollRight { move-column-right; }
     Mod+Ctrl+WheelScrollLeft  { move-column-left; }
 
     // Usually scrolling up and down with Shift in applications results in
     // horizontal scrolling; these binds replicate that.
-    Mod+Shift+WheelScrollDown      { focus-column-right; }
-    Mod+Shift+WheelScrollUp        { focus-column-left; }
+    Mod+Shift+WheelScrollDown      { focus-column-right {}; }
+    Mod+Shift+WheelScrollUp        { focus-column-left {}; }
     Mod+Ctrl+Shift+WheelScrollDown { move-column-right; }
     Mod+Ctrl+Shift+WheelScrollUp   { move-column-left; }
 

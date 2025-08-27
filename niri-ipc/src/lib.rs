@@ -299,9 +299,17 @@ pub enum Action {
     /// Focus the previously focused window.
     FocusWindowPrevious {},
     /// Focus the column to the left.
-    FocusColumnLeft {},
+    FocusColumnLeft {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the column to the right.
-    FocusColumnRight {},
+    FocusColumnRight {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the first column.
     FocusColumnFirst {},
     /// Focus the last column.
@@ -323,25 +331,49 @@ pub enum Action {
     /// Focus the window or the monitor below.
     FocusWindowOrMonitorDown {},
     /// Focus the column or the monitor to the left.
-    FocusColumnOrMonitorLeft {},
+    FocusColumnOrMonitorLeft {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the column or the monitor to the right.
-    FocusColumnOrMonitorRight {},
+    FocusColumnOrMonitorRight {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the window below.
     FocusWindowDown {},
     /// Focus the window above.
     FocusWindowUp {},
     /// Focus the window below or the column to the left.
-    FocusWindowDownOrColumnLeft {},
+    FocusWindowDownOrColumnLeft {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the window below or the column to the right.
-    FocusWindowDownOrColumnRight {},
+    FocusWindowDownOrColumnRight {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the window above or the column to the left.
     FocusWindowUpOrColumnLeft {},
     /// Focus the window above or the column to the right.
     FocusWindowUpOrColumnRight {},
     /// Focus the window or the workspace below.
-    FocusWindowOrWorkspaceDown {},
+    FocusWindowOrWorkspaceDown {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the window or the workspace above.
-    FocusWindowOrWorkspaceUp {},
+    FocusWindowOrWorkspaceUp {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the topmost window.
     FocusWindowTop {},
     /// Focus the bottommost window.
@@ -435,9 +467,17 @@ pub enum Action {
     /// Center all fully visible columns on the screen.
     CenterVisibleColumns {},
     /// Focus the workspace below.
-    FocusWorkspaceDown {},
+    FocusWorkspaceDown {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus the workspace above.
-    FocusWorkspaceUp {},
+    FocusWorkspaceUp {
+        /// Skip the configured animation
+        #[cfg_attr(feature = "clap", arg())]
+        skip_animation: Option<bool>,
+    },
     /// Focus a workspace by reference (index or name).
     FocusWorkspace {
         /// Reference (index or name) of the workspace to focus.
