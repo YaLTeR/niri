@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
-pub struct DebugConfig {
+pub struct Debug {
     #[knuffel(child, unwrap(argument))]
     pub preview_render: Option<PreviewRender>,
     #[knuffel(child)]

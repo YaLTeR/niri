@@ -25,7 +25,7 @@ pub mod workspace;
 pub use crate::animations::{Animation, Animations};
 pub use crate::appearance::*;
 pub use crate::binds::*;
-pub use crate::debug::DebugConfig;
+pub use crate::debug::Debug;
 pub use crate::gestures::Gestures;
 pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
 pub use crate::layer_rule::LayerRule;
@@ -85,7 +85,7 @@ pub struct Config {
     #[knuffel(child, default)]
     pub switch_events: SwitchBinds,
     #[knuffel(child, default)]
-    pub debug: DebugConfig,
+    pub debug: Debug,
     #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
 }
@@ -1696,7 +1696,7 @@ mod tests {
                     },
                 ),
             },
-            debug: DebugConfig {
+            debug: Debug {
                 preview_render: None,
                 dbus_interfaces_in_non_session_instances: false,
                 wait_for_frame_completion_before_queueing: false,
