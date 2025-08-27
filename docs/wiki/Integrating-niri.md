@@ -20,6 +20,7 @@ Xwayland is required for running X11 apps and games, and also the Orca screen re
 <sup>Since: next release</sup> Niri integrates with [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) out of the box.
 The integration requires xwayland-satellite >= 0.7 available in `$PATH`.
 Please consider making niri depend on (or at least recommend) the xwayland-satellite package.
+If you had a custom config which manually started `xwayland-satellite` and set `DISPLAY`, you should remove those customizations for the automatic integration to work.
 
 You can change the path where niri looks for xwayland-satellite using the [`xwayland-satellite` top-level option](./Configuration:-Miscellaneous.md#xwayland-satellite).
 
