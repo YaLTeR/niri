@@ -17,7 +17,7 @@ use smithay::backend::input::{
     TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
-use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
+use smithay::input::keyboard::{keysyms, FilterResult, Keysym, KeysymHandle, Layout, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
@@ -384,7 +384,7 @@ impl State {
             |this, mods, keysym| {
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
-                let raw = keysym.raw_latin_sym_or_raw_current_sym();
+                let raw = resolve_keycode_to_raw_sym(&this.niri.config.borrow().input, &keysym);
 
                 if this.niri.exit_confirm_dialog.is_open() && pressed {
                     if raw == Some(Keysym::Return) {
@@ -3904,6 +3904,27 @@ impl State {
         if let Some(action) = action {
             self.do_action(action, true);
         }
+    }
+}
+
+/// Resolve a key press into a raw key symbol.
+///
+/// If the user configured a fixed layout for key bindings, then the key
+/// press is resolved with respect to that specified layout.  Otherwise the
+/// key press is resolved with respect to the current active layout and for
+/// non-ASCII symbols, falls back to the first layout with an ASCII symbol.
+fn resolve_keycode_to_raw_sym(config: &niri_config::Input, keysym: &KeysymHandle) -> Option<Keysym> {
+    if let Some(layout_index) = config.keyboard.xkb.resolve_keycode_with_layout {
+        // The internal implementation of raw_syms_for_key_in_layout()
+        // calls xkbcommon::xkb::Keymap::key_get_syms_by_level(),
+        // which wraps around if the layout index is out of range,
+        // for details see there.
+        let layout = Layout(layout_index);
+        let xkb = keysym.xkb().lock().unwrap();
+        xkb.raw_syms_for_key_in_layout(keysym.raw_code(), layout).first().copied()
+    } else {
+        // Resolve keycode with respect to the current layout.
+        keysym.raw_latin_sym_or_raw_current_sym()
     }
 }
 
