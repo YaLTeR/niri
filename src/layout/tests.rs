@@ -1,8 +1,8 @@
 use std::cell::{Cell, OnceCell, RefCell};
 
+use niri_config::workspace::WorkspaceName;
 use niri_config::{
-    FloatOrInt, OutputName, TabIndicatorLength, TabIndicatorPosition, WorkspaceName,
-    WorkspaceReference,
+    FloatOrInt, OutputName, TabIndicatorLength, TabIndicatorPosition, WorkspaceReference,
 };
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;

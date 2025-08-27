@@ -20,6 +20,7 @@ pub mod misc;
 pub mod output;
 pub mod utils;
 pub mod window_rule;
+pub mod workspace;
 
 pub use crate::animations::{
     Animation, AnimationCurve, AnimationKind, Animations, EasingParams, SpringParams,
@@ -35,6 +36,7 @@ pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
 pub use crate::utils::FloatOrInt;
 pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
+pub use crate::workspace::Workspace;
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {
