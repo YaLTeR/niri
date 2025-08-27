@@ -5,7 +5,8 @@ use smithay::input::keyboard::XkbConfig;
 use smithay::reexports::input;
 
 use crate::binds::Modifiers;
-use crate::{FloatOrInt, Percent};
+use crate::utils::Percent;
+use crate::FloatOrInt;
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq)]
 pub struct Input {

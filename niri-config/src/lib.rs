@@ -5,10 +5,9 @@ use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 use knuffel::errors::DecodeError;
-use miette::{miette, Context, IntoDiagnostic};
+use miette::{Context, IntoDiagnostic};
 
 pub mod animations;
 pub mod appearance;
@@ -33,6 +32,7 @@ pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocu
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
+pub use crate::utils::FloatOrInt;
 pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
@@ -88,13 +88,6 @@ pub struct Config {
     #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
 }
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Percent(pub f64);
-
-// MIN and MAX generics are only used during parsing to check the value.
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub struct FloatOrInt<const MIN: i32, const MAX: i32>(pub f64);
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Eq)]
 pub struct SpawnAtStartup {
@@ -209,72 +202,6 @@ pub struct Workspace {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceName(pub String);
-
-impl<S: knuffel::traits::ErrorSpan, const MIN: i32, const MAX: i32> knuffel::DecodeScalar<S>
-    for FloatOrInt<MIN, MAX>
-{
-    fn type_check(
-        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
-        ctx: &mut knuffel::decode::Context<S>,
-    ) {
-        if let Some(type_name) = &type_name {
-            ctx.emit_error(DecodeError::unexpected(
-                type_name,
-                "type name",
-                "no type name expected for this node",
-            ));
-        }
-    }
-
-    fn raw_decode(
-        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
-        ctx: &mut knuffel::decode::Context<S>,
-    ) -> Result<Self, DecodeError<S>> {
-        match &**val {
-            knuffel::ast::Literal::Int(ref value) => match value.try_into() {
-                Ok(v) => {
-                    if (MIN..=MAX).contains(&v) {
-                        Ok(FloatOrInt(f64::from(v)))
-                    } else {
-                        ctx.emit_error(DecodeError::conversion(
-                            val,
-                            format!("value must be between {MIN} and {MAX}"),
-                        ));
-                        Ok(FloatOrInt::default())
-                    }
-                }
-                Err(e) => {
-                    ctx.emit_error(DecodeError::conversion(val, e));
-                    Ok(FloatOrInt::default())
-                }
-            },
-            knuffel::ast::Literal::Decimal(ref value) => match value.try_into() {
-                Ok(v) => {
-                    if (f64::from(MIN)..=f64::from(MAX)).contains(&v) {
-                        Ok(FloatOrInt(v))
-                    } else {
-                        ctx.emit_error(DecodeError::conversion(
-                            val,
-                            format!("value must be between {MIN} and {MAX}"),
-                        ));
-                        Ok(FloatOrInt::default())
-                    }
-                }
-                Err(e) => {
-                    ctx.emit_error(DecodeError::conversion(val, e));
-                    Ok(FloatOrInt::default())
-                }
-            },
-            _ => {
-                ctx.emit_error(DecodeError::unsupported(
-                    val,
-                    "Unsupported value, only numbers are recognized",
-                ));
-                Ok(FloatOrInt::default())
-            }
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum ConfigPath {
@@ -418,74 +345,6 @@ impl Default for Config {
     }
 }
 
-fn expect_only_children<S>(
-    node: &knuffel::ast::SpannedNode<S>,
-    ctx: &mut knuffel::decode::Context<S>,
-) where
-    S: knuffel::traits::ErrorSpan,
-{
-    if let Some(type_name) = &node.type_name {
-        ctx.emit_error(DecodeError::unexpected(
-            type_name,
-            "type name",
-            "no type name expected for this node",
-        ));
-    }
-
-    for val in node.arguments.iter() {
-        ctx.emit_error(DecodeError::unexpected(
-            &val.literal,
-            "argument",
-            "no arguments expected for this node",
-        ))
-    }
-
-    for name in node.properties.keys() {
-        ctx.emit_error(DecodeError::unexpected(
-            name,
-            "property",
-            "no properties expected for this node",
-        ))
-    }
-}
-
-fn parse_arg_node<S: knuffel::traits::ErrorSpan, T: knuffel::traits::DecodeScalar<S>>(
-    name: &str,
-    node: &knuffel::ast::SpannedNode<S>,
-    ctx: &mut knuffel::decode::Context<S>,
-) -> Result<T, DecodeError<S>> {
-    let mut iter_args = node.arguments.iter();
-    let val = iter_args.next().ok_or_else(|| {
-        DecodeError::missing(node, format!("additional argument `{name}` is required"))
-    })?;
-
-    let value = knuffel::traits::DecodeScalar::decode(val, ctx)?;
-
-    if let Some(val) = iter_args.next() {
-        ctx.emit_error(DecodeError::unexpected(
-            &val.literal,
-            "argument",
-            "unexpected argument",
-        ));
-    }
-    for name in node.properties.keys() {
-        ctx.emit_error(DecodeError::unexpected(
-            name,
-            "property",
-            format!("unexpected property `{}`", name.escape_default()),
-        ));
-    }
-    for child in node.children() {
-        ctx.emit_error(DecodeError::unexpected(
-            child,
-            "node",
-            format!("unexpected node `{}`", child.node_name.escape_default()),
-        ));
-    }
-
-    Ok(value)
-}
-
 impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceName {
     fn type_check(
         type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
@@ -534,23 +393,6 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for WorkspaceName {
                 Ok(Self(String::new()))
             }
         }
-    }
-}
-
-impl FromStr for Percent {
-    type Err = miette::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let Some((value, empty)) = s.split_once('%') else {
-            return Err(miette!("value must end with '%'"));
-        };
-
-        if !empty.is_empty() {
-            return Err(miette!("trailing characters after '%' are not allowed"));
-        }
-
-        let value: f64 = value.parse().map_err(|_| miette!("error parsing value"))?;
-        Ok(Percent(value / 100.))
     }
 }
 

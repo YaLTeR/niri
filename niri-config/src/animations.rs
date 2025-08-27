@@ -1,7 +1,8 @@
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
 
-use crate::{expect_only_children, parse_arg_node, FloatOrInt};
+use crate::utils::{expect_only_children, parse_arg_node};
+use crate::FloatOrInt;
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Animations {

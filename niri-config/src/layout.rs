@@ -4,7 +4,8 @@ use niri_ipc::{ColumnDisplay, SizeChange};
 use crate::appearance::{
     Border, FocusRing, InsertHint, Shadow, TabIndicator, DEFAULT_BACKGROUND_COLOR,
 };
-use crate::{expect_only_children, Color, FloatOrInt};
+use crate::utils::expect_only_children;
+use crate::{Color, FloatOrInt};
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Layout {
