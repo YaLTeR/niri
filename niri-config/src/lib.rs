@@ -2550,13 +2550,18 @@ impl Config {
             .into_diagnostic()
             .with_context(|| format!("error reading {path:?}"))?;
 
-        let config = Self::parse(
-            path.file_name()
-                .and_then(OsStr::to_str)
-                .unwrap_or("config.kdl"),
-            &contents,
-        )
-        .context("error parsing")?;
+        let filename = path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .unwrap_or("config.kdl");
+
+        let config = match Self::parse(filename, &contents) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                return Err(miette::Report::msg(format!("error parsing: {e}")));
+            }
+        };
+
         debug!("loaded config from {path:?}");
         Ok(config)
     }
