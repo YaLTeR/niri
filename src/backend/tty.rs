@@ -587,9 +587,8 @@ impl Tty {
             })
             .ok_or(anyhow!("no allocator available for device"))?;
 
-        let is_primary_render_node = render_node
-            .map(|render_node| render_node == self.primary_render_node)
-            .unwrap_or(false);
+        let is_primary_render_node =
+            render_node.is_some_and(|render_node| render_node == self.primary_render_node);
         if node == self.primary_node || is_primary_render_node {
             if node == self.primary_node {
                 debug!("this is the primary node");
@@ -1058,6 +1057,10 @@ impl Tty {
             .iter()
             .copied()
             .filter(|format| {
+                if device.render_node.is_none() {
+                    return format.modifier == Modifier::Linear;
+                }
+
                 let is_ccs = matches!(
                     format.modifier,
                     Modifier::I915_y_tiled_ccs
@@ -1075,7 +1078,7 @@ impl Tty {
                     | Modifier::Unrecognized(0x10000000000000c)
                 );
 
-                !is_ccs && (device.render_node.is_some() || format.modifier == Modifier::Linear)
+                !is_ccs
             })
             .collect::<FormatSet>();
 
@@ -2470,8 +2473,7 @@ fn surface_dmabuf_feedback(
     // If this is the primary node surface, send scanout formats in both tranches to avoid
     // duplication.
     let render = if surface_render_node
-        .map(|surface_render_node| surface_render_node == primary_render_node)
-        .unwrap_or(false)
+        .is_some_and(|surface_render_node| surface_render_node == primary_render_node)
     {
         scanout.clone()
     } else {
