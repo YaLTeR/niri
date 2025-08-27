@@ -1,4 +1,5 @@
-use crate::{BlockOutFrom, CornerRadius, RegexEq, ShadowRule};
+use crate::utils::RegexEq;
+use crate::{BlockOutFrom, CornerRadius, ShadowRule};
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct LayerRule {
