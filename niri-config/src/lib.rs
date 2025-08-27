@@ -3,10 +3,10 @@ extern crate tracing;
 
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use miette::{Context, IntoDiagnostic};
+use miette::{Context as _, IntoDiagnostic as _};
 
 pub mod animations;
 pub mod appearance;
@@ -109,8 +109,41 @@ pub enum ConfigPath {
     },
 }
 
+impl Config {
+    pub fn load(path: &Path) -> miette::Result<Self> {
+        let contents = fs::read_to_string(path)
+            .into_diagnostic()
+            .with_context(|| format!("error reading {path:?}"))?;
+
+        let config = Self::parse(
+            path.file_name()
+                .and_then(OsStr::to_str)
+                .unwrap_or("config.kdl"),
+            &contents,
+        )
+        .context("error parsing")?;
+        debug!("loaded config from {path:?}");
+        Ok(config)
+    }
+
+    pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
+        let _span = tracy_client::span!("Config::parse");
+        knuffel::parse(filename, text)
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config::parse(
+            "default-config.kdl",
+            include_str!("../../resources/default-config.kdl"),
+        )
+        .unwrap()
+    }
+}
+
 impl ConfigPath {
-    /// Load the config, or return an error if it doesn't exist.
+    /// Loads the config, returns an error if it doesn't exist.
     pub fn load(&self) -> miette::Result<Config> {
         let _span = tracy_client::span!("ConfigPath::load");
 
@@ -122,7 +155,7 @@ impl ConfigPath {
         .context("error loading config")
     }
 
-    /// Load the config, or create it if it doesn't exist.
+    /// Loads the config, or creates it if it doesn't exist.
     ///
     /// Returns a tuple containing the path that was created, if any, and the loaded config.
     ///
@@ -196,39 +229,6 @@ impl ConfigPath {
             .with_context(|| format!("error writing default config to {path:?}"))?;
 
         Ok(())
-    }
-}
-
-impl Config {
-    pub fn load(path: &Path) -> miette::Result<Self> {
-        let contents = fs::read_to_string(path)
-            .into_diagnostic()
-            .with_context(|| format!("error reading {path:?}"))?;
-
-        let config = Self::parse(
-            path.file_name()
-                .and_then(OsStr::to_str)
-                .unwrap_or("config.kdl"),
-            &contents,
-        )
-        .context("error parsing")?;
-        debug!("loaded config from {path:?}");
-        Ok(config)
-    }
-
-    pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
-        let _span = tracy_client::span!("Config::parse");
-        knuffel::parse(filename, text)
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config::parse(
-            "default-config.kdl",
-            include_str!("../../resources/default-config.kdl"),
-        )
-        .unwrap()
     }
 }
 
