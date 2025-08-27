@@ -239,203 +239,23 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn can_create_default_config() {
+        let _ = Config::default();
+    }
+
+    #[test]
+    fn default_repeat_params() {
+        let config = Config::parse("config.kdl", "").unwrap();
+        assert_eq!(config.input.keyboard.repeat_delay, 600);
+        assert_eq!(config.input.keyboard.repeat_rate, 25);
+    }
+
     #[track_caller]
     fn do_parse(text: &str) -> Config {
         Config::parse("test.kdl", text)
             .map_err(miette::Report::new)
             .unwrap()
-    }
-
-    #[test]
-    fn parse_scroll_factor_combined() {
-        // Test combined scroll-factor syntax
-        let parsed = do_parse(
-            r#"
-            input {
-                mouse {
-                    scroll-factor 2.0
-                }
-                touchpad {
-                    scroll-factor 1.5
-                }
-            }
-            "#,
-        );
-
-        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r#"
-        Some(
-            ScrollFactor {
-                base: Some(
-                    FloatOrInt(
-                        2.0,
-                    ),
-                ),
-                horizontal: None,
-                vertical: None,
-            },
-        )
-        "#);
-        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r#"
-        Some(
-            ScrollFactor {
-                base: Some(
-                    FloatOrInt(
-                        1.5,
-                    ),
-                ),
-                horizontal: None,
-                vertical: None,
-            },
-        )
-        "#);
-    }
-
-    #[test]
-    fn parse_scroll_factor_split() {
-        // Test split horizontal/vertical syntax
-        let parsed = do_parse(
-            r#"
-            input {
-                mouse {
-                    scroll-factor horizontal=2.0 vertical=-1.0
-                }
-                touchpad {
-                    scroll-factor horizontal=-1.5 vertical=0.5
-                }
-            }
-            "#,
-        );
-
-        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r#"
-        Some(
-            ScrollFactor {
-                base: None,
-                horizontal: Some(
-                    FloatOrInt(
-                        2.0,
-                    ),
-                ),
-                vertical: Some(
-                    FloatOrInt(
-                        -1.0,
-                    ),
-                ),
-            },
-        )
-        "#);
-        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r#"
-        Some(
-            ScrollFactor {
-                base: None,
-                horizontal: Some(
-                    FloatOrInt(
-                        -1.5,
-                    ),
-                ),
-                vertical: Some(
-                    FloatOrInt(
-                        0.5,
-                    ),
-                ),
-            },
-        )
-        "#);
-    }
-
-    #[test]
-    fn parse_scroll_factor_partial() {
-        // Test partial specification (only one axis)
-        let parsed = do_parse(
-            r#"
-            input {
-                mouse {
-                    scroll-factor horizontal=2.0
-                }
-                touchpad {
-                    scroll-factor vertical=-1.5
-                }
-            }
-            "#,
-        );
-
-        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r#"
-        Some(
-            ScrollFactor {
-                base: None,
-                horizontal: Some(
-                    FloatOrInt(
-                        2.0,
-                    ),
-                ),
-                vertical: None,
-            },
-        )
-        "#);
-        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r#"
-        Some(
-            ScrollFactor {
-                base: None,
-                horizontal: None,
-                vertical: Some(
-                    FloatOrInt(
-                        -1.5,
-                    ),
-                ),
-            },
-        )
-        "#);
-    }
-
-    #[test]
-    fn parse_scroll_factor_mixed() {
-        // Test mixed base + override syntax
-        let parsed = do_parse(
-            r#"
-            input {
-                mouse {
-                    scroll-factor 2 vertical=-1
-                }
-                touchpad {
-                    scroll-factor 1.5 horizontal=3
-                }
-            }
-            "#,
-        );
-
-        assert_debug_snapshot!(parsed.input.mouse.scroll_factor, @r#"
-        Some(
-            ScrollFactor {
-                base: Some(
-                    FloatOrInt(
-                        2.0,
-                    ),
-                ),
-                horizontal: None,
-                vertical: Some(
-                    FloatOrInt(
-                        -1.0,
-                    ),
-                ),
-            },
-        )
-        "#);
-        assert_debug_snapshot!(parsed.input.touchpad.scroll_factor, @r#"
-        Some(
-            ScrollFactor {
-                base: Some(
-                    FloatOrInt(
-                        1.5,
-                    ),
-                ),
-                horizontal: Some(
-                    FloatOrInt(
-                        3.0,
-                    ),
-                ),
-                vertical: None,
-            },
-        )
-        "#);
     }
 
     #[test]
@@ -1923,17 +1743,5 @@ mod tests {
             ],
         }
         "#);
-    }
-
-    #[test]
-    fn can_create_default_config() {
-        let _ = Config::default();
-    }
-
-    #[test]
-    fn default_repeat_params() {
-        let config = Config::parse("config.kdl", "").unwrap();
-        assert_eq!(config.input.keyboard.repeat_delay, 600);
-        assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 }

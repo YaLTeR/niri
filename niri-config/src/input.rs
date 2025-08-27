@@ -448,6 +448,197 @@ mod tests {
 
     use super::*;
 
+    #[track_caller]
+    fn do_parse(text: &str) -> Input {
+        knuffel::parse("test.kdl", text)
+            .map_err(miette::Report::new)
+            .unwrap()
+    }
+
+    #[test]
+    fn parse_scroll_factor_combined() {
+        // Test combined scroll-factor syntax
+        let parsed = do_parse(
+            r#"
+            mouse {
+                scroll-factor 2.0
+            }
+            touchpad {
+                scroll-factor 1.5
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.mouse.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: Some(
+                    FloatOrInt(
+                        2.0,
+                    ),
+                ),
+                horizontal: None,
+                vertical: None,
+            },
+        )
+        "#);
+        assert_debug_snapshot!(parsed.touchpad.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: Some(
+                    FloatOrInt(
+                        1.5,
+                    ),
+                ),
+                horizontal: None,
+                vertical: None,
+            },
+        )
+        "#);
+    }
+
+    #[test]
+    fn parse_scroll_factor_split() {
+        // Test split horizontal/vertical syntax
+        let parsed = do_parse(
+            r#"
+            mouse {
+                scroll-factor horizontal=2.0 vertical=-1.0
+            }
+            touchpad {
+                scroll-factor horizontal=-1.5 vertical=0.5
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.mouse.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: Some(
+                    FloatOrInt(
+                        2.0,
+                    ),
+                ),
+                vertical: Some(
+                    FloatOrInt(
+                        -1.0,
+                    ),
+                ),
+            },
+        )
+        "#);
+        assert_debug_snapshot!(parsed.touchpad.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: Some(
+                    FloatOrInt(
+                        -1.5,
+                    ),
+                ),
+                vertical: Some(
+                    FloatOrInt(
+                        0.5,
+                    ),
+                ),
+            },
+        )
+        "#);
+    }
+
+    #[test]
+    fn parse_scroll_factor_partial() {
+        // Test partial specification (only one axis)
+        let parsed = do_parse(
+            r#"
+            mouse {
+                scroll-factor horizontal=2.0
+            }
+            touchpad {
+                scroll-factor vertical=-1.5
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.mouse.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: Some(
+                    FloatOrInt(
+                        2.0,
+                    ),
+                ),
+                vertical: None,
+            },
+        )
+        "#);
+        assert_debug_snapshot!(parsed.touchpad.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: None,
+                horizontal: None,
+                vertical: Some(
+                    FloatOrInt(
+                        -1.5,
+                    ),
+                ),
+            },
+        )
+        "#);
+    }
+
+    #[test]
+    fn parse_scroll_factor_mixed() {
+        // Test mixed base + override syntax
+        let parsed = do_parse(
+            r#"
+            mouse {
+                scroll-factor 2 vertical=-1
+            }
+            touchpad {
+                scroll-factor 1.5 horizontal=3
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.mouse.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: Some(
+                    FloatOrInt(
+                        2.0,
+                    ),
+                ),
+                horizontal: None,
+                vertical: Some(
+                    FloatOrInt(
+                        -1.0,
+                    ),
+                ),
+            },
+        )
+        "#);
+        assert_debug_snapshot!(parsed.touchpad.scroll_factor, @r#"
+        Some(
+            ScrollFactor {
+                base: Some(
+                    FloatOrInt(
+                        1.5,
+                    ),
+                ),
+                horizontal: Some(
+                    FloatOrInt(
+                        3.0,
+                    ),
+                ),
+                vertical: None,
+            },
+        )
+        "#);
+    }
+
     #[test]
     fn scroll_factor_h_v_factors() {
         let sf = ScrollFactor {
