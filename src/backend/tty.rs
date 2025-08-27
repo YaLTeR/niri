@@ -1318,47 +1318,47 @@ impl Tty {
             niri.event_loop.remove(vblank_throttle_timer_token);
         }
 
+        let refresh_interval = output_state.frame_clock.refresh_interval();
         let vblank_remaining_time =
             output_state
                 .last_drm_vblank_timestamp
                 .and_then(|last_drm_vblank_timestamp| {
-                    let refresh_interval = output_state.frame_clock.refresh_interval()?;
+                    let refresh_interval = refresh_interval?;
                     let vblank_diff = time.saturating_sub(last_drm_vblank_timestamp);
                     Some(refresh_interval.saturating_sub(vblank_diff))
                 });
 
-        if let Some(vblank_remaining_time) = vblank_remaining_time.filter(|vblank_remaining_time| {
-            output_state
-                .frame_clock
-                .refresh_interval()
-                .map(|refresh_interval| *vblank_remaining_time > refresh_interval / 2)
-                .unwrap_or(false)
-        }) {
-            static WARN_ONCE: Once = Once::new();
-            WARN_ONCE.call_once(|| warn!("output running faster as expected, throttling vblanks"));
+        if let (Some(refresh_interval), Some(vblank_remaining_time)) =
+            (refresh_interval, vblank_remaining_time)
+        {
+            if vblank_remaining_time > refresh_interval / 2 {
+                static WARN_ONCE: Once = Once::new();
+                WARN_ONCE
+                    .call_once(|| warn!("output running faster as expected, throttling vblanks"));
 
-            let throttled_time = if presentation_time.is_zero() {
-                Duration::ZERO
-            } else {
-                presentation_time.saturating_add(vblank_remaining_time)
-            };
-            let throttled_metadata = DrmEventMetadata {
-                sequence: meta.sequence,
-                time: DrmEventTime::Monotonic(throttled_time),
-            };
-            let timer_token = niri
-                .event_loop
-                .insert_source(
-                    Timer::from_duration(vblank_remaining_time),
-                    move |_, _, state| {
-                        let tty = state.backend.tty();
-                        tty.on_vblank(&mut state.niri, node, crtc, throttled_metadata);
-                        TimeoutAction::Drop
-                    },
-                )
-                .expect("failed to register vblank throttle timer");
-            output_state.vblank_throttle_timer_token = Some(timer_token);
-            return;
+                let throttled_time = if presentation_time.is_zero() {
+                    Duration::ZERO
+                } else {
+                    presentation_time.saturating_add(vblank_remaining_time)
+                };
+                let throttled_metadata = DrmEventMetadata {
+                    sequence: meta.sequence,
+                    time: DrmEventTime::Monotonic(throttled_time),
+                };
+                let timer_token = niri
+                    .event_loop
+                    .insert_source(
+                        Timer::from_duration(vblank_remaining_time),
+                        move |_, _, state| {
+                            let tty = state.backend.tty();
+                            tty.on_vblank(&mut state.niri, node, crtc, throttled_metadata);
+                            TimeoutAction::Drop
+                        },
+                    )
+                    .expect("failed to register vblank throttle timer");
+                output_state.vblank_throttle_timer_token = Some(timer_token);
+                return;
+            }
         }
         output_state.last_drm_vblank_timestamp = Some(time);
 
