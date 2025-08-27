@@ -40,5 +40,5 @@ If this is inconvenient, you can also add [`spawn-at-startup`](./Configuration:-
 
 ### Screen readers
 
-Niri works with the [Orca](https://orca.gnome.org) screen reader.
+<sup>Since: next release</sup> Niri works with the [Orca](https://orca.gnome.org) screen reader.
 Please see the [Accessibility](./Accessibility.md) page for details and advice for accessibility-focused distributions.
