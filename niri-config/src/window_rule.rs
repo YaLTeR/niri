@@ -1,10 +1,9 @@
 use niri_ipc::ColumnDisplay;
 
+use crate::appearance::{BlockOutFrom, BorderRule, CornerRadius, ShadowRule, TabIndicatorRule};
+use crate::layout::DefaultPresetSize;
 use crate::utils::RegexEq;
-use crate::{
-    BlockOutFrom, BorderRule, CornerRadius, DefaultPresetSize, FloatOrInt, ShadowRule,
-    TabIndicatorRule,
-};
+use crate::FloatOrInt;
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
 pub struct WindowRule {
