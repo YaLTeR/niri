@@ -3179,14 +3179,14 @@ impl<W: LayoutElement> Layout<W> {
         self.options = options;
     }
 
-    pub fn toggle_width(&mut self) {
+    pub fn toggle_width(&mut self, forwards: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.toggle_width();
+        workspace.toggle_width(forwards);
     }
 
-    pub fn toggle_window_width(&mut self, window: Option<&W::Id>) {
+    pub fn toggle_window_width(&mut self, window: Option<&W::Id>, forwards: bool) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
@@ -3206,10 +3206,10 @@ impl<W: LayoutElement> Layout<W> {
         let Some(workspace) = workspace else {
             return;
         };
-        workspace.toggle_window_width(window);
+        workspace.toggle_window_width(window, forwards);
     }
 
-    pub fn toggle_window_height(&mut self, window: Option<&W::Id>) {
+    pub fn toggle_window_height(&mut self, window: Option<&W::Id>, forwards: bool) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
@@ -3229,7 +3229,7 @@ impl<W: LayoutElement> Layout<W> {
         let Some(workspace) = workspace else {
             return;
         };
-        workspace.toggle_window_height(window);
+        workspace.toggle_window_height(window, forwards);
     }
 
     pub fn toggle_full_width(&mut self) {

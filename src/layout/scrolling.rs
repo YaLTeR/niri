@@ -2522,13 +2522,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         None
     }
 
-    pub fn toggle_width(&mut self) {
+    pub fn toggle_width(&mut self, forwards: bool) {
         if self.columns.is_empty() {
             return;
         }
 
         let col = &mut self.columns[self.active_column_idx];
-        col.toggle_width(None);
+        col.toggle_width(None, forwards);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2616,7 +2616,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
-    pub fn toggle_window_width(&mut self, window: Option<&W::Id>) {
+    pub fn toggle_window_width(&mut self, window: Option<&W::Id>, forwards: bool) {
         if self.columns.is_empty() {
             return;
         }
@@ -2635,12 +2635,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             (&mut self.columns[self.active_column_idx], None)
         };
 
-        col.toggle_width(tile_idx);
+        col.toggle_width(tile_idx, forwards);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
-    pub fn toggle_window_height(&mut self, window: Option<&W::Id>) {
+    pub fn toggle_window_height(&mut self, window: Option<&W::Id>, forwards: bool) {
         if self.columns.is_empty() {
             return;
         }
@@ -2659,7 +2659,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             (&mut self.columns[self.active_column_idx], None)
         };
 
-        col.toggle_window_height(tile_idx, true);
+        col.toggle_window_height(tile_idx, true, forwards);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -4557,7 +4557,7 @@ impl<W: LayoutElement> Column<W> {
         true
     }
 
-    fn toggle_width(&mut self, tile_idx: Option<usize>) {
+    fn toggle_width(&mut self, tile_idx: Option<usize>, forwards: bool) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         let preset_idx = if self.is_full_width {
@@ -4566,24 +4566,39 @@ impl<W: LayoutElement> Column<W> {
             self.preset_width_idx
         };
 
+        let len = self.options.preset_column_widths.len();
         let preset_idx = if let Some(idx) = preset_idx {
-            (idx + 1) % self.options.preset_column_widths.len()
+            (idx + if forwards { 1 } else { len - 1 }) % len
         } else {
             let tile = &self.tiles[tile_idx];
             let current_window = tile.window_expected_or_current_size().w;
             let current_tile = tile.tile_expected_or_current_size().w;
 
-            self.options
+            let mut it = self
+                .options
                 .preset_column_widths
                 .iter()
-                .position(|prop| {
-                    match self.resolve_preset_width(*prop) {
+                .map(|preset| self.resolve_preset_width(*preset));
+
+            if forwards {
+                it.position(|resolved| {
+                    match resolved {
                         // Some allowance for fractional scaling purposes.
                         ResolvedSize::Tile(resolved) => current_tile + 1. < resolved,
                         ResolvedSize::Window(resolved) => current_window + 1. < resolved,
                     }
                 })
                 .unwrap_or(0)
+            } else {
+                it.rposition(|resolved| {
+                    match resolved {
+                        // Some allowance for fractional scaling purposes.
+                        ResolvedSize::Tile(resolved) => resolved + 1. < current_tile,
+                        ResolvedSize::Window(resolved) => resolved + 1. < current_window,
+                    }
+                })
+                .unwrap_or(len - 1)
+            }
         };
 
         let preset = self.options.preset_column_widths[preset_idx];
@@ -4744,7 +4759,7 @@ impl<W: LayoutElement> Column<W> {
         self.update_tile_sizes(animate);
     }
 
-    fn toggle_window_height(&mut self, tile_idx: Option<usize>, animate: bool) {
+    fn toggle_window_height(&mut self, tile_idx: Option<usize>, animate: bool, forwards: bool) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         // Start by converting all heights to automatic, since only one window in the column can be
@@ -4756,28 +4771,39 @@ impl<W: LayoutElement> Column<W> {
             self.convert_heights_to_auto();
         }
 
+        let len = self.options.preset_window_heights.len();
         let preset_idx = match self.data[tile_idx].height {
-            WindowHeight::Preset(idx) => (idx + 1) % self.options.preset_window_heights.len(),
+            WindowHeight::Preset(idx) => (idx + if forwards { 1 } else { len - 1 }) % len,
             _ => {
                 let current = self.data[tile_idx].size.h;
                 let tile = &self.tiles[tile_idx];
-                self.options
+
+                let mut it = self
+                    .options
                     .preset_window_heights
                     .iter()
                     .copied()
-                    .position(|preset| {
+                    .map(|preset| {
                         let window_height = match self.resolve_preset_height(preset) {
                             ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
                             ResolvedSize::Window(h) => h,
                         };
-                        let resolved = tile.tile_height_for_window_height(
-                            window_height.round().clamp(1., 100000.),
-                        );
+                        tile.tile_height_for_window_height(window_height.round().clamp(1., 100000.))
+                    });
 
+                if forwards {
+                    it.position(|resolved| {
                         // Some allowance for fractional scaling purposes.
                         current + 1. < resolved
                     })
                     .unwrap_or(0)
+                } else {
+                    it.rposition(|resolved| {
+                        // Some allowance for fractional scaling purposes.
+                        resolved + 1. < current
+                    })
+                    .unwrap_or(len - 1)
+                }
             }
         };
         self.data[tile_idx].height = WindowHeight::Preset(preset_idx);
