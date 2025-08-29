@@ -3,6 +3,9 @@ use std::time::Duration;
 use keyframe::functions::{EaseOutCubic, EaseOutQuad};
 use keyframe::EasingFunction;
 
+mod bezier;
+use bezier::CubicBezier;
+
 mod spring;
 pub use spring::{Spring, SpringParams};
 
@@ -43,6 +46,7 @@ pub enum Curve {
     EaseOutQuad,
     EaseOutCubic,
     EaseOutExpo,
+    CubicBezier(CubicBezier),
 }
 
 impl Animation {
@@ -342,6 +346,7 @@ impl Curve {
             Curve::EaseOutQuad => EaseOutQuad.y(x),
             Curve::EaseOutCubic => EaseOutCubic.y(x),
             Curve::EaseOutExpo => 1. - 2f64.powf(-10. * x),
+            Curve::CubicBezier(b) => b.y(x),
         }
     }
 }
@@ -353,6 +358,9 @@ impl From<niri_config::animations::Curve> for Curve {
             niri_config::animations::Curve::EaseOutQuad => Curve::EaseOutQuad,
             niri_config::animations::Curve::EaseOutCubic => Curve::EaseOutCubic,
             niri_config::animations::Curve::EaseOutExpo => Curve::EaseOutExpo,
+            niri_config::animations::Curve::CubicBezier(x1, y1, x2, y2) => {
+                Curve::CubicBezier(CubicBezier::new(x1, y1, x2, y2))
+            }
         }
     }
 }
