@@ -790,7 +790,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let idx = self.idx_of(id).unwrap();
 
         let tile = &mut self.tiles[idx];
-        tile.floating_preset_width_idx = None;
+        tile.floating_preset_height_idx = None;
 
         let available_size = self.working_area.size.h;
         let win = tile.window();
