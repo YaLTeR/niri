@@ -2,6 +2,7 @@ use core::f64;
 use std::rc::Rc;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation};
+use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 
@@ -490,6 +491,17 @@ impl<W: LayoutElement> Tile<W> {
         });
     }
 
+    pub fn offset_move_y_anim_current(&mut self, offset: f64) {
+        if let Some(move_) = self.move_y_animation.as_mut() {
+            // If the anim is almost done, there's little point trying to offset it; we can let
+            // things jump. If it turns out like a bad idea, we could restart the anim instead.
+            let value = move_.anim.value();
+            if value > 0.001 {
+                move_.from += offset / value;
+            }
+        }
+    }
+
     pub fn stop_move_animations(&mut self) {
         self.move_x_animation = None;
         self.move_y_animation = None;
@@ -680,6 +692,19 @@ impl<W: LayoutElement> Tile<W> {
         loc += self.window_loc();
         loc += self.window.buf_loc().to_f64();
         loc
+    }
+
+    /// Returns a partially-filled [`WindowLayout`].
+    ///
+    /// Only the sizing properties that a [`Tile`] can fill are filled.
+    pub fn ipc_layout_template(&self) -> WindowLayout {
+        WindowLayout {
+            pos_in_scrolling_layout: None,
+            tile_size: self.tile_size().into(),
+            window_size: self.window().size().into(),
+            tile_pos_in_workspace_view: None,
+            window_offset_in_tile: self.window_loc().into(),
+        }
     }
 
     fn is_in_input_region(&self, mut point: Point<f64, Logical>) -> bool {

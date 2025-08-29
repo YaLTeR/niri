@@ -1,5 +1,4 @@
-use niri_config::layer_rule::LayerRule;
-use niri_config::Config;
+use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
@@ -196,7 +195,7 @@ impl MappedLayer {
                     (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
                     scale,
                     alpha,
-                    Kind::Unspecified,
+                    Kind::ScanoutCandidate,
                 ));
             }
 
@@ -206,7 +205,7 @@ impl MappedLayer {
                 buf_pos.to_physical_precise_round(scale),
                 scale,
                 alpha,
-                Kind::Unspecified,
+                Kind::ScanoutCandidate,
             );
         }
 

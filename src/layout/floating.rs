@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::rc::Rc;
 
 use niri_config::{PresetSize, RelativeTo};
-use niri_ipc::{PositionChange, SizeChange};
+use niri_ipc::{PositionChange, SizeChange, WindowLayout};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
@@ -323,6 +323,22 @@ impl<W: LayoutElement> FloatingSpace<W> {
         })
     }
 
+    pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
+        let scale = self.scale;
+        self.tiles_with_offsets().map(move |(tile, offset)| {
+            // Do not include animated render offset here to avoid IPC spam.
+            let pos = offset;
+            // Round to physical pixels.
+            let pos = pos.to_physical_precise_round(scale).to_logical(scale);
+
+            let layout = WindowLayout {
+                tile_pos_in_workspace_view: Some(pos.into()),
+                ..tile.ipc_layout_template()
+            };
+            (tile, layout)
+        })
+    }
+
     pub fn new_window_toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
         let border_config = rules.border.resolve_against(self.options.border);
         compute_toplevel_bounds(border_config, self.working_area.size)
@@ -609,7 +625,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         }
     }
 
-    pub fn toggle_window_width(&mut self, id: Option<&W::Id>) {
+    pub fn toggle_window_width(&mut self, id: Option<&W::Id>, forwards: bool) {
         let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
             return;
         };
@@ -617,18 +633,22 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let available_size = self.working_area.size.w;
 
+        let len = self.options.preset_column_widths.len();
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_width_idx {
-            (idx + 1) % self.options.preset_column_widths.len()
+            (idx + if forwards { 1 } else { len - 1 }) % len
         } else {
             let current_window = tile.window_expected_or_current_size().w;
             let current_tile = tile.tile_expected_or_current_size().w;
 
-            self.options
+            let mut it = self
+                .options
                 .preset_column_widths
                 .iter()
-                .position(|preset| {
-                    let resolved = resolve_preset_size(*preset, available_size);
+                .map(|preset| resolve_preset_size(*preset, available_size));
+
+            if forwards {
+                it.position(|resolved| {
                     match resolved {
                         // Some allowance for fractional scaling purposes.
                         ResolvedSize::Tile(resolved) => current_tile + 1. < resolved,
@@ -636,6 +656,16 @@ impl<W: LayoutElement> FloatingSpace<W> {
                     }
                 })
                 .unwrap_or(0)
+            } else {
+                it.rposition(|resolved| {
+                    match resolved {
+                        // Some allowance for fractional scaling purposes.
+                        ResolvedSize::Tile(resolved) => resolved + 1. < current_tile,
+                        ResolvedSize::Window(resolved) => resolved + 1. < current_window,
+                    }
+                })
+                .unwrap_or(len - 1)
+            }
         };
 
         let preset = self.options.preset_column_widths[preset_idx];
@@ -655,7 +685,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         true
     }
 
-    pub fn toggle_window_height(&mut self, id: Option<&W::Id>) {
+    pub fn toggle_window_height(&mut self, id: Option<&W::Id>, forwards: bool) {
         let Some(id) = id.or(self.active_window_id.as_ref()).cloned() else {
             return;
         };
@@ -663,18 +693,22 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let available_size = self.working_area.size.h;
 
+        let len = self.options.preset_window_heights.len();
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_height_idx {
-            (idx + 1) % self.options.preset_window_heights.len()
+            (idx + if forwards { 1 } else { len - 1 }) % len
         } else {
             let current_window = tile.window_expected_or_current_size().h;
             let current_tile = tile.tile_expected_or_current_size().h;
 
-            self.options
+            let mut it = self
+                .options
                 .preset_window_heights
                 .iter()
-                .position(|preset| {
-                    let resolved = resolve_preset_size(*preset, available_size);
+                .map(|preset| resolve_preset_size(*preset, available_size));
+
+            if forwards {
+                it.position(|resolved| {
                     match resolved {
                         // Some allowance for fractional scaling purposes.
                         ResolvedSize::Tile(resolved) => current_tile + 1. < resolved,
@@ -682,6 +716,16 @@ impl<W: LayoutElement> FloatingSpace<W> {
                     }
                 })
                 .unwrap_or(0)
+            } else {
+                it.rposition(|resolved| {
+                    match resolved {
+                        // Some allowance for fractional scaling purposes.
+                        ResolvedSize::Tile(resolved) => resolved + 1. < current_tile,
+                        ResolvedSize::Window(resolved) => resolved + 1. < current_window,
+                    }
+                })
+                .unwrap_or(len - 1)
+            }
         };
 
         let preset = self.options.preset_window_heights[preset_idx];
@@ -747,7 +791,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let idx = self.idx_of(id).unwrap();
 
         let tile = &mut self.tiles[idx];
-        tile.floating_preset_width_idx = None;
+        tile.floating_preset_height_idx = None;
 
         let available_size = self.working_area.size.h;
         let win = tile.window();

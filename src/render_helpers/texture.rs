@@ -195,7 +195,7 @@ impl<T: Texture> Element for TextureRenderElement<T> {
                 let mut region = region.to_f64().intersection(src)?;
 
                 region.loc -= src.loc;
-                region.upscale(texture_size / src.size);
+                region = region.upscale(texture_size / src.size);
 
                 let logical =
                     region.to_logical(self.buffer.scale, self.buffer.transform, &src.size);

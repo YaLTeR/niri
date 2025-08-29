@@ -1,114 +1,156 @@
 //! File modification watcher.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::mpsc;
 use std::time::{Duration, SystemTime};
 use std::{io, thread};
 
-use niri_config::ConfigPath;
+use niri_config::{Config, ConfigPath};
 use smithay::reexports::calloop::channel::SyncSender;
 
+use crate::niri::State;
+
+const POLLING_INTERVAL: Duration = Duration::from_millis(500);
+
 pub struct Watcher {
-    should_stop: Arc<AtomicBool>,
+    load_config: mpsc::Sender<()>,
 }
 
-impl Drop for Watcher {
-    fn drop(&mut self) {
-        self.should_stop.store(true, Ordering::SeqCst);
-    }
+struct WatcherInner {
+    /// The paths we're watching.
+    path: ConfigPath,
+
+    /// Last observed props of the watched file.
+    ///
+    /// Equality on this means the file did not change.
+    ///
+    /// We store the absolute path in addition to mtime to account for symlinked configs where the
+    /// symlink target may change without mtime. This is common on nix where everything is a
+    /// symlink to /nix/store, which keeps no mtime (= 1970-01-01).
+    last_props: Option<(SystemTime, PathBuf)>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum CheckResult {
+    Missing,
+    Unchanged,
+    Changed,
 }
 
 impl Watcher {
     pub fn new<T: Send + 'static>(
         path: ConfigPath,
-        process: impl FnMut(&ConfigPath) -> T + Send + 'static,
-        changed: SyncSender<T>,
-    ) -> Self {
-        let interval = Duration::from_millis(500);
-        Self::with_start_notification(path, process, changed, None, interval)
-    }
-
-    pub fn with_start_notification<T: Send + 'static>(
-        config_path: ConfigPath,
         mut process: impl FnMut(&ConfigPath) -> T + Send + 'static,
         changed: SyncSender<T>,
-        started: Option<mpsc::SyncSender<()>>,
-        polling_interval: Duration,
     ) -> Self {
-        let should_stop = Arc::new(AtomicBool::new(false));
+        let (load_config, load_config_rx) = mpsc::channel();
 
-        {
-            let should_stop = should_stop.clone();
-            thread::Builder::new()
-                .name(format!("Filesystem Watcher for {config_path:?}"))
-                .spawn(move || {
-                    // this "should" be as simple as storing the last seen mtime,
-                    // and if the contents change without updating mtime, we ignore it.
-                    //
-                    // but that breaks if the config is a symlink, and its target
-                    // changes but the new target and old target have identical mtimes.
-                    // in which case we should *not* ignore it; this is an entirely different file.
-                    //
-                    // in practice, this edge case does not occur on systems other than nix.
-                    // because, on nix, everything is a symlink to /nix/store
-                    // and /nix/store keeps no mtime (= 1970-01-01)
-                    // so, symlink targets change frequently when mtime doesn't.
-                    //
-                    // therefore, we must also store the canonical path, along with its mtime
+        thread::Builder::new()
+            .name(format!("Filesystem Watcher for {path:?}"))
+            .spawn(move || {
+                let mut inner = WatcherInner::new(path);
 
-                    fn see_path(path: &Path) -> io::Result<(SystemTime, PathBuf)> {
-                        let canon = path.canonicalize()?;
-                        let mtime = canon.metadata()?.modified()?;
-                        Ok((mtime, canon))
-                    }
+                loop {
+                    let mut should_load = match load_config_rx.recv_timeout(POLLING_INTERVAL) {
+                        Ok(()) => true,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(mpsc::RecvTimeoutError::Timeout) => false,
+                    };
 
-                    fn see(config_path: &ConfigPath) -> io::Result<(SystemTime, PathBuf)> {
-                        match config_path {
-                            ConfigPath::Explicit(path) => see_path(path),
-                            ConfigPath::Regular {
-                                user_path,
-                                system_path,
-                            } => see_path(user_path).or_else(|_| see_path(system_path)),
+                    match inner.check() {
+                        CheckResult::Missing => continue,
+                        CheckResult::Unchanged => (),
+                        CheckResult::Changed => {
+                            trace!("config file changed");
+                            should_load = true;
                         }
                     }
 
-                    let mut last_props = see(&config_path).ok();
+                    if should_load {
+                        let rv = process(&inner.path);
 
-                    if let Some(started) = started {
-                        let _ = started.send(());
-                    }
-
-                    loop {
-                        thread::sleep(polling_interval);
-
-                        if should_stop.load(Ordering::SeqCst) {
+                        if let Err(err) = changed.send(rv) {
+                            warn!("error sending change notification: {err:?}");
                             break;
                         }
-
-                        if let Ok(new_props) = see(&config_path) {
-                            if last_props.as_ref() != Some(&new_props) {
-                                trace!("config file changed");
-
-                                let rv = process(&config_path);
-
-                                if let Err(err) = changed.send(rv) {
-                                    warn!("error sending change notification: {err:?}");
-                                    break;
-                                }
-
-                                last_props = Some(new_props);
-                            }
-                        }
                     }
+                }
 
-                    debug!("exiting watcher thread for {config_path:?}");
-                })
-                .unwrap();
-        }
+                debug!("exiting watcher thread for {:?}", inner.path);
+            })
+            .unwrap();
 
-        Self { should_stop }
+        Self { load_config }
     }
+
+    pub fn load_config(&self) {
+        let _ = self.load_config.send(());
+    }
+}
+
+fn see_path(path: &Path) -> io::Result<(SystemTime, PathBuf)> {
+    let canon = path.canonicalize()?;
+    let mtime = canon.metadata()?.modified()?;
+    Ok((mtime, canon))
+}
+
+fn see(config_path: &ConfigPath) -> io::Result<(SystemTime, PathBuf)> {
+    match config_path {
+        ConfigPath::Explicit(path) => see_path(path),
+        ConfigPath::Regular {
+            user_path,
+            system_path,
+        } => see_path(user_path).or_else(|_| see_path(system_path)),
+    }
+}
+
+impl WatcherInner {
+    pub fn new(path: ConfigPath) -> Self {
+        let last_props = see(&path).ok();
+        Self { path, last_props }
+    }
+
+    pub fn check(&mut self) -> CheckResult {
+        if let Ok(new_props) = see(&self.path) {
+            if self.last_props.as_ref() != Some(&new_props) {
+                self.last_props = Some(new_props);
+                CheckResult::Changed
+            } else {
+                CheckResult::Unchanged
+            }
+        } else {
+            CheckResult::Missing
+        }
+    }
+}
+
+pub fn setup(state: &mut State, config_path: &ConfigPath) {
+    // Parsing the config actually takes > 20 ms on my beefy machine, so let's do it on the
+    // watcher thread.
+    let process = |path: &ConfigPath| {
+        path.load().map_err(|err| {
+            warn!("{err:?}");
+        })
+    };
+
+    let (tx, rx) = calloop::channel::sync_channel(1);
+    state
+        .niri
+        .event_loop
+        .insert_source(
+            rx,
+            |event: calloop::channel::Event<Result<Config, ()>>, _, state| match event {
+                calloop::channel::Event::Msg(config) => {
+                    let failed = config.is_err();
+                    state.reload_config(config);
+                    state.ipc_config_loaded(failed);
+                }
+                calloop::channel::Event::Closed => (),
+            },
+        )
+        .unwrap();
+
+    state.niri.config_file_watcher = Some(Watcher::new(config_path.clone(), process, tx));
 }
 
 #[cfg(test)]
@@ -117,8 +159,6 @@ mod tests {
     use std::fs::{self, File, FileTimes};
     use std::io::Write;
 
-    use calloop::channel::{sync_channel, Event};
-    use calloop::EventLoop;
     use xshell::{cmd, Shell, TempDir};
 
     use super::*;
@@ -214,29 +254,9 @@ mod tests {
                 sh, config_path, ..
             } = self;
 
-            let (tx, rx) = sync_channel(1);
-            let (started_tx, started_rx) = mpsc::sync_channel(1);
-
-            let _watcher = Watcher::with_start_notification(
-                config_path,
-                |config_path| canon(config_path).clone(),
-                tx,
-                Some(started_tx),
-                Duration::from_millis(100),
-            );
-
-            started_rx.recv()?;
-
-            let event_loop = EventLoop::try_new()?;
-            event_loop
-                .handle()
-                .insert_source(rx, |event, (), latest_path| {
-                    if let Event::Msg(path) = event {
-                        *latest_path = Some(path);
-                    }
-                })?;
-
-            let mut test = TestUtil { event_loop };
+            let mut test = TestUtil {
+                watcher: WatcherInner::new(config_path),
+            };
 
             // don't trigger before we start
             test.assert_unchanged();
@@ -252,22 +272,23 @@ mod tests {
         }
     }
 
-    struct TestUtil<'a> {
-        event_loop: EventLoop<'a, Option<PathBuf>>,
+    struct TestUtil {
+        watcher: WatcherInner,
     }
 
-    impl<'a> TestUtil<'a> {
+    impl TestUtil {
+        // Ensures that mtime is different between writes in the tests.
         fn pass_time(&self) {
             thread::sleep(Duration::from_millis(50));
         }
 
         fn assert_unchanged(&mut self) {
-            let mut new_path = None;
-            self.event_loop
-                .dispatch(Duration::from_millis(150), &mut new_path)
-                .unwrap();
-            assert_eq!(
-                new_path, None,
+            let res = self.watcher.check();
+
+            // This may be Missing or Unchanged, both are fine.
+            assert_ne!(
+                res,
+                CheckResult::Changed,
                 "watcher should not have noticed any changes"
             );
 
@@ -275,15 +296,16 @@ mod tests {
         }
 
         fn assert_changed_to(&mut self, expected: &str) {
-            let mut new_path = None;
-            self.event_loop
-                .dispatch(Duration::from_millis(150), &mut new_path)
-                .unwrap();
-            let Some(new_path) = new_path else {
-                panic!("watcher should have noticed a change, but it didn't");
-            };
-            let actual = fs::read_to_string(&new_path).unwrap();
-            assert_eq!(actual, expected, "watcher gave the wrong file");
+            let res = self.watcher.check();
+            assert_eq!(
+                res,
+                CheckResult::Changed,
+                "watcher should have noticed a change, but it didn't"
+            );
+
+            let new_path = canon(&self.watcher.path);
+            let actual = fs::read_to_string(new_path).unwrap();
+            assert_eq!(actual, expected, "wrong file contents");
 
             self.pass_time();
         }

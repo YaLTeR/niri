@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-    <a href="https://github.com/YaLTeR/niri/wiki/Getting-Started">Getting Started</a> | <a href="https://github.com/YaLTeR/niri/wiki/Configuration:-Introduction">Configuration</a> | <a href="https://github.com/YaLTeR/niri/discussions/325">Setup&nbsp;Showcase</a>
+    <a href="https://yalter.github.io/niri/Getting-Started.html">Getting Started</a> | <a href="https://yalter.github.io/niri/Configuration%3A-Introduction.html">Configuration</a> | <a href="https://github.com/YaLTeR/niri/discussions/325">Setup&nbsp;Showcase</a>
 </p>
 
 ![niri with a few windows open](https://github.com/user-attachments/assets/535e6530-2f44-4b84-a883-1240a3eee6e9)
@@ -29,16 +29,16 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 ## Features
 
 - Built from the ground up for scrollable tiling
-- [Dynamic workspaces](https://github.com/YaLTeR/niri/wiki/Workspaces) like in GNOME
+- [Dynamic workspaces](https://yalter.github.io/niri/Workspaces.html) like in GNOME
 - An [Overview](https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995) that zooms out workspaces and windows
 - Built-in screenshot UI
 - Monitor and window screencasting through xdg-desktop-portal-gnome
-    - You can [block out](https://github.com/YaLTeR/niri/wiki/Configuration:-Window-Rules#block-out-from) sensitive windows from screencasts
-    - [Dynamic cast target](https://github.com/YaLTeR/niri/wiki/Screencasting#dynamic-screencast-target) that can change what it shows on the go
+    - You can [block out](https://yalter.github.io/niri/Configuration%3A-Window-Rules.html#block-out-from) sensitive windows from screencasts
+    - [Dynamic cast target](https://yalter.github.io/niri/Screencasting.html#dynamic-screencast-target) that can change what it shows on the go
 - [Touchpad](https://github.com/YaLTeR/niri/assets/1794388/946a910e-9bec-4cd1-a923-4a9421707515) and [mouse](https://github.com/YaLTeR/niri/assets/1794388/8464e65d-4bf2-44fa-8c8e-5883355bd000) gestures
-- Group windows into [tabs](https://github.com/YaLTeR/niri/wiki/Tabs)
+- Group windows into [tabs](https://yalter.github.io/niri/Tabs.html)
 - Configurable layout: gaps, borders, struts, window sizes
-- [Gradient borders](https://github.com/YaLTeR/niri/wiki/Configuration:-Layout#gradients) with Oklab and Oklch support
+- [Gradient borders](https://yalter.github.io/niri/Configuration%3A-Layout.html#gradients) with Oklab and Oklch support
 - [Animations](https://github.com/YaLTeR/niri/assets/1794388/ce178da2-af9e-4c51-876f-8709c241d95e) with support for [custom shaders](https://github.com/YaLTeR/niri/assets/1794388/27a238d6-0a22-4692-b794-30dc7a626fad)
 - Live-reloading config
 
@@ -54,8 +54,9 @@ Niri is stable for day-to-day use and does most things expected of a Wayland com
 Many people are daily-driving niri, and are happy to help in our [Matrix channel].
 
 Give it a try!
-Follow the instructions on the [Getting Started](https://github.com/YaLTeR/niri/wiki/Getting-Started) wiki page.
+Follow the instructions on the [Getting Started](https://yalter.github.io/niri/Getting-Started.html) page.
 Have your [waybar]s and [fuzzel]s ready: niri is not a complete desktop environment.
+Also check out [awesome-niri], a list of niri-related links and projects.
 
 Here are some points you may have questions about:
 
@@ -70,12 +71,12 @@ We have touchpad gestures, but no touchscreen gestures yet.
 You can check on [wayland.app](https://wayland.app) at the bottom of each protocol's page.
 - **Performance**: while I run niri on beefy machines, I try to stay conscious of performance.
 I've seen someone use it fine on an Eee PC 900 from 2008, of all things.
-- **Xwayland**: no built-in support, but xwayland-satellite is [easy to set up](https://github.com/YaLTeR/niri/wiki/Xwayland#using-xwayland-satellite) and works very well.
+- **Xwayland**: no built-in support, but xwayland-satellite is [easy to set up](https://yalter.github.io/niri/Xwayland.html#using-xwayland-satellite) and works very well.
     - Steam and games, including Proton: work perfectly through xwayland-satellite.
     - JetBrains IDEs, Ghidra: work well through xwayland-satellite.
     - Discord and other Electron apps: work well through xwayland-satellite.
     - Chromium and VSCode: work perfectly natively on Wayland with the right flags.
-    - X11 apps that want to position windows or bars at specific screen coordinates: won't work well; you can run them in a nested compositor like [labwc](https://github.com/YaLTeR/niri/wiki/Xwayland#using-the-labwc-wayland-compositor) or [rootful Xwayland](https://github.com/YaLTeR/niri/wiki/Xwayland#directly-running-xwayland-in-rootful-mode).
+    - X11 apps that want to position windows or bars at specific screen coordinates: won't work well; you can run them in a nested compositor like [labwc](https://yalter.github.io/niri/Xwayland.html#using-the-labwc-wayland-compositor) or [rootful Xwayland](https://yalter.github.io/niri/Xwayland.html#directly-running-xwayland-in-rootful-mode).
     - Display scaling (integer or fractional) keeps X11 apps crisp, but you need the latest xwayland-satellite.
     For games, you can run them in [gamescope] at native resolution, even with display scaling.
 
@@ -119,11 +120,14 @@ Here are some other projects which implement a similar workflow:
 
 ## Contact
 
-We have a Matrix chat, feel free to join and ask a question: https://matrix.to/#/#niri:matrix.org
+Our main communication channel is a Matrix chat, feel free to join and ask a question: https://matrix.to/#/#niri:matrix.org
+
+We also have a community Discord server: https://discord.gg/vT8Sfjy7sx
 
 [PaperWM]: https://github.com/paperwm/PaperWM
 [waybar]: https://github.com/Alexays/Waybar
 [fuzzel]: https://codeberg.org/dnkl/fuzzel
+[awesome-niri]: https://github.com/Vortriz/awesome-niri
 [karousel]: https://github.com/peterfajdiga/karousel
 [papersway]: https://spwhitton.name/tech/code/papersway/
 [hyprscrolling]: https://github.com/hyprwm/hyprland-plugins/tree/main/hyprscrolling

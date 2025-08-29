@@ -275,7 +275,7 @@ impl Element for OffscreenRenderElement {
                 let mut region = region.to_f64().intersection(src)?;
 
                 region.loc -= src.loc;
-                region.upscale(texture_size / src.size);
+                region = region.upscale(texture_size / src.size);
 
                 let logical = region.to_logical(self.scale, Transform::Normal, &src.size);
                 Some(logical.to_physical_precise_up(scale))
@@ -347,7 +347,7 @@ impl<'render> RenderElement<TtyRenderer<'render>> for OffscreenRenderElement {
     fn underlying_storage(
         &self,
         _renderer: &mut TtyRenderer<'render>,
-    ) -> Option<UnderlyingStorage> {
+    ) -> Option<UnderlyingStorage<'_>> {
         // If scanout for things other than Wayland buffers is implemented, this will need to take
         // the target GPU into account.
         None

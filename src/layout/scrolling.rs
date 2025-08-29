@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{CenterFocusedColumn, PresetSize, Struts};
-use niri_ipc::{ColumnDisplay, SizeChange};
+use niri_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
@@ -177,7 +177,7 @@ pub struct Column<W: LayoutElement> {
     tab_indicator: TabIndicator,
 
     /// Animation of the render offset during window swapping.
-    move_animation: Option<Animation>,
+    move_animation: Option<MoveAnimation>,
 
     /// Latest known view size for this column's workspace.
     view_size: Size<f64, Logical>,
@@ -253,6 +253,12 @@ pub enum WindowHeight {
 pub enum ScrollDirection {
     Left,
     Right,
+}
+
+#[derive(Debug)]
+struct MoveAnimation {
+    anim: Animation,
+    from: f64,
 }
 
 impl<W: LayoutElement> ScrollingSpace<W> {
@@ -1244,22 +1250,47 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let offset = prev_width - self.data[col_idx].width;
 
         // Move other columns in tandem with resizing.
-        let started_resize_anim =
-            column.tiles[tile_idx].resize_animation().is_some() && offset != 0.;
-        if started_resize_anim {
+        let ongoing_resize_anim = column.tiles[tile_idx].resize_animation().is_some();
+        if offset != 0. {
             if self.active_column_idx <= col_idx {
                 for col in &mut self.columns[col_idx + 1..] {
-                    col.animate_move_from_with_config(
-                        offset,
-                        self.options.animations.window_resize.anim,
-                    );
+                    // If there's a resize animation on the tile (that may have just started in
+                    // column.update_window()), then the apparent size change is smooth with no
+                    // sudden jumps. This corresponds to adding an X animation to adjacent columns.
+                    //
+                    // There could also be no resize animation with nonzero offset. This could
+                    // happen for example:
+                    // - if the window resized on its own, which we don't animate
+                    // - if the window resized by less than 10 px (the resize threshold)
+                    //
+                    // The latter case could also cancel an ongoing resize animation.
+                    //
+                    // Now, stationary columns shouldn't react to this offset change in any way,
+                    // i.e. their apparent X position should jump together with the resize.
+                    // However, adjacent columns that are already animating an X movement should
+                    // offset their animations to avoid the jump.
+                    //
+                    // Notably, this is necessary to fix the animation jump when resizing width back
+                    // and forth in quick succession (in a way that cancels the resize animation).
+                    if ongoing_resize_anim {
+                        col.animate_move_from_with_config(
+                            offset,
+                            self.options.animations.window_resize.anim,
+                        );
+                    } else {
+                        col.offset_move_anim_current(offset);
+                    }
                 }
             } else {
                 for col in &mut self.columns[..=col_idx] {
-                    col.animate_move_from_with_config(
-                        -offset,
-                        self.options.animations.window_resize.anim,
-                    );
+                    if ongoing_resize_anim {
+                        col.animate_move_from_with_config(
+                            -offset,
+                            self.options.animations.window_resize.anim,
+                        );
+                    } else {
+                        col.offset_move_anim_current(-offset);
+                    }
                 }
             }
         }
@@ -1318,7 +1349,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
                 // Synchronize the horizontal view movement with the resize so that it looks nice.
                 // This is especially important for always-centered view.
-                let config = if started_resize_anim {
+                let config = if ongoing_resize_anim {
                     self.options.animations.window_resize.anim
                 } else {
                     self.options.animations.horizontal_view_movement.0
@@ -2336,6 +2367,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             })
     }
 
+    pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
+        self.columns
+            .iter()
+            .enumerate()
+            .flat_map(move |(col_idx, col)| {
+                col.tiles().enumerate().map(move |(tile_idx, (tile, _))| {
+                    let layout = WindowLayout {
+                        // Our indices are 1-based, consistent with the actions.
+                        pos_in_scrolling_layout: Some((col_idx + 1, tile_idx + 1)),
+                        ..tile.ipc_layout_template()
+                    };
+                    (tile, layout)
+                })
+            })
+    }
+
     pub(super) fn insert_hint_area(
         &self,
         position: InsertPosition,
@@ -2476,13 +2523,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         None
     }
 
-    pub fn toggle_width(&mut self) {
+    pub fn toggle_width(&mut self, forwards: bool) {
         if self.columns.is_empty() {
             return;
         }
 
         let col = &mut self.columns[self.active_column_idx];
-        col.toggle_width(None);
+        col.toggle_width(None, forwards);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2570,7 +2617,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
-    pub fn toggle_window_width(&mut self, window: Option<&W::Id>) {
+    pub fn toggle_window_width(&mut self, window: Option<&W::Id>, forwards: bool) {
         if self.columns.is_empty() {
             return;
         }
@@ -2589,12 +2636,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             (&mut self.columns[self.active_column_idx], None)
         };
 
-        col.toggle_width(tile_idx);
+        col.toggle_width(tile_idx, forwards);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
-    pub fn toggle_window_height(&mut self, window: Option<&W::Id>) {
+    pub fn toggle_window_height(&mut self, window: Option<&W::Id>, forwards: bool) {
         if self.columns.is_empty() {
             return;
         }
@@ -2613,7 +2660,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             (&mut self.columns[self.active_column_idx], None)
         };
 
-        col.toggle_window_height(tile_idx, true);
+        col.toggle_window_height(tile_idx, true, forwards);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -3880,8 +3927,8 @@ impl<W: LayoutElement> Column<W> {
     }
 
     pub fn advance_animations(&mut self) {
-        if let Some(anim) = &mut self.move_animation {
-            if anim.is_done() {
+        if let Some(move_) = &mut self.move_animation {
+            if move_.anim.is_done() {
                 self.move_animation = None;
             }
         }
@@ -3946,8 +3993,8 @@ impl<W: LayoutElement> Column<W> {
     pub fn render_offset(&self) -> Point<f64, Logical> {
         let mut offset = Point::from((0., 0.));
 
-        if let Some(anim) = &self.move_animation {
-            offset.x += anim.value();
+        if let Some(move_) = &self.move_animation {
+            offset.x += move_.from * move_.anim.value();
         }
 
         offset
@@ -3965,15 +4012,27 @@ impl<W: LayoutElement> Column<W> {
         from_x_offset: f64,
         config: niri_config::Animation,
     ) {
-        let current_offset = self.move_animation.as_ref().map_or(0., Animation::value);
+        let current_offset = self
+            .move_animation
+            .as_ref()
+            .map_or(0., |move_| move_.from * move_.anim.value());
 
-        self.move_animation = Some(Animation::new(
-            self.clock.clone(),
-            from_x_offset + current_offset,
-            0.,
-            0.,
-            config,
-        ));
+        let anim = Animation::new(self.clock.clone(), 1., 0., 0., config);
+        self.move_animation = Some(MoveAnimation {
+            anim,
+            from: from_x_offset + current_offset,
+        });
+    }
+
+    pub fn offset_move_anim_current(&mut self, offset: f64) {
+        if let Some(move_) = self.move_animation.as_mut() {
+            // If the anim is almost done, there's little point trying to offset it; we can let
+            // things jump. If it turns out like a bad idea, we could restart the anim instead.
+            let value = move_.anim.value();
+            if value > 0.001 {
+                move_.from += offset / value;
+            }
+        }
     }
 
     pub fn contains(&self, window: &W::Id) -> bool {
@@ -4043,14 +4102,12 @@ impl<W: LayoutElement> Column<W> {
             .find(|(_, tile)| tile.window().id() == window)
             .unwrap();
 
-        let height = f64::from(tile.window().size().h);
-        let offset = tile
-            .window()
-            .animation_snapshot()
-            .map_or(0., |from| from.size.h - height);
+        let prev_height = self.data[tile_idx].size.h;
 
         tile.update_window();
         self.data[tile_idx].update(tile);
+
+        let offset = prev_height - self.data[tile_idx].size.h;
 
         let is_tabbed = self.display_mode == ColumnDisplay::Tabbed;
 
@@ -4060,12 +4117,35 @@ impl<W: LayoutElement> Column<W> {
         // windows in the column, so they should all be animated. How should this interact with
         // animated vs. non-animated resizes? For example, an animated +20 resize followed by two
         // non-animated -10 resizes.
-        if !is_tabbed && tile.resize_animation().is_some() && offset != 0. {
-            for tile in &mut self.tiles[tile_idx + 1..] {
-                tile.animate_move_y_from_with_config(
-                    offset,
-                    self.options.animations.window_resize.anim,
-                );
+        if !is_tabbed && offset != 0. {
+            if tile.resize_animation().is_some() {
+                // If there's a resize animation (that may have just started in
+                // tile.update_window()), then the apparent size change is smooth with no sudden
+                // jumps. This corresponds to adding an Y animation to tiles below.
+                for tile in &mut self.tiles[tile_idx + 1..] {
+                    tile.animate_move_y_from_with_config(
+                        offset,
+                        self.options.animations.window_resize.anim,
+                    );
+                }
+            } else {
+                // There's no resize animation, but the offset is nonzero. This could happen for
+                // example:
+                // - if the window resized on its own, which we don't animate
+                // - if the window resized by less than 10 px (the resize threshold)
+                //
+                // The latter case could also cancel an ongoing resize animation.
+                //
+                // Now, stationary tiles below shouldn't react to this offset change in any way,
+                // i.e. their apparent Y position should jump together with the resize. However,
+                // tiles below that are already animating an Y movement should offset their
+                // animations to avoid the jump.
+                //
+                // Notably, this is necessary to fix the animation jump when resizing height back
+                // and forth in quick succession (in a way that cancels the resize animation).
+                for tile in &mut self.tiles[tile_idx + 1..] {
+                    tile.offset_move_y_anim_current(offset);
+                }
             }
         }
     }
@@ -4479,7 +4559,7 @@ impl<W: LayoutElement> Column<W> {
         true
     }
 
-    fn toggle_width(&mut self, tile_idx: Option<usize>) {
+    fn toggle_width(&mut self, tile_idx: Option<usize>, forwards: bool) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         let preset_idx = if self.is_full_width {
@@ -4488,24 +4568,39 @@ impl<W: LayoutElement> Column<W> {
             self.preset_width_idx
         };
 
+        let len = self.options.preset_column_widths.len();
         let preset_idx = if let Some(idx) = preset_idx {
-            (idx + 1) % self.options.preset_column_widths.len()
+            (idx + if forwards { 1 } else { len - 1 }) % len
         } else {
             let tile = &self.tiles[tile_idx];
             let current_window = tile.window_expected_or_current_size().w;
             let current_tile = tile.tile_expected_or_current_size().w;
 
-            self.options
+            let mut it = self
+                .options
                 .preset_column_widths
                 .iter()
-                .position(|prop| {
-                    match self.resolve_preset_width(*prop) {
+                .map(|preset| self.resolve_preset_width(*preset));
+
+            if forwards {
+                it.position(|resolved| {
+                    match resolved {
                         // Some allowance for fractional scaling purposes.
                         ResolvedSize::Tile(resolved) => current_tile + 1. < resolved,
                         ResolvedSize::Window(resolved) => current_window + 1. < resolved,
                     }
                 })
                 .unwrap_or(0)
+            } else {
+                it.rposition(|resolved| {
+                    match resolved {
+                        // Some allowance for fractional scaling purposes.
+                        ResolvedSize::Tile(resolved) => resolved + 1. < current_tile,
+                        ResolvedSize::Window(resolved) => resolved + 1. < current_window,
+                    }
+                })
+                .unwrap_or(len - 1)
+            }
         };
 
         let preset = self.options.preset_column_widths[preset_idx];
@@ -4666,7 +4761,7 @@ impl<W: LayoutElement> Column<W> {
         self.update_tile_sizes(animate);
     }
 
-    fn toggle_window_height(&mut self, tile_idx: Option<usize>, animate: bool) {
+    fn toggle_window_height(&mut self, tile_idx: Option<usize>, animate: bool, forwards: bool) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         // Start by converting all heights to automatic, since only one window in the column can be
@@ -4678,28 +4773,39 @@ impl<W: LayoutElement> Column<W> {
             self.convert_heights_to_auto();
         }
 
+        let len = self.options.preset_window_heights.len();
         let preset_idx = match self.data[tile_idx].height {
-            WindowHeight::Preset(idx) => (idx + 1) % self.options.preset_window_heights.len(),
+            WindowHeight::Preset(idx) => (idx + if forwards { 1 } else { len - 1 }) % len,
             _ => {
                 let current = self.data[tile_idx].size.h;
                 let tile = &self.tiles[tile_idx];
-                self.options
+
+                let mut it = self
+                    .options
                     .preset_window_heights
                     .iter()
                     .copied()
-                    .position(|preset| {
+                    .map(|preset| {
                         let window_height = match self.resolve_preset_height(preset) {
                             ResolvedSize::Tile(h) => tile.window_height_for_tile_height(h),
                             ResolvedSize::Window(h) => h,
                         };
-                        let resolved = tile.tile_height_for_window_height(
-                            window_height.round().clamp(1., 100000.),
-                        );
+                        tile.tile_height_for_window_height(window_height.round().clamp(1., 100000.))
+                    });
 
+                if forwards {
+                    it.position(|resolved| {
                         // Some allowance for fractional scaling purposes.
                         current + 1. < resolved
                     })
                     .unwrap_or(0)
+                } else {
+                    it.rposition(|resolved| {
+                        // Some allowance for fractional scaling purposes.
+                        resolved + 1. < current
+                    })
+                    .unwrap_or(len - 1)
+                }
             }
         };
         self.data[tile_idx].height = WindowHeight::Preset(preset_idx);
