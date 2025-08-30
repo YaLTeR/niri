@@ -49,6 +49,7 @@ impl Winit {
                 subpixel: Subpixel::Unknown,
                 make: "Smithay".into(),
                 model: "Winit".into(),
+                serial_number: "Unknown".into(),
             },
         );
 

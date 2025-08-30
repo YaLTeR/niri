@@ -36,6 +36,7 @@ impl Layout {
                 subpixel: Subpixel::Unknown,
                 make: String::new(),
                 model: String::new(),
+                serial_number: String::new(),
             },
         );
         let mode = Some(Mode {

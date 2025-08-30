@@ -1,13 +1,16 @@
 //! Headless backend for tests.
 //!
 //! This can eventually grow into a more complete backend if needed, but for now it's missing some
-//! crucial parts like rendering.
+//! crucial parts like dmabufs.
 
 use std::mem;
 use std::sync::{Arc, Mutex};
 
+use anyhow::Context as _;
 use niri_config::OutputName;
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::egl::native::EGLSurfacelessDisplay;
+use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::renderer::element::RenderElementStates;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
@@ -17,20 +20,43 @@ use smithay::wayland::presentation::Refresh;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
 use crate::niri::{Niri, RedrawState};
+use crate::render_helpers::{resources, shaders};
 use crate::utils::{get_monotonic_time, logical_output};
 
 pub struct Headless {
+    renderer: Option<GlesRenderer>,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
 }
 
 impl Headless {
     pub fn new() -> Self {
         Self {
+            renderer: None,
             ipc_outputs: Default::default(),
         }
     }
 
     pub fn init(&mut self, _niri: &mut Niri) {}
+
+    pub fn add_renderer(&mut self) -> anyhow::Result<()> {
+        if self.renderer.is_some() {
+            error!("add_renderer: renderer must not already exist");
+            return Ok(());
+        }
+
+        let mut renderer = unsafe {
+            let display =
+                EGLDisplay::new(EGLSurfacelessDisplay).context("error creating EGL display")?;
+            let context = EGLContext::new(&display).context("error creating EGL context")?;
+            GlesRenderer::new(context).context("error creating renderer")?
+        };
+
+        resources::init(&mut renderer);
+        shaders::init(&mut renderer);
+
+        self.renderer = Some(renderer);
+        Ok(())
+    }
 
     pub fn add_output(&mut self, niri: &mut Niri, n: u8, size: (u16, u16)) {
         let connector = format!("headless-{n}");
@@ -45,6 +71,7 @@ impl Headless {
                 subpixel: Subpixel::Unknown,
                 make: make.clone(),
                 model: model.clone(),
+                serial_number: serial.clone(),
             },
         );
 
@@ -93,9 +120,9 @@ impl Headless {
 
     pub fn with_primary_renderer<T>(
         &mut self,
-        _f: impl FnOnce(&mut GlesRenderer) -> T,
+        f: impl FnOnce(&mut GlesRenderer) -> T,
     ) -> Option<T> {
-        None
+        self.renderer.as_mut().map(f)
     }
 
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {

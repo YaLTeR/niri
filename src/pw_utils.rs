@@ -1,9 +1,10 @@
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::iter::zip;
 use std::mem;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
+use std::ptr::NonNull;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -28,6 +29,7 @@ use pipewire::spa::utils::{
 };
 use pipewire::spa::{self};
 use pipewire::stream::{Stream, StreamFlags, StreamListener, StreamState};
+use pipewire::sys::{pw_buffer, pw_stream_queue_buffer};
 use smithay::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmBuffer, GbmBufferFlags, GbmDevice};
@@ -36,6 +38,7 @@ use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::sync::SyncPoint;
 use smithay::output::{Output, OutputModeSource};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
@@ -55,6 +58,7 @@ pub struct PipeWire {
     _context: Context,
     pub core: Core,
     pub token: RegistrationToken,
+    event_loop: LoopHandle<'static, State>,
     to_niri: calloop::channel::Sender<PwToNiri>,
 }
 
@@ -65,27 +69,44 @@ pub enum PwToNiri {
 }
 
 pub struct Cast {
+    event_loop: LoopHandle<'static, State>,
     pub session_id: usize,
     pub stream_id: usize,
     pub stream: Stream,
     _listener: StreamListener<()>,
-    pub is_active: Rc<Cell<bool>>,
     pub target: CastTarget,
     pub dynamic_target: bool,
     formats: FormatSet,
-    state: Rc<RefCell<CastState>>,
-    refresh: Rc<Cell<u32>>,
     offer_alpha: bool,
     pub cursor_mode: CursorMode,
     pub last_frame_time: Duration,
-    min_time_between_frames: Rc<Cell<Duration>>,
-    dmabufs: Rc<RefCell<HashMap<i64, Dmabuf>>>,
     scheduled_redraw: Option<RegistrationToken>,
+    // Incremented once per successful frame, stored in buffer meta.
+    sequence_counter: u64,
+    inner: Rc<RefCell<CastInner>>,
+}
+
+/// Mutable `Cast` state shared with PipeWire callbacks.
+#[derive(Debug)]
+struct CastInner {
+    is_active: bool,
+    node_id: Option<u32>,
+    state: CastState,
+    refresh: u32,
+    min_time_between_frames: Duration,
+    dmabufs: HashMap<i64, Dmabuf>,
+    /// Buffers dequeued from PipeWire in process of rendering.
+    ///
+    /// This is an ordered list of buffers that we started rendering to and waiting for the
+    /// rendering to complete. The completion can be checked from the `SyncPoint`s. The buffers are
+    /// stored in order from oldest to newest, and the same ordering should be preserved when
+    /// submitting completed buffers to PipeWire.
+    rendering_buffers: Vec<(NonNull<pw_buffer>, SyncPoint)>,
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
-pub enum CastState {
+enum CastState {
     ResizePending {
         pending_size: Size<u32, Physical>,
     },
@@ -134,7 +155,7 @@ macro_rules! make_params {
 
 impl PipeWire {
     pub fn new(
-        event_loop: &LoopHandle<'static, State>,
+        event_loop: LoopHandle<'static, State>,
         to_niri: calloop::channel::Sender<PwToNiri>,
     ) -> anyhow::Result<Self> {
         let main_loop = MainLoop::new(None).context("error creating MainLoop")?;
@@ -176,6 +197,7 @@ impl PipeWire {
             _context: context,
             core,
             token,
+            event_loop,
             to_niri,
         })
     }
@@ -200,13 +222,13 @@ impl PipeWire {
         let to_niri_ = self.to_niri.clone();
         let stop_cast = move || {
             if let Err(err) = to_niri_.send(PwToNiri::StopCast { session_id }) {
-                warn!("error sending StopCast to niri: {err:?}");
+                warn!(session_id, "error sending StopCast to niri: {err:?}");
             }
         };
         let to_niri_ = self.to_niri.clone();
         let redraw = move || {
             if let Err(err) = to_niri_.send(PwToNiri::Redraw { stream_id }) {
-                warn!("error sending Redraw to niri: {err:?}");
+                warn!(stream_id, "error sending Redraw to niri: {err:?}");
             }
         };
         let redraw_ = redraw.clone();
@@ -214,30 +236,34 @@ impl PipeWire {
         let stream = Stream::new(&self.core, "niri-screen-cast-src", Properties::new())
             .context("error creating Stream")?;
 
-        // Like in good old wayland-rs times...
-        let node_id = Rc::new(Cell::new(None));
-        let is_active = Rc::new(Cell::new(false));
-        let min_time_between_frames = Rc::new(Cell::new(Duration::ZERO));
-        let dmabufs = Rc::new(RefCell::new(HashMap::new()));
-        let refresh = Rc::new(Cell::new(refresh));
-
         let pending_size = Size::from((size.w as u32, size.h as u32));
-        let state = Rc::new(RefCell::new(CastState::ResizePending { pending_size }));
+
+        // Like in good old wayland-rs times...
+        let inner = Rc::new(RefCell::new(CastInner {
+            is_active: false,
+            node_id: None,
+            state: CastState::ResizePending { pending_size },
+            refresh,
+            min_time_between_frames: Duration::ZERO,
+            dmabufs: HashMap::new(),
+            rendering_buffers: Vec::new(),
+        }));
 
         let listener = stream
             .add_local_listener_with_user_data(())
             .state_changed({
-                let is_active = is_active.clone();
+                let inner = inner.clone();
                 let stop_cast = stop_cast.clone();
                 move |stream, (), old, new| {
-                    debug!("pw stream: state changed: {old:?} -> {new:?}");
+                    debug!(stream_id, "pw stream: state changed: {old:?} -> {new:?}");
+                    let mut inner = inner.borrow_mut();
 
                     match new {
                         StreamState::Paused => {
-                            if node_id.get().is_none() {
+                            if inner.node_id.is_none() {
                                 let id = stream.node_id();
-                                node_id.set(Some(id));
-                                debug!("pw stream: sending signal with {id}");
+                                inner.node_id = Some(id);
+                                debug!(stream_id, "pw stream: sending signal with {id}");
 
                                 let _span = tracy_client::span!("sending PipeWireStreamAdded");
                                 async_io::block_on(async {
@@ -248,39 +274,42 @@ impl PipeWire {
                                     .await;
 
                                     if let Err(err) = res {
-                                        warn!("error sending PipeWireStreamAdded: {err:?}");
+                                        warn!(
+                                            stream_id,
+                                            "error sending PipeWireStreamAdded: {err:?}"
+                                        );
                                         stop_cast();
                                     }
                                 });
                             }
 
-                            is_active.set(false);
+                            inner.is_active = false;
                         }
                         StreamState::Error(_) => {
-                            if is_active.get() {
-                                is_active.set(false);
+                            if inner.is_active {
+                                inner.is_active = false;
                                 stop_cast();
                             }
                         }
                         StreamState::Unconnected => (),
                         StreamState::Connecting => (),
                         StreamState::Streaming => {
-                            is_active.set(true);
+                            inner.is_active = true;
                             redraw();
                         }
                     }
                 }
             })
             .param_changed({
-                let min_time_between_frames = min_time_between_frames.clone();
+                let inner = inner.clone();
                 let stop_cast = stop_cast.clone();
-                let state = state.clone();
                 let gbm = gbm.clone();
                 let formats = formats.clone();
-                let refresh = refresh.clone();
                 move |stream, (), id, pod| {
                     let id = ParamType::from_raw(id);
-                    trace!(?id, "pw stream: param_changed");
+                    trace!(stream_id, ?id, "pw stream: param_changed");
+                    let mut inner = inner.borrow_mut();
+                    let inner = &mut *inner;
 
                     if id != ParamType::Format {
                         return;
@@ -291,7 +320,7 @@ impl PipeWire {
                     let (m_type, m_subtype) = match parse_format(pod) {
                         Ok(x) => x,
                         Err(err) => {
-                            warn!("pw stream: error parsing format: {err:?}");
+                            warn!(stream_id, "pw stream: error parsing format: {err:?}");
                             return;
                         }
                     };
@@ -302,19 +331,19 @@ impl PipeWire {
 
                     let mut format = VideoInfoRaw::new();
                     format.parse(pod).unwrap();
-                    debug!("pw stream: got format = {format:?}");
+                    debug!(stream_id, "pw stream: got format = {format:?}");
 
                     let format_size = Size::from((format.size().width, format.size().height));
 
-                    let mut state = state.borrow_mut();
+                    let state = &mut inner.state;
                     if format_size != state.expected_format_size() {
                         if !matches!(&*state, CastState::ResizePending { .. }) {
-                            warn!("pw stream: wrong size, but we're not resizing");
+                            warn!(stream_id, "pw stream: wrong size, but we're not resizing");
                             stop_cast();
                             return;
                         }
 
-                        debug!("pw stream: wrong size, waiting");
+                        debug!(stream_id, "pw stream: wrong size, waiting");
                         return;
                     }
 
@@ -329,31 +358,31 @@ impl PipeWire {
                     let min_frame_time = Duration::from_micros(
                         1_000_000 * u64::from(max_frame_rate.denom) / u64::from(max_frame_rate.num),
                     );
-                    min_time_between_frames.set(min_frame_time);
+                    inner.min_time_between_frames = min_frame_time;
 
                     let object = pod.as_object().unwrap();
                     let Some(prop_modifier) =
                         object.find_prop(spa::utils::Id(FormatProperties::VideoModifier.0))
                     else {
-                        warn!("pw stream: modifier prop missing");
+                        warn!(stream_id, "pw stream: modifier prop missing");
                         stop_cast();
                         return;
                     };
 
                     if prop_modifier.flags().contains(PodPropFlags::DONT_FIXATE) {
-                        debug!("pw stream: fixating the modifier");
+                        debug!(stream_id, "pw stream: fixating the modifier");
 
                         let pod_modifier = prop_modifier.value();
                         let Ok((_, modifiers)) = PodDeserializer::deserialize_from::<Choice<i64>>(
                             pod_modifier.as_bytes(),
                         ) else {
-                            warn!("pw stream: wrong modifier property type");
+                            warn!(stream_id, "pw stream: wrong modifier property type");
                             stop_cast();
                             return;
                         };
 
                         let ChoiceEnum::Enum { alternatives, .. } = modifiers.1 else {
-                            warn!("pw stream: wrong modifier choice type");
+                            warn!(stream_id, "pw stream: wrong modifier choice type");
                             stop_cast();
                             return;
                         };
@@ -366,13 +395,17 @@ impl PipeWire {
                         ) {
                             Ok(x) => x,
                             Err(err) => {
-                                warn!("pw stream: couldn't find preferred modifier: {err:?}");
+                                warn!(
+                                    stream_id,
+                                    "pw stream: couldn't find preferred modifier: {err:?}"
+                                );
                                 stop_cast();
                                 return;
                             }
                         };
 
                         debug!(
+                            stream_id,
                             "pw stream: allocation successful \
                              (modifier={modifier:?}, plane_count={plane_count}), \
                              moving to confirmation pending"
@@ -396,7 +429,7 @@ impl PipeWire {
                         let o1 = make_video_params(
                             &fixated_format,
                             format_size,
-                            refresh.get(),
+                            inner.refresh,
                             format_has_alpha,
                         );
                         let pod1 = make_pod(&mut b1, o1);
@@ -404,13 +437,13 @@ impl PipeWire {
                         let o2 = make_video_params(
                             &formats,
                             format_size,
-                            refresh.get(),
+                            inner.refresh,
                             format_has_alpha,
                         );
                         let mut params = [pod1, make_pod(&mut b2, o2)];
 
                         if let Err(err) = stream.update_params(&mut params) {
-                            warn!("error updating stream params: {err:?}");
+                            warn!(stream_id, "error updating stream params: {err:?}");
                             stop_cast();
                         }
 
@@ -446,7 +479,7 @@ impl PipeWire {
                                     None
                                 };
 
-                            debug!("pw stream: moving to ready state");
+                            debug!(stream_id, "pw stream: moving to ready state");
 
                             *state = CastState::Ready {
                                 size,
@@ -469,13 +502,14 @@ impl PipeWire {
                             ) {
                                 Ok(x) => x,
                                 Err(err) => {
-                                    warn!("pw stream: test allocation failed: {err:?}");
+                                    warn!(stream_id, "pw stream: test allocation failed: {err:?}");
                                     stop_cast();
                                     return;
                                 }
                             };
 
                             debug!(
+                                stream_id,
                                 "pw stream: allocation successful \
                                  (modifier={modifier:?}, plane_count={plane_count}), \
                                  moving to ready"
@@ -512,9 +546,6 @@ impl PipeWire {
                             ))),
                         ),
                         Property::new(SPA_PARAM_BUFFERS_blocks, pod::Value::Int(plane_count)),
-                        // Property::new(SPA_PARAM_BUFFERS_size, pod::Value::Int(size as i32)),
-                        // Property::new(SPA_PARAM_BUFFERS_stride, pod::Value::Int(stride as i32)),
-                        // Property::new(SPA_PARAM_BUFFERS_align, pod::Value::Int(16)),
                         Property::new(
                             SPA_PARAM_BUFFERS_dataType,
                             pod::Value::Choice(ChoiceValue::Int(Choice(
@@ -529,47 +560,49 @@ impl PipeWire {
 
                     // FIXME: Hidden / embedded / metadata cursor
 
-                    // let o2 = pod::object!(
-                    //     SpaTypes::ObjectParamMeta,
-                    //     ParamType::Meta,
-                    //     Property::new(SPA_PARAM_META_type,
-                    // pod::Value::Id(Id(SPA_META_Header))),
-                    //     Property::new(
-                    //         SPA_PARAM_META_size,
-                    //         pod::Value::Int(size_of::<spa_meta_header>() as i32)
-                    //     ),
-                    // );
+                    let o2 = pod::object!(
+                        SpaTypes::ObjectParamMeta,
+                        ParamType::Meta,
+                        Property::new(
+                            SPA_PARAM_META_type,
+                            pod::Value::Id(spa::utils::Id(SPA_META_Header))
+                        ),
+                        Property::new(
+                            SPA_PARAM_META_size,
+                            pod::Value::Int(size_of::<spa_meta_header>() as i32)
+                        ),
+                    );
                     let mut b1 = vec![];
-                    // let mut b2 = vec![];
-                    let mut params = [
-                        make_pod(&mut b1, o1), // make_pod(&mut b2, o2)
-                    ];
+                    let mut b2 = vec![];
+                    let mut params = [make_pod(&mut b1, o1), make_pod(&mut b2, o2)];
 
                     if let Err(err) = stream.update_params(&mut params) {
-                        warn!("error updating stream params: {err:?}");
+                        warn!(stream_id, "error updating stream params: {err:?}");
                         stop_cast();
                     }
                 }
             })
             .add_buffer({
-                let dmabufs = dmabufs.clone();
+                let inner = inner.clone();
                 let stop_cast = stop_cast.clone();
-                let state = state.clone();
                 move |stream, (), buffer| {
+                    let mut inner = inner.borrow_mut();
+
                     let (size, alpha, modifier) = if let CastState::Ready {
                         size,
                         alpha,
                         modifier,
                         ..
-                    } = &*state.borrow()
+                    } = &inner.state
                     {
                         (*size, *alpha, *modifier)
                     } else {
-                        trace!("pw stream: add buffer, but not ready yet");
+                        trace!(stream_id, "pw stream: add buffer, but not ready yet");
                         return;
                     };
 
                     trace!(
+                        stream_id,
                         "pw stream: add_buffer, size={size:?}, alpha={alpha}, \
                          modifier={modifier:?}"
                     );
@@ -586,7 +619,7 @@ impl PipeWire {
                         let dmabuf = match allocate_dmabuf(&gbm, size, fourcc, modifier) {
                             Ok(dmabuf) => dmabuf,
                             Err(err) => {
-                                warn!("error allocating dmabuf: {err:?}");
+                                warn!(stream_id, "error allocating dmabuf: {err:?}");
                                 stop_cast();
                                 return;
                             }
@@ -595,31 +628,54 @@ impl PipeWire {
                         let plane_count = dmabuf.num_planes();
                         assert_eq!((*spa_buffer).n_datas as usize, plane_count);
 
-                        for (i, fd) in dmabuf.handles().enumerate() {
+                        for (i, (fd, (stride, offset))) in
+                            zip(dmabuf.handles(), zip(dmabuf.strides(), dmabuf.offsets()))
+                                .enumerate()
+                        {
                             let spa_data = (*spa_buffer).datas.add(i);
                             assert!((*spa_data).type_ & (1 << DataType::DmaBuf.as_raw()) > 0);
 
                             (*spa_data).type_ = DataType::DmaBuf.as_raw();
+
+                            // With DMA-BUFs, consumers should ignore the maxsize field, and
+                            // producers are allowed to set it to 0.
+                            //
+                            // https://docs.pipewire.org/page_dma_buf.html
                             (*spa_data).maxsize = 1;
                             (*spa_data).fd = fd.as_raw_fd() as i64;
                             (*spa_data).flags = SPA_DATA_FLAG_READWRITE;
+
+                            let chunk = (*spa_data).chunk;
+                            (*chunk).stride = stride as i32;
+                            (*chunk).offset = offset;
+
+                            trace!(
+                                stream_id,
+                                "pw buffer plane: fd={}, stride={stride}, offset={offset}",
+                                (*spa_data).fd
+                            );
                         }
 
                         let fd = (*(*spa_buffer).datas).fd;
-                        assert!(dmabufs.borrow_mut().insert(fd, dmabuf).is_none());
+                        assert!(inner.dmabufs.insert(fd, dmabuf).is_none());
                     }
 
                     // During size re-negotiation, the stream sometimes just keeps running, in
                     // which case we may need to force a redraw once we got a newly sized buffer.
-                    if dmabufs.borrow().len() == 1 && stream.state() == StreamState::Streaming {
+                    if inner.dmabufs.len() == 1 && stream.state() == StreamState::Streaming {
                         redraw_();
                     }
                 }
             })
             .remove_buffer({
-                let dmabufs = dmabufs.clone();
+                let inner = inner.clone();
                 move |_stream, (), buffer| {
-                    trace!("pw stream: remove_buffer");
+                    trace!(stream_id, "pw stream: remove_buffer");
+                    let mut inner = inner.borrow_mut();
+
+                    inner
+                        .rendering_buffers
+                        .retain(|(buf, _)| buf.as_ptr() != buffer);
 
                     unsafe {
                         let spa_buffer = (*buffer).buffer;
@@ -627,17 +683,20 @@ impl PipeWire {
                         assert!((*spa_buffer).n_datas > 0);
 
                         let fd = (*spa_data).fd;
-                        dmabufs.borrow_mut().remove(&fd);
+                        inner.dmabufs.remove(&fd);
                     }
                 }
             })
             .register()
             .unwrap();
 
-        trace!("starting pw stream with size={pending_size:?}, refresh={refresh:?}");
+        trace!(
+            stream_id,
+            "starting pw stream with size={pending_size:?}, refresh={refresh:?}"
+        );
 
         let params;
-        make_params!(params, &formats, pending_size, refresh.get(), alpha);
+        make_params!(params, &formats, pending_size, refresh, alpha);
         stream
             .connect(
                 Direction::Output,
@@ -648,33 +707,37 @@ impl PipeWire {
             .context("error connecting stream")?;
 
         let cast = Cast {
+            event_loop: self.event_loop.clone(),
             session_id,
             stream_id,
             stream,
             _listener: listener,
-            is_active,
             target,
             dynamic_target,
             formats,
-            state,
-            refresh,
             offer_alpha: alpha,
             cursor_mode,
             last_frame_time: Duration::ZERO,
-            min_time_between_frames,
-            dmabufs,
             scheduled_redraw: None,
+            sequence_counter: 0,
+            inner,
         };
         Ok(cast)
     }
 }
 
 impl Cast {
+    pub fn is_active(&self) -> bool {
+        self.inner.borrow().is_active
+    }
+
     pub fn ensure_size(&self, size: Size<i32, Physical>) -> anyhow::Result<CastSizeChange> {
+        let mut inner = self.inner.borrow_mut();
+
         let new_size = Size::from((size.w as u32, size.h as u32));
 
-        let mut state = self.state.borrow_mut();
-        if matches!(&*state, CastState::Ready { size, .. } if *size == new_size) {
+        let state = &mut inner.state;
+        if matches!(state, CastState::Ready { size, .. } if *size == new_size) {
             return Ok(CastSizeChange::Ready);
         }
 
@@ -695,7 +758,7 @@ impl Cast {
             params,
             &self.formats,
             new_size,
-            self.refresh.get(),
+            inner.refresh,
             self.offer_alpha
         );
         self.stream
@@ -706,15 +769,17 @@ impl Cast {
     }
 
     pub fn set_refresh(&mut self, refresh: u32) -> anyhow::Result<()> {
-        if self.refresh.get() == refresh {
+        let mut inner = self.inner.borrow_mut();
+
+        if inner.refresh == refresh {
             return Ok(());
         }
 
         let _span = tracy_client::span!("Cast::set_refresh");
         debug!("cast FPS changed, updating stream FPS");
-        self.refresh.set(refresh);
+        inner.refresh = refresh;
 
-        let size = self.state.borrow().expected_format_size();
+        let size = inner.state.expected_format_size();
         let params;
         make_params!(params, &self.formats, size, refresh, self.offer_alpha);
         self.stream
@@ -725,8 +790,10 @@ impl Cast {
     }
 
     fn compute_extra_delay(&self, target_frame_time: Duration) -> Duration {
+        let inner = self.inner.borrow();
+
         let last = self.last_frame_time;
-        let min = self.min_time_between_frames.get();
+        let min = inner.min_time_between_frames;
 
         if last.is_zero() {
             trace!(?target_frame_time, ?last, "last is zero, recording");
@@ -760,12 +827,7 @@ impl Cast {
         Duration::ZERO
     }
 
-    fn schedule_redraw(
-        &mut self,
-        event_loop: &LoopHandle<'static, State>,
-        output: Output,
-        target_time: Duration,
-    ) {
+    fn schedule_redraw(&mut self, output: Output, target_time: Duration) {
         if self.scheduled_redraw.is_some() {
             return;
         }
@@ -773,7 +835,8 @@ impl Cast {
         let now = get_monotonic_time();
         let duration = target_time.saturating_sub(now);
         let timer = Timer::from_duration(duration);
-        let token = event_loop
+        let token = self
+            .event_loop
             .insert_source(timer, move |_, _, state| {
                 // Guard against output disconnecting before the timer has a chance to run.
                 if state.niri.output_state.contains_key(&output) {
@@ -786,9 +849,9 @@ impl Cast {
         self.scheduled_redraw = Some(token);
     }
 
-    fn remove_scheduled_redraw(&mut self, event_loop: &LoopHandle<'static, State>) {
+    fn remove_scheduled_redraw(&mut self) {
         if let Some(token) = self.scheduled_redraw.take() {
-            event_loop.remove(token);
+            self.event_loop.remove(token);
         }
     }
 
@@ -801,18 +864,95 @@ impl Cast {
     /// [`Cast::dequeue_buffer_and_render()`].
     pub fn check_time_and_schedule(
         &mut self,
-        event_loop: &LoopHandle<'static, State>,
         output: &Output,
         target_frame_time: Duration,
     ) -> bool {
         let delay = self.compute_extra_delay(target_frame_time);
         if delay >= CAST_DELAY_ALLOWANCE {
             trace!("delay >= allowance, scheduling redraw");
-            self.schedule_redraw(event_loop, output.clone(), target_frame_time + delay);
+            self.schedule_redraw(output.clone(), target_frame_time + delay);
             true
         } else {
-            self.remove_scheduled_redraw(event_loop);
+            self.remove_scheduled_redraw();
             false
+        }
+    }
+
+    fn dequeue_available_buffer(&mut self) -> Option<NonNull<pw_buffer>> {
+        unsafe { NonNull::new(self.stream.dequeue_raw_buffer()) }
+    }
+
+    fn queue_completed_buffers(&mut self) {
+        let mut inner = self.inner.borrow_mut();
+
+        // We want to queue buffers in order, so find the first still-rendering buffer, and queue
+        // everything up to that. Even if there are completed buffers past the first
+        // still-rendering buffer, we do not want to queue them, since that would send frames out
+        // of order.
+        let first_in_progress_idx = inner
+            .rendering_buffers
+            .iter()
+            .position(|(_, sync)| !sync.is_reached())
+            .unwrap_or(inner.rendering_buffers.len());
+
+        for (buffer, _) in inner.rendering_buffers.drain(..first_in_progress_idx) {
+            trace!("queueing completed buffer");
+            unsafe {
+                pw_stream_queue_buffer(self.stream.as_raw_ptr(), buffer.as_ptr());
+            }
+        }
+    }
+
+    unsafe fn queue_after_sync(&mut self, pw_buffer: NonNull<pw_buffer>, sync_point: SyncPoint) {
+        let _span = tracy_client::span!("Cast::queue_after_sync");
+
+        let mut inner = self.inner.borrow_mut();
+
+        let mut sync_point = sync_point;
+        let sync_fd = match sync_point.export() {
+            Some(sync_fd) => Some(sync_fd),
+            None => {
+                // There are two main ways this can happen. First is that the SyncPoint is
+                // pre-signalled, then the buffer is already ready and no waiting is needed. Second
+                // is that the SyncPoint is potentially still not signalled, but exporting a fence
+                // fd had failed. In this case, there's not much we can do (perhaps do a blocking
+                // wait for the SyncPoint, which itself might fail).
+                //
+                // So let's hope for the best and mark the buffer as submittable. We do not reuse
+                // the original SyncPoint because if we do hit the second case (when it's not
+                // signalled), then without a sync fd we cannot schedule a queue upon its
+                // completion, effectively going stuck. It's better to queue an incomplete buffer
+                // than getting stuck.
+                sync_point = SyncPoint::signaled();
+                None
+            }
+        };
+
+        inner.rendering_buffers.push((pw_buffer, sync_point));
+        drop(inner);
+
+        match sync_fd {
+            None => {
+                trace!("sync_fd is None, queueing completed buffers");
+                // In case this is the only buffer in the list, we will queue it right away.
+                self.queue_completed_buffers();
+            }
+            Some(sync_fd) => {
+                trace!("scheduling buffer to queue");
+                let stream_id = self.stream_id;
+                let source = Generic::new(sync_fd, Interest::READ, Mode::OneShot);
+                self.event_loop
+                    .insert_source(source, move |_, _, state| {
+                        for cast in &mut state.niri.casts {
+                            if cast.stream_id == stream_id {
+                                cast.queue_completed_buffers();
+                            }
+                        }
+
+                        Ok(PostAction::Remove)
+                    })
+                    .unwrap();
+            }
         }
     }
 
@@ -822,9 +962,10 @@ impl Cast {
         elements: &[impl RenderElement<GlesRenderer>],
         size: Size<i32, Physical>,
         scale: Scale<f64>,
-        wait_for_sync: bool,
     ) -> bool {
-        let CastState::Ready { damage_tracker, .. } = &mut *self.state.borrow_mut() else {
+        let mut inner = self.inner.borrow_mut();
+
+        let CastState::Ready { damage_tracker, .. } = &mut inner.state else {
             error!("cast must be in Ready state to render");
             return false;
         };
@@ -844,104 +985,78 @@ impl Cast {
             trace!("no damage, skipping frame");
             return false;
         }
+        drop(inner);
 
-        let Some(mut buffer) = self.stream.dequeue_buffer() else {
+        let Some(pw_buffer) = self.dequeue_available_buffer() else {
             warn!("no available buffer in pw stream, skipping frame");
             return false;
         };
+        let buffer = pw_buffer.as_ptr();
 
-        let fd = buffer.datas_mut()[0].as_raw().fd;
-        let dmabuf = &self.dmabufs.borrow()[&fd];
+        unsafe {
+            let spa_buffer = (*buffer).buffer;
 
-        match render_to_dmabuf(
-            renderer,
-            dmabuf.clone(),
-            size,
-            scale,
-            Transform::Normal,
-            elements.iter().rev(),
-        ) {
-            Ok(sync_point) => {
-                // FIXME: implement PipeWire explicit sync, and at the very least async wait.
-                if wait_for_sync {
-                    let _span = tracy_client::span!("wait for completion");
-                    if let Err(err) = sync_point.wait() {
-                        warn!("error waiting for pw frame completion: {err:?}");
-                    }
+            let fd = (*(*spa_buffer).datas).fd;
+            let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
+
+            match render_to_dmabuf(
+                renderer,
+                dmabuf,
+                size,
+                scale,
+                Transform::Normal,
+                elements.iter().rev(),
+            ) {
+                Ok(sync_point) => {
+                    mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                    trace!("queueing buffer with seq={}", self.sequence_counter);
+                    self.queue_after_sync(pw_buffer, sync_point);
+                    true
+                }
+                Err(err) => {
+                    warn!("error rendering to dmabuf: {err:?}");
+                    return_unused_buffer(&self.stream, pw_buffer);
+                    false
                 }
             }
-            Err(err) => {
-                warn!("error rendering to dmabuf: {err:?}");
-                return false;
-            }
         }
-
-        for (data, (stride, offset)) in
-            zip(buffer.datas_mut(), zip(dmabuf.strides(), dmabuf.offsets()))
-        {
-            let chunk = data.chunk_mut();
-            *chunk.size_mut() = 1;
-            *chunk.stride_mut() = stride as i32;
-            *chunk.offset_mut() = offset;
-
-            trace!(
-                "pw buffer: fd = {}, stride = {stride}, offset = {offset}",
-                data.as_raw().fd
-            );
-        }
-
-        true
     }
 
-    pub fn dequeue_buffer_and_clear(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        wait_for_sync: bool,
-    ) -> bool {
+    pub fn dequeue_buffer_and_clear(&mut self, renderer: &mut GlesRenderer) -> bool {
+        let mut inner = self.inner.borrow_mut();
+
         // Clear out the damage tracker if we're in Ready state.
-        if let CastState::Ready { damage_tracker, .. } = &mut *self.state.borrow_mut() {
+        if let CastState::Ready { damage_tracker, .. } = &mut inner.state {
             *damage_tracker = None;
         };
+        drop(inner);
 
-        let Some(mut buffer) = self.stream.dequeue_buffer() else {
-            warn!("no available buffer in pw stream, skipping clear");
+        let Some(pw_buffer) = self.dequeue_available_buffer() else {
+            warn!("no available buffer in pw stream, skipping frame");
             return false;
         };
+        let buffer = pw_buffer.as_ptr();
 
-        let fd = buffer.datas_mut()[0].as_raw().fd;
-        let dmabuf = &self.dmabufs.borrow()[&fd];
+        unsafe {
+            let spa_buffer = (*buffer).buffer;
 
-        match clear_dmabuf(renderer, dmabuf.clone()) {
-            Ok(sync_point) => {
-                // FIXME: implement PipeWire explicit sync, and at the very least async wait.
-                if wait_for_sync {
-                    let _span = tracy_client::span!("wait for completion");
-                    if let Err(err) = sync_point.wait() {
-                        warn!("error waiting for pw frame completion: {err:?}");
-                    }
+            let fd = (*(*spa_buffer).datas).fd;
+            let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
+
+            match clear_dmabuf(renderer, dmabuf) {
+                Ok(sync_point) => {
+                    mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                    trace!("queueing clear buffer with seq={}", self.sequence_counter);
+                    self.queue_after_sync(pw_buffer, sync_point);
+                    true
+                }
+                Err(err) => {
+                    warn!("error clearing dmabuf: {err:?}");
+                    return_unused_buffer(&self.stream, pw_buffer);
+                    false
                 }
             }
-            Err(err) => {
-                warn!("error clearing dmabuf: {err:?}");
-                return false;
-            }
         }
-
-        for (data, (stride, offset)) in
-            zip(buffer.datas_mut(), zip(dmabuf.strides(), dmabuf.offsets()))
-        {
-            let chunk = data.chunk_mut();
-            *chunk.size_mut() = 1;
-            *chunk.stride_mut() = stride as i32;
-            *chunk.offset_mut() = offset;
-
-            trace!(
-                "pw buffer: fd = {}, stride = {stride}, offset = {offset}",
-                data.as_raw().fd
-            );
-        }
-
-        true
     }
 }
 
@@ -1110,4 +1225,52 @@ fn allocate_dmabuf(
         .export()
         .context("error exporting GBM buffer object as dmabuf")?;
     Ok(dmabuf)
+}
+
+unsafe fn return_unused_buffer(stream: &Stream, pw_buffer: NonNull<pw_buffer>) {
+    // pw_stream_return_buffer() requires too new PipeWire (1.4.0). So, mark as
+    // corrupted and queue.
+    let pw_buffer = pw_buffer.as_ptr();
+    let spa_buffer = (*pw_buffer).buffer;
+    let chunk = (*(*spa_buffer).datas).chunk;
+    // Some (older?) consumers will check for size == 0 instead of the CORRUPTED flag.
+    (*chunk).size = 0;
+    (*chunk).flags = SPA_CHUNK_FLAG_CORRUPTED as i32;
+
+    if let Some(header) = find_meta_header(spa_buffer) {
+        let header = header.as_ptr();
+        (*header).flags = SPA_META_HEADER_FLAG_CORRUPTED;
+    }
+
+    pw_stream_queue_buffer(stream.as_raw_ptr(), pw_buffer);
+}
+
+unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64) {
+    let pw_buffer = pw_buffer.as_ptr();
+    let spa_buffer = (*pw_buffer).buffer;
+    let chunk = (*(*spa_buffer).datas).chunk;
+
+    // With DMA-BUFs, consumers should ignore the size field, and producers are allowed
+    // to set it to 0.
+    //
+    // https://docs.pipewire.org/page_dma_buf.html
+    //
+    // However, OBS checks for size != 0 as a workaround for old compositor versions,
+    // so we set it to 1.
+    (*chunk).size = 1;
+    // Clear the corrupted flag we may have set before.
+    (*chunk).flags = SPA_CHUNK_FLAG_NONE as i32;
+
+    *sequence = sequence.wrapping_add(1);
+    if let Some(header) = find_meta_header(spa_buffer) {
+        let header = header.as_ptr();
+        // Clear the corrupted flag we may have set before.
+        (*header).flags = 0;
+        (*header).seq = *sequence;
+    }
+}
+
+unsafe fn find_meta_header(buffer: *mut spa_buffer) -> Option<NonNull<spa_meta_header>> {
+    let p = spa_buffer_find_meta_data(buffer, SPA_META_Header, size_of::<spa_meta_header>()).cast();
+    NonNull::new(p)
 }

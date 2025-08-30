@@ -2,10 +2,10 @@
 extern crate tracing;
 
 use std::fmt::Write as _;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{self, Write};
 use std::os::fd::FromRawFd;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::{env, mem};
 
@@ -20,12 +20,11 @@ use niri::dbus;
 use niri::ipc::client::handle_msg;
 use niri::niri::State;
 use niri::utils::spawning::{
-    spawn, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV, REMOVE_ENV_RUST_BACKTRACE,
-    REMOVE_ENV_RUST_LIB_BACKTRACE,
+    spawn, spawn_sh, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV,
+    REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
-use niri::utils::watcher::Watcher;
-use niri::utils::{cause_panic, version, xwayland, IS_SYSTEMD_SERVICE};
-use niri_config::Config;
+use niri::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
+use niri_config::ConfigPath;
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
@@ -99,8 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Sub::Validate { config } => {
                 tracy_client::Client::start();
 
-                let (path, _, _) = config_path(config);
-                Config::load(&path)?;
+                config_path(config).load()?;
                 info!("config is valid");
                 return Ok(());
             }
@@ -144,53 +142,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("starting version {}", &version());
 
     // Load the config.
-    let mut config_created = false;
-    let (path, watch_path, create_default) = config_path(cli.config);
+    let config_path = config_path(cli.config);
     env::remove_var("NIRI_CONFIG");
-    if create_default {
-        let default_parent = path.parent().unwrap();
-
-        match fs::create_dir_all(default_parent) {
-            Ok(()) => {
-                // Create the config and fill it with the default config if it doesn't exist.
-                let new_file = File::options()
-                    .read(true)
-                    .write(true)
-                    .create_new(true)
-                    .open(&path);
-                match new_file {
-                    Ok(mut new_file) => {
-                        let default = include_bytes!("../resources/default-config.kdl");
-                        match new_file.write_all(default) {
-                            Ok(()) => {
-                                config_created = true;
-                                info!("wrote default config to {:?}", &path);
-                            }
-                            Err(err) => {
-                                warn!("error writing config file at {:?}: {err:?}", &path)
-                            }
-                        }
-                    }
-                    Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
-                    Err(err) => warn!("error creating config file at {:?}: {err:?}", &path),
-                }
-            }
-            Err(err) => {
-                warn!(
-                    "error creating config directories {:?}: {err:?}",
-                    default_parent
-                );
-            }
-        }
-    }
-
-    let config_load_result = Config::load(&path);
+    let (config_created_at, config_load_result) = config_path.load_or_create();
     let config_errored = config_load_result.is_err();
     let mut config = config_load_result
         .map_err(|err| warn!("{err:?}"))
         .unwrap_or_default();
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
+    let spawn_sh_at_startup = mem::take(&mut config.spawn_sh_at_startup);
     *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
 
     store_and_increase_nofile_rlimit();
@@ -257,6 +218,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "dbus")]
     dbus::DBusServers::start(&mut state, cli.session);
 
+    #[cfg(feature = "dbus")]
+    if cli.session {
+        state.niri.a11y.start();
+    }
+
     if env::var_os("NIRI_DISABLE_SYSTEM_MANAGER_NOTIFY").map_or(true, |x| x != "1") {
         // Notify systemd we're ready.
         if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
@@ -269,27 +235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Set up config file watcher.
-    let _watcher = {
-        // Parsing the config actually takes > 20 ms on my beefy machine, so let's do it on the
-        // watcher thread.
-        let process = |path: &Path| {
-            Config::load(path).map_err(|err| {
-                warn!("{:?}", err.context("error loading config"));
-            })
-        };
-
-        let (tx, rx) = calloop::channel::sync_channel(1);
-        let watcher = Watcher::new(watch_path.clone(), process, tx);
-        event_loop
-            .handle()
-            .insert_source(rx, |event, _, state| match event {
-                calloop::channel::Event::Msg(config) => state.reload_config(config),
-                calloop::channel::Event::Closed => (),
-            })
-            .unwrap();
-        watcher
-    };
+    watcher::setup(&mut state, &config_path);
 
     // Spawn commands from cli and auto-start.
     spawn(cli.command, None);
@@ -297,11 +243,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for elem in spawn_at_startup {
         spawn(elem.command, None);
     }
+    for elem in spawn_sh_at_startup {
+        spawn_sh(elem.command, None);
+    }
 
     // Show the config error notification right away if needed.
     if config_errored {
         state.niri.config_error_notification.show();
-    } else if config_created {
+        state.ipc_config_loaded(true);
+    } else if let Some(path) = config_created_at {
         state.niri.config_error_notification.show_created(path);
     }
 
@@ -385,26 +335,21 @@ fn system_config_path() -> PathBuf {
     PathBuf::from("/etc/niri/config.kdl")
 }
 
-/// Resolves and returns the config path to load, the config path to watch, and whether to create
-/// the default config at the path to load.
-fn config_path(cli_path: Option<PathBuf>) -> (PathBuf, PathBuf, bool) {
+fn config_path(cli_path: Option<PathBuf>) -> ConfigPath {
     if let Some(explicit) = cli_path.or_else(env_config_path) {
-        return (explicit.clone(), explicit, false);
+        return ConfigPath::Explicit(explicit);
     }
 
     let system_path = system_config_path();
-    if let Some(path) = default_config_path() {
-        if path.exists() {
-            return (path.clone(), path, false);
-        }
 
-        if system_path.exists() {
-            (system_path, path, false)
-        } else {
-            (path.clone(), path, true)
+    if let Some(user_path) = default_config_path() {
+        ConfigPath::Regular {
+            user_path,
+            system_path,
         }
     } else {
-        (system_path.clone(), system_path, false)
+        // Couldn't find the home directory, or whatever.
+        ConfigPath::Explicit(system_path)
     }
 }
 
