@@ -2,7 +2,7 @@ use knuffel::errors::DecodeError;
 use niri_ipc::{ColumnDisplay, SizeChange};
 
 use crate::appearance::{
-    Border, FocusRing, InsertHint, Shadow, TabIndicator, DEFAULT_BACKGROUND_COLOR,
+    Blur, Border, FocusRing, InsertHint, Shadow, TabIndicator, DEFAULT_BACKGROUND_COLOR,
 };
 use crate::utils::expect_only_children;
 use crate::{Color, FloatOrInt};
@@ -11,6 +11,8 @@ use crate::{Color, FloatOrInt};
 pub struct Layout {
     #[knuffel(child, default)]
     pub focus_ring: FocusRing,
+    #[knuffel(child, default)]
+    pub blur: Blur,
     #[knuffel(child, default)]
     pub border: Border,
     #[knuffel(child, default)]
@@ -45,6 +47,7 @@ impl Default for Layout {
     fn default() -> Self {
         Self {
             focus_ring: Default::default(),
+            blur: Default::default(),
             border: Default::default(),
             shadow: Default::default(),
             tab_indicator: Default::default(),
