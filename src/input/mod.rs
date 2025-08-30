@@ -636,8 +636,8 @@ impl State {
                 self.niri.screenshot_ui.toggle_pointer();
                 self.niri.queue_redraw_all();
             }
-            Action::Screenshot(show_cursor) => {
-                self.open_screenshot_ui(show_cursor);
+            Action::Screenshot(show_cursor, auto_confirm) => {
+                self.open_screenshot_ui(show_cursor, auto_confirm);
             }
             Action::ScreenshotWindow(write_to_disk) => {
                 let focus = self.niri.layout.focus_with_output();

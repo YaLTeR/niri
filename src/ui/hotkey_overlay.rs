@@ -263,7 +263,7 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
     // Screenshot is not as important, can omit if not bound.
     if let Some(bind) = binds
         .iter()
-        .find(|bind| matches!(bind.action, Action::Screenshot(_)))
+        .find(|bind| matches!(bind.action, Action::Screenshot(..)))
     {
         actions.push(&bind.action);
     }
@@ -479,7 +479,7 @@ fn action_name(action: &Action) -> String {
             String::from("Switch Focus Between Floating and Tiling")
         }
         Action::ToggleOverview => String::from("Open the Overview"),
-        Action::Screenshot(_) => String::from("Take a Screenshot"),
+        Action::Screenshot(..) => String::from("Take a Screenshot"),
         Action::Spawn(args) => format!(
             "Spawn <span face='monospace' bgcolor='#000000'>{}</span>",
             args.first().unwrap_or(&String::new())
