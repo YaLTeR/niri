@@ -6,7 +6,7 @@ Niri has basic support for screen readers (specifically, [Orca](https://orca.gno
 We implement the `org.freedesktop.a11y.KeyboardMonitor` D-Bus interface for Orca to listen and grab keyboard keys, and we expose the main niri UI elements via [AccessKit](https://accesskit.dev).
 Specifically, niri will announce:
 
-- workspace switching, for example it'll say "Workspace 2";
+- workspace switching, for example it'll say "Workspace 2" when you switch to the second workspace;
 - the exit confirmation dialog (appears on <kbd>Super</kbd><kbd>Shift</kbd><kbd>E</kbd> by default);
 - entering the screenshot UI and the overview (niri will say when these are focused, nothing else for now);
 - whenever a config parse error occurs;
