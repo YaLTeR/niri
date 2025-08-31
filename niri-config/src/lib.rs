@@ -831,6 +831,8 @@ mod tests {
 
             debug {
                 render-drm-device "/dev/dri/renderD129"
+                ignore-drm-device "/dev/dri/renderD128"
+                ignore-drm-device "/dev/dri/renderD130"
             }
 
             workspace "workspace-1" {
@@ -2008,6 +2010,10 @@ mod tests {
                 render_drm_device: Some(
                     "/dev/dri/renderD129",
                 ),
+                ignored_drm_devices: [
+                    "/dev/dri/renderD128",
+                    "/dev/dri/renderD130",
+                ],
                 force_pipewire_invalid_modifier: false,
                 emulate_zero_presentation_time: false,
                 disable_resize_throttling: false,

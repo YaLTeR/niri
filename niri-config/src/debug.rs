@@ -13,6 +13,7 @@ pub struct Debug {
     pub keep_max_bpc_unchanged: bool,
     pub restrict_primary_scanout_to_matching_format: bool,
     pub render_drm_device: Option<PathBuf>,
+    pub ignored_drm_devices: Vec<PathBuf>,
     pub force_pipewire_invalid_modifier: bool,
     pub emulate_zero_presentation_time: bool,
     pub disable_resize_throttling: bool,
@@ -45,6 +46,8 @@ pub struct DebugPart {
     pub restrict_primary_scanout_to_matching_format: Option<Flag>,
     #[knuffel(child, unwrap(argument))]
     pub render_drm_device: Option<PathBuf>,
+    #[knuffel(children(name = "ignore-drm-device"), unwrap(argument))]
+    pub ignored_drm_devices: Vec<PathBuf>,
     #[knuffel(child)]
     pub force_pipewire_invalid_modifier: Option<Flag>,
     #[knuffel(child)]
@@ -91,6 +94,9 @@ impl MergeWith<DebugPart> for Debug {
         );
 
         merge_clone_opt!((self, part), preview_render, render_drm_device);
+
+        self.ignored_drm_devices
+            .extend(part.ignored_drm_devices.iter().cloned());
     }
 }
 

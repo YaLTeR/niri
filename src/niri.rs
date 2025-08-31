@@ -1504,6 +1504,10 @@ impl State {
             output_config_changed = true;
         }
 
+        if config.debug.ignored_drm_devices != old_config.debug.ignored_drm_devices {
+            output_config_changed = true;
+        }
+
         // FIXME: move backdrop rendering into layout::Monitor, then this will become unnecessary.
         if config.overview.backdrop_color != old_config.overview.backdrop_color {
             output_config_changed = true;

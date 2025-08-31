@@ -83,6 +83,8 @@ pub struct Tty {
     primary_node: DrmNode,
     // DRM render node corresponding to the primary GPU.
     primary_render_node: DrmNode,
+    // Ignored DRM nodes.
+    ignored_nodes: HashSet<DrmNode>,
     // Devices indexed by DRM node (not necessarily the render node).
     devices: HashMap<DrmNode, OutputDevice>,
     // The dma-buf global corresponds to the output device (the primary GPU). It is only `Some()`
@@ -328,6 +330,11 @@ impl Tty {
         }
         info!("using as the render node: {node_path}");
 
+        let mut ignored_nodes = ignored_nodes_from_config(&config.borrow());
+        if ignored_nodes.remove(&primary_node) || ignored_nodes.remove(&primary_render_node) {
+            warn!("ignoring the primary node or render node is not allowed");
+        }
+
         Ok(Self {
             config,
             session,
@@ -336,6 +343,7 @@ impl Tty {
             gpu_manager,
             primary_node,
             primary_render_node,
+            ignored_nodes,
             devices: HashMap::new(),
             dmabuf_global: None,
             update_output_config_on_resume: false,
@@ -503,6 +511,11 @@ impl Tty {
         debug!("device added: {device_id} {path:?}");
 
         let node = DrmNode::from_dev_id(device_id)?;
+
+        if self.ignored_nodes.contains(&node) {
+            debug!("node is ignored, skipping");
+            return Ok(());
+        }
 
         let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
         let fd = self.session.open(path, open_flags)?;
@@ -1822,6 +1835,48 @@ impl Tty {
         }
         self.update_output_config_on_resume = false;
 
+        // Update ignored nodes.
+        let mut ignored_nodes = ignored_nodes_from_config(&self.config.borrow());
+        if ignored_nodes.remove(&self.primary_node)
+            || ignored_nodes.remove(&self.primary_render_node)
+        {
+            warn!("ignoring the primary node or render node is not allowed");
+        }
+        if ignored_nodes != self.ignored_nodes {
+            self.ignored_nodes = ignored_nodes;
+
+            let mut device_list = self
+                .udev_dispatcher
+                .as_source_ref()
+                .device_list()
+                .map(|(device_id, path)| (device_id, path.to_owned()))
+                .collect::<HashMap<_, _>>();
+
+            let removed_devices = self
+                .devices
+                .keys()
+                .filter(|node| {
+                    self.ignored_nodes.contains(node) || !device_list.contains_key(&node.dev_id())
+                })
+                .copied()
+                .collect::<Vec<_>>();
+
+            for node in removed_devices {
+                device_list.remove(&node.dev_id());
+                self.device_removed(node.dev_id(), niri);
+            }
+
+            for node in self.devices.keys() {
+                device_list.remove(&node.dev_id());
+            }
+
+            for (device_id, path) in device_list {
+                if let Err(err) = self.device_added(device_id, &path, niri) {
+                    warn!("error adding device {path:?}: {err:?}");
+                }
+            }
+        }
+
         // Figure out if we should disable laptop panels.
         let mut disable_laptop_panels = false;
         if niri.is_lid_closed {
@@ -2181,10 +2236,7 @@ impl GammaProps {
     }
 }
 
-fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
-    let path = config.debug.render_drm_device.as_ref()?;
-    debug!("attempting to use render node from config: {path:?}");
-
+fn primary_node_from_render_node(path: &Path) -> Option<(DrmNode, DrmNode)> {
     match DrmNode::from_path(path) {
         Ok(node) => {
             if node.ty() == NodeType::Render {
@@ -2215,7 +2267,28 @@ fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
             warn!("error opening {path:?} as DRM node: {err:?}");
         }
     }
+
     None
+}
+
+fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
+    let path = config.debug.render_drm_device.as_ref()?;
+    debug!("attempting to use render node from config: {path:?}");
+
+    primary_node_from_render_node(path)
+}
+
+fn ignored_nodes_from_config(config: &Config) -> HashSet<DrmNode> {
+    let mut disabled_nodes = HashSet::new();
+
+    for path in &config.debug.ignored_drm_devices {
+        if let Some((primary_node, render_node)) = primary_node_from_render_node(path) {
+            disabled_nodes.insert(primary_node);
+            disabled_nodes.insert(render_node);
+        }
+    }
+
+    disabled_nodes
 }
 
 fn surface_dmabuf_feedback(
