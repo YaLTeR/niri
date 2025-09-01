@@ -120,9 +120,10 @@ Icon=com.spotify.Client
 Exec=cage -- flatpak run com.spotify.Client
 Terminal=false
 ```
-## Proton-GE Native Wayland
 
-For most games it's possible to run them in native wayland, completely sidestepping all the issues related to x11. Custom versions of Proton like [Proton-GE](https://github.com/GloriousEggroll/proton-ge-custom) let you set the environmental variable ``PROTON_ENABLE_WAYLAND=1`` in the game's launch parameters which helps immensly for games that would otherwise require solutions like gamescope. Do note that for now it is an experimental feature and might not work with every game.
+## Proton-GE native Wayland
+
+It's possible to run some games as native Wayland clients, sidestepping the issues related to X11. You can do it with a custom version of Proton like [Proton-GE](https://github.com/GloriousEggroll/proton-ge-custom) by setting the `PROTON_ENABLE_WAYLAND=1` environmental variable in the game's launch parameters. Do note that for now this is an experimental feature, might not work with every game and might have its own issues.
 
 ```
 PROTON_ENABLE_WAYLAND=1 %command%
