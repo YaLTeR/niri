@@ -1,16 +1,18 @@
 use std::cell::RefCell;
+use std::{mem, ptr};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::iter::zip;
-use std::mem;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::ptr::NonNull;
 use std::rc::Rc;
 use std::time::Duration;
 
+use anyhow::{ensure};
 use anyhow::Context as _;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::RegistrationToken;
+use smithay::backend::renderer::ExportMem;
 use pipewire::context::Context;
 use pipewire::core::{Core, PW_ID_CORE};
 use pipewire::main_loop::MainLoop;
@@ -42,13 +44,14 @@ use smithay::backend::renderer::sync::SyncPoint;
 use smithay::output::{Output, OutputModeSource};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
+use smithay::reexports::rustix;
 use smithay::reexports::gbm::Modifier;
 use smithay::utils::{Physical, Scale, Size, Transform};
 use zbus::object_server::SignalEmitter;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode};
 use crate::niri::{CastTarget, State};
-use crate::render_helpers::{clear_dmabuf, render_to_dmabuf};
+use crate::render_helpers::{clear_dmabuf, render_to_dmabuf, render_and_download};
 use crate::utils::get_monotonic_time;
 
 // Give a 0.1 ms allowance for presentation time errors.
@@ -1195,9 +1198,17 @@ impl Cast {
     ) -> bool {
         let mut inner = self.inner.borrow_mut();
 
-        if let CastState::Ready { damage_tracker, .. } = &mut inner.state {
+        if let CastState::Ready {
+            damage_tracker,
+            extra_negotiation_result,
+            alpha,
+            ..
+        } = &mut inner.state {
             let damage_tracker = damage_tracker
                 .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
+
+            let extra_negotiation_result = extra_negotiation_result.clone();
+            let alpha = alpha.clone();
 
             // Size change will drop the damage tracker, but scale change won't, so check it here.
             let OutputModeSource::Static { scale: t_scale, .. } = damage_tracker.mode() else {
@@ -1221,33 +1232,74 @@ impl Cast {
 
             let buffer = pw_buffer.as_ptr();
 
-            unsafe {
-                let spa_buffer = (*buffer).buffer;
+            match extra_negotiation_result {
+                Some(_) => {
+                    unsafe {
+                        let spa_buffer = (*buffer).buffer;
 
-                let fd = (*(*spa_buffer).datas).fd;
-                let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
+                        let fd = (*(*spa_buffer).datas).fd;
+                        let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
 
-                match render_to_dmabuf(
-                    renderer,
-                    dmabuf,
-                    size,
-                    scale,
-                    Transform::Normal,
-                    elements.iter().rev(),
-                ) {
-                    Ok(sync_point) => {
-                        mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
-                        trace!("queueing buffer with seq={}", self.sequence_counter);
-                        self.queue_after_sync(pw_buffer, sync_point);
-                        true
+                        match render_to_dmabuf(
+                            renderer,
+                            dmabuf,
+                            size,
+                            scale,
+                            Transform::Normal,
+                            elements.iter().rev(),
+                        ) {
+                            Ok(sync_point) => {
+                                mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                                trace!("queueing buffer with seq={}", self.sequence_counter);
+                                self.queue_after_sync(pw_buffer, sync_point);
+                                true
+                            }
+                            Err(err) => {
+                                warn!("error rendering to dmabuf: {err:?}");
+                                return_unused_buffer(&self.stream, pw_buffer);
+                                false
+                            }
+                        }
                     }
-                    Err(err) => {
-                        warn!("error rendering to dmabuf: {err:?}");
-                        return_unused_buffer(&self.stream, pw_buffer);
-                        false
+                },
+                None => {
+                    unsafe {
+                        let spa_buffer = (*buffer).buffer;
+
+                        let fd = (*(*spa_buffer).datas).fd;
+                        let shmbuf = self.inner.borrow().shmbufs[&fd].clone();
+
+                        let fourcc = if alpha {
+                            Fourcc::Argb8888
+                        } else {
+                            Fourcc::Xrgb8888
+                        };
+
+
+                        match render_to_shmbuf(
+                            renderer,
+                            &shmbuf,
+                            size,
+                            scale,
+                            Transform::Normal,
+                            fourcc,
+                            elements,
+                        ) {
+                            Ok(()) => {
+                                mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                                trace!("queueing buffer with seq={}", self.sequence_counter);
+                                true
+                            }
+                            Err(err) => {
+                                warn!("error rendering to shmbuf: {err:?}");
+                                return_unused_buffer(&self.stream, pw_buffer);
+                                false
+                            }
+                        }
                     }
-                }
+                },
             }
+
         } else {
             error!("cast must be in Ready state to render");
             false
@@ -1460,4 +1512,43 @@ unsafe fn mark_buffer_as_good(pw_buffer: NonNull<pw_buffer>, sequence: &mut u64)
 unsafe fn find_meta_header(buffer: *mut spa_buffer) -> Option<NonNull<spa_meta_header>> {
     let p = spa_buffer_find_meta_data(buffer, SPA_META_Header, size_of::<spa_meta_header>()).cast();
     NonNull::new(p)
+}
+
+fn render_to_shmbuf(
+    renderer: &mut GlesRenderer,
+    buffer: &Shmbuf,
+    size: Size<i32, Physical>,
+    scale: Scale<f64>,
+    transform: Transform,
+    fourcc: Fourcc,
+    elements: &[impl RenderElement<GlesRenderer>],
+) -> anyhow::Result<()> {
+    let expected_size =
+        size.w as usize * size.h as usize * SHM_BYTES_PER_PIXEL as usize;
+    ensure!(buffer.size == expected_size, "invalid buffer size");
+    let mapping = render_and_download(
+        renderer,
+        size,
+        scale,
+        transform,
+        fourcc,
+        elements.iter().rev(),
+    )?;
+    let bytes = renderer
+        .map_texture(&mapping)
+        .context("error mapping texture")?;
+
+    unsafe {
+        let buf =  rustix::mm::mmap(
+            std::ptr::null_mut(),
+            buffer.size as usize,
+            rustix::mm::ProtFlags::READ | rustix::mm::ProtFlags::WRITE,
+            rustix::mm::MapFlags::SHARED,
+            buffer.fd.clone(),
+            0,
+        )?;
+        ptr::copy_nonoverlapping(bytes.as_ptr(), buf.cast(), buffer.size);
+        let _ = rustix::mm::munmap(buf, buffer.size).unwrap();
+    }
+    Ok(())
 }
