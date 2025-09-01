@@ -1,4 +1,4 @@
-<h1 align="center">niri</h1>
+<h1 align="center"><img alt="niri" src="https://github.com/user-attachments/assets/07d05cd0-d5dc-4a28-9a35-51bae8f119a0"></h1>
 <p align="center">A scrollable-tiling Wayland compositor.</p>
 <p align="center">
     <a href="https://matrix.to/#/#niri:matrix.org"><img alt="Matrix" src="https://img.shields.io/badge/matrix-%23niri-blue?logo=matrix"></a>
@@ -41,6 +41,7 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 - [Gradient borders](https://yalter.github.io/niri/Configuration%3A-Layout.html#gradients) with Oklab and Oklch support
 - [Animations](https://github.com/YaLTeR/niri/assets/1794388/ce178da2-af9e-4c51-876f-8709c241d95e) with support for [custom shaders](https://github.com/YaLTeR/niri/assets/1794388/27a238d6-0a22-4692-b794-30dc7a626fad)
 - Live-reloading config
+- Works with [screen readers](https://yalter.github.io/niri/Accessibility.html)
 
 ## Video Demo
 
@@ -71,14 +72,7 @@ We have touchpad gestures, but no touchscreen gestures yet.
 You can check on [wayland.app](https://wayland.app) at the bottom of each protocol's page.
 - **Performance**: while I run niri on beefy machines, I try to stay conscious of performance.
 I've seen someone use it fine on an Eee PC 900 from 2008, of all things.
-- **Xwayland**: no built-in support, but xwayland-satellite is [easy to set up](https://yalter.github.io/niri/Xwayland.html#using-xwayland-satellite) and works very well.
-    - Steam and games, including Proton: work perfectly through xwayland-satellite.
-    - JetBrains IDEs, Ghidra: work well through xwayland-satellite.
-    - Discord and other Electron apps: work well through xwayland-satellite.
-    - Chromium and VSCode: work perfectly natively on Wayland with the right flags.
-    - X11 apps that want to position windows or bars at specific screen coordinates: won't work well; you can run them in a nested compositor like [labwc](https://yalter.github.io/niri/Xwayland.html#using-the-labwc-wayland-compositor) or [rootful Xwayland](https://yalter.github.io/niri/Xwayland.html#directly-running-xwayland-in-rootful-mode).
-    - Display scaling (integer or fractional) keeps X11 apps crisp, but you need the latest xwayland-satellite.
-    For games, you can run them in [gamescope] at native resolution, even with display scaling.
+- **Xwayland**: [integrated](https://yalter.github.io/niri/Xwayland.html#using-xwayland-satellite) via xwayland-satellite starting from niri 25.08.
 
 ## Media
 
@@ -135,4 +129,3 @@ We also have a community Discord server: https://discord.gg/vT8Sfjy7sx
 [PaperWM.spoon]: https://github.com/mogenson/PaperWM.spoon
 [Matrix channel]: https://matrix.to/#/#niri:matrix.org
 [OpenTabletDriver]: https://opentabletdriver.net/
-[gamescope]: https://github.com/ValveSoftware/gamescope

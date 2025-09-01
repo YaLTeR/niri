@@ -263,7 +263,7 @@ debug {
 
 ### `skip-cursor-only-updates-during-vrr`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.08</sup>
 
 Skips redrawing the screen from cursor input while variable refresh rate is active.
 
@@ -279,7 +279,7 @@ debug {
 
 ### `deactivate-unfocused-windows`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.08</sup>
 
 Some clients (notably, Chromium- and Electron-based, like Teams or Slack) erroneously use the Activated xdg window state instead of keyboard focus for things like deciding whether to send notifications for new messages, or for picking where to show an IME popup.
 Niri keeps the Activated state on unfocused workspaces and invisible tabbed windows (to reduce unwanted animations), surfacing bugs in these applications.
@@ -295,7 +295,7 @@ debug {
 
 ### `keep-max-bpc-unchanged`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.08</sup>
 
 When connecting monitors, niri sets their max bpc to 8 in order to reduce display bandwidth and to potentially allow more monitors to be connected at once.
 Restricting bpc to 8 is not a problem since we don't support HDR or color management yet and can't really make use of higher bpc.

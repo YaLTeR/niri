@@ -17,16 +17,16 @@ Splitting the niri config file into multiple files, or includes, are not support
 
 Xwayland is required for running X11 apps and games, and also the Orca screen reader.
 
-<sup>Since: next release</sup> Niri integrates with [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) out of the box.
+<sup>Since: 25.08</sup> Niri integrates with [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) out of the box.
 The integration requires xwayland-satellite >= 0.7 available in `$PATH`.
 Please consider making niri depend on (or at least recommend) the xwayland-satellite package.
-If you had a custom config which manually started `xwayland-satellite` and set `DISPLAY`, you should remove those customizations for the automatic integration to work.
+If you had a custom config which manually started `xwayland-satellite` and set `$DISPLAY`, you should remove those customizations for the automatic integration to work.
 
 You can change the path where niri looks for xwayland-satellite using the [`xwayland-satellite` top-level option](./Configuration:-Miscellaneous.md#xwayland-satellite).
 
 ### Keyboard layout
 
-<sup>Since: next release</sup> By default (unless [manually configured](./Configuration:-Input.md#layout) otherwise), niri reads keyboard layout settings from systemd-localed at `org.freedesktop.locale1` over D-Bus.
+<sup>Since: 25.08</sup> By default (unless [manually configured](./Configuration:-Input.md#layout) otherwise), niri reads keyboard layout settings from systemd-localed at `org.freedesktop.locale1` over D-Bus.
 Make sure your system installer sets the keyboard layout via systemd-localed, and niri should pick it up.
 
 ### Autostart
@@ -41,7 +41,7 @@ If this is inconvenient, you can also add [`spawn-at-startup`](./Configuration:-
 
 ### Screen readers
 
-<sup>Since: next release</sup> Niri works with the [Orca](https://orca.gnome.org) screen reader.
+<sup>Since: 25.08</sup> Niri works with the [Orca](https://orca.gnome.org) screen reader.
 Please see the [Accessibility](./Accessibility.md) page for details and advice for accessibility-focused distributions.
 
 ### Desktop components
