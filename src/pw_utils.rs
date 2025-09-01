@@ -1195,60 +1195,62 @@ impl Cast {
     ) -> bool {
         let mut inner = self.inner.borrow_mut();
 
-        let CastState::Ready { damage_tracker, .. } = &mut inner.state else {
-            error!("cast must be in Ready state to render");
-            return false;
-        };
-        let damage_tracker = damage_tracker
-            .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
+        if let CastState::Ready { damage_tracker, .. } = &mut inner.state {
+            let damage_tracker = damage_tracker
+                .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
 
-        // Size change will drop the damage tracker, but scale change won't, so check it here.
-        let OutputModeSource::Static { scale: t_scale, .. } = damage_tracker.mode() else {
-            unreachable!();
-        };
-        if *t_scale != scale {
-            *damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
-        }
+            // Size change will drop the damage tracker, but scale change won't, so check it here.
+            let OutputModeSource::Static { scale: t_scale, .. } = damage_tracker.mode() else {
+                unreachable!();
+            };
+            if *t_scale != scale {
+                *damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+            }
 
-        let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
-        if damage.is_none() {
-            trace!("no damage, skipping frame");
-            return false;
-        }
-        drop(inner);
+            let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
+            if damage.is_none() {
+                trace!("no damage, skipping frame");
+                return false;
+            }
+            drop(inner);
 
-        let Some(pw_buffer) = self.dequeue_available_buffer() else {
-            warn!("no available buffer in pw stream, skipping frame");
-            return false;
-        };
-        let buffer = pw_buffer.as_ptr();
+            let Some(pw_buffer) = self.dequeue_available_buffer() else {
+                warn!("no available buffer in pw stream, skipping frame");
+                return false;
+            };
 
-        unsafe {
-            let spa_buffer = (*buffer).buffer;
+            let buffer = pw_buffer.as_ptr();
 
-            let fd = (*(*spa_buffer).datas).fd;
-            let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
+            unsafe {
+                let spa_buffer = (*buffer).buffer;
 
-            match render_to_dmabuf(
-                renderer,
-                dmabuf,
-                size,
-                scale,
-                Transform::Normal,
-                elements.iter().rev(),
-            ) {
-                Ok(sync_point) => {
-                    mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
-                    trace!("queueing buffer with seq={}", self.sequence_counter);
-                    self.queue_after_sync(pw_buffer, sync_point);
-                    true
-                }
-                Err(err) => {
-                    warn!("error rendering to dmabuf: {err:?}");
-                    return_unused_buffer(&self.stream, pw_buffer);
-                    false
+                let fd = (*(*spa_buffer).datas).fd;
+                let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
+
+                match render_to_dmabuf(
+                    renderer,
+                    dmabuf,
+                    size,
+                    scale,
+                    Transform::Normal,
+                    elements.iter().rev(),
+                ) {
+                    Ok(sync_point) => {
+                        mark_buffer_as_good(pw_buffer, &mut self.sequence_counter);
+                        trace!("queueing buffer with seq={}", self.sequence_counter);
+                        self.queue_after_sync(pw_buffer, sync_point);
+                        true
+                    }
+                    Err(err) => {
+                        warn!("error rendering to dmabuf: {err:?}");
+                        return_unused_buffer(&self.stream, pw_buffer);
+                        false
+                    }
                 }
             }
+        } else {
+            error!("cast must be in Ready state to render");
+            false
         }
     }
 
