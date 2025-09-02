@@ -1,3 +1,5 @@
+use insta::assert_snapshot;
+
 use super::*;
 
 #[test]
@@ -394,4 +396,148 @@ fn unfullscreen_view_offset_not_reset_during_ongoing_gesture() {
     ];
 
     check_ops(&ops);
+}
+
+#[test]
+fn unfullscreen_preserves_view_pos() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+    ];
+
+    let mut layout = check_ops(&ops);
+
+    // View pos is looking at the first window.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
+
+    let ops = [
+        Op::FullscreenWindow(2),
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // View pos = width of first window + gap.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"116");
+
+    let ops = [
+        Op::FullscreenWindow(2),
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // View pos is back to showing the first window.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
+}
+
+#[test]
+fn unfullscreen_of_tabbed_preserves_view_pos() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::ConsumeOrExpelWindowLeft { id: None },
+        Op::SetColumnDisplay(ColumnDisplay::Tabbed),
+        // Get view pos back on the first window.
+        Op::FocusColumnLeft,
+        Op::FocusColumnRight,
+    ];
+
+    let mut layout = check_ops(&ops);
+
+    // View pos is looking at the first window.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
+
+    let ops = [
+        Op::FullscreenWindow(2),
+        Op::Communicate(2),
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // View pos = width of first window + gap.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"116");
+
+    let ops = [
+        Op::FullscreenWindow(3),
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // View pos is still on the second column because the second tile hasn't unfullscreened yet.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"116");
+
+    let ops = [Op::Communicate(2), Op::CompleteAnimations];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // View pos is back to showing the first window.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
+}
+
+#[test]
+fn unfullscreen_of_tabbed_via_change_to_normal_preserves_view_pos() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::ConsumeOrExpelWindowLeft { id: None },
+        Op::SetColumnDisplay(ColumnDisplay::Tabbed),
+        // Get view pos back on the first window.
+        Op::FocusColumnLeft,
+        Op::FocusColumnRight,
+    ];
+
+    let mut layout = check_ops(&ops);
+
+    // View pos is looking at the first window.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
+
+    let ops = [
+        Op::FullscreenWindow(2),
+        Op::Communicate(2),
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // View pos = width of first window + gap.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"116");
+
+    let ops = [
+        Op::SetColumnDisplay(ColumnDisplay::Normal),
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // View pos is still on the second column because the second tile hasn't unfullscreened yet.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"116");
+
+    let ops = [Op::Communicate(2), Op::CompleteAnimations];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // View pos is back to showing the first window.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
 }
