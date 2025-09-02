@@ -444,8 +444,8 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn is_active_fullscreen(&self) -> bool {
-        self.scrolling.is_active_fullscreen()
+    pub fn is_active_pending_fullscreen(&self) -> bool {
+        self.scrolling.is_active_pending_fullscreen()
     }
 
     pub fn set_output(&mut self, output: Option<Output>) {
@@ -571,7 +571,7 @@ impl<W: LayoutElement> Workspace<W> {
         match target {
             WorkspaceAddWindowTarget::Auto => {
                 // Don't steal focus from an active fullscreen window.
-                let activate = activate.map_smart(|| !self.is_active_fullscreen());
+                let activate = activate.map_smart(|| !self.is_active_pending_fullscreen());
 
                 // If the tile is pending fullscreen, open it in the scrolling layout where it can
                 // go fullscreen.
