@@ -18,6 +18,7 @@ use super::workspace::{InteractiveResize, ResolvedSize};
 use super::{ConfigureIntent, HitType, InteractiveResizeData, LayoutElement, Options, RemovedTile};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
+use crate::layout::SizingMode;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
@@ -62,8 +63,8 @@ pub struct ScrollingSpace<W: LayoutElement> {
     /// The value is the view offset that the previous column had before, to restore it.
     activate_prev_column_on_removal: Option<f64>,
 
-    /// View offset to restore after unfullscreening.
-    view_offset_before_fullscreen: Option<f64>,
+    /// View offset to restore after unfullscreening or unmaximizing.
+    view_offset_to_restore: Option<f64>,
 
     /// Windows in the closing animation.
     closing_windows: Vec<ClosingWindow>,
@@ -177,6 +178,13 @@ pub struct Column<W: LayoutElement> {
     /// take some time to catch up and actually unfullscreen.
     is_pending_fullscreen: bool,
 
+    /// Whether this column is going to be maximized.
+    ///
+    /// Can be `true` together with `is_pending_fullscreen`, which means that the column is
+    /// effectively pending fullscreen, but unfullscreening should go back to maximized state,
+    /// rather than normal.
+    is_pending_maximized: bool,
+
     /// How this column displays and arranges windows.
     display_mode: ColumnDisplay,
 
@@ -191,6 +199,11 @@ pub struct Column<W: LayoutElement> {
 
     /// Latest known working area for this column's workspace.
     working_area: Rectangle<f64, Logical>,
+
+    /// Working area for this column's workspace excluding struts.
+    ///
+    /// Used for maximize-to-edges.
+    parent_area: Rectangle<f64, Logical>,
 
     /// Scale of the output the column is on (and rounds its sizes to).
     scale: f64,
@@ -285,7 +298,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             interactive_resize: None,
             view_offset: ViewOffset::Static(0.),
             activate_prev_column_on_removal: None,
-            view_offset_before_fullscreen: None,
+            view_offset_to_restore: None,
             closing_windows: Vec::new(),
             view_size,
             working_area,
@@ -306,7 +319,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let working_area = compute_working_area(parent_area, scale, options.layout.struts);
 
         for (column, data) in zip(&mut self.columns, &mut self.data) {
-            column.update_config(view_size, working_area, scale, options.clone());
+            column.update_config(view_size, working_area, parent_area, scale, options.clone());
             data.update(column);
         }
 
@@ -440,7 +453,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let col = &self.columns[self.active_column_idx];
-        col.is_pending_fullscreen
+        col.pending_sizing_mode().is_fullscreen()
     }
 
     pub fn new_window_toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
@@ -533,24 +546,25 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         target_x: Option<f64>,
         col_x: f64,
         width: f64,
-        is_fullscreen: bool,
+        mode: SizingMode,
     ) -> f64 {
-        if is_fullscreen {
+        if mode.is_fullscreen() {
             return 0.;
         }
 
+        let (area, padding) = if mode.is_maximized() {
+            (self.parent_area, 0.)
+        } else {
+            (self.working_area, self.options.layout.gaps)
+        };
+
         let target_x = target_x.unwrap_or_else(|| self.target_view_pos());
 
-        let new_offset = compute_new_view_offset(
-            target_x + self.working_area.loc.x,
-            self.working_area.size.w,
-            col_x,
-            width,
-            self.options.layout.gaps,
-        );
+        let new_offset =
+            compute_new_view_offset(target_x + area.loc.x, area.size.w, col_x, width, padding);
 
         // Non-fullscreen windows are always offset at least by the working area position.
-        new_offset - self.working_area.loc.x
+        new_offset - area.loc.x
     }
 
     fn compute_new_view_offset_centered(
@@ -558,18 +572,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         target_x: Option<f64>,
         col_x: f64,
         width: f64,
-        is_fullscreen: bool,
+        mode: SizingMode,
     ) -> f64 {
-        if is_fullscreen {
-            return self.compute_new_view_offset_fit(target_x, col_x, width, is_fullscreen);
+        if mode.is_fullscreen() {
+            return self.compute_new_view_offset_fit(target_x, col_x, width, mode);
         }
+
+        let area = if mode.is_maximized() {
+            self.parent_area
+        } else {
+            self.working_area
+        };
 
         // Columns wider than the view are left-aligned (the fit code can deal with that).
-        if self.working_area.size.w <= width {
-            return self.compute_new_view_offset_fit(target_x, col_x, width, is_fullscreen);
+        if area.size.w <= width {
+            return self.compute_new_view_offset_fit(target_x, col_x, width, mode);
         }
 
-        -(self.working_area.size.w - width) / 2. - self.working_area.loc.x
+        -(area.size.w - width) / 2. - area.loc.x
     }
 
     fn compute_new_view_offset_for_column_fit(&self, target_x: Option<f64>, idx: usize) -> f64 {
@@ -578,7 +598,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             target_x,
             self.column_x(idx),
             col.width(),
-            col.is_fullscreen(),
+            col.sizing_mode(),
         )
     }
 
@@ -592,7 +612,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             target_x,
             self.column_x(idx),
             col.width(),
-            col.is_fullscreen(),
+            col.sizing_mode(),
         )
     }
 
@@ -633,6 +653,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let target_col_x = self.column_x(idx);
                 let target_col_width = self.columns[idx].width();
 
+                // NOTE: This logic won't work entirely correctly with small fixed-size maximized
+                // windows (they have a different area and padding).
                 let total_width = if source_col_x < target_col_x {
                     // Source is left from target.
                     target_col_x - source_col_x + target_col_width
@@ -770,7 +792,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
             // A different column was activated; reset the flag.
             self.activate_prev_column_on_removal = None;
-            self.view_offset_before_fullscreen = None;
+            self.view_offset_to_restore = None;
             self.interactive_resize = None;
         }
     }
@@ -855,6 +877,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             tile,
             self.view_size,
             self.working_area,
+            self.parent_area,
             self.scale,
             width,
             is_full_width,
@@ -956,6 +979,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         column.update_config(
             self.view_size,
             self.working_area,
+            self.parent_area,
             self.scale,
             self.options.clone(),
         );
@@ -1059,15 +1083,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             tile.animate_alpha(0., 1., movement_config);
         }
 
-        let was_fullscreen = column.is_fullscreen();
+        let was_normal = column.sizing_mode().is_normal();
 
         let tile = column.tiles.remove(tile_idx);
         column.data.remove(tile_idx);
 
         // If an active column became non-fullscreen after removing the tile, clear the stored
         // unfullscreen offset.
-        if column_idx == self.active_column_idx && was_fullscreen && !column.is_fullscreen() {
-            self.view_offset_before_fullscreen = None;
+        if column_idx == self.active_column_idx && !was_normal && column.sizing_mode().is_normal() {
+            self.view_offset_to_restore = None;
         }
 
         // If one window is left, reset its weight to 1.
@@ -1171,7 +1195,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         if column_idx == self.active_column_idx {
-            self.view_offset_before_fullscreen = None;
+            self.view_offset_to_restore = None;
         }
 
         if self.columns.is_empty() {
@@ -1225,7 +1249,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .enumerate()
             .find(|(_, col)| col.contains(window))
             .unwrap();
-        let was_fullscreen = column.is_fullscreen();
+        let was_normal = column.sizing_mode().is_normal();
         let prev_origin = column.tiles_origin();
 
         let (tile_idx, tile) = column
@@ -1337,9 +1361,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
 
             // When the active column goes fullscreen, store the view offset to restore later.
-            let is_fullscreen = self.columns[col_idx].is_fullscreen();
-            if !was_fullscreen && is_fullscreen {
-                self.view_offset_before_fullscreen = Some(self.view_offset.stationary());
+            let is_normal = self.columns[col_idx].sizing_mode().is_normal();
+            if was_normal && !is_normal {
+                self.view_offset_to_restore = Some(self.view_offset.stationary());
             }
 
             // Upon unfullscreening, restore the view offset.
@@ -1348,11 +1372,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // will unfullscreen one by one, and the column width will shrink only when the
             // last tile unfullscreens. This is when we want to restore the view offset,
             // otherwise it will immediately reset back by the animate_view_offset below.
-            let unfullscreen_offset = if was_fullscreen && !is_fullscreen {
+            let unfullscreen_offset = if !was_normal && is_normal {
                 // Take the value unconditionally, even if the view is currently frozen by
                 // a view gesture. It shouldn't linger around because it's only valid for this
                 // particular unfullscreen.
-                self.view_offset_before_fullscreen.take()
+                self.view_offset_to_restore.take()
             } else {
                 None
             };
@@ -2165,6 +2189,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if col.display_mode != ColumnDisplay::Tabbed && col.tiles.len() > 1 {
             let window = col.tiles[col.active_tile_idx].window().id().clone();
             self.set_fullscreen(&window, false);
+            self.set_maximized(&window, false);
         }
     }
 
@@ -2305,6 +2330,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .enumerate()
             .filter_map(move |(idx, pos)| (idx != active_idx).then_some(pos));
         iter::once(active_pos).chain(offsets)
+    }
+
+    pub fn columns(&self) -> impl Iterator<Item = &Column<W>> {
+        self.columns.iter()
     }
 
     fn columns_mut(&mut self) -> impl Iterator<Item = (&mut Column<W>, f64)> + '_ {
@@ -2474,7 +2503,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
                 // Adjust for place-within-column tab indicator.
                 let origin_x = col.tiles_origin().x;
-                let extra_w = if is_tabbed && !col.is_fullscreen() {
+                let extra_w = if is_tabbed && col.sizing_mode().is_normal() {
                     col.tab_indicator.extra_size(col.tiles.len(), col.scale).w
                 } else {
                     0.
@@ -2491,9 +2520,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // effect here.
         if self.columns.is_empty() {
             let view_offset = if self.is_centering_focused_column() {
-                self.compute_new_view_offset_centered(Some(0.), 0., hint_area.size.w, false)
+                self.compute_new_view_offset_centered(
+                    Some(0.),
+                    0.,
+                    hint_area.size.w,
+                    SizingMode::Normal,
+                )
             } else {
-                self.compute_new_view_offset_fit(Some(0.), 0., hint_area.size.w, false)
+                self.compute_new_view_offset_fit(Some(0.), 0., hint_area.size.w, SizingMode::Normal)
             };
             hint_area.loc.x -= view_offset;
         } else {
@@ -2693,7 +2727,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let col = &mut self.columns[self.active_column_idx];
-        if col.is_pending_fullscreen || col.is_full_width {
+        if !col.pending_sizing_mode().is_normal() || col.is_full_width {
             return;
         }
 
@@ -2708,6 +2742,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             cancel_resize_for_column(&mut self.interactive_resize, col);
             return;
         }
+
+        // NOTE: This logic won't work entirely correctly with small fixed-size maximized windows
+        // (they have a different area and padding).
 
         // Consider the end of an ongoing animation because that's what compute to fit does too.
         let view_x = self.target_view_pos();
@@ -2812,6 +2849,37 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         true
     }
 
+    pub fn set_maximized(&mut self, window: &W::Id, maximize: bool) -> bool {
+        let mut col_idx = self
+            .columns
+            .iter()
+            .position(|col| col.contains(window))
+            .unwrap();
+
+        if maximize == self.columns[col_idx].is_pending_maximized {
+            return false;
+        }
+
+        let mut col = &mut self.columns[col_idx];
+        let is_tabbed = col.display_mode == ColumnDisplay::Tabbed;
+
+        cancel_resize_for_column(&mut self.interactive_resize, col);
+
+        if maximize && (col.tiles.len() > 1 && !is_tabbed) {
+            // This wasn't the only window in its column; extract it into a separate column.
+            self.consume_or_expel_window_right(Some(window));
+            col_idx += 1;
+            col = &mut self.columns[col_idx];
+        }
+
+        col.set_maximized(maximize);
+
+        // With place_within_column, the tab indicator changes the column size immediately.
+        self.data[col_idx].update(col);
+
+        true
+    }
+
     pub fn render_above_top_layer(&self) -> bool {
         // Render above the top layer if we're on a fullscreen window and the view is stationary.
         if self.columns.is_empty() {
@@ -2822,7 +2890,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return false;
         }
 
-        self.columns[self.active_column_idx].is_fullscreen()
+        self.columns[self.active_column_idx]
+            .sizing_mode()
+            .is_fullscreen()
     }
 
     pub fn render_elements<R: NiriRenderer>(
@@ -2902,7 +2972,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let col_render_off = col.render_offset();
 
             // Hit the tab indicator.
-            if col.display_mode == ColumnDisplay::Tabbed && !col.is_fullscreen() {
+            if col.display_mode == ColumnDisplay::Tabbed && col.sizing_mode().is_normal() {
                 let col_pos = view_off + col_off + col_render_off;
                 let col_pos = col_pos.to_physical_precise_round(scale).to_logical(scale);
 
@@ -3134,20 +3204,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let mut snapping_points = Vec::new();
 
-        let left_strut = self.working_area.loc.x;
-        let right_strut = self.view_size.w - self.working_area.size.w - self.working_area.loc.x;
-
         if self.is_centering_focused_column() {
             let mut col_x = 0.;
             for (col_idx, col) in self.columns.iter().enumerate() {
                 let col_w = col.width();
+                let mode = col.sizing_mode();
 
-                let view_pos = if col.is_fullscreen() {
+                let area = if mode.is_maximized() {
+                    self.parent_area
+                } else {
+                    self.working_area
+                };
+
+                let left_strut = area.loc.x;
+
+                let view_pos = if mode.is_fullscreen() {
                     col_x
-                } else if self.working_area.size.w <= col_w {
+                } else if area.size.w <= col_w {
                     col_x - left_strut
                 } else {
-                    col_x - (self.working_area.size.w - col_w) / 2. - left_strut
+                    col_x - (area.size.w - col_w) / 2. - left_strut
                 };
                 snapping_points.push(Snap { view_pos, col_idx });
 
@@ -3160,34 +3236,50 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             );
 
             let view_width = self.view_size.w;
-            let working_area_width = self.working_area.size.w;
             let gaps = self.options.layout.gaps;
 
             let snap_points =
                 |col_x, col: &Column<W>, prev_col_w: Option<f64>, next_col_w: Option<f64>| {
                     let col_w = col.width();
+                    let mode = col.sizing_mode();
+
+                    let area = if mode.is_maximized() {
+                        self.parent_area
+                    } else {
+                        self.working_area
+                    };
+
+                    let left_strut = area.loc.x;
+                    let right_strut = self.view_size.w - area.size.w - area.loc.x;
 
                     // Normal columns align with the working area, but fullscreen columns align with
                     // the view size.
-                    if col.is_fullscreen() {
+                    if mode.is_fullscreen() {
                         let left = col_x;
-                        let right = col_x + col_w;
+                        let right = left + col_w;
                         (left, right)
                     } else {
                         // Logic from compute_new_view_offset.
-                        let padding = ((working_area_width - col_w) / 2.).clamp(0., gaps);
+                        let padding = if mode.is_maximized() {
+                            0.
+                        } else {
+                            ((area.size.w - col_w) / 2.).clamp(0., gaps)
+                        };
 
-                        let center = if self.working_area.size.w <= col_w {
+                        let center = if area.size.w <= col_w {
                             col_x - left_strut
                         } else {
-                            col_x - (self.working_area.size.w - col_w) / 2. - left_strut
+                            col_x - (area.size.w - col_w) / 2. - left_strut
                         };
                         let is_overflowing = |adj_col_w: Option<f64>| {
                             center_on_overflow
                                 && adj_col_w
                                     .filter(|adj_col_w| {
+                                        // NOTE: This logic won't work entirely correctly with small
+                                        // fixed-size maximized windows (they have a different area
+                                        // and padding).
                                         center_on_overflow
-                                            && adj_col_w + 3.0 * gaps + col_w > working_area_width
+                                            && adj_col_w + 3.0 * gaps + col_w > area.size.w
                                     })
                                     .is_some()
                         };
@@ -3211,6 +3303,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             //
             // It's ok if leftmost_snap is > rightmost_snap (this happens if the columns on a
             // workspace total up to less than the workspace width).
+
+            // The first column's left snap isn't actually guaranteed to be the *leftmost* snap.
+            // With weird enough left strut and perhaps a maximized small fixed-size window, you
+            // can make the second window's left snap be further to the left than the first
+            // window's. The same goes for the rightmost snap.
+            //
+            // This isn't actually a big problem because it's very much an obscure edge case. Just
+            // need to make sure the code doesn't panic when that happens.
             let leftmost_snap = snap_points(
                 0.,
                 &self.columns[0],
@@ -3295,16 +3395,28 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     let col = &self.columns[col_idx];
                     let col_x = self.column_x(col_idx);
                     let col_w = col.width();
+                    let mode = col.sizing_mode();
 
-                    if col.is_fullscreen() {
+                    let area = if mode.is_maximized() {
+                        self.parent_area
+                    } else {
+                        self.working_area
+                    };
+
+                    let left_strut = area.loc.x;
+
+                    if mode.is_fullscreen() {
                         if target_snap.view_pos + self.view_size.w < col_x + col_w {
                             break;
                         }
                     } else {
-                        let padding = ((self.working_area.size.w - col_w) / 2.)
-                            .clamp(0., self.options.layout.gaps);
-                        if target_snap.view_pos + left_strut + self.working_area.size.w
-                            < col_x + col_w + padding
+                        let padding = if mode.is_maximized() {
+                            0.
+                        } else {
+                            ((area.size.w - col_w) / 2.).clamp(0., self.options.layout.gaps)
+                        };
+
+                        if target_snap.view_pos + left_strut + area.size.w < col_x + col_w + padding
                         {
                             break;
                         }
@@ -3317,14 +3429,27 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     let col = &self.columns[col_idx];
                     let col_x = self.column_x(col_idx);
                     let col_w = col.width();
+                    let mode = col.sizing_mode();
 
-                    if col.is_fullscreen() {
+                    let area = if mode.is_maximized() {
+                        self.parent_area
+                    } else {
+                        self.working_area
+                    };
+
+                    let left_strut = area.loc.x;
+
+                    if mode.is_fullscreen() {
                         if col_x < target_snap.view_pos {
                             break;
                         }
                     } else {
-                        let padding = ((self.working_area.size.w - col_w) / 2.)
-                            .clamp(0., self.options.layout.gaps);
+                        let padding = if mode.is_maximized() {
+                            0.
+                        } else {
+                            ((area.size.w - col_w) / 2.).clamp(0., self.options.layout.gaps)
+                        };
+
                         if col_x - padding < target_snap.view_pos + left_strut {
                             break;
                         }
@@ -3339,7 +3464,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let delta = active_col_x - new_col_x;
 
         if self.active_column_idx != new_col_idx {
-            self.view_offset_before_fullscreen = None;
+            self.view_offset_to_restore = None;
         }
 
         self.active_column_idx = new_col_idx;
@@ -3391,7 +3516,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .find(|col| col.contains(&window))
             .unwrap();
 
-        if col.is_pending_fullscreen {
+        if !col.pending_sizing_mode().is_normal() {
             return false;
         }
 
@@ -3637,11 +3762,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
             let col = &self.columns[self.active_column_idx];
 
-            if self.view_offset_before_fullscreen.is_some() {
+            if self.view_offset_to_restore.is_some() {
                 assert!(
-                    col.is_fullscreen(),
-                    "when view_offset_before_fullscreen is set, \
-                     the active column must be fullscreen"
+                    !col.sizing_mode().is_normal(),
+                    "when view_offset_to_restore is set, \
+                     the active column must be fullscreen or maximized"
                 );
             }
         }
@@ -3796,6 +3921,7 @@ impl<W: LayoutElement> Column<W> {
         tile: Tile<W>,
         view_size: Size<f64, Logical>,
         working_area: Rectangle<f64, Logical>,
+        parent_area: Rectangle<f64, Logical>,
         scale: f64,
         width: ColumnWidth,
         is_full_width: bool,
@@ -3815,29 +3941,33 @@ impl<W: LayoutElement> Column<W> {
             width,
             preset_width_idx: None,
             is_full_width,
+            is_pending_maximized: false,
             is_pending_fullscreen: false,
             display_mode,
             tab_indicator: TabIndicator::new(options.layout.tab_indicator),
             move_animation: None,
             view_size,
             working_area,
+            parent_area,
             scale,
             clock: tile.clock.clone(),
             options,
         };
 
-        let is_pending_fullscreen = tile.window().is_pending_fullscreen();
+        let pending_sizing_mode = tile.window().pending_sizing_mode();
 
         rv.add_tile_at(0, tile);
 
-        if is_pending_fullscreen {
-            rv.set_fullscreen(true);
+        match pending_sizing_mode {
+            SizingMode::Normal => (),
+            SizingMode::Maximized => rv.set_maximized(true),
+            SizingMode::Fullscreen => rv.set_fullscreen(true),
         }
 
         // Animate the tab indicator for new columns.
         if display_mode == ColumnDisplay::Tabbed
             && !rv.options.layout.tab_indicator.hide_when_single_tab
-            && !rv.is_fullscreen()
+            && rv.sizing_mode().is_normal()
         {
             // Usually new columns are created together with window movement actions. For new
             // windows, we handle that in start_open_animation().
@@ -3852,12 +3982,16 @@ impl<W: LayoutElement> Column<W> {
         &mut self,
         view_size: Size<f64, Logical>,
         working_area: Rectangle<f64, Logical>,
+        parent_area: Rectangle<f64, Logical>,
         scale: f64,
         options: Rc<Options>,
     ) {
         let mut update_sizes = false;
 
-        if self.view_size != view_size || self.working_area != working_area {
+        if self.view_size != view_size
+            || self.working_area != working_area
+            || self.parent_area != parent_area
+        {
             update_sizes = true;
         }
 
@@ -3895,6 +4029,7 @@ impl<W: LayoutElement> Column<W> {
             .update_config(options.layout.tab_indicator);
         self.view_size = view_size;
         self.working_area = working_area;
+        self.parent_area = parent_area;
         self.scale = scale;
         self.options = options;
 
@@ -3954,7 +4089,7 @@ impl<W: LayoutElement> Column<W> {
         // you don't want that to happen in fullscreen. Also, laying things out correctly when the
         // tab indicator is within the column and the column goes fullscreen, would require too
         // many changes to the code for too little benefit (it's mostly invisible anyway).
-        let enabled = self.display_mode == ColumnDisplay::Tabbed && !self.is_fullscreen();
+        let enabled = self.display_mode == ColumnDisplay::Tabbed && self.sizing_mode().is_normal();
 
         self.tab_indicator.update_render_elements(
             enabled,
@@ -3965,6 +4100,24 @@ impl<W: LayoutElement> Column<W> {
             is_active,
             self.scale,
         );
+    }
+
+    pub fn is_pending_fullscreen(&self) -> bool {
+        self.is_pending_fullscreen
+    }
+
+    pub fn is_pending_maximized(&self) -> bool {
+        self.is_pending_maximized
+    }
+
+    pub fn pending_sizing_mode(&self) -> SizingMode {
+        if self.is_pending_fullscreen {
+            SizingMode::Fullscreen
+        } else if self.is_pending_maximized {
+            SizingMode::Maximized
+        } else {
+            SizingMode::Normal
+        }
     }
 
     pub fn render_offset(&self) -> Point<f64, Logical> {
@@ -4040,7 +4193,7 @@ impl<W: LayoutElement> Column<W> {
     /// - is_fullscreen() can suddenly change when consuming/expelling a fullscreen tile into/from a
     ///   non-fullscreen column. This can influence the code that saves/restores the unfullscreen
     ///   view offset.
-    fn is_fullscreen(&self) -> bool {
+    fn sizing_mode(&self) -> SizingMode {
         // Behaviors that we want:
         //
         // 1. The common case: single tile in a column. Assume no animations. Fullscreening the tile
@@ -4058,7 +4211,23 @@ impl<W: LayoutElement> Column<W> {
         //    mode change applies instantly).
         //
         // The logic that satisfies these behaviors is to check if *any* tile is fullscreen.
-        self.tiles.iter().any(|tile| tile.is_fullscreen())
+        let mut any_fullscreen = false;
+        let mut any_maximized = false;
+        for tile in &self.tiles {
+            match tile.sizing_mode() {
+                SizingMode::Normal => (),
+                SizingMode::Maximized => any_maximized = true,
+                SizingMode::Fullscreen => any_fullscreen = true,
+            }
+        }
+
+        if any_fullscreen {
+            SizingMode::Fullscreen
+        } else if any_maximized {
+            SizingMode::Maximized
+        } else {
+            SizingMode::Normal
+        }
     }
 
     pub fn contains(&self, window: &W::Id) -> bool {
@@ -4102,6 +4271,7 @@ impl<W: LayoutElement> Column<W> {
 
         if self.display_mode != ColumnDisplay::Tabbed {
             self.is_pending_fullscreen = false;
+            self.is_pending_maximized = false;
         }
 
         self.data
@@ -4213,7 +4383,8 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn update_tile_sizes_with_transaction(&mut self, animate: bool, transaction: Transaction) {
-        if self.is_pending_fullscreen {
+        let sizing_mode = self.pending_sizing_mode();
+        if matches!(sizing_mode, SizingMode::Fullscreen | SizingMode::Maximized) {
             for (tile_idx, tile) in self.tiles.iter_mut().enumerate() {
                 // In tabbed mode, only the visible window participates in the transaction.
                 let is_active = tile_idx == self.active_tile_idx;
@@ -4223,7 +4394,11 @@ impl<W: LayoutElement> Column<W> {
                     Some(transaction.clone())
                 };
 
-                tile.request_fullscreen(animate, transaction);
+                if matches!(sizing_mode, SizingMode::Fullscreen) {
+                    tile.request_fullscreen(animate, transaction);
+                } else {
+                    tile.request_maximized(self.parent_area.size, animate, transaction);
+                }
             }
             return;
         }
@@ -4510,7 +4685,7 @@ impl<W: LayoutElement> Column<W> {
             .map(NotNan::into_inner)
             .unwrap();
 
-        if self.display_mode == ColumnDisplay::Tabbed && !self.is_fullscreen() {
+        if self.display_mode == ColumnDisplay::Tabbed && self.sizing_mode().is_normal() {
             let extra_size = self.tab_indicator.extra_size(self.tiles.len(), self.scale);
             tiles_width += extra_size.w;
         }
@@ -4875,6 +5050,19 @@ impl<W: LayoutElement> Column<W> {
         self.update_tile_sizes(true);
     }
 
+    fn set_maximized(&mut self, maximize: bool) {
+        if self.is_pending_maximized == maximize {
+            return;
+        }
+
+        if maximize {
+            assert!(self.tiles.len() == 1 || self.display_mode == ColumnDisplay::Tabbed);
+        }
+
+        self.is_pending_maximized = maximize;
+        self.update_tile_sizes(true);
+    }
+
     fn set_column_display(&mut self, display: ColumnDisplay) {
         if self.display_mode == display {
             return;
@@ -4936,8 +5124,13 @@ impl<W: LayoutElement> Column<W> {
     fn tiles_origin(&self) -> Point<f64, Logical> {
         let mut origin = Point::from((0., 0.));
 
-        if self.is_fullscreen() {
-            return origin;
+        match self.sizing_mode() {
+            SizingMode::Normal => (),
+            SizingMode::Maximized => {
+                origin.y += self.parent_area.loc.y;
+                return origin;
+            }
+            SizingMode::Fullscreen => return origin,
         }
 
         origin.y += self.working_area.loc.y + self.options.layout.gaps;
@@ -5096,7 +5289,7 @@ impl<W: LayoutElement> Column<W> {
 
                 // Animate the appearance of the tab indicator.
                 if self.display_mode == ColumnDisplay::Tabbed
-                    && !self.is_fullscreen()
+                    && self.sizing_mode().is_normal()
                     && self.tiles.len() == 1
                     && !self.tab_indicator.config().hide_when_single_tab
                 {
@@ -5119,7 +5312,7 @@ impl<W: LayoutElement> Column<W> {
         assert!(self.active_tile_idx < self.tiles.len());
         assert_eq!(self.tiles.len(), self.data.len());
 
-        if self.is_pending_fullscreen {
+        if !self.pending_sizing_mode().is_normal() {
             assert!(self.tiles.len() == 1 || self.display_mode == ColumnDisplay::Tabbed);
         }
 
@@ -5151,8 +5344,8 @@ impl<W: LayoutElement> Column<W> {
             assert_eq!(self.clock, tile.clock);
             assert_eq!(self.scale, tile.scale());
             assert_eq!(
-                self.is_pending_fullscreen,
-                tile.window().is_pending_fullscreen()
+                self.pending_sizing_mode(),
+                tile.window().pending_sizing_mode()
             );
             assert_eq!(self.view_size, tile.view_size());
             tile.verify_invariants();
@@ -5178,7 +5371,7 @@ impl<W: LayoutElement> Column<W> {
                 tile.tile_height_for_window_height(f64::from(requested_size.h));
             let min_tile_height = f64::max(1., tile.min_size_nonfullscreen().h);
 
-            if !self.is_pending_fullscreen
+            if self.pending_sizing_mode().is_normal()
                 && self.scale.round() == self.scale
                 && working_size.h.round() == working_size.h
                 && gaps.round() == gaps

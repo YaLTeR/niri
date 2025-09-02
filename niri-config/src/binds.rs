@@ -303,6 +303,9 @@ pub enum Action {
     #[knuffel(skip)]
     SwitchPresetWindowHeightBackById(u64),
     MaximizeColumn,
+    MaximizeWindowToEdges,
+    #[knuffel(skip)]
+    MaximizeWindowToEdgesById(u64),
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
     ExpandColumnToAvailableWidth,
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
@@ -568,6 +571,10 @@ impl From<niri_ipc::Action> for Action {
                 Self::SwitchPresetWindowHeightBackById(id)
             }
             niri_ipc::Action::MaximizeColumn {} => Self::MaximizeColumn,
+            niri_ipc::Action::MaximizeWindowToEdges { id: None } => Self::MaximizeWindowToEdges,
+            niri_ipc::Action::MaximizeWindowToEdges { id: Some(id) } => {
+                Self::MaximizeWindowToEdgesById(id)
+            }
             niri_ipc::Action::SetColumnWidth { change } => Self::SetColumnWidth(change),
             niri_ipc::Action::ExpandColumnToAvailableWidth {} => Self::ExpandColumnToAvailableWidth,
             niri_ipc::Action::SwitchLayout { layout } => Self::SwitchLayout(layout),
