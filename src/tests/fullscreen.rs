@@ -212,6 +212,5 @@ fn unfullscreen_before_fullscreen_ack_doesnt_prevent_view_offset_save_restore() 
     f.niri_complete_animations();
 
     // The view position should restore to the first window.
-    // FIXME: this currently doesn't work and sets the view position to the second window.
-    assert_snapshot!(f.niri().layout.active_workspace().unwrap().scrolling().view_pos(), @"100");
+    assert_snapshot!(f.niri().layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
 }
