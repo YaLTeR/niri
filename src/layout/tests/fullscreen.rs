@@ -541,3 +541,57 @@ fn unfullscreen_of_tabbed_via_change_to_normal_preserves_view_pos() {
     // View pos is back to showing the first window.
     assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
 }
+
+#[test]
+fn removing_only_fullscreen_tile_updates_view_offset() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::ConsumeOrExpelWindowLeft { id: None },
+        Op::SetColumnDisplay(ColumnDisplay::Tabbed),
+        Op::CompleteAnimations,
+    ];
+
+    let mut layout = check_ops(&ops);
+
+    // View pos with gap.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
+
+    let ops = [
+        Op::FullscreenWindow(2),
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // View pos without gap because we went fullscreen.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"0");
+
+    let ops = [
+        Op::FullscreenWindow(2),
+        // The active window responds, the other tabbed window doesn't yet.
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // View pos without gap because other tile is still fullscreen.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"0");
+
+    let ops = [
+        // Expel the fullscreen window from the column, changing the column to non-fullscreen.
+        Op::ConsumeOrExpelWindowRight { id: Some(1) },
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, &ops);
+
+    // View pos should include gap now that the column is no longer fullscreen.
+    // FIXME: currently, removing a tile doesn't cause the view offset to update.
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"0");
+}
