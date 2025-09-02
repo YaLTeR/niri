@@ -868,17 +868,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let target_column = &mut self.columns[col_idx];
         let tile_idx = tile_idx.unwrap_or(target_column.tiles.len());
         let mut prev_active_tile_idx = target_column.active_tile_idx;
-        let was_fullscreen = target_column.tiles[prev_active_tile_idx].is_fullscreen();
 
         target_column.add_tile_at(tile_idx, tile, true);
         self.data[col_idx].update(target_column);
-
-        // If the target column is the active column and its window was requested to, but hasn't
-        // gone into fullscreen yet, then clear the stored view offset, if we just asked it to
-        // stop going into fullscreen.
-        if col_idx == self.active_column_idx && !was_fullscreen && !target_column.is_fullscreen {
-            self.view_offset_before_fullscreen = None;
-        }
 
         if tile_idx <= prev_active_tile_idx {
             target_column.active_tile_idx += 1;
@@ -1060,13 +1052,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             tile.animate_alpha(0., 1., movement_config);
         }
 
+        let was_fullscreen = column.is_any_fullscreen();
+
         let tile = column.tiles.remove(tile_idx);
         column.data.remove(tile_idx);
 
-        // If we're removing a pending-unfullscreen window, we need to clear the stored view
-        // offset. There might be other pending-unfullscreen windows in this column but that's kind
-        // of an edge case, don't think we need to handle that.
-        if column_idx == self.active_column_idx && tile.is_fullscreen() && !column.is_fullscreen {
+        // If an active column became non-fullscreen after removing the tile, clear the stored
+        // unfullscreen offset.
+        if column_idx == self.active_column_idx && was_fullscreen && !column.is_any_fullscreen() {
             self.view_offset_before_fullscreen = None;
         }
 
@@ -1225,6 +1218,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .enumerate()
             .find(|(_, col)| col.contains(window))
             .unwrap();
+        let was_fullscreen = column.is_any_fullscreen();
+
         let (tile_idx, tile) = column
             .tiles
             .iter_mut()
@@ -1232,7 +1227,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .find(|(_, tile)| tile.window().id() == window)
             .unwrap();
 
-        let was_fullscreen = tile.is_fullscreen();
         let resize = tile.window_mut().interactive_resize_data();
 
         // Do this before calling update_window() so it can get up-to-date info.
@@ -1322,13 +1316,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 self.view_offset.offset(offset);
             }
 
+            // When the active column goes fullscreen, store the view offset to restore later.
+            let is_fullscreen = self.columns[col_idx].is_any_fullscreen();
+            if !was_fullscreen && is_fullscreen {
+                self.view_offset_before_fullscreen = Some(self.view_offset.stationary());
+            }
+
             // Upon unfullscreening, restore the view offset.
             //
             // In tabbed display mode, there can be multiple tiles in a fullscreen column. They
             // will unfullscreen one by one, and the column width will shrink only when the
             // last tile unfullscreens. This is when we want to restore the view offset,
             // otherwise it will immediately reset back by the animate_view_offset below.
-            let is_fullscreen = self.columns[col_idx].tiles.iter().any(Tile::is_fullscreen);
             let unfullscreen_offset = if was_fullscreen && !is_fullscreen {
                 // Take the value unconditionally, even if the view is currently frozen by
                 // a view gesture. It shouldn't linger around because it's only valid for this
@@ -2773,11 +2772,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let mut col = &mut self.columns[col_idx];
         let is_tabbed = col.display_mode == ColumnDisplay::Tabbed;
 
-        if is_fullscreen && col_idx == self.active_column_idx && (col.tiles.len() == 1 || is_tabbed)
-        {
-            self.view_offset_before_fullscreen = Some(self.view_offset.stationary());
-        }
-
         cancel_resize_for_column(&mut self.interactive_resize, col);
 
         if is_fullscreen && (col.tiles.len() > 1 && !is_tabbed) {
@@ -2805,18 +2799,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // With place_within_column, the tab indicator changes the column size immediately.
         self.data[col_idx].update(col);
-
-        // If we quickly fullscreen and unfullscreen before any window has a chance to receive the
-        // request, we need to reset the offset.
-        if col_idx == self.active_column_idx
-            && !is_fullscreen
-            && !col
-                .tiles
-                .iter()
-                .any(|tile| tile.is_fullscreen() || tile.window().is_pending_fullscreen())
-        {
-            self.view_offset_before_fullscreen = None;
-        }
 
         true
     }
@@ -3394,11 +3376,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return false;
         }
 
-        let (col_idx, col) = self
+        let col = self
             .columns
             .iter_mut()
-            .enumerate()
-            .find(|(_, col)| col.contains(&window))
+            .find(|col| col.contains(&window))
             .unwrap();
 
         if col.is_fullscreen {
@@ -3421,14 +3402,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.interactive_resize = Some(resize);
 
         self.view_offset.stop_anim_and_gesture();
-
-        // If this is the active column, clear the stored unfullscreen view offset in case one of
-        // the tiles in the column is still pending unfullscreen. Normally it is cleared and
-        // applied in update_window(), but we skip that during interactive resize because the view
-        // is frozen.
-        if col_idx == self.active_column_idx {
-            self.view_offset_before_fullscreen = None;
-        }
 
         true
     }
@@ -3655,14 +3628,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
             let col = &self.columns[self.active_column_idx];
 
-            // When we have an unfullscreen view offset stored, the active column should have a
-            // fullscreen tile.
             if self.view_offset_before_fullscreen.is_some() {
                 assert!(
-                    col.is_fullscreen
-                        || col.tiles.iter().any(|tile| {
-                            tile.is_fullscreen() || tile.window().is_pending_fullscreen()
-                        })
+                    col.is_any_fullscreen(),
+                    "when view_offset_before_fullscreen is set, \
+                     the active column must be fullscreen"
                 );
             }
         }
@@ -4031,6 +4001,10 @@ impl<W: LayoutElement> Column<W> {
                 move_.from += offset / value;
             }
         }
+    }
+
+    fn is_any_fullscreen(&self) -> bool {
+        self.tiles.iter().any(|tile| tile.is_fullscreen())
     }
 
     pub fn contains(&self, window: &W::Id) -> bool {
