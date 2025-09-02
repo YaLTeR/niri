@@ -566,16 +566,16 @@ impl<W: LayoutElement> Workspace<W> {
         is_floating: bool,
     ) {
         self.enter_output_for_window(tile.window());
-        tile.unfullscreen_to_floating = is_floating;
+        tile.restore_to_floating = is_floating;
 
         match target {
             WorkspaceAddWindowTarget::Auto => {
                 // Don't steal focus from an active fullscreen window.
                 let activate = activate.map_smart(|| !self.is_active_pending_fullscreen());
 
-                // If the tile is pending fullscreen, open it in the scrolling layout where it can
-                // go fullscreen.
-                if is_floating && !tile.window().is_pending_fullscreen() {
+                // If the tile is pending maximized or fullscreen, open it in the scrolling layout
+                // where it can do that.
+                if is_floating && tile.window().pending_sizing_mode().is_normal() {
                     self.floating.add_tile(tile, activate);
 
                     if activate || self.scrolling.is_empty() {
@@ -604,7 +604,7 @@ impl<W: LayoutElement> Workspace<W> {
 
                 let floating_has_window = self.floating.has_window(next_to);
 
-                if is_floating && !tile.window().is_pending_fullscreen() {
+                if is_floating && tile.window().pending_sizing_mode().is_normal() {
                     if floating_has_window {
                         self.floating.add_tile_above(next_to, tile, activate);
                     } else {
@@ -824,6 +824,8 @@ impl<W: LayoutElement> Workspace<W> {
         toplevel.with_pending_state(|state| {
             if state.states.contains(xdg_toplevel::State::Fullscreen) {
                 state.size = Some(self.view_size.to_i32_round());
+            } else if state.states.contains(xdg_toplevel::State::Maximized) {
+                state.size = Some(self.working_area.size.to_i32_round());
             } else {
                 let size =
                     self.new_window_size(width, height, is_floating, rules, (min_size, max_size));
@@ -1189,10 +1191,10 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) {
-        let mut unfullscreen_to_floating = false;
+        let mut restore_to_floating = false;
         if self.floating.has_window(window) {
             if is_fullscreen {
-                unfullscreen_to_floating = true;
+                restore_to_floating = true;
                 self.toggle_window_floating(Some(window));
             } else {
                 // Floating windows are never fullscreen, so this is an unfullscreen request for an
@@ -1208,7 +1210,8 @@ impl<W: LayoutElement> Workspace<W> {
                 .tiles()
                 .find(|tile| tile.window().id() == window)
                 .unwrap();
-            if tile.window().is_pending_fullscreen() && tile.unfullscreen_to_floating {
+            // TODO pending maximized
+            if tile.window().pending_sizing_mode().is_fullscreen() && tile.restore_to_floating {
                 // Unfullscreen and float in one call so it has a chance to notice and request a
                 // (0, 0) size, rather than the scrolling column size.
                 self.toggle_window_floating(Some(window));
@@ -1226,7 +1229,7 @@ impl<W: LayoutElement> Workspace<W> {
                 .find(|tile| tile.window().id() == window)
                 .unwrap();
 
-            tile.unfullscreen_to_floating = unfullscreen_to_floating;
+            tile.restore_to_floating = restore_to_floating;
         }
     }
 
@@ -1235,8 +1238,60 @@ impl<W: LayoutElement> Workspace<W> {
             .tiles()
             .find(|tile| tile.window().id() == window)
             .unwrap();
-        let current = tile.window().is_pending_fullscreen();
+        let current = tile.window().pending_sizing_mode().is_fullscreen();
         self.set_fullscreen(window, !current);
+    }
+
+    pub fn set_maximized(&mut self, window: &W::Id, maximize: bool) {
+        let mut restore_to_floating = false;
+        if self.floating.has_window(window) {
+            if maximize {
+                restore_to_floating = true;
+                self.toggle_window_floating(Some(window));
+            } else {
+                // Floating windows are never maximized, so this is an unmaximize request for an
+                // already unmaximized window.
+                return;
+            }
+        } else if !maximize {
+            // The window is in the scrolling layout and we're requesting to unmaximize. If it is
+            // indeed maximized (i.e. this isn't a duplicate unmaximize request), then we may
+            // need to unmaximize into floating.
+            let tile = self
+                .scrolling
+                .tiles()
+                .find(|tile| tile.window().id() == window)
+                .unwrap();
+            if tile.window().pending_sizing_mode().is_maximized() && tile.restore_to_floating {
+                // Unmaximize and float in one call so it has a chance to notice and request a
+                // (0, 0) size, rather than the scrolling column size.
+                self.toggle_window_floating(Some(window));
+                return;
+            }
+        }
+
+        // TODO pending fullscreen
+        let changed = self.scrolling.set_maximized(window, maximize);
+
+        // When going to maximized, remember if we should unmaximize to floating.
+        if changed && maximize {
+            let tile = self
+                .scrolling
+                .tiles_mut()
+                .find(|tile| tile.window().id() == window)
+                .unwrap();
+
+            tile.restore_to_floating = restore_to_floating;
+        }
+    }
+
+    pub fn toggle_maximized(&mut self, window: &W::Id) {
+        let tile = self
+            .tiles()
+            .find(|tile| tile.window().id() == window)
+            .unwrap();
+        let current = tile.window().pending_sizing_mode().is_maximized();
+        self.set_maximized(window, !current);
     }
 
     pub fn toggle_window_floating(&mut self, id: Option<&W::Id>) {

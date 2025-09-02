@@ -341,6 +341,10 @@ impl Window {
         self.surface.attach(Some(&buffer), 0, 0);
     }
 
+    pub fn attach_null(&self) {
+        self.surface.attach(None, 0, 0);
+    }
+
     pub fn set_size(&self, w: u16, h: u16) {
         self.viewport.set_destination(i32::from(w), i32::from(h));
     }
@@ -351,6 +355,14 @@ impl Window {
 
     pub fn unset_fullscreen(&self) {
         self.xdg_toplevel.unset_fullscreen();
+    }
+
+    pub fn set_maximized(&self) {
+        self.xdg_toplevel.set_maximized();
+    }
+
+    pub fn unset_maximized(&self) {
+        self.xdg_toplevel.unset_maximized();
     }
 
     pub fn set_parent(&self, parent: Option<&XdgToplevel>) {
@@ -432,6 +444,10 @@ impl LayerSurface {
     pub fn attach_new_buffer(&self) {
         let buffer = self.spbm.create_u32_rgba_buffer(0, 0, 0, 0, &self.qh, ());
         self.surface.attach(Some(&buffer), 0, 0);
+    }
+
+    pub fn attach_null(&self) {
+        self.surface.attach(None, 0, 0);
     }
 
     pub fn set_size(&self, w: u16, h: u16) {
