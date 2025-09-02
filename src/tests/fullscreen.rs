@@ -127,7 +127,7 @@ fn windowed_fullscreen_chain() {
         let mapped = f.niri().layout.windows().next().unwrap().1;
         format!(
             "fs {}, wfs {}",
-            mapped.is_fullscreen(),
+            mapped.sizing_mode().is_fullscreen(),
             mapped.is_windowed_fullscreen()
         )
     };
@@ -235,6 +235,46 @@ fn interactive_move_unfullscreen_to_scrolling_restores_size() {
     );
 
     // Start an interactive move which causes an unfullscreen.
+    let output = f.niri_output(1);
+    let niri = f.niri();
+    let mapped = niri.layout.windows().next().unwrap().1;
+    let window = mapped.window.clone();
+    niri.layout
+        .interactive_move_begin(window.clone(), &output, Point::default());
+    niri.layout.interactive_move_update(
+        &window,
+        Point::from((1000., 0.)),
+        output,
+        Point::default(),
+    );
+    f.double_roundtrip(id);
+
+    // This should request the tiled size.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 936 × 1048, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn interactive_move_unmaximize_to_scrolling_restores_size() {
+    let (mut f, id, surface) = set_up();
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    let niri = f.niri();
+    let mapped = niri.layout.windows().next().unwrap().1;
+    let window = mapped.window.clone();
+    niri.layout.set_maximized(&window, true);
+    f.double_roundtrip(id);
+
+    // This should request a maximized size.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1888 × 1048, states: [Activated, Maximized]"
+    );
+
+    // Start an interactive move which causes an unmaximize.
     let output = f.niri_output(1);
     let niri = f.niri();
     let mapped = niri.layout.windows().next().unwrap().1;
