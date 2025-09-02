@@ -30,6 +30,7 @@ x Transition when opening/closing MruUI
 x how to handle overview mode? Inhibit open?
 x add config item to disable
 x make modifier key configurable
+- fix thumbnail close animation on MRU UI close.
 
 */
 use std::cell::RefCell;
@@ -422,6 +423,17 @@ impl ToWindowIterator for MruScope {
     }
 }
 
+pub enum MruCloseRequest {
+    Cancelled,
+    Current,
+    Selection(SelectedThumbnail),
+}
+
+pub enum MruCloseResponse {
+    Id(MappedId),
+    Animation(Box<ThumbnailSelectionAnimation>),
+}
+
 niri_render_elements! {
     WindowMruUiRenderElement => {
         SolidColor = SolidColorRenderElement,
@@ -495,20 +507,50 @@ impl WindowMruUi {
         self.advance(dir);
     }
 
-    pub fn close(&mut self) -> Option<(SelectedThumbnail, Instant)> {
+    pub fn close(&mut self, close_request: MruCloseRequest) -> Option<MruCloseResponse> {
         let WindowMruUiState::Open(ref inner) = self.state else {
             return None;
         };
-        let thumb = inner.select_thumbnail();
-        let clock = inner.clock.clone();
-        let config = inner.options.animations.window_mru_ui_open_close.0;
-        let open_ts = inner.open_timestamp;
 
-        self.state = WindowMruUiState::Closed {
-            close_animation: Some(Animation::new(clock, 1., 0., 0., config)),
+        // Determine if we will be returning an Animation. If so, the selected
+        // thumbnail's texture needs to be removed from the cache to prevent the
+        // MRU UI's closing animation from doing a fade out of this thumbnail
+        // (because a ThumbnailSelectionAnimation will be responsible for that
+        // part of the transition).
+        let use_anim =
+            Instant::now() - inner.open_timestamp >= THUMBNAIL_SELECT_ANIMATION_THRESHOLD;
+
+        let prepare_response = move |idx| {
+            let thumb = inner.get_thumbnail_data(idx, use_anim)?;
+
+            if use_anim {
+                let config = inner.options.animations.window_mru_ui_open_close.0;
+                let clock = inner.clock.clone();
+
+                let mon_view = Rectangle::new(
+                    inner.output.current_location().to_f64(),
+                    output_size(&inner.output),
+                );
+                Some(MruCloseResponse::Animation(Box::new(
+                    ThumbnailSelectionAnimation::new(thumb, clock.clone(), mon_view, config),
+                )))
+            } else {
+                Some(MruCloseResponse::Id(thumb.id))
+            }
         };
 
-        thumb.map(|t| (t, open_ts))
+        let response = match close_request {
+            MruCloseRequest::Cancelled => None,
+            MruCloseRequest::Current => prepare_response(inner.wmru.current),
+            MruCloseRequest::Selection(selected) => prepare_response(selected.0),
+        };
+
+        let config = inner.options.animations.window_mru_ui_open_close.0;
+
+        self.state = WindowMruUiState::Closed {
+            close_animation: Some(Animation::new(inner.clock.clone(), 1., 0., 0., config)),
+        };
+        response
     }
 
     pub fn update_config(&mut self, config: &niri_config::Config) {
@@ -958,6 +1000,38 @@ impl WindowMruUi {
                 .flatten(),
         )
     }
+
+    pub fn output(&self) -> Option<&Output> {
+        match self.state {
+            WindowMruUiState::Open(ref inner) => Some(&inner.output),
+            _ => None,
+        }
+    }
+
+    pub fn thumbnail_under(&self, pos: Point<f64, Logical>) -> Option<SelectedThumbnail> {
+        let WindowMruUiState::Open(ref inner) = self.state else {
+            return None;
+        };
+
+        let view_offset = inner.view_offset?;
+        let output_size = output_size(self.output()?);
+
+        for (idx, thumb) in inner.wmru.thumbnails.iter().enumerate() {
+            if Rectangle::new(
+                Point::from((
+                    thumb.offset - view_offset,
+                    (output_size.h - thumb.size.h) / 2.,
+                )),
+                thumb.size,
+            )
+            .contains(pos)
+            {
+                return Some(SelectedThumbnail(idx));
+            }
+        }
+
+        None
+    }
 }
 
 impl Inner {
@@ -970,28 +1044,31 @@ impl Inner {
         }
     }
 
-    /// Return the window Id and screen position of the selected thumbnail.
-    /// The thumbnail texture is _taken_ from the texture cache.
-    fn select_thumbnail(&self) -> Option<SelectedThumbnail> {
-        let id = self.current_window_id()?;
-        let thumbnail = self.wmru.current()?;
-        let texture = self
-            .textures
-            .borrow_mut()
-            .get_mut(self.wmru.current)?
-            .thumbnail
-            .take()?;
+    /// Return the window Id and screen position of the thumbnail at the given WindowMru index.
+    /// The thumbnail texture is _taken_ from the texture cache if [take] is true.
+    fn get_thumbnail_data(&self, idx: usize, take: bool) -> Option<ThumbnailData> {
+        let thumbnail = self.wmru.thumbnails.get(idx)?;
+
+        let binding = &mut self.textures.borrow_mut();
+        let texture = &mut binding.get_mut(idx)?.thumbnail;
+        let size = if take {
+            texture.take().map(|t| t.logical_size())
+        } else {
+            texture.as_ref().map(|t| t.logical_size())
+        }?;
+
         let view_offset = self.view_offset?
             + self
                 .move_animation
                 .as_ref()
                 .map(|ma| ma.from * ma.anim.value())
                 .unwrap_or(0.);
-        Some(SelectedThumbnail {
-            id,
+
+        Some(ThumbnailData {
+            id: thumbnail.id,
             offset: -view_offset + thumbnail.offset + thumbnail.render_offset(),
             scale: THUMBNAIL_SCALE,
-            texture,
+            size,
         })
     }
 
@@ -1090,10 +1167,10 @@ impl Inner {
                     let mut tcache = self.textures.borrow_mut();
                     let textures = tcache.get_mut(i).unwrap();
                     if let Some(id) = wmru.get_id(i) {
-                        if let Some(thumb_texture) = textures.get_thumbnail(niri, renderer, id) {
+                        if let Some(thumb_texture) = textures.thumbnail(niri, renderer, id) {
                             let title_texture = (i == wmru.current)
                                 .then(|| {
-                                    textures.get_title(
+                                    textures.title(
                                         niri,
                                         renderer,
                                         id,
@@ -1134,7 +1211,7 @@ struct MruUiTileTextures {
 }
 
 impl MruUiTileTextures {
-    fn get_thumbnail(
+    fn thumbnail(
         &mut self,
         niri: &Niri,
         renderer: &mut GlesRenderer,
@@ -1152,7 +1229,7 @@ impl MruUiTileTextures {
         self.thumbnail.clone()
     }
 
-    fn get_title(
+    fn title(
         &mut self,
         niri: &Niri,
         renderer: &mut GlesRenderer,
@@ -1337,18 +1414,22 @@ impl ClosingThumbnail {
     }
 }
 
-pub struct SelectedThumbnail {
+#[derive(Debug)]
+pub struct SelectedThumbnail(usize);
+
+#[derive(Debug)]
+struct ThumbnailData {
     /// Id of the window the thumbnail corresponds to.
-    pub id: MappedId,
+    id: MappedId,
 
     /// Most recent view offset of the thumbnail (in Monitor coordinate space).
-    pub offset: f64,
+    offset: f64,
 
     /// Scale used to render the thumbnail relative to its corresponding window.
-    pub scale: f64,
+    scale: f64,
 
-    /// Texture used to render the thumbnail.
-    texture: MruTexture,
+    /// Logical size of the thumbnail
+    size: Size<f64, Logical>,
 }
 
 pub struct ThumbnailSelectionAnimation {
@@ -1363,21 +1444,20 @@ pub struct ThumbnailSelectionAnimation {
 }
 
 impl ThumbnailSelectionAnimation {
-    pub fn new(
-        thumb: SelectedThumbnail,
-        mon: &Monitor<Mapped>,
+    fn new(
+        thumb: ThumbnailData,
         clock: Clock,
+        mon_view: Rectangle<f64, Logical>,
         config: niri_config::Animation,
     ) -> Self {
-        let mon_view = Rectangle::new(mon.output().current_location().to_f64(), mon.view_size());
-        let texture_size = thumb.texture.logical_size();
+        // let mon_view = Rectangle::new(mon.output().current_location().to_f64(), mon.view_size());
         ThumbnailSelectionAnimation {
             id: thumb.id,
             anim: Animation::new(clock, 1., 0., 0., config),
             from: mon_view.loc
                 + Point::<f64, Logical>::from((
                     thumb.offset,
-                    (mon_view.size.h - texture_size.h) / 2.,
+                    (mon_view.size.h - thumb.size.h) / 2.,
                 )),
             from_scale: thumb.scale,
             offscreen: OffscreenBuffer::default(),

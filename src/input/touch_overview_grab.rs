@@ -11,6 +11,7 @@ use smithay::utils::{IsAlive, Logical, Point, Serial};
 
 use crate::layout::workspace::{Workspace, WorkspaceId};
 use crate::niri::State;
+use crate::ui::window_mru_ui::MruCloseRequest;
 use crate::window::Mapped;
 
 // When the touch is stationary for this much time, it becomes an interactive move.
@@ -101,7 +102,7 @@ impl TouchOverviewGrab {
                 }
 
                 if should_close_mru_ui {
-                    state.niri.close_mru_ui();
+                    state.niri.close_mru_ui(MruCloseRequest::Cancelled);
                 }
             }
             GestureState::ViewOffset => {

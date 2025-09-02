@@ -163,7 +163,8 @@ use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::ui::window_mru_ui::{
-    ThumbnailSelectionAnimation, WindowMruUi, WindowMruUiRenderElement,
+    MruCloseRequest, MruCloseResponse, ThumbnailSelectionAnimation, WindowMruUi,
+    WindowMruUiRenderElement,
 };
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
@@ -3300,7 +3301,7 @@ impl Niri {
     /// The cursor may be inside the window's activation region, but not within the window's input
     /// region.
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Mapped> {
-        if self.is_locked() || self.screenshot_ui.is_open() {
+        if self.is_locked() || self.screenshot_ui.is_open() || self.window_mru_ui.is_open() {
             return None;
         }
 
@@ -6354,10 +6355,33 @@ impl Niri {
         self.notified_activity_this_iteration = true;
     }
 
-    /// Close the MRU UI immediately and cancel thumbnail selection animation.
-    pub fn close_mru_ui(&mut self) {
-        self.window_mru_ui.close();
-        self.thumbnail_selection_animation = None;
+    pub fn close_mru_ui(&mut self, close_request: MruCloseRequest) -> Option<Window> {
+        // If there was another thumbnail selection animation in progress,
+        // mark the corresponding tile for regular rendering.
+        let old_tsa = self.thumbnail_selection_animation.take();
+        if let Some(old_tile) = old_tsa
+            .and_then(|tsa| self.find_window_by_id(tsa.id))
+            .and_then(|window| self.layout.find_tile_by_id_mut(&window))
+        {
+            old_tile.skip_render = false;
+        }
+
+        match self.window_mru_ui.close(close_request)? {
+            MruCloseResponse::Id(id) => self.find_window_by_id(id),
+            MruCloseResponse::Animation(tsa) => {
+                let id = tsa.id;
+                self.thumbnail_selection_animation = Some(*tsa);
+                let window = self.find_window_by_id(id);
+                if let Some(ref window) = window {
+                    // Mark the tile corresponding to the thumbnail as to-be-skipped
+                    // during regular Tile rendering.
+                    if let Some(tile) = self.layout.find_tile_by_id_mut(window) {
+                        tile.skip_render = true;
+                    }
+                }
+                window
+            }
+        }
     }
 
     // Consume the active `PendingMruCommit`, if any, and use the information
