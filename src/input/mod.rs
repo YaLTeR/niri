@@ -2357,9 +2357,9 @@ impl State {
             // FIXME: ideally this should use the pointer focus with up-to-date global location.
             let mut pointer_confined = None;
             if let Some(under) = &self.niri.pointer_contents.surface {
-                // No need to check if the pointer focus surface matches, because here we're
-                // checking for an already-active constraint, and the constraint is
-                // deactivated when the focused surface changes.
+                // No need to check if the pointer focus surface matches, because here we're checking
+                // for an already-active constraint, and the constraint is deactivated when the focused
+                // surface changes.
                 let pos_within_surface = pos - under.1;
 
                 let mut pointer_locked = false;
@@ -3925,7 +3925,20 @@ impl State {
 
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
-        if self.niri.screenshot_ui.is_open() {
+        if self.niri.window_mru_ui.is_open() {
+            let (output, pos_within_output) = self.niri.output_under(pos).unwrap();
+            if Some(output) == self.niri.window_mru_ui.output() {
+                if let Some(thumbnail) = self.niri.window_mru_ui.thumbnail_under(pos_within_output)
+                {
+                    if let Some(window) = self
+                        .niri
+                        .close_mru_ui(MruCloseRequest::Selection(thumbnail))
+                    {
+                        self.focus_window(&window);
+                    }
+                }
+            }
+        } else if self.niri.screenshot_ui.is_open() {
             if let Some(output) = under.output.clone() {
                 let geom = self.niri.global_space.output_geometry(&output).unwrap();
                 let mut point = (pos - geom.loc.to_f64())

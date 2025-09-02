@@ -10,7 +10,7 @@ Todo:
   - Transition when wrapping around during Mru navigation(?)
   x UI open/close animation
 - shortcut to "summon" a window to the current workspace
-- support clicking on the target thumbnail
+x support clicking on the target thumbnail
 x add title of the current Mru selection under the thumbnail
 x change BakedBuffers to TextureBuffers
 x add bindings in the UI to switch to Output or Workspace modes
@@ -31,6 +31,7 @@ x how to handle overview mode? Inhibit open?
 x add config item to disable
 x make modifier key configurable
 - fix thumbnail close animation on MRU UI close.
+- support swiping gesture to navigate thumbnails
 
 */
 use std::cell::RefCell;
