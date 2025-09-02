@@ -44,12 +44,6 @@ fn create_window(f: &mut Fixture, id: ClientId, w: u16, h: u16) -> WlSurface {
     surface
 }
 
-fn complete_animations(niri: &mut Niri) {
-    niri.clock.set_complete_instantly(true);
-    niri.advance_animations();
-    niri.clock.set_complete_instantly(false);
-}
-
 fn set_time(niri: &mut Niri, time: Duration) {
     // This is a bit involved because we're dealing with an AdjustableClock that maintains its own
     // internal current_time.
@@ -118,7 +112,7 @@ fn set_up_two_in_column() -> (Fixture, ClientId, WlSurface, WlSurface) {
     f.double_roundtrip(id);
 
     set_time(f.niri(), Duration::ZERO);
-    complete_animations(f.niri());
+    f.niri_complete_animations();
 
     (f, id, surface1, surface2)
 }
