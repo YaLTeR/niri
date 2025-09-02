@@ -90,7 +90,7 @@ const FONT: &str = "sans 14px";
 
 // Minimum duration the MRU UI needs to have stayed opened for the Thumbnail
 // selection animation to be triggered
-pub const THUMBNAIL_SELECT_ANIMATION_THRESHOLD: Duration = Duration::from_millis(250);
+const THUMBNAIL_SELECT_ANIMATION_THRESHOLD: Duration = Duration::from_millis(500);
 
 #[derive(Debug)]
 struct Thumbnail {
