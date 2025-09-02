@@ -2339,7 +2339,7 @@ impl Niri {
         let compositor_state = CompositorState::new_v6::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new_with_capabilities::<State>(
             &display_handle,
-            [WmCapabilities::Fullscreen],
+            [WmCapabilities::Fullscreen, WmCapabilities::Maximize],
         );
         let xdg_decoration_state =
             XdgDecorationState::new_with_filter::<State, _>(&display_handle, |client| {
@@ -5545,11 +5545,12 @@ impl Niri {
         let _span = tracy_client::span!("Niri::screenshot_window");
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let alpha = if mapped.is_fullscreen() || mapped.is_ignoring_opacity_window_rule() {
-            1.
-        } else {
-            mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
-        };
+        let alpha =
+            if mapped.sizing_mode().is_fullscreen() || mapped.is_ignoring_opacity_window_rule() {
+                1.
+            } else {
+                mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
+            };
         // FIXME: pointer.
         let elements = mapped.render(
             renderer,
