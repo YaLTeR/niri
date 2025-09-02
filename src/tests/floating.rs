@@ -856,6 +856,23 @@ window-rule {
 }
 
 #[test]
+fn unmap_from_floating() {
+    let (mut f, id, surface) = set_up();
+
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Resize to something different on both axes.
+    let window = f.client(id).window(&surface);
+    window.attach_null();
+    window.commit();
+
+    // Shouldn't panic.
+    f.double_roundtrip(id);
+}
+
+#[test]
 fn unfullscreen_to_floating_doesnt_send_extra_configure() {
     let (mut f, id, surface) = set_up();
 
