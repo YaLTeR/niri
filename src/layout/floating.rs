@@ -413,8 +413,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         // unfullscreen it.
         let floating_size = tile.floating_window_size;
         let win = tile.window_mut();
-        let mut size = if win.is_pending_fullscreen() {
-            // If the window was fullscreen without a floating size, ask for (0, 0).
+        let mut size = if !win.pending_sizing_mode().is_normal() {
+            // If the window was fullscreen or maximized without a floating size, ask for (0, 0).
             floating_size.unwrap_or_default()
         } else {
             // If the window wasn't fullscreen without a floating size (e.g. it was tiled before),
@@ -1312,6 +1312,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         assert_eq!(self.tiles.len(), self.data.len());
 
         for (i, (tile, data)) in zip(&self.tiles, &self.data).enumerate() {
+            use crate::layout::SizingMode;
+
             assert!(Rc::ptr_eq(&self.options, &tile.options));
             assert_eq!(self.view_size, tile.view_size());
             assert_eq!(self.clock, tile.clock);
@@ -1325,9 +1327,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 assert!(idx < self.options.layout.preset_window_heights.len());
             }
 
-            assert!(
-                !tile.window().is_pending_fullscreen(),
-                "floating windows cannot be fullscreen"
+            assert_eq!(
+                tile.window().pending_sizing_mode(),
+                SizingMode::Normal,
+                "floating windows cannot be maximized or fullscreen"
             );
 
             data.verify_invariants();
