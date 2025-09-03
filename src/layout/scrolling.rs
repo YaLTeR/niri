@@ -1226,6 +1226,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .find(|(_, col)| col.contains(window))
             .unwrap();
         let was_fullscreen = column.is_fullscreen();
+        let prev_origin = column.tiles_origin();
 
         let (tile_idx, tile) = column
             .tiles
@@ -1292,6 +1293,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                         col.offset_move_anim_current(-offset);
                     }
                 }
+            }
+        }
+
+        // When a column goes between fullscreen and non-fullscreen, the tiles origin can change.
+        // The change comes from things like ignoring struts and hiding the tab indicator in
+        // fullscreen, so both in X and Y directions.
+        let column = &mut self.columns[col_idx];
+        let new_origin = column.tiles_origin();
+        let origin_delta = prev_origin - new_origin;
+        if origin_delta != Point::new(0., 0.) {
+            for (tile, _pos) in column.tiles_mut() {
+                tile.animate_move_from(origin_delta);
             }
         }
 
