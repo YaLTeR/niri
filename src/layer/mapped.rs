@@ -59,6 +59,7 @@ impl MappedLayer {
         config: &Config,
     ) -> Self {
         let mut shadow_config = config.layout.shadow;
+
         // Shadows for layer surfaces need to be explicitly enabled.
         shadow_config.on = false;
         let shadow_config = rules.shadow.resolve_against(shadow_config);

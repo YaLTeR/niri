@@ -19,7 +19,10 @@ use smithay::wayland::presentation::Refresh;
 
 use super::{IpcOutputMap, OutputId, RenderResult};
 use crate::niri::{Niri, RedrawState, State};
+use crate::render_helpers::blur::EffectsFramebuffers;
 use crate::render_helpers::debug::draw_damage;
+use crate::render_helpers::render_data::RendererData;
+use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, logical_output};
 
@@ -119,6 +122,16 @@ impl Winit {
                     }
 
                     state.niri.output_resized(&winit.output);
+
+                    if let Err(err) = EffectsFramebuffers::update_for_output(
+                        winit.output.clone(),
+                        winit.backend.renderer(),
+                    ) {
+                        warn!("Failed to update EffectsFramebuffers for output resize: {err}");
+                    } else {
+                        // the optimized blur buffer has been dirtied, re-render on next State::dispatch
+                        EffectsFramebuffers::set_dirty(&winit.output);
+                    }
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
                 WinitEvent::Focus(_) => (),
@@ -144,6 +157,8 @@ impl Winit {
 
         resources::init(renderer);
         shaders::init(renderer);
+        RendererData::init(renderer.as_gles_renderer());
+        EffectsFramebuffers::init_for_output(self.output.clone(), renderer);
 
         let config = self.config.borrow();
         if let Some(src) = config.animations.window_resize.custom_shader.as_deref() {
