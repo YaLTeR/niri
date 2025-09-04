@@ -349,6 +349,8 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let rules = self.window.rules();
+        let animated_window_size = self.animated_window_size();
+        let animated_tile_size = self.animated_tile_size();
 
         let draw_border_with_background = rules
             .draw_border_with_background
@@ -364,7 +366,7 @@ impl<W: LayoutElement> Tile<W> {
                 })
         };
         self.border.update_render_elements(
-            self.animated_window_size(),
+            animated_window_size,
             is_active,
             !draw_border_with_background,
             self.window.is_urgent(),
@@ -384,13 +386,8 @@ impl<W: LayoutElement> Tile<W> {
         } else {
             rules.geometry_corner_radius.unwrap_or_default()
         };
-        self.shadow.update_render_elements(
-            self.animated_tile_size(),
-            is_active,
-            radius,
-            self.scale,
-            1.,
-        );
+        self.shadow
+            .update_render_elements(animated_tile_size, is_active, radius, self.scale, 1.);
 
         let draw_focus_ring_with_background = if self.effective_border_width().is_some() {
             false
