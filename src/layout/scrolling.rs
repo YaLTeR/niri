@@ -2778,11 +2778,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn set_fullscreen(&mut self, window: &W::Id, is_fullscreen: bool) -> bool {
-        let (mut col_idx, tile_idx) = self
+        let mut col_idx = self
             .columns
             .iter()
-            .enumerate()
-            .find_map(|(col_idx, col)| col.position(window).map(|tile_idx| (col_idx, tile_idx)))
+            .position(|col| col.contains(window))
             .unwrap();
 
         if is_fullscreen == self.columns[col_idx].is_pending_fullscreen {
@@ -2796,21 +2795,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         if is_fullscreen && (col.tiles.len() > 1 && !is_tabbed) {
             // This wasn't the only window in its column; extract it into a separate column.
-            let activate = self.active_column_idx == col_idx && col.active_tile_idx == tile_idx;
-
-            let removed = self.remove_tile_by_idx(col_idx, tile_idx, Transaction::new(), None);
-            // Create a column manually to disable the resize animation.
-            let column = Column::new_with_tile(
-                removed.tile,
-                self.view_size,
-                self.working_area,
-                self.scale,
-                removed.width,
-                removed.is_full_width,
-                false,
-            );
-            self.add_column(Some(col_idx + 1), column, activate, None);
-
+            self.consume_or_expel_window_right(Some(window));
             col_idx += 1;
             col = &mut self.columns[col_idx];
         }
@@ -4881,7 +4866,7 @@ impl<W: LayoutElement> Column<W> {
         }
 
         self.is_pending_fullscreen = is_fullscreen;
-        self.update_tile_sizes(false);
+        self.update_tile_sizes(true);
     }
 
     fn set_column_display(&mut self, display: ColumnDisplay) {
