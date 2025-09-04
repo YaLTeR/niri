@@ -4881,7 +4881,7 @@ impl<W: LayoutElement> Column<W> {
         }
 
         self.is_pending_fullscreen = is_fullscreen;
-        self.update_tile_sizes(false);
+        self.update_tile_sizes(true);
     }
 
     fn set_column_display(&mut self, display: ColumnDisplay) {
