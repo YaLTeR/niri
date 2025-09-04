@@ -827,17 +827,6 @@ impl<W: LayoutElement> Tile<W> {
         Point::from((0., y))
     }
 
-    pub fn draw_border_with_background(&self) -> bool {
-        if self.effective_border_width().is_some() {
-            return false;
-        }
-
-        self.window
-            .rules()
-            .draw_border_with_background
-            .unwrap_or_else(|| !self.window.has_ssd())
-    }
-
     fn render_inner<'a, R: NiriRenderer + 'a>(
         &'a self,
         renderer: &mut R,
