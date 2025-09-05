@@ -14,7 +14,7 @@ use smithay::wayland::compositor::{
     SurfaceAttributes,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
-use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
+use smithay::wayland::shell::xdg::ToplevelCachedState;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
@@ -286,13 +286,14 @@ impl CompositorHandler for State {
                         .buffer_delta
                         .take();
 
-                    let role = states
-                        .data_map
-                        .get::<XdgToplevelSurfaceData>()
-                        .unwrap()
-                        .lock()
-                        .unwrap();
-                    (role.configure_serial, buffer_delta)
+                    let serial = states
+                        .cached_state
+                        .get::<ToplevelCachedState>()
+                        .current()
+                        .last_acked
+                        .as_ref()
+                        .map(|c| c.serial);
+                    (serial, buffer_delta)
                 });
                 if serial.is_none() {
                     error!("commit on a mapped surface without a configured serial");
