@@ -182,3 +182,4 @@ environment {
 environment {
     DISPLAY: ":0"
 }
+```
