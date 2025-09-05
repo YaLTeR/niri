@@ -1415,13 +1415,15 @@ impl State {
         }
 
         // Reload the repeat info.
-        if config.input.keyboard.repeat_rate != old_config.input.keyboard.repeat_rate
-            || config.input.keyboard.repeat_delay != old_config.input.keyboard.repeat_delay
+        if config.input.keyboard.resolved_repeat_rate()
+            != old_config.input.keyboard.resolved_repeat_rate()
+            || config.input.keyboard.resolved_repeat_delay()
+                != old_config.input.keyboard.resolved_repeat_delay()
         {
             let keyboard = self.niri.seat.get_keyboard().unwrap();
             keyboard.change_repeat_info(
-                config.input.keyboard.repeat_rate.into(),
-                config.input.keyboard.repeat_delay.into(),
+                config.input.keyboard.resolved_repeat_rate().into(),
+                config.input.keyboard.resolved_repeat_delay().into(),
             );
         }
 
@@ -1657,7 +1659,7 @@ impl State {
 
             let background_color = config
                 .and_then(|c| c.background_color)
-                .unwrap_or(full_config.layout.background_color)
+                .unwrap_or(*full_config.layout.background_color)
                 .to_array_unpremul();
             let background_color = Color32F::from(background_color);
 
@@ -2439,8 +2441,8 @@ impl Niri {
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         let keyboard = match seat.add_keyboard(
             config_.input.keyboard.xkb.to_xkb_config(),
-            config_.input.keyboard.repeat_delay.into(),
-            config_.input.keyboard.repeat_rate.into(),
+            config_.input.keyboard.resolved_repeat_delay().into(),
+            config_.input.keyboard.resolved_repeat_rate().into(),
         ) {
             Err(err) => {
                 if let smithay::input::keyboard::Error::BadKeymap = err {
@@ -2450,8 +2452,8 @@ impl Niri {
                 }
                 seat.add_keyboard(
                     Default::default(),
-                    config_.input.keyboard.repeat_delay.into(),
-                    config_.input.keyboard.repeat_rate.into(),
+                    config_.input.keyboard.resolved_repeat_delay().into(),
+                    config_.input.keyboard.resolved_repeat_rate().into(),
                 )
                 .unwrap()
             }
@@ -2906,7 +2908,7 @@ impl Niri {
 
         let background_color = c
             .and_then(|c| c.background_color)
-            .unwrap_or(config.layout.background_color)
+            .unwrap_or(*config.layout.background_color)
             .to_array_unpremul();
 
         let mut backdrop_color = c

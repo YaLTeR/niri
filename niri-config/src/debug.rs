@@ -57,7 +57,7 @@ mod tests {
     use niri_macros::Mergeable;
 
     use super::*;
-    use crate::{MaybeSet, Mergeable};
+    use crate::Mergeable;
 
     #[test]
     fn test_debug_regular_bool_merging() {
@@ -93,7 +93,7 @@ mod tests {
         assert!(!*base.flag_c);
 
         let overlay = MultiFlags {
-            flag_a: BoolFlag(MaybeSet::new(true)),
+            flag_a: true.into(),
             ..Default::default()
         };
 
@@ -104,7 +104,7 @@ mod tests {
         assert!(!*base.flag_c);
 
         let overlay2 = MultiFlags {
-            flag_b: BoolFlag(MaybeSet::new(true)),
+            flag_b: true.into(),
             ..Default::default()
         };
 
@@ -117,10 +117,10 @@ mod tests {
     #[test]
     fn test_debug_mutex_with_regular_fields() {
         let mut base = Debug::default();
-        base.dbus_interfaces_in_non_session_instances = BoolFlag(MaybeSet::new(true));
+        base.dbus_interfaces_in_non_session_instances = true.into();
 
         let overlay = Debug {
-            wait_for_frame_completion_before_queueing: BoolFlag(MaybeSet::new(true)),
+            wait_for_frame_completion_before_queueing: true.into(),
             render_drm_device: Some("/dev/dri/renderD128".into()),
             ..Default::default()
         };

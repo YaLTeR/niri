@@ -821,7 +821,7 @@ mod tests {
         assert!(!base.slowdown.is_set());
 
         let overlay = Animations {
-            slowdown: MaybeSet::new(FloatOrInt(2.0)),
+            slowdown: FloatOrInt(2.0).into(),
             ..Default::default()
         };
 

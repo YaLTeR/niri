@@ -668,8 +668,8 @@ impl Options {
         let round = |logical: f64| round_logical_in_physical_max1(scale, logical);
 
         self.gaps = round(self.gaps);
-        self.focus_ring.width = FloatOrInt(round(self.focus_ring.width.0));
-        self.border.width = FloatOrInt(round(self.border.width.0));
+        self.focus_ring.width = FloatOrInt(round(self.focus_ring.width.0)).into();
+        self.border.width = FloatOrInt(round(self.border.width.0)).into();
 
         self
     }

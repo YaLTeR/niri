@@ -1,81 +1,45 @@
-use std::collections::HashSet;
+//! File modification watcher.
+
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
-use std::time::Duration;
+use std::sync::mpsc;
+use std::time::{Duration, SystemTime};
+use std::{io, thread};
 
 use niri_config::{Config, ConfigPath};
-use notify_debouncer_mini::notify::RecursiveMode;
-use notify_debouncer_mini::{new_debouncer, DebounceEventResult, Debouncer};
 use smithay::reexports::calloop::channel::SyncSender;
 
 use crate::niri::State;
 
+const POLLING_INTERVAL: Duration = Duration::from_millis(500);
+
 pub struct Watcher {
     load_config: mpsc::Sender<()>,
-    targets: Arc<Mutex<HashSet<PathBuf>>>,
-    ctrl_tx: mpsc::Sender<ManagerMsg>,
 }
 
-enum ManagerMsg {
-    Refresh,
-    Stop,
+struct WatcherInner {
+    /// The main config path.
+    path: ConfigPath,
+
+    /// Last observed props for all watched files (main + includes).
+    ///
+    /// Maps from canonical path to (mtime, resolved_path).
+    /// Equality on the values means the file did not change.
+    ///
+    /// We store the resolved path in addition to mtime to account for symlinked configs where the
+    /// symlink target may change without mtime. This is common on nix where everything is a
+    /// symlink to /nix/store, which keeps no mtime (= 1970-01-01).
+    last_props: HashMap<PathBuf, (SystemTime, PathBuf)>,
+
+    /// List of included files from last successful config load.
+    included_files: Vec<PathBuf>,
 }
 
-impl Drop for Watcher {
-    fn drop(&mut self) {
-        let _ = self.ctrl_tx.send(ManagerMsg::Stop);
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Signature {
-    canon_path: PathBuf,
-    size: u64,
-    mtime_ticks: u128,
-}
-
-fn file_signature(p: &Path) -> Option<Signature> {
-    let canon = p.canonicalize().ok()?;
-    let md = std::fs::metadata(&canon).ok()?;
-    let len = md.len();
-    let mt = md.modified().ok()?;
-    let ticks = mt.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis();
-    Some(Signature {
-        canon_path: canon,
-        size: len,
-        mtime_ticks: ticks,
-    })
-}
-
-fn effective_config_path(cp: &ConfigPath) -> Option<PathBuf> {
-    match cp {
-        ConfigPath::Explicit(p) => {
-            if p.exists() {
-                Some(p.clone())
-            } else {
-                None
-            }
-        }
-        ConfigPath::Regular {
-            user_path,
-            system_path,
-        } => {
-            if user_path.exists() {
-                Some(user_path.clone())
-            } else if system_path.exists() {
-                Some(system_path.clone())
-            } else {
-                None
-            }
-        }
-    }
-}
-
-fn compute_signature(cp: &ConfigPath) -> Option<Signature> {
-    let p = effective_config_path(cp)?;
-    // Follow symlinks and capture metadata.
-    file_signature(&p)
+#[derive(Debug, PartialEq, Eq)]
+enum CheckResult {
+    Missing,
+    Unchanged,
+    Changed,
 }
 
 impl Watcher {
@@ -84,110 +48,31 @@ impl Watcher {
         mut process: impl FnMut(&ConfigPath) -> T + Send + 'static,
         changed: SyncSender<T>,
     ) -> Self {
-        let initial_targets = initial_targets_for(&path);
-        let targets = Arc::new(Mutex::new(initial_targets));
-
         let (load_config, load_config_rx) = mpsc::channel();
-        let load_config_clone = load_config.clone();
-
-        let (tx_event, rx_event) = mpsc::channel::<()>();
-        let (ctrl_tx, ctrl_rx) = mpsc::channel::<ManagerMsg>();
-        let ctrl_tx_clone = ctrl_tx.clone();
-
-        let targets_cb = targets.clone();
-        let sig_state: Arc<Mutex<Option<Signature>>> =
-            Arc::new(Mutex::new(compute_signature(&path)));
-        let sig_state_cb = sig_state.clone();
-        let sig_state_poll = sig_state.clone();
-        let path_for_cb = path.clone();
-        let path_for_poll = path.clone();
-        let tx_event_poll = tx_event.clone();
-
-        thread::Builder::new()
-            .name("watcher-manager".into())
-            .spawn(move || {
-                let ctrl_tx_for_cb = ctrl_tx.clone();
-                let mut debouncer: Debouncer<notify_debouncer_mini::notify::RecommendedWatcher> =
-                    new_debouncer(
-                        Duration::from_millis(50),
-                        move |res: DebounceEventResult| match res {
-                            Ok(events) => {
-                                if events.is_empty() {
-                                    return;
-                                }
-                                let new_sig = compute_signature(&path_for_cb);
-                                let mut guard = sig_state_cb.lock().unwrap();
-
-                                let suppress_delete =
-                                    matches!(path_for_cb, ConfigPath::Explicit(_))
-                                        && guard.is_some()
-                                        && new_sig.is_none();
-
-                                let changed_sig = !suppress_delete && *guard != new_sig;
-                                if changed_sig {
-                                    *guard = new_sig;
-                                    let _ = tx_event.send(());
-                                } else {
-                                    *guard = new_sig;
-                                }
-                                let _ = ctrl_tx_for_cb.send(ManagerMsg::Refresh);
-                            }
-                            Err(err) => warn!("file watcher error: {err:?}"),
-                        },
-                    )
-                    .expect("failed to create file watcher");
-
-                let mut last_watched = HashSet::<PathBuf>::new();
-                {
-                    let t = targets_cb.lock().unwrap();
-                    refresh_watches(&mut debouncer, &*t, &mut last_watched);
-                }
-
-                loop {
-                    match ctrl_rx.recv_timeout(Duration::from_millis(200)) {
-                        Ok(ManagerMsg::Refresh) => {
-                            let t = targets_cb.lock().unwrap();
-                            refresh_watches(&mut debouncer, &*t, &mut last_watched);
-                        }
-                        Ok(ManagerMsg::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                        Err(mpsc::RecvTimeoutError::Timeout) => {
-                            let new_sig = compute_signature(&path_for_poll);
-                            let mut guard = sig_state_poll.lock().unwrap();
-                            let suppress_delete = matches!(path_for_poll, ConfigPath::Explicit(_))
-                                && guard.is_some()
-                                && new_sig.is_none();
-                            let changed_sig = !suppress_delete && *guard != new_sig;
-                            if changed_sig {
-                                *guard = new_sig;
-                                let _ = tx_event_poll.send(());
-                                let _ = ctrl_tx.send(ManagerMsg::Refresh);
-                            } else {
-                                *guard = new_sig;
-                            }
-                        }
-                    }
-                }
-            })
-            .unwrap();
 
         thread::Builder::new()
             .name(format!("Filesystem Watcher for {path:?}"))
             .spawn(move || {
+                let mut inner = WatcherInner::new(path);
+
                 loop {
-                    let timeout = Duration::from_millis(50);
-                    let should_load = match load_config_rx.recv_timeout(timeout) {
+                    let mut should_load = match load_config_rx.recv_timeout(POLLING_INTERVAL) {
                         Ok(()) => true,
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
                         Err(mpsc::RecvTimeoutError::Timeout) => false,
                     };
 
-                    let mut triggered_by_event = false;
-                    while rx_event.try_recv().is_ok() {
-                        triggered_by_event = true;
+                    match inner.check() {
+                        CheckResult::Missing => continue,
+                        CheckResult::Unchanged => (),
+                        CheckResult::Changed => {
+                            trace!("config file changed");
+                            should_load = true;
+                        }
                     }
 
-                    if should_load || triggered_by_event {
-                        let rv = process(&path);
+                    if should_load {
+                        let rv = process(&inner.path);
 
                         if let Err(err) = changed.send(rv) {
                             warn!("error sending change notification: {err:?}");
@@ -196,133 +81,131 @@ impl Watcher {
                     }
                 }
 
-                debug!("exiting watcher thread for {:?}", path);
+                debug!("exiting watcher thread for {:?}", inner.path);
             })
             .unwrap();
 
-        let _ = ctrl_tx_clone.send(ManagerMsg::Refresh);
-
-        Self {
-            load_config: load_config_clone,
-            targets,
-            ctrl_tx: ctrl_tx_clone,
-        }
+        Self { load_config }
     }
 
     pub fn load_config(&self) {
         let _ = self.load_config.send(());
     }
-
-    pub fn set_targets(&self, files: impl IntoIterator<Item = PathBuf>) {
-        {
-            let mut t = self.targets.lock().unwrap();
-            t.clear();
-            t.extend(files);
-        }
-        let _ = self.ctrl_tx.send(ManagerMsg::Refresh);
-    }
-
-    pub fn add_target(&self, file: PathBuf) {
-        {
-            let mut t = self.targets.lock().unwrap();
-            if !t.insert(file) {
-                return;
-            }
-        }
-        let _ = self.ctrl_tx.send(ManagerMsg::Refresh);
-    }
-
-    pub fn remove_target(&self, file: &Path) {
-        {
-            let mut t = self.targets.lock().unwrap();
-            if !t.remove(file) {
-                return;
-            }
-        }
-        let _ = self.ctrl_tx.send(ManagerMsg::Refresh);
-    }
 }
 
-fn initial_targets_for(config_path: &ConfigPath) -> HashSet<PathBuf> {
-    let mut s = HashSet::new();
+fn see_path(path: &Path) -> io::Result<(SystemTime, PathBuf)> {
+    let canon = path.canonicalize()?;
+    let mtime = canon.metadata()?.modified()?;
+    Ok((mtime, canon))
+}
+
+fn see(config_path: &ConfigPath) -> io::Result<(SystemTime, PathBuf)> {
     match config_path {
-        ConfigPath::Explicit(p) => {
-            if let Some(par) = p.parent() {
-                s.insert(par.to_path_buf());
-            }
-            if p.exists() {
-                s.insert(p.clone());
-            }
-        }
+        ConfigPath::Explicit(path) => see_path(path),
         ConfigPath::Regular {
             user_path,
             system_path,
-        } => {
-            if let Some(par) = user_path.parent() {
-                s.insert(par.to_path_buf());
-            }
-            if let Some(par) = system_path.parent() {
-                s.insert(par.to_path_buf());
-            }
-            if user_path.exists() {
-                s.insert(user_path.clone());
-            } else if system_path.exists() {
-                s.insert(system_path.clone());
-            }
-        }
+        } => see_path(user_path).or_else(|_| see_path(system_path)),
     }
-    s
 }
 
-fn parent_candidates(p: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    if let Some(parent) = p.parent() {
-        out.push(parent.to_path_buf());
+impl WatcherInner {
+    pub fn new(path: ConfigPath) -> Self {
+        let mut watcher = Self {
+            path,
+            last_props: HashMap::new(),
+            included_files: Vec::new(),
+        };
+        watcher.update_watched_files();
+        watcher
     }
-    if let Ok(canon) = p.canonicalize() {
-        if let Some(parent) = canon.parent() {
-            let pb = parent.to_path_buf();
-            if !out.contains(&pb) {
-                out.push(pb);
+
+    fn update_watched_files(&mut self) {
+        // Try to load config with includes to get all files we need to watch
+        match self.path.load_with_includes() {
+            Ok((_, included_files)) => {
+                self.included_files = included_files;
+
+                // Update props for all watched files
+                let mut new_props = HashMap::new();
+                for file_path in &self.included_files {
+                    if let Ok((mtime, canon)) = see_path(file_path) {
+                        new_props.insert(file_path.clone(), (mtime, canon));
+                    }
+                }
+                self.last_props = new_props;
+            }
+            Err(_) => {
+                // If we can't load config, just watch the main file(s)
+                self.included_files.clear();
+                if let Ok(new_props) = see(&self.path) {
+                    let canon = match &self.path {
+                        ConfigPath::Explicit(path) => path.clone(),
+                        ConfigPath::Regular {
+                            user_path,
+                            system_path,
+                        } => {
+                            if user_path.exists() {
+                                user_path.clone()
+                            } else {
+                                system_path.clone()
+                            }
+                        }
+                    };
+                    self.last_props.clear();
+                    self.last_props.insert(canon, new_props);
+                }
             }
         }
     }
-    out
-}
 
-fn refresh_watches(
-    debouncer: &mut Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>,
-    targets: &HashSet<PathBuf>,
-    last: &mut HashSet<PathBuf>,
-) {
-    let mut desired = HashSet::<PathBuf>::new();
+    pub fn check(&mut self) -> CheckResult {
+        // Check if any watched file has changed, but don't update state yet
+        let mut any_changed = false;
 
-    for t in targets {
-        for d in parent_candidates(t) {
-            if d.is_dir() {
-                desired.insert(d);
+        // First check the main config file
+        match see(&self.path) {
+            Ok(new_props) => {
+                let main_path = match &self.path {
+                    ConfigPath::Explicit(path) => path.clone(),
+                    ConfigPath::Regular {
+                        user_path,
+                        system_path,
+                    } => {
+                        if user_path.exists() {
+                            user_path.clone()
+                        } else {
+                            system_path.clone()
+                        }
+                    }
+                };
+
+                if self.last_props.get(&main_path) != Some(&new_props) {
+                    any_changed = true;
+                }
+            }
+            Err(_) => return CheckResult::Missing,
+        }
+
+        // Check all included files
+        if !any_changed {
+            for file_path in &self.included_files {
+                if let Ok((mtime, canon)) = see_path(file_path) {
+                    let new_props = (mtime, canon);
+                    if self.last_props.get(file_path) != Some(&new_props) {
+                        any_changed = true;
+                        break;
+                    }
+                }
             }
         }
-        if t.exists() && t.is_file() {
-            desired.insert(t.clone());
-        }
-        if let Ok(canon) = t.canonicalize() {
-            if canon.exists() && canon.is_file() {
-                desired.insert(canon);
-            }
-        }
-    }
 
-    for p in last.clone() {
-        if !desired.contains(&p) {
-            let _ = debouncer.watcher().unwatch(&p);
-            last.remove(&p);
-        }
-    }
-
-    for p in desired {
-        if last.insert(p.clone()) {
-            let _ = debouncer.watcher().watch(&p, RecursiveMode::NonRecursive);
+        // If any file changed, update our watched file list and return changed
+        if any_changed {
+            self.update_watched_files();
+            CheckResult::Changed
+        } else {
+            CheckResult::Unchanged
         }
     }
 }
@@ -361,10 +244,6 @@ mod tests {
     use std::error::Error;
     use std::fs::{self, File, FileTimes};
     use std::io::Write;
-    use std::path::Path;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-    use std::time::{Duration, SystemTime};
 
     use xshell::{cmd, Shell, TempDir};
 
@@ -461,26 +340,8 @@ mod tests {
                 sh, config_path, ..
             } = self;
 
-            let changed = Arc::new(AtomicBool::new(false));
-            let changed_clone = changed.clone();
-
-            let (tx, rx) = calloop::channel::sync_channel(1);
-            let watcher = Watcher::new(
-                config_path.clone(),
-                move |path: &ConfigPath| {
-                    changed_clone.store(true, Ordering::SeqCst);
-                    canon(path).to_path_buf()
-                },
-                tx,
-            );
-
-            thread::sleep(Duration::from_millis(300));
-
             let mut test = TestUtil {
-                changed,
-                rx,
-                path: config_path,
-                _watcher: watcher,
+                watcher: WatcherInner::new(config_path),
             };
 
             // don't trigger before we start
@@ -498,49 +359,37 @@ mod tests {
     }
 
     struct TestUtil {
-        changed: Arc<AtomicBool>,
-        rx: calloop::channel::Channel<PathBuf>,
-        path: ConfigPath,
-        _watcher: Watcher,
+        watcher: WatcherInner,
     }
 
     impl TestUtil {
-        // Ensure that mtime is different between writes in the tests.
+        // Ensures that mtime is different between writes in the tests.
         fn pass_time(&self) {
-            thread::sleep(Duration::from_millis(150));
+            thread::sleep(Duration::from_millis(50));
         }
 
         fn assert_unchanged(&mut self) {
-            self.pass_time();
-
-            while let Ok(_) = self.rx.try_recv() {
-                panic!("watcher should not have noticed any changes");
-            }
+            let res = self.watcher.check();
 
             // This may be Missing or Unchanged, both are fine.
-            assert!(
-                !self.changed.swap(false, Ordering::SeqCst),
+            assert_ne!(
+                res,
+                CheckResult::Changed,
                 "watcher should not have noticed any changes"
             );
+
+            self.pass_time();
         }
 
         fn assert_changed_to(&mut self, expected: &str) {
-            let mut received = false;
-            for _ in 0..50 {
-                if self.rx.try_recv().is_ok() || self.changed.load(Ordering::SeqCst) {
-                    received = true;
-                    break;
-                }
-                thread::sleep(Duration::from_millis(50));
-            }
-
-            assert!(
-                received,
+            let res = self.watcher.check();
+            assert_eq!(
+                res,
+                CheckResult::Changed,
                 "watcher should have noticed a change, but it didn't"
             );
-            self.changed.store(false, Ordering::SeqCst);
 
-            let new_path = canon(&self.path);
+            let new_path = canon(&self.watcher.path);
             let actual = fs::read_to_string(new_path).unwrap();
             assert_eq!(actual, expected, "wrong file contents");
 
@@ -804,6 +653,133 @@ mod tests {
 
             Ok(())
         })
+    }
+
+    #[test]
+    fn change_included_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                sh.write_file(
+                    "niri/config.kdl",
+                    "include \"colors.kdl\"\nlayout {\n    gaps 10\n}",
+                )?;
+                sh.write_file("niri/colors.kdl", "// Color definitions\n")
+            })
+            .assert_initial("include \"colors.kdl\"\nlayout {\n    gaps 10\n}")
+            .run(|sh, test| {
+                sh.write_file("niri/colors.kdl", "// Updated colors\n")?;
+                test.assert_changed_to("include \"colors.kdl\"\nlayout {\n    gaps 10\n}");
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn add_included_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| sh.write_file("niri/config.kdl", "layout {\n    gaps 10\n}"))
+            .assert_initial("layout {\n    gaps 10\n}")
+            .run(|sh, test| {
+                sh.write_file("niri/colors.kdl", "// Colors\n")?;
+                test.pass_time();
+
+                sh.write_file(
+                    "niri/config.kdl",
+                    "include \"colors.kdl\"\nlayout {\n    gaps 10\n}",
+                )?;
+                test.assert_changed_to("include \"colors.kdl\"\nlayout {\n    gaps 10\n}");
+
+                sh.write_file("niri/colors.kdl", "// Updated colors\n")?;
+                test.assert_changed_to("include \"colors.kdl\"\nlayout {\n    gaps 10\n}");
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn remove_included_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                sh.write_file(
+                    "niri/config.kdl",
+                    "include \"colors.kdl\"\nlayout {\n    gaps 10\n}",
+                )?;
+                sh.write_file("niri/colors.kdl", "// Colors\n")
+            })
+            .assert_initial("include \"colors.kdl\"\nlayout {\n    gaps 10\n}")
+            .run(|sh, test| {
+                sh.remove_path("niri/colors.kdl")?;
+                // Removing an included file should be detected as a change
+                // (config will fail to load but that's expected)
+                test.assert_unchanged();
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn single_event_for_included_file_change() -> Result {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let setup = TestPath::Explicit("niri/config.kdl").setup(|sh| {
+            sh.write_file(
+                "niri/config.kdl",
+                "layout {\n    gaps 10\n}\n\ninclude \"colors.kdl\"",
+            )?;
+            sh.write_file("niri/colors.kdl", "// Color definitions\n")
+        });
+
+        let (tx, _rx) = calloop::channel::sync_channel::<Result<(), ()>>(1);
+        let process = move |_: &ConfigPath| {
+            counter_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        };
+
+        let _watcher = Watcher::new(setup.config_path.clone(), process, tx);
+
+        // Let initial setup settle
+        std::thread::sleep(std::time::Duration::from_millis(600));
+
+        // Change the included file
+        setup
+            .sh
+            .write_file("niri/colors.kdl", "// Updated colors\n")?;
+
+        // Wait for watcher to detect change (should be within one polling interval)
+        std::thread::sleep(std::time::Duration::from_millis(600));
+
+        let event_count = counter.load(Ordering::SeqCst);
+        assert_eq!(
+            event_count, 1,
+            "Expected exactly 1 config load event, got {}",
+            event_count
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn nested_includes() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                sh.write_file(
+                    "niri/config.kdl",
+                    "include \"a.kdl\"\nlayout {\n    gaps 10\n}",
+                )?;
+                sh.write_file("niri/a.kdl", "include \"b.kdl\"\n// a content")?;
+                sh.write_file("niri/b.kdl", "// b content\n")
+            })
+            .assert_initial("include \"a.kdl\"\nlayout {\n    gaps 10\n}")
+            .run(|sh, test| {
+                sh.write_file("niri/b.kdl", "// updated b\n")?;
+                test.assert_changed_to("include \"a.kdl\"\nlayout {\n    gaps 10\n}");
+
+                Ok(())
+            })
     }
 
     #[test]

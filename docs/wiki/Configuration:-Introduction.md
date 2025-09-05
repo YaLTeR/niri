@@ -95,6 +95,19 @@ input {
 }
 ```
 
+Some configurations are note mergeable, for example environment:
+
+```kdl,must-fail
+// This is NOT valid: environment cannot appear twice
+environment {
+    DISPLAY ":0"
+}
+
+environment {
+    DISPLAY: "1"
+}
+```
+
 Exceptions are, for example, sections that configure different devices by name:
 
 <!-- NOTE: this may break in the future -->

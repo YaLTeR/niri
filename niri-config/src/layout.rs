@@ -6,7 +6,7 @@ use crate::appearance::{
     Border, FocusRing, InsertHint, Shadow, TabIndicator, DEFAULT_BACKGROUND_COLOR,
 };
 use crate::utils::expect_only_children;
-use crate::{Color, FloatOrInt};
+use crate::{Color, FloatOrInt, MaybeSet};
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq, Mergeable)]
 pub struct Layout {
@@ -34,12 +34,12 @@ pub struct Layout {
     pub empty_workspace_above_first: bool,
     #[knuffel(child, unwrap(argument, str), default = Self::default().default_column_display)]
     pub default_column_display: ColumnDisplay,
-    #[knuffel(child, unwrap(argument), default = Self::default().gaps)]
-    pub gaps: FloatOrInt<0, 65535>,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(FloatOrInt(16.)))]
+    pub gaps: MaybeSet<FloatOrInt<0, 65535>>,
     #[knuffel(child, default)]
     pub struts: Struts,
-    #[knuffel(child, default = DEFAULT_BACKGROUND_COLOR)]
-    pub background_color: Color,
+    #[knuffel(child, default = MaybeSet::unset(DEFAULT_BACKGROUND_COLOR))]
+    pub background_color: MaybeSet<Color>,
 }
 
 impl Default for Layout {
@@ -56,10 +56,10 @@ impl Default for Layout {
             always_center_single_column: false,
             empty_workspace_above_first: false,
             default_column_display: ColumnDisplay::Normal,
-            gaps: FloatOrInt(16.),
+            gaps: FloatOrInt(16.).into(),
             struts: Default::default(),
             preset_window_heights: Default::default(),
-            background_color: DEFAULT_BACKGROUND_COLOR,
+            background_color: DEFAULT_BACKGROUND_COLOR.into(),
         }
     }
 }

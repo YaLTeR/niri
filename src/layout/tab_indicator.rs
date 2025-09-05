@@ -88,7 +88,7 @@ impl TabIndicator {
         let gap = round_max1(gap.abs()).copysign(gap);
         let gaps_between = round_max1(self.config.gaps_between_tabs.0);
 
-        let position = self.config.position;
+        let position = *self.config.position;
         let side = match position {
             TabIndicatorPosition::Left | TabIndicatorPosition::Right => area.size.h,
             TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => area.size.w,
@@ -168,14 +168,14 @@ impl TabIndicator {
         is_active: bool,
         scale: f64,
     ) {
-        if !enabled || self.config.off {
+        if !enabled || *self.config.off {
             self.shader_locs.clear();
             self.shaders.clear();
             return;
         }
 
         let count = tab_count;
-        if self.config.hide_when_single_tab && count == 1 {
+        if *self.config.hide_when_single_tab && count == 1 {
             self.shader_locs.clear();
             self.shaders.clear();
             return;
@@ -184,7 +184,7 @@ impl TabIndicator {
         self.shaders.resize_with(count, Default::default);
         self.shader_locs.resize_with(count, Default::default);
 
-        let position = self.config.position;
+        let position = *self.config.position;
         let radius = self.config.corner_radius.0 as f32;
         let shared_rounded_corners = self.config.gaps_between_tabs.0 == 0.;
         let mut tabs_left = tab_count;
@@ -276,12 +276,12 @@ impl TabIndicator {
         scale: f64,
         point: Point<f64, Logical>,
     ) -> Option<usize> {
-        if self.config.off {
+        if *self.config.off {
             return None;
         }
 
         let count = tab_count;
-        if self.config.hide_when_single_tab && count == 1 {
+        if *self.config.hide_when_single_tab && count == 1 {
             return None;
         }
 
@@ -309,9 +309,9 @@ impl TabIndicator {
 
     /// Extra size occupied by the tab indicator.
     pub fn extra_size(&self, tab_count: usize, scale: f64) -> Size<f64, Logical> {
-        if self.config.off
-            || !self.config.place_within_column
-            || (self.config.hide_when_single_tab && tab_count == 1)
+        if *self.config.off
+            || !*self.config.place_within_column
+            || (*self.config.hide_when_single_tab && tab_count == 1)
         {
             return Size::from((0., 0.));
         }
@@ -324,7 +324,7 @@ impl TabIndicator {
         // that it peeks from the other side of the window".
         let size = f64::max(0., width + gap);
 
-        match self.config.position {
+        match *self.config.position {
             TabIndicatorPosition::Left | TabIndicatorPosition::Right => Size::from((size, 0.)),
             TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => Size::from((0., size)),
         }
@@ -332,7 +332,7 @@ impl TabIndicator {
 
     /// Offset of the tabbed content due to space occupied by the tab indicator.
     pub fn content_offset(&self, tab_count: usize, scale: f64) -> Point<f64, Logical> {
-        match self.config.position {
+        match *self.config.position {
             TabIndicatorPosition::Left | TabIndicatorPosition::Top => {
                 self.extra_size(tab_count, scale).to_point()
             }
@@ -385,7 +385,7 @@ impl TabInfo {
             // one is enabled.
             let focus_ring_config = tile.focus_ring().config();
             let border_config = tile.border().config();
-            let config = if focus_ring_config.off {
+            let config = if *focus_ring_config.off {
                 border_config
             } else {
                 focus_ring_config
@@ -398,7 +398,7 @@ impl TabInfo {
             } else {
                 (config.inactive_color, config.inactive_gradient)
             };
-            gradient.unwrap_or_else(|| Gradient::from(color))
+            gradient.unwrap_or_else(|| Gradient::from(*color))
         };
 
         let gradient = gradient_from_rule()
