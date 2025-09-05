@@ -19,7 +19,6 @@ use smithay::input::pointer::{
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
@@ -92,7 +91,7 @@ use crate::protocols::virtual_pointer::{
     VirtualPointerInputBackend, VirtualPointerManagerState, VirtualPointerMotionAbsoluteEvent,
     VirtualPointerMotionEvent,
 };
-use crate::utils::{output_size, send_scale_transform, with_toplevel_role};
+use crate::utils::{output_size, send_scale_transform};
 use crate::{
     delegate_ext_workspace, delegate_foreign_toplevel, delegate_gamma_control,
     delegate_mutter_x11_interop, delegate_output_management, delegate_screencopy,
@@ -543,15 +542,6 @@ impl ForeignToplevelHandler for State {
     fn set_fullscreen(&mut self, wl_surface: WlSurface, wl_output: Option<WlOutput>) {
         if let Some((mapped, current_output)) = self.niri.layout.find_window_and_output(&wl_surface)
         {
-            let has_fullscreen_cap = with_toplevel_role(mapped.toplevel(), |role| {
-                role.current
-                    .capabilities
-                    .contains(xdg_toplevel::WmCapabilities::Fullscreen)
-            });
-            if !has_fullscreen_cap {
-                return;
-            }
-
             let window = mapped.window.clone();
 
             if let Some(requested_output) = wl_output.as_ref().and_then(Output::from_resource) {

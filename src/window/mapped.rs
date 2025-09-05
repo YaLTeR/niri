@@ -15,7 +15,9 @@ use smithay::reexports::wayland_server::Resource as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 use smithay::wayland::compositor::{remove_pre_commit_hook, with_states, HookId, SurfaceData};
 use smithay::wayland::seat::WaylandFocus;
-use smithay::wayland::shell::xdg::{SurfaceCachedState, ToplevelSurface};
+use smithay::wayland::shell::xdg::{
+    SurfaceCachedState, ToplevelCachedState, ToplevelSurface, XdgToplevelSurfaceData,
+};
 use wayland_backend::server::Credentials;
 
 use super::{ResolvedWindowRules, WindowRef};
@@ -36,7 +38,7 @@ use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
     get_credentials_for_surface, send_scale_transform, update_tiled_state, with_toplevel_role,
-    ResizeEdge,
+    with_toplevel_role_and_current, ResizeEdge,
 };
 
 #[derive(Debug)]
@@ -726,10 +728,8 @@ impl LayoutElement for Mapped {
                 // has the same size and fullscreen state to the last pending configure.
                 (&configure.state, configure.serial)
             } else {
-                (
-                    role.last_acked.as_ref().unwrap(),
-                    role.configure_serial.unwrap(),
-                )
+                let (serial, state) = role.last_acked.as_ref().unwrap();
+                (state, *serial)
             };
 
             let same_size = last_sent.size.unwrap_or_default() == size;
@@ -739,9 +739,17 @@ impl LayoutElement for Mapped {
         });
 
         if let Some(serial) = already_sent {
-            if let Some(current_serial) =
-                with_toplevel_role(self.toplevel(), |role| role.current_serial)
-            {
+            let current_serial = with_states(self.toplevel().wl_surface(), |states| {
+                states
+                    .cached_state
+                    .get::<ToplevelCachedState>()
+                    .current()
+                    .last_acked
+                    .as_ref()
+                    .map(|(serial, _)| serial)
+                    .copied()
+            });
+            if let Some(current_serial) = current_serial {
                 // God this triple negative...
                 if !current_serial.is_no_older_than(&serial) {
                     // We have already sent a request for the new size, but the surface has not
@@ -805,7 +813,9 @@ impl LayoutElement for Mapped {
 
     fn has_ssd(&self) -> bool {
         let toplevel = self.toplevel();
-        let mode = with_toplevel_role(self.toplevel(), |role| role.current.decoration_mode);
+        let mode = self
+            .toplevel()
+            .with_committed_state(|current| current.and_then(|s| s.decoration_mode));
 
         match mode {
             Some(zxdg_toplevel_decoration_v1::Mode::ServerSide) => true,
@@ -892,10 +902,10 @@ impl LayoutElement for Mapped {
             return ConfigureIntent::ShouldSend;
         }
 
-        with_toplevel_role(self.toplevel(), |attributes| {
+        with_toplevel_role_and_current(self.toplevel(), |attributes, current_committed| {
             if let Some(server_pending) = &attributes.server_pending {
                 let current_server = attributes.current_server_state();
-                if server_pending != current_server {
+                if *server_pending != current_server {
                     // Something changed. Check if the only difference is the size, and if the
                     // current server size matches the current committed size.
                     let mut current_server_same_size = current_server.clone();
@@ -903,12 +913,17 @@ impl LayoutElement for Mapped {
                     if current_server_same_size == *server_pending {
                         // Only the size changed. Check if the window committed our previous size
                         // request.
-                        if attributes.current.size == current_server.size {
+                        let Some(current_committed) = current_committed else {
+                            error!("mapped must have had initial commit");
+                            return ConfigureIntent::ShouldSend;
+                        };
+
+                        if current_committed.size == current_server.size {
                             // The window had committed for our previous size change, so we can
                             // change the size again.
                             trace!(
                                 "current size matches server size: {:?}",
-                                attributes.current.size
+                                current_committed.size
                             );
                             ConfigureIntent::CanSend
                         } else {
@@ -960,7 +975,7 @@ impl LayoutElement for Mapped {
                 }
 
                 let server_pending = role.server_pending.as_ref().unwrap();
-                server_pending != role.current_server_state()
+                *server_pending != role.current_server_state()
             });
 
         if has_pending_changes {
@@ -1031,10 +1046,8 @@ impl LayoutElement for Mapped {
             return false;
         }
 
-        with_toplevel_role(self.toplevel(), |role| {
-            role.current
-                .states
-                .contains(xdg_toplevel::State::Fullscreen)
+        self.toplevel().with_committed_state(|current| {
+            current.is_some_and(|s| s.states.contains(xdg_toplevel::State::Fullscreen))
         })
     }
 
@@ -1076,7 +1089,14 @@ impl LayoutElement for Mapped {
             return current_size;
         }
 
-        let pending = with_toplevel_role(self.toplevel(), |role| {
+        let pending = with_states(self.toplevel().wl_surface(), |states| {
+            let role = states
+                .data_map
+                .get::<XdgToplevelSurfaceData>()
+                .unwrap()
+                .lock()
+                .unwrap();
+
             // If we have a server-pending size change that we haven't sent yet, use that size.
             if let Some(server_pending) = &role.server_pending {
                 let current_server = role.current_server_state();
@@ -1095,13 +1115,12 @@ impl LayoutElement for Mapped {
             {
                 (&configure.state, configure.serial)
             } else {
-                (
-                    role.last_acked.as_ref().unwrap(),
-                    role.configure_serial.unwrap(),
-                )
+                let (serial, state) = role.last_acked.as_ref().unwrap();
+                (state, *serial)
             };
 
-            if let Some(current_serial) = role.current_serial {
+            let mut guard = states.cached_state.get::<ToplevelCachedState>();
+            if let Some((current_serial, _)) = guard.current().last_acked.as_ref() {
                 if !current_serial.is_no_older_than(&last_serial) {
                     return Some((
                         last_sent.size.unwrap_or_default(),
