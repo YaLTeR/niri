@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use knuffel::errors::DecodeError;
 use miette::{miette, IntoDiagnostic as _};
+use niri_macros::Mergeable;
 use smithay::backend::renderer::Color32F;
 
 use crate::FloatOrInt;
@@ -11,7 +12,7 @@ pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.25, 0.
 pub const DEFAULT_BACKDROP_COLOR: Color = Color::from_array_unpremul([0.15, 0.15, 0.15, 1.]);
 
 /// RGB color in [0, 1] with unpremultiplied alpha.
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
@@ -76,7 +77,7 @@ impl MulAssign<f32> for Color {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct Gradient {
     #[knuffel(property, str)]
     pub from: Color,
@@ -102,20 +103,20 @@ impl From<Color> for Gradient {
     }
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq, Mergeable)]
 pub enum GradientRelativeTo {
     #[default]
     Window,
     WorkspaceView,
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct GradientInterpolation {
     pub color_space: GradientColorSpace,
     pub hue_interpolation: HueInterpolation,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Mergeable)]
 pub enum GradientColorSpace {
     #[default]
     Srgb,
@@ -124,7 +125,7 @@ pub enum GradientColorSpace {
     Oklch,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Mergeable)]
 pub enum HueInterpolation {
     #[default]
     Shorter,
@@ -133,7 +134,7 @@ pub enum HueInterpolation {
     Decreasing,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct CornerRadius {
     pub top_left: f32,
     pub top_right: f32,
@@ -221,7 +222,7 @@ impl CornerRadius {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct FocusRing {
     #[knuffel(child)]
     pub off: bool,
@@ -256,7 +257,7 @@ impl Default for FocusRing {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct Border {
     #[knuffel(child)]
     pub off: bool,
@@ -321,7 +322,7 @@ impl From<FocusRing> for Border {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct Shadow {
     #[knuffel(child)]
     pub on: bool,
@@ -356,7 +357,7 @@ impl Default for Shadow {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct ShadowOffset {
     #[knuffel(property, default)]
     pub x: FloatOrInt<-65535, 65535>,
@@ -364,7 +365,7 @@ pub struct ShadowOffset {
     pub y: FloatOrInt<-65535, 65535>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct WorkspaceShadow {
     #[knuffel(child)]
     pub off: bool,
@@ -407,7 +408,7 @@ impl From<WorkspaceShadow> for Shadow {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct TabIndicator {
     #[knuffel(child)]
     pub off: bool,
@@ -465,13 +466,13 @@ impl Default for TabIndicator {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct TabIndicatorLength {
     #[knuffel(property)]
     pub total_proportion: Option<f64>,
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub enum TabIndicatorPosition {
     Left,
     Right,
@@ -479,7 +480,7 @@ pub enum TabIndicatorPosition {
     Bottom,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct InsertHint {
     #[knuffel(child)]
     pub off: bool,
@@ -499,17 +500,19 @@ impl Default for InsertHint {
     }
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq, Mergeable)]
 pub enum BlockOutFrom {
     Screencast,
     ScreenCapture,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct BorderRule {
     #[knuffel(child)]
+    #[mergeable(mutex)]
     pub off: bool,
     #[knuffel(child)]
+    #[mergeable(mutex)]
     pub on: bool,
     #[knuffel(child, unwrap(argument))]
     pub width: Option<FloatOrInt<0, 65535>>,
@@ -527,11 +530,13 @@ pub struct BorderRule {
     pub urgent_gradient: Option<Gradient>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct ShadowRule {
     #[knuffel(child)]
+    #[mergeable(mutex)]
     pub off: bool,
     #[knuffel(child)]
+    #[mergeable(mutex)]
     pub on: bool,
     #[knuffel(child)]
     pub offset: Option<ShadowOffset>,
@@ -547,7 +552,7 @@ pub struct ShadowRule {
     pub inactive_color: Option<Color>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct TabIndicatorRule {
     #[knuffel(child)]
     pub active_color: Option<Color>,
@@ -564,40 +569,6 @@ pub struct TabIndicatorRule {
 }
 
 impl BorderRule {
-    pub fn merge_with(&mut self, other: &Self) {
-        if other.off {
-            self.off = true;
-            self.on = false;
-        }
-
-        if other.on {
-            self.off = false;
-            self.on = true;
-        }
-
-        if let Some(x) = other.width {
-            self.width = Some(x);
-        }
-        if let Some(x) = other.active_color {
-            self.active_color = Some(x);
-        }
-        if let Some(x) = other.inactive_color {
-            self.inactive_color = Some(x);
-        }
-        if let Some(x) = other.urgent_color {
-            self.urgent_color = Some(x);
-        }
-        if let Some(x) = other.active_gradient {
-            self.active_gradient = Some(x);
-        }
-        if let Some(x) = other.inactive_gradient {
-            self.inactive_gradient = Some(x);
-        }
-        if let Some(x) = other.urgent_gradient {
-            self.urgent_gradient = Some(x);
-        }
-    }
-
     pub fn resolve_against(&self, mut config: Border) -> Border {
         config.off |= self.off;
         if self.on {
@@ -634,37 +605,6 @@ impl BorderRule {
 }
 
 impl ShadowRule {
-    pub fn merge_with(&mut self, other: &Self) {
-        if other.off {
-            self.off = true;
-            self.on = false;
-        }
-
-        if other.on {
-            self.off = false;
-            self.on = true;
-        }
-
-        if let Some(x) = other.offset {
-            self.offset = Some(x);
-        }
-        if let Some(x) = other.softness {
-            self.softness = Some(x);
-        }
-        if let Some(x) = other.spread {
-            self.spread = Some(x);
-        }
-        if let Some(x) = other.draw_behind_window {
-            self.draw_behind_window = Some(x);
-        }
-        if let Some(x) = other.color {
-            self.color = Some(x);
-        }
-        if let Some(x) = other.inactive_color {
-            self.inactive_color = Some(x);
-        }
-    }
-
     pub fn resolve_against(&self, mut config: Shadow) -> Shadow {
         config.on |= self.on;
         if self.off {
@@ -691,29 +631,6 @@ impl ShadowRule {
         }
 
         config
-    }
-}
-
-impl TabIndicatorRule {
-    pub fn merge_with(&mut self, other: &Self) {
-        if let Some(x) = other.active_color {
-            self.active_color = Some(x);
-        }
-        if let Some(x) = other.inactive_color {
-            self.inactive_color = Some(x);
-        }
-        if let Some(x) = other.urgent_color {
-            self.urgent_color = Some(x);
-        }
-        if let Some(x) = other.active_gradient {
-            self.active_gradient = Some(x);
-        }
-        if let Some(x) = other.inactive_gradient {
-            self.inactive_gradient = Some(x);
-        }
-        if let Some(x) = other.urgent_gradient {
-            self.urgent_gradient = Some(x);
-        }
     }
 }
 
@@ -1006,6 +923,7 @@ mod tests {
     use insta::assert_snapshot;
 
     use super::*;
+    use crate::mergeable::Mergeable;
 
     #[test]
     fn parse_gradient_interpolation() {

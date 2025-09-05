@@ -78,32 +78,19 @@ input {
 
 #### Sections
 
-Most sections cannot be repeated. For example:
+Most sections that are repeated will be merged top-down in a where where "last one wins":
 
 ```kdl
-// This is valid: every section appears once.
 input {
-    keyboard {
-        // ...
-    }
-
     touchpad {
-        // ...
-    }
-}
-```
-
-```kdl,must-fail
-// This is NOT valid: input section appears twice.
-input {
-    keyboard {
-        // ...
+        scroll-factor 0.3
     }
 }
 
+// Scroll factor becomes 0.75, the previous value 0.3 is overridden
 input {
     touchpad {
-        // ...
+        scroll-factor 0.75
     }
 }
 ```

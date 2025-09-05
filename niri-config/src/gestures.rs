@@ -1,6 +1,8 @@
+use niri_macros::Mergeable;
+
 use crate::FloatOrInt;
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct Gestures {
     #[knuffel(child, default)]
     pub dnd_edge_view_scroll: DndEdgeViewScroll,
@@ -10,7 +12,7 @@ pub struct Gestures {
     pub hot_corners: HotCorners,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct DndEdgeViewScroll {
     #[knuffel(child, unwrap(argument), default = Self::default().trigger_width)]
     pub trigger_width: FloatOrInt<0, 65535>,
@@ -30,7 +32,7 @@ impl Default for DndEdgeViewScroll {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct DndEdgeWorkspaceSwitch {
     #[knuffel(child, unwrap(argument), default = Self::default().trigger_height)]
     pub trigger_height: FloatOrInt<0, 65535>,
@@ -50,7 +52,7 @@ impl Default for DndEdgeWorkspaceSwitch {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct HotCorners {
     #[knuffel(child)]
     pub off: bool,
