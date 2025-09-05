@@ -84,6 +84,11 @@ fn wiki_docs_parses() {
         must_fail,
     } in code_blocks
     {
+        // Skip code blocks that contain include directives since they require file resolution
+        if code.trim_start().starts_with("include ") || code.contains("\ninclude ") {
+            continue;
+        }
+
         if let Err(error) = niri_config::Config::parse(&filename, &code) {
             if !must_fail {
                 errors.push(format!(

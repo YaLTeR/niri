@@ -16,7 +16,7 @@ impl InsertHintElement {
         Self {
             inner: FocusRing::new(niri_config::FocusRing {
                 off: config.off,
-                width: FloatOrInt(0.),
+                width: FloatOrInt(0.).into(),
                 active_color: config.color,
                 inactive_color: config.color,
                 urgent_color: config.color,
@@ -30,7 +30,7 @@ impl InsertHintElement {
     pub fn update_config(&mut self, config: niri_config::InsertHint) {
         self.inner.update_config(niri_config::FocusRing {
             off: config.off,
-            width: FloatOrInt(0.),
+            width: FloatOrInt(0.).into(),
             active_color: config.color,
             inactive_color: config.color,
             urgent_color: config.color,

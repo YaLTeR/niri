@@ -54,7 +54,7 @@ impl Shadow {
         // Adjust width to draw all necessary pixels.
         let width = ceil(sigma * 3.);
 
-        let offset = self.config.offset;
+        let offset = *self.config.offset;
         let offset = Point::from((ceil(offset.x.0), ceil(offset.y.0)));
 
         let spread = self.config.spread.0;
@@ -74,12 +74,12 @@ impl Shadow {
         let shader_size = box_size + Size::from((width, width)).upscale(2.);
 
         let color = if is_active {
-            self.config.color
+            *self.config.color
         } else {
             // Default to slightly more transparent.
             self.config
                 .inactive_color
-                .unwrap_or(self.config.color * 0.75)
+                .unwrap_or(*self.config.color * 0.75)
         };
 
         let shader_geo = Rectangle::new(Point::from((-width, -width)), shader_size);

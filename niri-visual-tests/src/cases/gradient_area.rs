@@ -19,11 +19,11 @@ pub struct GradientArea {
 impl GradientArea {
     pub fn new(_args: Args) -> Self {
         let border = FocusRing::new(niri_config::FocusRing {
-            off: false,
-            width: FloatOrInt(1.),
-            active_color: Color::from_rgba8_unpremul(255, 255, 255, 128),
-            inactive_color: Color::default(),
-            urgent_color: Color::default(),
+            off: false.into(),
+            width: FloatOrInt(1.).into(),
+            active_color: Color::from_rgba8_unpremul(255, 255, 255, 128).into(),
+            inactive_color: Color::default().into(),
+            urgent_color: Color::default().into(),
             active_gradient: None,
             inactive_gradient: None,
             urgent_gradient: None,
