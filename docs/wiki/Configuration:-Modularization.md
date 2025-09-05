@@ -121,3 +121,64 @@ workspace "development" {
 Some sections will be merged when appearing more than once, with a "last one wins" strategy
 
 ```kdl
+layout {
+    gaps 16
+    background-color "#003300"
+
+    focus-ring {
+        width 4
+        active-color "#7fc8ff"
+        inactive-color "#505050"
+        urgent-color "#9b0000"
+    }
+}
+
+layout {
+    gaps 5
+
+    focus-ring {
+        active-color "#505050"
+    }
+}
+```
+
+This would result the resolved configuration:
+```kdl
+layout {
+    gaps 5
+    background-color "#003300"
+
+    focus-ring {
+        width 4
+        active-color "#505050"
+        inactive-color "#505050"
+        urgent-color "#9b0000"
+    }
+}
+```
+
+Some sections can appear more than once, but will not be merged:
+
+```kdl
+// Window rules are not merged
+window-rule {
+    open-maximized true
+}
+
+window-rule {
+    match app-id="Alacritty"
+    open-maximized false
+}
+```
+
+Some sections cannot appear more than once and will fail validation:
+
+```kdl,must-fail
+// Environment can only be defined once
+environment {
+    DISPLAY: ":1"
+}
+
+environment {
+    DISPLAY: ":0"
+}
