@@ -128,19 +128,9 @@ impl WatcherInner {
 
                 // Update props for all watched files
                 let mut new_props = HashMap::new();
-                for file_path in &self.included_files {
-                    if let Ok((mtime, canon)) = see_path(file_path) {
-                        new_props.insert(file_path.clone(), (mtime, canon));
-                    }
-                }
-                self.last_props = new_props;
-            }
-            Err(_) => {
-                // If we can't load config, just watch the main file(s)
-                self.included_files.clear();
-                if let Ok(new_props) = see(&self.path) {
-                    let canon = match &self.path {
-                        ConfigPath::Explicit(path) => path.clone(),
+                if let Ok((mtime, canon)) = see(&self.path) {
+                    let main_path = match &self.path {
+                        ConfigPath::Explicit(p) => p.clone(),
                         ConfigPath::Regular {
                             user_path,
                             system_path,
@@ -152,8 +142,48 @@ impl WatcherInner {
                             }
                         }
                     };
-                    self.last_props.clear();
-                    self.last_props.insert(canon, new_props);
+                    new_props.insert(main_path, (mtime, canon));
+                }
+
+                for file_path in &self.included_files {
+                    if let Ok((mtime, canon)) = see_path(file_path) {
+                        new_props.insert(file_path.clone(), (mtime, canon));
+                    }
+                }
+
+                self.last_props = new_props;
+            }
+            Err(_) => {
+                // Start from current map to avoid losing what we already track.
+                let mut new_props = HashMap::new();
+
+                if let Ok((mtime, canon)) = see(&self.path) {
+                    let main_path = match &self.path {
+                        ConfigPath::Explicit(p) => p.clone(),
+                        ConfigPath::Regular {
+                            user_path,
+                            system_path,
+                        } => {
+                            if user_path.exists() {
+                                user_path.clone()
+                            } else {
+                                system_path.clone()
+                            }
+                        }
+                    };
+                    new_props.insert(main_path, (mtime, canon));
+                }
+
+                // Update props for all included files we already know about
+                for file_path in &self.included_files {
+                    if let Ok((mtime, canon)) = see_path(file_path) {
+                        new_props.insert(file_path.clone(), (mtime, canon));
+                    }
+                }
+
+                // Only replace if we observed anything; otherwise keep the previous map.
+                if !new_props.is_empty() {
+                    self.last_props = new_props;
                 }
             }
         }
