@@ -2357,9 +2357,9 @@ impl State {
             // FIXME: ideally this should use the pointer focus with up-to-date global location.
             let mut pointer_confined = None;
             if let Some(under) = &self.niri.pointer_contents.surface {
-                // No need to check if the pointer focus surface matches, because here we're checking
-                // for an already-active constraint, and the constraint is deactivated when the focused
-                // surface changes.
+                // No need to check if the pointer focus surface matches, because here we're
+                // checking for an already-active constraint, and the constraint is
+                // deactivated when the focused surface changes.
                 let pos_within_surface = pos - under.1;
 
                 let mut pointer_locked = false;
