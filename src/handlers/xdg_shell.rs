@@ -981,6 +981,7 @@ impl State {
             workspace_name: ws.and_then(|w| w.name().cloned()),
         };
 
+        trace!(surface = %toplevel.wl_surface().id(), "sending initial configure");
         toplevel.send_configure();
     }
 
