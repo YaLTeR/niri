@@ -115,7 +115,9 @@ impl CompositorHandler for State {
 
                             (rules, width, height, is_full_width, output, workspace_id)
                         } else {
-                            error!("window map must happen after initial configure");
+                            // Can happen when a surface unmaps by attaching a null buffer while
+                            // there are in-flight pending configures.
+                            debug!("window mapped without proper initial configure");
                             (ResolvedWindowRules::empty(), None, None, false, None, None)
                         };
 
