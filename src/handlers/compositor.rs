@@ -56,7 +56,8 @@ impl CompositorHandler for State {
 
     fn commit(&mut self, surface: &WlSurface) {
         let _span = tracy_client::span!("CompositorHandler::commit");
-        trace!(surface = ?surface.id(), "commit");
+        let _span = trace_span!("commit", surface = %surface.id()).entered();
+        trace!("commit");
 
         on_commit_buffer_handler::<Self>(surface);
         self.backend.early_import(surface);
@@ -207,6 +208,7 @@ impl CompositorHandler for State {
                 }
 
                 // The toplevel remains unmapped.
+                trace!("toplevel remains unmapped");
                 let unmapped = entry.get();
                 if unmapped.needs_initial_configure() {
                     let toplevel = unmapped.window.toplevel().expect("no x11 support").clone();
@@ -242,6 +244,8 @@ impl CompositorHandler for State {
                     // The toplevel got unmapped.
                     //
                     // Test client: wleird-unmap.
+                    trace!("toplevel got unmapped");
+
                     let active_window = self.niri.layout.focus().map(|m| &m.window);
                     let was_active = active_window == Some(&window);
 
