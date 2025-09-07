@@ -28,6 +28,8 @@ To do that, put files into the correct directories according to this table.
 
 Doing this will make niri appear in GDM and other display managers.
 
+See the [Integrating niri](./Integrating-niri.md) page for further information on distribution integration.
+
 ### Running tests
 
 A bulk of our tests spawn niri compositor instances and test Wayland clients.
@@ -41,6 +43,13 @@ $ export RAYON_NUM_THREADS=2
 ```
 
 Don't forget to exclude the development-only `niri-visual-tests` crate when running tests.
+
+Some tests require surfaceless EGL to be available at test time.
+If this is problematic, you can skip them like so:
+
+```
+$ cargo test -- --skip=::egl
+```
 
 You may also want to set the `RUN_SLOW_TESTS=1` environment variable to run the slower tests.
 
@@ -121,3 +130,8 @@ It contains the exact dependency versions that I used when testing the release.
 If you need to change the versions of some dependencies, pay extra attention to `smithay` and `smithay-drm-extras` commit hash.
 These crates don't currently have regular stable releases, so niri uses git snapshots.
 Upstream frequently has breaking changes (API and behavior), so you're strongly advised to use the exact commit hash from the niri release's `Cargo.lock`.
+
+### Shell completions
+
+You can generate shell completions for several shells via `niri completions <SHELL>`, i.e. `niri completions bash`.
+See `niri completions -h` for a full list.

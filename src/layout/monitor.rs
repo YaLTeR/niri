@@ -601,13 +601,13 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn move_down_or_to_workspace_down(&mut self) {
         if !self.active_workspace().move_down() {
-            self.move_to_workspace_down();
+            self.move_to_workspace_down(true);
         }
     }
 
     pub fn move_up_or_to_workspace_up(&mut self) {
         if !self.active_workspace().move_up() {
-            self.move_to_workspace_up();
+            self.move_to_workspace_up(true);
         }
     }
 
@@ -623,7 +623,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn move_to_workspace_up(&mut self) {
+    pub fn move_to_workspace_up(&mut self, focus: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = source_workspace_idx.saturating_sub(1);
@@ -637,13 +637,19 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
+        let activate = if focus {
+            ActivateWindow::Yes
+        } else {
+            ActivateWindow::Smart
+        };
+
         self.add_tile(
             removed.tile,
             MonitorAddWindowTarget::Workspace {
                 id: new_id,
                 column_idx: None,
             },
-            ActivateWindow::Yes,
+            activate,
             true,
             removed.width,
             removed.is_full_width,
@@ -651,7 +657,7 @@ impl<W: LayoutElement> Monitor<W> {
         );
     }
 
-    pub fn move_to_workspace_down(&mut self) {
+    pub fn move_to_workspace_down(&mut self, focus: bool) {
         let source_workspace_idx = self.active_workspace_idx;
 
         let new_idx = min(source_workspace_idx + 1, self.workspaces.len() - 1);
@@ -665,13 +671,19 @@ impl<W: LayoutElement> Monitor<W> {
             return;
         };
 
+        let activate = if focus {
+            ActivateWindow::Yes
+        } else {
+            ActivateWindow::Smart
+        };
+
         self.add_tile(
             removed.tile,
             MonitorAddWindowTarget::Workspace {
                 id: new_id,
                 column_idx: None,
             },
-            ActivateWindow::Yes,
+            activate,
             true,
             removed.width,
             removed.is_full_width,
@@ -748,7 +760,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         if workspace.floating_is_active() {
-            self.move_to_workspace_up();
+            self.move_to_workspace_up(activate);
             return;
         }
 
@@ -769,7 +781,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         if workspace.floating_is_active() {
-            self.move_to_workspace_down();
+            self.move_to_workspace_down(activate);
             return;
         }
 
@@ -790,7 +802,12 @@ impl<W: LayoutElement> Monitor<W> {
 
         let workspace = &mut self.workspaces[source_workspace_idx];
         if workspace.floating_is_active() {
-            self.move_to_workspace(None, idx, ActivateWindow::Smart);
+            let activate = if activate {
+                ActivateWindow::Smart
+            } else {
+                ActivateWindow::No
+            };
+            self.move_to_workspace(None, idx, activate);
             return;
         }
 

@@ -41,7 +41,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! niri-ipc = "=25.5.1"
+//! niri-ipc = "=25.8.0"
 //! ```
 //!
 //! ## Features
@@ -202,6 +202,12 @@ pub enum Action {
         /// Command to spawn.
         #[cfg_attr(feature = "clap", arg(last = true, required = true))]
         command: Vec<String>,
+    },
+    /// Spawn a command through the shell.
+    SpawnSh {
+        /// Command to run.
+        #[cfg_attr(feature = "clap", arg(last = true, required = true))]
+        command: String,
     },
     /// Do a screen transition.
     DoScreenTransition {
@@ -441,9 +447,23 @@ pub enum Action {
     /// Focus the previous workspace.
     FocusWorkspacePrevious {},
     /// Move the focused window to the workspace below.
-    MoveWindowToWorkspaceDown {},
+    MoveWindowToWorkspaceDown {
+        /// Whether the focus should follow the target workspace.
+        ///
+        /// If `true` (the default), the focus will follow the window to the new workspace. If
+        /// `false`, the focus will remain on the original workspace.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move the focused window to the workspace above.
-    MoveWindowToWorkspaceUp {},
+    MoveWindowToWorkspaceUp {
+        /// Whether the focus should follow the target workspace.
+        ///
+        /// If `true` (the default), the focus will follow the window to the new workspace. If
+        /// `false`, the focus will remain on the original workspace.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set, default_value_t = true))]
+        focus: bool,
+    },
     /// Move a window to a workspace.
     #[cfg_attr(
         feature = "clap",
@@ -657,6 +677,8 @@ pub enum Action {
     },
     /// Switch between preset column widths.
     SwitchPresetColumnWidth {},
+    /// Switch between preset column widths backwards.
+    SwitchPresetColumnWidthBack {},
     /// Switch between preset window widths.
     SwitchPresetWindowWidth {
         /// Id of the window whose width to switch.
@@ -665,8 +687,24 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: Option<u64>,
     },
+    /// Switch between preset window widths backwards.
+    SwitchPresetWindowWidthBack {
+        /// Id of the window whose width to switch.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Switch between preset window heights.
     SwitchPresetWindowHeight {
+        /// Id of the window whose height to switch.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Switch between preset window heights backwards.
+    SwitchPresetWindowHeightBack {
         /// Id of the window whose height to switch.
         ///
         /// If `None`, uses the focused window.
@@ -1587,5 +1625,63 @@ impl FromStr for ScaleToSet {
 
         let scale = s.parse().map_err(|_| "error parsing scale")?;
         Ok(Self::Specific(scale))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_size_change() {
+        assert_eq!(
+            "10".parse::<SizeChange>().unwrap(),
+            SizeChange::SetFixed(10),
+        );
+        assert_eq!(
+            "+10".parse::<SizeChange>().unwrap(),
+            SizeChange::AdjustFixed(10),
+        );
+        assert_eq!(
+            "-10".parse::<SizeChange>().unwrap(),
+            SizeChange::AdjustFixed(-10),
+        );
+        assert_eq!(
+            "10%".parse::<SizeChange>().unwrap(),
+            SizeChange::SetProportion(10.),
+        );
+        assert_eq!(
+            "+10%".parse::<SizeChange>().unwrap(),
+            SizeChange::AdjustProportion(10.),
+        );
+        assert_eq!(
+            "-10%".parse::<SizeChange>().unwrap(),
+            SizeChange::AdjustProportion(-10.),
+        );
+
+        assert!("-".parse::<SizeChange>().is_err());
+        assert!("10% ".parse::<SizeChange>().is_err());
+    }
+
+    #[test]
+    fn parse_position_change() {
+        assert_eq!(
+            "10".parse::<PositionChange>().unwrap(),
+            PositionChange::SetFixed(10.),
+        );
+        assert_eq!(
+            "+10".parse::<PositionChange>().unwrap(),
+            PositionChange::AdjustFixed(10.),
+        );
+        assert_eq!(
+            "-10".parse::<PositionChange>().unwrap(),
+            PositionChange::AdjustFixed(-10.),
+        );
+
+        assert!("10%".parse::<PositionChange>().is_err());
+        assert!("+10%".parse::<PositionChange>().is_err());
+        assert!("-10%".parse::<PositionChange>().is_err());
+        assert!("-".parse::<PositionChange>().is_err());
+        assert!("10% ".parse::<PositionChange>().is_err());
     }
 }

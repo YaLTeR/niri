@@ -103,7 +103,7 @@ fn test_ondemand(path: &str) -> bool {
     let mut child = match process.spawn() {
         Ok(child) => child,
         Err(err) => {
-            info!("error spawning xwayland-satellite at {path:?}, disabling integration: {err}");
+            warn!("error spawning xwayland-satellite at {path:?}, disabling integration: {err}");
             return false;
         }
     };
@@ -111,13 +111,13 @@ fn test_ondemand(path: &str) -> bool {
     let status = match child.wait() {
         Ok(status) => status,
         Err(err) => {
-            info!("error waiting for xwayland-satellite, disabling integration: {err}");
+            warn!("error waiting for xwayland-satellite, disabling integration: {err}");
             return false;
         }
     };
 
     if !status.success() {
-        info!("xwayland-satellite doesn't support on-demand activation, disabling integration");
+        warn!("xwayland-satellite doesn't support on-demand activation, disabling integration");
         return false;
     }
 

@@ -118,7 +118,7 @@
           checkFlags = [
             # These tests require the ability to access a "valid EGL Display", but that won't work
             # inside the Nix sandbox
-            "--skip=tests::animations"
+            "--skip=::egl"
           ];
 
           postInstall =
@@ -204,6 +204,7 @@
                   ];
                 }
               ))
+              pkgs.cargo-insta
             ];
 
             nativeBuildInputs = [

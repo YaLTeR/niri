@@ -60,6 +60,12 @@ Switch workspaces with three-finger vertical swipes.
 
 Move the view horizontally with three-finger horizontal swipes.
 
+#### Open and Close the Overview
+
+<sup>Since: 25.05</sup>
+
+Open and close the overview with a four-finger vertical swipe.
+
 ### All Pointing Devices
 
 #### Drag-and-Drop Edge View Scroll

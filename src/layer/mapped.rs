@@ -1,5 +1,4 @@
-use niri_config::layer_rule::LayerRule;
-use niri_config::Config;
+use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };

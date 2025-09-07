@@ -60,6 +60,26 @@ A combination of factors:
 
 All in all, the situation works out in favor of avoiding Xwayland integration.
 
-Also, in the next release niri will have seamless built-in xwayland-satellite integration, that will solve the big rough edge of having to set it up manually.
+<sup>Since: 25.08</sup> niri has seamless built-in xwayland-satellite integration that by and large works as well as built-in Xwayland in other compositors, solving the hurdle of having to set it up manually.
 
-Besides, I wouldn't be too surprised if, down the road, xwayland-satellite becomes the standard way of integrating Xwayland into new compositors, since it takes on the bulk of the annoying work, and isolates the compositor from misbehaving clients.
+I wouldn't be too surprised if, down the road, xwayland-satellite becomes the standard way of integrating Xwayland into new compositors, since it takes on the bulk of the annoying work, and isolates the compositor from misbehaving clients.
+
+### Can I enable blur behind semitransparent windows?
+
+Not yet, follow/upvote [this issue](https://github.com/YaLTeR/niri/issues/54).
+
+There's also [a PR](https://github.com/YaLTeR/niri/pull/1634) adding blur to niri which you can build and run manually.
+Keep in mind that it's an experimental implementation that may have problems and performance concerns.
+
+### Can I make a window sticky / pinned / always on top / appear on all workspaces?
+
+Not yet, follow/upvote [this issue](https://github.com/YaLTeR/niri/issues/932).
+
+You can emulate this with a script that uses the niri IPC.
+For example, [nirius](https://git.sr.ht/~tsdh/nirius) seems to have this feature (`toggle-follow-mode`).
+
+### How do I make the Bitwarden window in Firefox open as floating?
+
+Firefox seems to first open the Bitwarden window with a generic Firefox title, and only later change the window title to Bitwarden, so you can't effectively target it with an `open-floating` window rule.
+
+You'll need to use a script, for example [this one](https://github.com/YaLTeR/niri/discussions/1599) or other ones (search niri issues and discussions for Bitwarden).

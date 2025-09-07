@@ -46,6 +46,10 @@ animations {
         spring damping-ratio=0.6 stiffness=1000 epsilon=0.001
     }
 
+    exit-confirmation-open-close {
+        spring damping-ratio=0.6 stiffness=500 epsilon=0.01
+    }
+
     screenshot-ui-open {
         duration-ms 200
         curve "ease-out-quad"
@@ -80,14 +84,24 @@ animations {
 }
 ```
 
-Currently, niri only supports four curves:
+Currently, niri only supports five curves.
+You can get a feel for them on pages like [easings.net](https://easings.net/).
 
 - `ease-out-quad` <sup>Since: 0.1.5</sup>
 - `ease-out-cubic`
 - `ease-out-expo`
 - `linear` <sup>Since: 0.1.6</sup>
-
-You can get a feel for them on pages like [easings.net](https://easings.net/).
+- `cubic-bezier` <sup>Since: 25.08</sup>
+    A custom [cubic Bézier curve](https://www.w3.org/TR/css-easing-1/#cubic-bezier-easing-functions). You need to set 4 numbers defining the control points of the curve, for example:
+    ```kdl
+    animations {
+        window-open {
+            // Same as CSS cubic-bezier(0.05, 0.7, 0.1, 1)
+            curve "cubic-bezier" 0.05 0.7 0.1 1
+        }
+    }
+    ```
+    You can tweak the cubic-bezier parameters on pages like [easings.co](https://easings.co?curve=0.05,0.7,0.1,1).
 
 #### Spring
 
@@ -359,6 +373,22 @@ This one uses an underdamped spring by default (`damping-ratio=0.6`) which cause
 animations {
     config-notification-open-close {
         spring damping-ratio=0.6 stiffness=1000 epsilon=0.001
+    }
+}
+```
+
+#### `exit-confirmation-open-close`
+
+<sup>Since: 25.08</sup>
+
+The open/close animation of the exit confirmation dialog.
+
+This one uses an underdamped spring by default (`damping-ratio=0.6`) which causes a slight oscillation in the end.
+
+```kdl
+animations {
+    exit-confirmation-open-close {
+        spring damping-ratio=0.6 stiffness=500 epsilon=0.01
     }
 }
 ```

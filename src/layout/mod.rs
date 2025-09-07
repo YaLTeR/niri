@@ -2178,18 +2178,18 @@ impl<W: LayoutElement> Layout<W> {
         workspace.focus_window_up_or_bottom();
     }
 
-    pub fn move_to_workspace_up(&mut self) {
+    pub fn move_to_workspace_up(&mut self, focus: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_to_workspace_up();
+        monitor.move_to_workspace_up(focus);
     }
 
-    pub fn move_to_workspace_down(&mut self) {
+    pub fn move_to_workspace_down(&mut self, focus: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_to_workspace_down();
+        monitor.move_to_workspace_down(focus);
     }
 
     pub fn move_to_workspace(
@@ -3179,14 +3179,14 @@ impl<W: LayoutElement> Layout<W> {
         self.options = options;
     }
 
-    pub fn toggle_width(&mut self) {
+    pub fn toggle_width(&mut self, forwards: bool) {
         let Some(workspace) = self.active_workspace_mut() else {
             return;
         };
-        workspace.toggle_width();
+        workspace.toggle_width(forwards);
     }
 
-    pub fn toggle_window_width(&mut self, window: Option<&W::Id>) {
+    pub fn toggle_window_width(&mut self, window: Option<&W::Id>, forwards: bool) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
@@ -3206,10 +3206,10 @@ impl<W: LayoutElement> Layout<W> {
         let Some(workspace) = workspace else {
             return;
         };
-        workspace.toggle_window_width(window);
+        workspace.toggle_window_width(window, forwards);
     }
 
-    pub fn toggle_window_height(&mut self, window: Option<&W::Id>) {
+    pub fn toggle_window_height(&mut self, window: Option<&W::Id>, forwards: bool) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
                 return;
@@ -3229,7 +3229,7 @@ impl<W: LayoutElement> Layout<W> {
         let Some(workspace) = workspace else {
             return;
         };
-        workspace.toggle_window_height(window);
+        workspace.toggle_window_height(window, forwards);
     }
 
     pub fn toggle_full_width(&mut self) {
@@ -4809,7 +4809,7 @@ impl<W: LayoutElement> Layout<W> {
         let wsid = ws.id();
 
         // if `empty_workspace_above_first` is set and `ws` is the first
-        // worskpace on a monitor, another empty workspace needs to
+        // workspace on a monitor, another empty workspace needs to
         // be added before.
         // Conversely, if `ws` was the last workspace on a monitor, an
         // empty workspace needs to be added after.

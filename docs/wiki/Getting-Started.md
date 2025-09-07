@@ -21,6 +21,15 @@ Also, check the [configuration introduction](./Configuration:-Introduction.md) p
 There you can find links to other pages containing thorough documentation and examples for all options.
 Finally, the [Xwayland](./Xwayland.md) page explains how to run X11 applications on niri.
 
+### Desktop environments
+
+Some desktop environments and shells work with niri and can give a more out-of-the-box experience:
+
+- [LXQt](https://lxqt-project.org/) officially supports niri, see [their wiki](https://github.com/lxqt/lxqt/wiki/ConfigWaylandSettings#general) for details on setting it up.
+- Many [XFCE](https://www.xfce.org/) components work on Wayland, including niri. See [their wiki](https://wiki.xfce.org/releng/wayland_roadmap#component_specific_status) for details.
+- There are complete desktop shells based on Quickshell that support niri, for example [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) and [Noctalia](https://github.com/noctalia-dev/noctalia-shell).
+- You can run a [COSMIC](https://system76.com/cosmic/) session with niri using [cosmic-ext-extra-sessions](https://github.com/Drakulix/cosmic-ext-extra-sessions).
+
 ### NVIDIA
 
 The NVIDIA drivers currently have an issue with high VRAM usage due to a heap reuse quirk.
