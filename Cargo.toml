@@ -76,7 +76,7 @@ niri-egl-wrapper = { version = "25.2.0", path = "niri-egl-wrapper" }
 ordered-float = "5.0.0"
 pango = { version = "0.21.0", features = ["v1_44"] }
 pangocairo = "0.21.0"
-png = "0.17.16"
+png = "0.18.0"
 portable-atomic = { version = "1.11.0", default-features = false, features = ["float"] }
 profiling = "1.0.16"
 sd-notify = "0.4.5"
@@ -117,7 +117,7 @@ approx = "0.5.1"
 calloop-wayland-source = "0.4.0"
 insta.workspace = true
 proptest = "1.6.0"
-proptest-derive = { version = "0.5.1", features = ["boxed_union"] }
+proptest-derive = { version = "0.6.0", features = ["boxed_union"] }
 rayon = "1.10.0"
 wayland-client = "0.31.8"
 xshell = "0.2.7"
