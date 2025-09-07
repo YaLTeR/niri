@@ -10,12 +10,15 @@ pub struct RecentWindows {
     pub off: bool,
     #[knuffel(child, unwrap(argument, str), default = Self::default().mod_key)]
     pub mod_key: ModKey,
+    #[knuffel(child)]
+    pub enable_selection_animation: bool,
 }
 
 impl Default for RecentWindows {
     fn default() -> Self {
         RecentWindows {
             off: false,
+            enable_selection_animation: false,
             mod_key: ModKey::Alt,
         }
     }

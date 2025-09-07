@@ -2290,6 +2290,7 @@ impl State {
                                 wmru,
                                 dir,
                                 output.clone(),
+                                config.recent_windows.enable_selection_animation,
                             );
                         }
                     }

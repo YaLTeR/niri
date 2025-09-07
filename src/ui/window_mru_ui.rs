@@ -362,6 +362,9 @@ pub struct Inner {
 
     /// Output the UI was opened on
     output: Output,
+
+    /// Animate thumbnail selection to warp to the corresponding tile
+    enable_selection_animation: bool,
 }
 
 // Taken from Tile.rs,
@@ -478,6 +481,7 @@ impl WindowMruUi {
         mut wmru: WindowMru,
         dir: MruDirection,
         output: Output,
+        enable_selection_animation: bool,
     ) {
         if self.is_open() {
             return;
@@ -514,6 +518,7 @@ impl WindowMruUi {
             clock,
             open_timestamp: Instant::now(),
             output,
+            enable_selection_animation,
         };
 
         self.state = WindowMruUiState::Open(Box::new(inner));
@@ -1194,7 +1199,8 @@ impl Inner {
         // MRU UI's closing animation from doing a fade out of that thumbnail
         // (because a ThumbnailSelectionAnimation will take over that part of
         // the transition).
-        let use_anim = Instant::now() - *open_timestamp >= THUMBNAIL_SELECT_ANIMATION_THRESHOLD;
+        let use_anim = self.enable_selection_animation
+            && Instant::now() - *open_timestamp >= THUMBNAIL_SELECT_ANIMATION_THRESHOLD;
 
         let current_idx = wmru.current;
         let prepare_response = move |idx| {
