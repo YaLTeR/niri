@@ -41,9 +41,10 @@ use std::str::FromStr;
 use std::time::{Duration, Instant};
 use std::{iter, mem};
 
+use niri_config::utils::RegexEq;
+use niri_config::window_rule::Match;
 use niri_config::{
-    Action, Bind, Key, Match, ModKey, Modifiers, MruDirection, MruFilter, MruScope, RegexEq,
-    Trigger,
+    Action, Bind, Key, ModKey, Modifiers, MruDirection, MruFilter, MruScope, Trigger,
 };
 use pango::{Alignment, EllipsizeMode, FontDescription};
 use pangocairo::cairo::{self, ImageSurface};

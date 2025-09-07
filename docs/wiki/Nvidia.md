@@ -42,7 +42,7 @@ The fix shipped in the driver at the time of writing uses a value of 0, while th
 
 ### Screencast flickering fix
 
-<sup>Until: next release</sup>
+<sup>Until: 25.08</sup>
 
 If you have screencast glitches or flickering on NVIDIA, set this in the niri config:
 
@@ -52,4 +52,4 @@ debug {
 }
 ```
 
-This will become unnecessary once niri supports explicit sync for PipeWire screencasts: https://github.com/YaLTeR/niri/issues/1432
+This debug flag has since been removed because the problem was properly fixed in niri.

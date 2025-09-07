@@ -1,7 +1,7 @@
 > *Time, Dr. Freeman? Is it really that... time again?*
 
 A compositor deals with one or more monitors on mostly fixed refresh cycles.
-For example, a 170 Hz monitor can draw a frame every ~5.88 ms.
+For example, a 170 Hz monitor can draw a frame every ~5.88 ms.
 
 Most of the time, the compositor doesn't actually redraw the monitor: when nothing changes on screen (e.g. you're reading a document and aren't moving your cursor), it would be wasteful to wake up the GPU to composite the same image.
 During an animation however, screen contents do change every frame.

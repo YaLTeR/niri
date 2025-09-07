@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::iter::zip;
 use std::rc::Rc;
 
@@ -123,9 +124,35 @@ impl HotkeyOverlay {
 
         Some(PrimaryGpuTextureRenderElement(elem))
     }
+
+    pub fn a11y_text(&self) -> String {
+        let config = self.config.borrow();
+        let actions = collect_actions(&config);
+
+        let mut buf = String::new();
+        writeln!(&mut buf, "{TITLE}").unwrap();
+
+        for action in actions {
+            let Some((key, action)) = format_bind(&config.binds.0, action) else {
+                continue;
+            };
+
+            let key = key.map(|key| key_name(true, self.mod_key, &key));
+            let key = key.as_deref().unwrap_or("not bound");
+
+            let action = match pango::parse_markup(&action, '\0') {
+                Ok((_attrs, text, _accel)) => text,
+                Err(_) => action.into(),
+            };
+
+            writeln!(&mut buf, "{key} {action}").unwrap();
+        }
+
+        buf
+    }
 }
 
-fn format_bind(binds: &[Bind], mod_key: ModKey, action: &Action) -> Option<(String, String)> {
+fn format_bind(binds: &[Bind], action: &Action) -> Option<(Option<Key>, String)> {
     let mut bind_with_non_null = None;
     let mut bind_with_custom_title = None;
     let mut found_null_title = false;
@@ -158,33 +185,16 @@ fn format_bind(binds: &[Bind], mod_key: ModKey, action: &Action) -> Option<(Stri
             title = Some(custom.clone());
         }
 
-        key_name(mod_key, &bind.key)
+        Some(bind.key)
     } else {
-        String::from("(not bound)")
+        None
     };
     let title = title.unwrap_or_else(|| action_name(action));
 
-    Some((format!(" {key} "), title))
+    Some((key, title))
 }
 
-fn render(
-    renderer: &mut GlesRenderer,
-    config: &Config,
-    mod_key: ModKey,
-    scale: f64,
-) -> anyhow::Result<RenderedOverlay> {
-    let _span = tracy_client::span!("hotkey_overlay::render");
-
-    // let margin = MARGIN * scale;
-    let padding: i32 = to_physical_precise_round(scale, PADDING);
-    let line_interval: i32 = to_physical_precise_round(scale, LINE_INTERVAL);
-
-    // FIXME: if it doesn't fit, try splitting in two columns or something.
-    // let mut target_size = output_size;
-    // target_size.w -= margin * 2;
-    // target_size.h -= margin * 2;
-    // anyhow::ensure!(target_size.w > 0 && target_size.h > 0);
-
+fn collect_actions(config: &Config) -> Vec<&Action> {
     let binds = &config.binds.0;
 
     // Collect actions that we want to show.
@@ -218,9 +228,9 @@ fn render(
         actions.push(&bind.action);
     } else if binds
         .iter()
-        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceDown))
+        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceDown(_)))
     {
-        actions.push(&Action::MoveWindowToWorkspaceDown);
+        actions.push(&Action::MoveWindowToWorkspaceDown(true));
     } else {
         actions.push(&Action::MoveColumnToWorkspaceDown(true));
     }
@@ -233,9 +243,9 @@ fn render(
         actions.push(&bind.action);
     } else if binds
         .iter()
-        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceUp))
+        .any(|bind| matches!(bind.action, Action::MoveWindowToWorkspaceUp(_)))
     {
-        actions.push(&Action::MoveWindowToWorkspaceUp);
+        actions.push(&Action::MoveWindowToWorkspaceUp(true));
     } else {
         actions.push(&Action::MoveColumnToWorkspaceUp(true));
     }
@@ -270,7 +280,7 @@ fn render(
 
     // Add the spawn actions.
     for bind in binds.iter().filter(|bind| {
-        matches!(bind.action, Action::Spawn(_))
+        matches!(bind.action, Action::Spawn(_) | Action::SpawnSh(_))
             // Only show binds with Mod or Super to filter out stuff like volume up/down.
             && (bind.key.modifiers.contains(Modifiers::COMPOSITOR)
                 || bind.key.modifiers.contains(Modifiers::SUPER))
@@ -290,9 +300,36 @@ fn render(
         actions.retain(|&action| binds.iter().any(|bind| bind.action == *action))
     }
 
-    let strings = actions
+    actions
+}
+
+fn render(
+    renderer: &mut GlesRenderer,
+    config: &Config,
+    mod_key: ModKey,
+    scale: f64,
+) -> anyhow::Result<RenderedOverlay> {
+    let _span = tracy_client::span!("hotkey_overlay::render");
+
+    // let margin = MARGIN * scale;
+    let padding: i32 = to_physical_precise_round(scale, PADDING);
+    let line_interval: i32 = to_physical_precise_round(scale, LINE_INTERVAL);
+
+    // FIXME: if it doesn't fit, try splitting in two columns or something.
+    // let mut target_size = output_size;
+    // target_size.w -= margin * 2;
+    // target_size.h -= margin * 2;
+    // anyhow::ensure!(target_size.w > 0 && target_size.h > 0);
+
+    let strings = collect_actions(config)
         .into_iter()
-        .filter_map(|action| format_bind(binds, mod_key, action))
+        .filter_map(|action| format_bind(&config.binds.0, action))
+        .map(|(key, action)| {
+            let key = key.map(|key| key_name(false, mod_key, &key));
+            let key = key.as_deref().unwrap_or("(not bound)");
+            let key = format!(" {key} ");
+            (key, action)
+        })
         .collect::<Vec<_>>();
 
     let mut font = FontDescription::from_string(FONT);
@@ -431,8 +468,8 @@ fn action_name(action: &Action) -> String {
         Action::FocusWorkspaceUp => String::from("Switch Workspace Up"),
         Action::MoveColumnToWorkspaceDown(_) => String::from("Move Column to Workspace Down"),
         Action::MoveColumnToWorkspaceUp(_) => String::from("Move Column to Workspace Up"),
-        Action::MoveWindowToWorkspaceDown => String::from("Move Window to Workspace Down"),
-        Action::MoveWindowToWorkspaceUp => String::from("Move Window to Workspace Up"),
+        Action::MoveWindowToWorkspaceDown(_) => String::from("Move Window to Workspace Down"),
+        Action::MoveWindowToWorkspaceUp(_) => String::from("Move Window to Workspace Up"),
         Action::SwitchPresetColumnWidth => String::from("Switch Preset Column Widths"),
         Action::MaximizeColumn => String::from("Maximize Column"),
         Action::ConsumeOrExpelWindowLeft => String::from("Consume or Expel Window Left"),
@@ -447,11 +484,16 @@ fn action_name(action: &Action) -> String {
             "Spawn <span face='monospace' bgcolor='#000000'>{}</span>",
             args.first().unwrap_or(&String::new())
         ),
+        Action::SpawnSh(command) => format!(
+            "Spawn <span face='monospace' bgcolor='#000000'>{}</span>",
+            // Fairly crude but should get the job done in most cases.
+            command.split_ascii_whitespace().next().unwrap_or("")
+        ),
         _ => String::from("FIXME: Unknown"),
     }
 }
 
-fn key_name(mod_key: ModKey, key: &Key) -> String {
+fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
     let mut name = String::new();
 
     let has_comp_mod = key.modifiers.contains(Modifiers::COMPOSITOR);
@@ -504,7 +546,7 @@ fn key_name(mod_key: ModKey, key: &Key) -> String {
     }
 
     let pretty = match key.trigger {
-        Trigger::Keysym(keysym) => prettify_keysym_name(&keysym_get_name(keysym)),
+        Trigger::Keysym(keysym) => prettify_keysym_name(screen_reader, &keysym_get_name(keysym)),
         Trigger::MouseLeft => String::from("Mouse Left"),
         Trigger::MouseRight => String::from("Mouse Right"),
         Trigger::MouseMiddle => String::from("Mouse Middle"),
@@ -524,16 +566,24 @@ fn key_name(mod_key: ModKey, key: &Key) -> String {
     name
 }
 
-fn prettify_keysym_name(name: &str) -> String {
+fn prettify_keysym_name(screen_reader: bool, name: &str) -> String {
+    let name = if screen_reader {
+        name
+    } else {
+        match name {
+            "slash" => "/",
+            "comma" => ",",
+            "period" => ".",
+            "minus" => "-",
+            "equal" => "=",
+            "grave" => "`",
+            "bracketleft" => "[",
+            "bracketright" => "]",
+            _ => name,
+        }
+    };
+
     let name = match name {
-        "slash" => "/",
-        "comma" => ",",
-        "period" => ".",
-        "minus" => "-",
-        "equal" => "=",
-        "grave" => "`",
-        "bracketleft" => "[",
-        "bracketright" => "]",
         "Next" => "Page Down",
         "Prior" => "Page Up",
         "Print" => "PrtSc",
@@ -558,8 +608,10 @@ mod tests {
     #[track_caller]
     fn check(config: &str, action: Action) -> String {
         let config = Config::parse("test.kdl", config).unwrap();
-        if let Some((key, title)) = format_bind(&config.binds.0, ModKey::Super, &action) {
-            format!("{key}: {title}")
+        if let Some((key, title)) = format_bind(&config.binds.0, &action) {
+            let key = key.map(|key| key_name(false, ModKey::Super, &key));
+            let key = key.as_deref().unwrap_or("(not bound)");
+            format!(" {key} : {title}")
         } else {
             String::from("None")
         }

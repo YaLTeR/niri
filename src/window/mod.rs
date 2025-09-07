@@ -1,8 +1,9 @@
 use std::cmp::{max, min};
 
+use niri_config::window_rule::{Match, WindowRule};
 use niri_config::{
-    BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, Match, PresetSize, ShadowRule,
-    TabIndicatorRule, WindowRule,
+    BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize, ShadowRule,
+    TabIndicatorRule,
 };
 use niri_ipc::ColumnDisplay;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;

@@ -275,7 +275,7 @@ impl Element for OffscreenRenderElement {
                 let mut region = region.to_f64().intersection(src)?;
 
                 region.loc -= src.loc;
-                region.upscale(texture_size / src.size);
+                region = region.upscale(texture_size / src.size);
 
                 let logical = region.to_logical(self.scale, Transform::Normal, &src.size);
                 Some(logical.to_physical_precise_up(scale))

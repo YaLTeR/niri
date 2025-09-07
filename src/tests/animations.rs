@@ -2,7 +2,8 @@ use std::fmt::Write as _;
 use std::time::Duration;
 
 use insta::assert_snapshot;
-use niri_config::{AnimationCurve, AnimationKind, Config, EasingParams, FloatOrInt};
+use niri_config::animations::{Curve, EasingParams, Kind};
+use niri_config::{Config, FloatOrInt};
 use niri_ipc::SizeChange;
 use smithay::utils::{Point, Size};
 use wayland_client::protocol::wl_surface::WlSurface;
@@ -73,9 +74,9 @@ fn set_time(niri: &mut Niri, time: Duration) {
 
 // Sets up a fixture with linear animations, a renderer, and an output.
 fn set_up() -> Fixture {
-    const LINEAR: AnimationKind = AnimationKind::Easing(EasingParams {
+    const LINEAR: Kind = Kind::Easing(EasingParams {
         duration_ms: 1000,
-        curve: AnimationCurve::Linear,
+        curve: Curve::Linear,
     });
 
     let mut config = Config::default();
@@ -123,7 +124,7 @@ fn set_up_two_in_column() -> (Fixture, ClientId, WlSurface, WlSurface) {
 }
 
 #[test]
-fn height_resize_animates_next_y() {
+fn egl_height_resize_animates_next_y() {
     let (mut f, id, surface1, surface2) = set_up_two_in_column();
 
     // Issue a resize.
@@ -170,7 +171,7 @@ fn height_resize_animates_next_y() {
 }
 
 #[test]
-fn clientside_height_change_doesnt_animate() {
+fn egl_clientside_height_change_doesnt_animate() {
     let (mut f, id, surface1, _surface2) = set_up_two_in_column();
 
     // The initial state.

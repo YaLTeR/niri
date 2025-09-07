@@ -20,9 +20,6 @@ use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::texture::{TextureBuffer, TextureRenderElement};
 use crate::utils::{output_size, to_physical_precise_round};
 
-const TEXT: &str = "Failed to parse the config file. \
-                    Please run <span face='monospace' bgcolor='#000000'>niri validate</span> \
-                    to see the errors.";
 const PADDING: i32 = 8;
 const FONT: &str = "sans 14px";
 const BORDER: i32 = 4;
@@ -186,7 +183,7 @@ fn render(
 
     let padding: i32 = to_physical_precise_round(scale, PADDING);
 
-    let mut text = String::from(TEXT);
+    let mut text = error_text(true);
     let mut border_color = (1., 0.3, 0.3);
     if let Some(path) = created_path {
         text = format!(
@@ -248,4 +245,14 @@ fn render(
     )?;
 
     Ok(buffer)
+}
+
+pub fn error_text(markup: bool) -> String {
+    let command = if markup {
+        "<span face='monospace' bgcolor='#000000'>niri validate</span>"
+    } else {
+        "niri validate"
+    };
+
+    format!("Failed to parse the config file. Please run {command} to see the errors.")
 }

@@ -52,6 +52,11 @@ To fix this, run them with the `_JAVA_AWT_WM_NONREPARENTING=1` environment varia
 There's a bug in rofi-wayland that prevents it from accepting keyboard input on niri with errors in the output.
 It's been fixed in rofi, but [the fix had not been released yet](https://github.com/davatorium/rofi/discussions/2008).
 
+### Zen Browser
+
+For some reason, DMABUF screencasts are disabled in the Zen Browser, so screencasting doesn't work out of the box on niri.
+To fix it, open `about:config` and set `widget.dmabuf.force-enabled` to `true`.
+
 ### Fullscreen games
 
 Some video games, both Linux-native and on Wine, have various issues when using non-stacking desktop environments.
@@ -88,3 +93,12 @@ window-rule {
     default-floating-position x=10 y=10 relative-to="bottom-right"
 }
 ```
+
+### Waybar and other GTK 3 components
+
+If you have rounded corners on your Waybar and they show up with black pixels in the corners, then set your Waybar opacity to 0.99, which should fix it.
+
+GTK 3 seems to have a bug where it reports a surface as fully opaque even if it has rounded corners.
+This leads to niri filling the transparent pixels inside the corners with black.
+
+Setting the surface opacity to something below 1 fixes the problem because then GTK no longer reports the surface as opaque.

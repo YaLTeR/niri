@@ -13,9 +13,10 @@ use std::{env, mem, thread};
 use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDecorationsMode;
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
+use niri_config::debug::PreviewRender;
 use niri_config::{
-    Config, FloatOrInt, Key, Modifiers, OutputName, PreviewRender, TrackLayout,
-    WarpMouseToFocusMode, WorkspaceReference, Xkb, DEFAULT_MRU_COMMIT_MS,
+    Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
+    WorkspaceReference, Xkb, DEFAULT_MRU_COMMIT_MS,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -45,7 +46,7 @@ use smithay::desktop::{
     find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
-use smithay::input::keyboard::Layout as KeyboardLayout;
+use smithay::input::keyboard::{Layout as KeyboardLayout, XkbConfig};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
     GrabStartData as PointerGrabStartData, MotionEvent,
@@ -110,6 +111,8 @@ use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 
+#[cfg(feature = "dbus")]
+use crate::a11y::A11y;
 use crate::animation::Clock;
 use crate::backend::tty::SurfaceDmabufFeedback;
 use crate::backend::{Backend, Headless, RenderResult, Tty, Winit};
@@ -158,7 +161,7 @@ use crate::render_helpers::{
     render_to_texture, render_to_vec, shaders, RenderTarget, SplitElements,
 };
 use crate::ui::config_error_notification::ConfigErrorNotification;
-use crate::ui::exit_confirm_dialog::ExitConfirmDialog;
+use crate::ui::exit_confirm_dialog::{ExitConfirmDialog, ExitConfirmDialogRenderElement};
 use crate::ui::hotkey_overlay::HotkeyOverlay;
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
@@ -382,7 +385,7 @@ pub struct Niri {
     pub window_mru_ui: WindowMruUi,
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
-    pub exit_confirm_dialog: Option<ExitConfirmDialog>,
+    pub exit_confirm_dialog: ExitConfirmDialog,
 
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
     pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
@@ -394,6 +397,8 @@ pub struct Niri {
     pub dbus: Option<crate::dbus::DBusServers>,
     #[cfg(feature = "dbus")]
     pub a11y_keyboard_monitor: Option<crate::dbus::freedesktop_a11y::KeyboardMonitor>,
+    #[cfg(feature = "dbus")]
+    pub a11y: A11y,
     #[cfg(feature = "dbus")]
     pub inhibit_power_key_fd: Option<zbus::zvariant::OwnedFd>,
 
@@ -521,6 +526,7 @@ pub enum KeyboardFocus {
     LayerShell { surface: WlSurface },
     LockScreen { surface: Option<WlSurface> },
     ScreenshotUi,
+    ExitConfirmDialog,
     Overview,
 }
 
@@ -537,6 +543,8 @@ pub struct PointContents {
     pub window: Option<(Window, HitType)>,
     // If surface belongs to a layer surface, this is that layer surface.
     pub layer: Option<LayerSurface>,
+    // Pointer is over a hot corner.
+    pub hot_corner: bool,
 }
 
 #[derive(Debug, Default)]
@@ -636,6 +644,7 @@ impl KeyboardFocus {
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface.as_ref(),
             KeyboardFocus::ScreenshotUi => None,
+            KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
         }
     }
@@ -646,6 +655,7 @@ impl KeyboardFocus {
             KeyboardFocus::LayerShell { surface } => Some(surface),
             KeyboardFocus::LockScreen { surface } => surface,
             KeyboardFocus::ScreenshotUi => None,
+            KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
         }
     }
@@ -782,6 +792,10 @@ impl State {
         self.refresh_ipc_outputs();
         self.ipc_refresh_layout();
         self.ipc_refresh_keyboard_layout_index();
+
+        // Needs to be called after updating the keyboard focus.
+        #[cfg(feature = "dbus")]
+        self.niri.refresh_a11y();
     }
 
     fn notify_blocker_cleared(&mut self) {
@@ -969,7 +983,10 @@ impl State {
         let pointer = &self.niri.seat.get_pointer().unwrap();
         let location = pointer.current_location();
 
-        if !self.niri.is_locked() && !self.niri.screenshot_ui.is_open() {
+        if !self.niri.exit_confirm_dialog.is_open()
+            && !self.niri.is_locked()
+            && !self.niri.screenshot_ui.is_open()
+        {
             // Don't refresh cursor focus during transitions.
             if let Some((output, _)) = self.niri.output_under(location) {
                 let monitor = self.niri.layout.monitor_for_output(output).unwrap();
@@ -1088,7 +1105,9 @@ impl State {
         }
 
         // Compute the current focus.
-        let focus = if self.niri.is_locked() {
+        let focus = if self.niri.exit_confirm_dialog.is_open() {
+            KeyboardFocus::ExitConfirmDialog
+        } else if self.niri.is_locked() {
             KeyboardFocus::LockScreen {
                 surface: self.niri.lock_surface_focus(),
             }
@@ -1372,6 +1391,22 @@ impl State {
         }
     }
 
+    fn set_xkb_config(&mut self, xkb: XkbConfig) {
+        let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let num_lock = keyboard.modifier_state().num_lock;
+        if let Err(err) = keyboard.set_xkb_config(self, xkb) {
+            warn!("error updating xkb config: {err:?}");
+            return;
+        }
+
+        // Restore num lock to its previous value.
+        let mut mods_state = keyboard.modifier_state();
+        if mods_state.num_lock != num_lock {
+            mods_state.num_lock = num_lock;
+            keyboard.set_modifier_state(mods_state);
+        }
+    }
+
     pub fn reload_config(&mut self, config: Result<Config, ()>) {
         let _span = tracy_client::span!("State::reload_config");
 
@@ -1380,6 +1415,10 @@ impl State {
             Err(()) => {
                 self.niri.config_error_notification.show();
                 self.niri.queue_redraw_all();
+
+                #[cfg(feature = "dbus")]
+                self.niri.a11y_announce_config_error();
+
                 return;
             }
         };
@@ -1575,10 +1614,7 @@ impl State {
                     xkb = self.niri.xkb_from_locale1.clone().unwrap_or_default();
                 }
 
-                let keyboard = self.niri.seat.get_keyboard().unwrap();
-                if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
-                    warn!("error updating xkb config: {err:?}");
-                }
+                self.set_xkb_config(xkb.to_xkb_config());
             }
 
             self.ipc_keyboard_layouts_changed();
@@ -2315,11 +2351,7 @@ impl State {
         }
 
         let xkb = xkb.clone();
-        let keyboard = self.niri.seat.get_keyboard().unwrap();
-        if let Err(err) = keyboard.set_xkb_config(self, xkb.to_xkb_config()) {
-            warn!("error updating xkb config: {err:?}");
-        }
-
+        self.set_xkb_config(xkb.to_xkb_config());
         self.ipc_keyboard_layouts_changed();
     }
 }
@@ -2517,13 +2549,10 @@ impl Niri {
             hotkey_overlay.show();
         }
 
-        let exit_confirm_dialog = match ExitConfirmDialog::new() {
-            Ok(x) => Some(x),
-            Err(err) => {
-                warn!("error creating the exit confirm dialog: {err:?}");
-                None
-            }
-        };
+        let exit_confirm_dialog = ExitConfirmDialog::new(animation_clock.clone(), config.clone());
+
+        #[cfg(feature = "dbus")]
+        let a11y = A11y::new(event_loop.clone());
 
         event_loop
             .insert_source(
@@ -2724,6 +2753,8 @@ impl Niri {
             dbus: None,
             #[cfg(feature = "dbus")]
             a11y_keyboard_monitor: None,
+            #[cfg(feature = "dbus")]
+            a11y,
             #[cfg(feature = "dbus")]
             inhibit_power_key_fd: None,
 
@@ -3268,7 +3299,7 @@ impl Niri {
         extended_bounds: bool,
         pos: Point<f64, Logical>,
     ) -> Option<(Output, &Workspace<Mapped>)> {
-        if self.is_locked() || self.screenshot_ui.is_open() {
+        if self.exit_confirm_dialog.is_open() || self.is_locked() || self.screenshot_ui.is_open() {
             return None;
         }
 
@@ -3301,7 +3332,11 @@ impl Niri {
     /// The cursor may be inside the window's activation region, but not within the window's input
     /// region.
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Mapped> {
-        if self.is_locked() || self.screenshot_ui.is_open() || self.window_mru_ui.is_open() {
+        if self.exit_confirm_dialog.is_open()
+            || self.is_locked()
+            || self.screenshot_ui.is_open()
+            || self.window_mru_ui.is_open()
+        {
             return None;
         }
 
@@ -3353,7 +3388,9 @@ impl Niri {
         // The ordering here must be consistent with the ordering in render() so that input is
         // consistent with the visuals.
 
-        if self.is_locked() {
+        if self.exit_confirm_dialog.is_open() {
+            return rv;
+        } else if self.is_locked() {
             let Some(state) = self.output_state.get(output) else {
                 return rv;
             };
@@ -3480,6 +3517,7 @@ impl Niri {
             if !hot_corners.off {
                 let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
                 if hot_corner.contains(pos_within_output) {
+                    rv.hot_corner = true;
                     return rv;
                 }
             }
@@ -3990,6 +4028,7 @@ impl Niri {
             // layer-shell, the layout will briefly draw as active, despite never having focus.
             KeyboardFocus::LockScreen { .. } => true,
             KeyboardFocus::ScreenshotUi => true,
+            KeyboardFocus::ExitConfirmDialog => true,
             KeyboardFocus::Overview => true,
         };
 
@@ -4120,6 +4159,7 @@ impl Niri {
 
         self.layout.advance_animations();
         self.config_error_notification.advance_animations();
+        self.exit_confirm_dialog.advance_animations();
         self.screenshot_ui.advance_animations();
         self.window_mru_ui.advance_animations();
 
@@ -4218,11 +4258,12 @@ impl Niri {
         }
 
         // Next, the exit confirm dialog.
-        if let Some(dialog) = &self.exit_confirm_dialog {
-            if let Some(element) = dialog.render(renderer, output) {
-                elements.push(element.into());
-            }
-        }
+        elements.extend(
+            self.exit_confirm_dialog
+                .render(renderer, output)
+                .into_iter()
+                .map(OutputRenderElements::from),
+        );
 
         // Next, the config error notification too.
         if let Some(element) = self.config_error_notification.render(renderer, output) {
@@ -4511,6 +4552,7 @@ impl Niri {
             state.unfinished_animations_remain = self.layout.are_animations_ongoing(Some(output));
             state.unfinished_animations_remain |=
                 self.config_error_notification.are_animations_ongoing();
+            state.unfinished_animations_remain |= self.exit_confirm_dialog.are_animations_ongoing();
             state.unfinished_animations_remain |= self.screenshot_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= self.window_mru_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= self.thumbnail_selection_animation.is_some();
@@ -6450,6 +6492,7 @@ niri_render_elements! {
         >>>,
         ScreenshotUi = ScreenshotUiRenderElement,
         WindowMruUi = WindowMruUiRenderElement,
+        ExitConfirmDialog = ExitConfirmDialogRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
