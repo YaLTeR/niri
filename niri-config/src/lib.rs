@@ -1786,6 +1786,7 @@ mod tests {
             recent_windows: RecentWindows {
                 off: true,
                 mod_key: Alt,
+                enable_selection_animation: false,
             },
         }
         "#);
