@@ -47,11 +47,6 @@ So if you hit this problem, comment out `prefer-no-csd` in the niri config and r
 Some Java apps like Ghidra can show up blank under xwayland-satellite.
 To fix this, run them with the `_JAVA_AWT_WM_NONREPARENTING=1` environment variable.
 
-### rofi-wayland
-
-There's a bug in rofi-wayland that prevents it from accepting keyboard input on niri with errors in the output.
-It's been fixed in rofi, but [the fix had not been released yet](https://github.com/davatorium/rofi/discussions/2008).
-
 ### Zen Browser
 
 For some reason, DMABUF screencasts are disabled in the Zen Browser, so screencasting doesn't work out of the box on niri.
