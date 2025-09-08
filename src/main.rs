@@ -75,7 +75,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // environment if they are set, since they will cause the winit backend to be selected
         // instead.
         if env::var_os("WSL_DISTRO_NAME").is_none() {
-        
             if env::var_os("DISPLAY").is_some() {
                 warn!("running as a session but DISPLAY is set, removing it");
                 env::remove_var("DISPLAY");
