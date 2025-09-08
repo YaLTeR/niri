@@ -50,11 +50,11 @@ readme = "README.md"
 keywords = ["wayland", "compositor", "tiling", "smithay", "wm"]
 
 [dependencies]
+atomic = "0.6.1"
 anyhow.workspace = true
 arrayvec = "0.7.6"
 async-channel = "2.3.1"
 async-io = { version = "2.4.0", optional = true }
-atomic = "0.6.0"
 bitflags.workspace = true
 bytemuck = { version = "1.22.0", features = ["derive"] }
 calloop = { version = "0.14.2", features = ["executor", "futures-io"] }

@@ -171,7 +171,7 @@ impl PipeWire {
         let token = event_loop
             .insert_source(generic, move |_, wrapper, _| {
                 let _span = tracy_client::span!("pipewire iteration");
-                wrapper.0.loop_().iterate(Some(Duration::ZERO));
+                wrapper.0.loop_().iterate(Duration::ZERO);
                 Ok(PostAction::Continue)
             })
             .unwrap();
@@ -849,12 +849,24 @@ impl Cast {
         }
     }
 
-    /// Updates sync timeline with a new monotonically increasing point value
-    fn update_sync_timeline(&mut self) -> Option<u64> {
+    /// Updates sync timeline with a new monotonically increasing point value for linux-drm-syncobj-v1
+    async fn update_sync_timeline(&mut self) -> Option<u64> {
         if let Some(sync_timeline) = self.sync_timeline.as_mut() {
             static COUNTER: AtomicU64 = AtomicU64::new(1);
-            let point = COUNTER.fetch_add(1, Ordering::SeqCst);
-            sync_timeline.set_acquire_point(point);
+            let point = COUNTER.fetch_add(2, Ordering::SeqCst); // Increment by 2 for acquire/release pair
+            
+            // Set acquire point for this frame
+            if let Err(err) = sync_timeline.set_acquire_point(point).await {
+                warn!("Failed to set acquire point: {:?}", err);
+                return None;
+            }
+            
+            // Set release point for this frame (next timeline point)
+            if let Err(err) = sync_timeline.signal_release(point + 1).await {
+                warn!("Failed to set release point: {:?}", err);
+                return None;
+            }
+            
             Some(point)
         } else {
             None
@@ -896,20 +908,29 @@ impl Cast {
     }
 
 
-    /// Synchronizes DMA-BUF buffers with timeline for explicit synchronization
-    fn sync_dmabuf_with_timeline(
+    /// Synchronizes DMA-BUF buffers with timeline for explicit synchronization using linux-drm-syncobj-v1
+    async fn sync_dmabuf_with_timeline(
         sync_timeline: &mut Option<SyncTimelineRef>,
         buffer: &mut [pipewire::spa::buffer::Data],
     ) -> Result<(), anyhow::Error> {
         if let Some(sync_timeline) = sync_timeline {
+            // Look for sync object file descriptors (acquire and release timelines)
+            let mut sync_fds = Vec::new();
             for data in buffer {
-                if data.type_() == DataType::DmaBuf {
-                    if let Some(_fd) = data.dma_buf_fd() {
-                        if let Err(err) = data.sync_dma_buf(sync_timeline) {
-                            return Err(anyhow::anyhow!("Failed to sync DMA-BUF: {:?}", err));
-                        }
+                if data.type_() == DataType::SyncObj {
+                    if let Some(fd) = data.sync_obj_fd() {
+                        sync_fds.push(fd);
                     }
                 }
+            }
+
+            // If we have sync object timeline fds, use them for explicit sync
+            if sync_fds.len() >= 2 {
+                let acquire_timeline_fd = sync_fds[0];  // First syncobj is acquire timeline
+                let release_timeline_fd = sync_fds[1];  // Second syncobj is release timeline
+                
+                sync_timeline.sync_dma_buf(acquire_timeline_fd, release_timeline_fd).await
+                    .map_err(|err| anyhow::anyhow!("Failed to sync DMA-BUF with timeline: {:?}", err))?;
             }
         }
         Ok(())
@@ -949,9 +970,10 @@ impl Cast {
         self.update_released_buffers();
 
         // Get acquire point from timeline - this is our producer role
-        let acquire_point = self.update_sync_timeline().unwrap_or(0);
+        let acquire_point = self.update_sync_timeline().await.unwrap_or(0);
 
-        let Some(mut buffer) = self.stream.dequeue_buffer_async().await? else {
+        // Use the new explicit sync dequeue method for timeline synchronization
+        let Some(mut buffer) = self.stream.dequeue_buffer_with_sync().await? else {
             return Ok(false);
         };
 
@@ -980,7 +1002,7 @@ impl Cast {
 
         // Only sync the DMA-BUF with timeline, but don't set release point
         if wait_for_sync && self.sync_timeline.is_some() {
-            Self::sync_dmabuf_with_timeline(&mut self.sync_timeline, buffer.datas_mut())?;
+            Self::sync_dmabuf_with_timeline(&mut self.sync_timeline, buffer.datas_mut()).await?;
         }
 
         // Save buffer_id and acquire_point before dropping buffer
@@ -1032,7 +1054,8 @@ impl Cast {
         }
 
         // Get acquire point from timeline - this is our producer role
-        let acquire_point = self.update_sync_timeline().unwrap_or(0);
+        // Note: This method needs to be async to properly handle timeline updates
+        let acquire_point = async_io::block_on(self.update_sync_timeline()).unwrap_or(0);
 
         let Some(mut buffer) = self.stream.dequeue_buffer() else {
             warn!("no available buffer in pw stream, skipping clear");
@@ -1063,7 +1086,7 @@ impl Cast {
 
         // Only sync the DMA-BUF with timeline, but don't set release point
         if wait_for_sync && self.sync_timeline.is_some() {
-            if let Err(err) = Self::sync_dmabuf_with_timeline(&mut self.sync_timeline, buffer.datas_mut()) {
+            if let Err(err) = async_io::block_on(Self::sync_dmabuf_with_timeline(&mut self.sync_timeline, buffer.datas_mut())) {
                 warn!("Sync operations failed: {:?}", err);
                 return false;
             }
