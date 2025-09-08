@@ -70,20 +70,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     if cli.session {
-        // If we're starting as a session, assume that the intention is to start on a TTY. Remove
-        // DISPLAY, WAYLAND_DISPLAY or WAYLAND_SOCKET from our environment if they are set, since
-        // they will cause the winit backend to be selected instead.
-        if env::var_os("DISPLAY").is_some() {
-            warn!("running as a session but DISPLAY is set, removing it");
-            env::remove_var("DISPLAY");
-        }
-        if env::var_os("WAYLAND_DISPLAY").is_some() {
-            warn!("running as a session but WAYLAND_DISPLAY is set, removing it");
-            env::remove_var("WAYLAND_DISPLAY");
-        }
-        if env::var_os("WAYLAND_SOCKET").is_some() {
-            warn!("running as a session but WAYLAND_SOCKET is set, removing it");
-            env::remove_var("WAYLAND_SOCKET");
+        // If we're starting as a session, assume that the intention is to start on a TTY unless
+        // this is a WSL environment. Remove DISPLAY, WAYLAND_DISPLAY or WAYLAND_SOCKET from our
+        // environment if they are set, since they will cause the winit backend to be selected
+        // instead.
+        if env::var_os("WSL_DISTRO_NAME").is_none() {
+            if env::var_os("DISPLAY").is_some() {
+                warn!("running as a session but DISPLAY is set, removing it");
+                env::remove_var("DISPLAY");
+            }
+            if env::var_os("WAYLAND_DISPLAY").is_some() {
+                warn!("running as a session but WAYLAND_DISPLAY is set, removing it");
+                env::remove_var("WAYLAND_DISPLAY");
+            }
+            if env::var_os("WAYLAND_SOCKET").is_some() {
+                warn!("running as a session but WAYLAND_SOCKET is set, removing it");
+                env::remove_var("WAYLAND_SOCKET");
+            }
         }
 
         // Set the current desktop for xdg-desktop-portal.
