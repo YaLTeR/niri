@@ -653,11 +653,15 @@ impl PipeWire {
                         let plane_count = dmabuf.num_planes();
                         assert_eq!((*spa_buffer).n_datas as usize, plane_count);
 
-                        for (i, fd) in dmabuf.handles().enumerate() {
+                        for (i, (fd, (stride, offset))) in
+                            zip(dmabuf.handles(), zip(dmabuf.strides(), dmabuf.offsets()))
+                                .enumerate()
+                        {
                             let spa_data = (*spa_buffer).datas.add(i);
                             assert!((*spa_data).type_ & (1 << DataType::DmaBuf.as_raw()) > 0);
 
                             (*spa_data).type_ = DataType::DmaBuf.as_raw();
+
                             // With DMA-BUFs, consumers should ignore the maxsize field, and
                             // producers are allowed to set it to 0.
                             //
@@ -665,6 +669,15 @@ impl PipeWire {
                             (*spa_data).maxsize = 1;
                             (*spa_data).fd = fd.as_raw_fd() as i64;
                             (*spa_data).flags = SPA_DATA_FLAG_READWRITE;
+
+                            let chunk = (*spa_data).chunk;
+                            (*chunk).stride = stride as i32;
+                            (*chunk).offset = offset;
+
+                            trace!(
+                                "pw buffer plane: fd={}, stride={stride}, offset={offset}",
+                                (*spa_data).fd
+                            );
                         }
 
                         let fd = (*(*spa_buffer).datas).fd;
@@ -1101,30 +1114,6 @@ impl Cast {
             let fd = (*(*spa_buffer).datas).fd;
             let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
 
-            for (i, (stride, offset)) in zip(dmabuf.strides(), dmabuf.offsets()).enumerate() {
-                let spa_data = (*spa_buffer).datas.add(i);
-                let chunk = (*spa_data).chunk;
-
-                // With DMA-BUFs, consumers should ignore the size field, and producers are allowed
-                // to set it to 0.
-                //
-                // https://docs.pipewire.org/page_dma_buf.html
-                //
-                // However, OBS checks for size != 0 as a workaround for old compositor versions,
-                // so we set it to 1.
-                (*chunk).size = 1;
-                // Clear the corrupted flag we may have set before.
-                (*chunk).flags = SPA_CHUNK_FLAG_NONE as i32;
-
-                (*chunk).stride = stride as i32;
-                (*chunk).offset = offset;
-
-                trace!(
-                    "pw buffer: fd = {}, stride = {stride}, offset = {offset}",
-                    (*spa_data).fd
-                );
-            }
-
             match render_to_dmabuf(
                 renderer,
                 dmabuf,
@@ -1168,30 +1157,6 @@ impl Cast {
 
             let fd = (*(*spa_buffer).datas).fd;
             let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
-
-            for (i, (stride, offset)) in zip(dmabuf.strides(), dmabuf.offsets()).enumerate() {
-                let spa_data = (*spa_buffer).datas.add(i);
-                let chunk = (*spa_data).chunk;
-
-                // With DMA-BUFs, consumers should ignore the size field, and producers are allowed
-                // to set it to 0.
-                //
-                // https://docs.pipewire.org/page_dma_buf.html
-                //
-                // However, OBS checks for size != 0 as a workaround for old compositor versions,
-                // so we set it to 1.
-                (*chunk).size = 1;
-                // Clear the corrupted flag we may have set before.
-                (*chunk).flags = SPA_CHUNK_FLAG_NONE as i32;
-
-                (*chunk).stride = stride as i32;
-                (*chunk).offset = offset;
-
-                trace!(
-                    "pw buffer: fd = {}, stride = {stride}, offset = {offset}",
-                    (*spa_data).fd
-                );
-            }
 
             match clear_dmabuf(renderer, dmabuf) {
                 Ok(sync_point) => {
