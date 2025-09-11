@@ -10,6 +10,7 @@ layout {
     center-focused-column "never"
     always-center-single-column
     empty-workspace-above-first
+    hide_floating_layout_if_unfocused
     default-column-display "tabbed"
     background-color "#003300"
 
@@ -132,6 +133,16 @@ If set, niri will always center a single column on a workspace, regardless of th
 ```kdl
 layout {
     always-center-single-column
+}
+```
+
+### `hide_floating_layout_if_unfocused`
+
+If set, niri will hide floating layout when switching focus from floating to scrolling.
+
+```kdl
+layout {
+    hide_floating_layout_if_unfocused
 }
 ```
 
