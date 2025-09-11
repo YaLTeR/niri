@@ -2831,6 +2831,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return false;
         }
 
+        // Always render scrolling layout above the top layer is equivalent to
+        // hide floating layout if it is unfocused.
+        if self.options.hide_floating_layout_if_unfocused {
+            return true;
+        }
+
         self.columns[self.active_column_idx].is_fullscreen
     }
 
