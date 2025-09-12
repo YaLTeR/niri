@@ -11,7 +11,9 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
-use smithay::wayland::shell::xdg::{ToplevelStateSet, XdgToplevelSurfaceRoleAttributes};
+use smithay::wayland::shell::xdg::{
+    ToplevelState, ToplevelStateSet, XdgToplevelSurfaceRoleAttributes,
+};
 use wayland_protocols_wlr::foreign_toplevel::v1::server::{
     zwlr_foreign_toplevel_handle_v1, zwlr_foreign_toplevel_manager_v1,
 };
@@ -19,7 +21,7 @@ use zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1;
 use zwlr_foreign_toplevel_manager_v1::ZwlrForeignToplevelManagerV1;
 
 use crate::niri::State;
-use crate::utils::with_toplevel_role;
+use crate::utils::with_toplevel_role_and_current;
 
 const VERSION: u32 = 3;
 
@@ -96,11 +98,16 @@ pub fn refresh(state: &mut State) {
     state.niri.layout.with_windows(|mapped, output, _, _| {
         let toplevel = mapped.toplevel();
         let wl_surface = toplevel.wl_surface();
-        with_toplevel_role(toplevel, |role| {
+        with_toplevel_role_and_current(toplevel, |role, cur| {
+            let Some(cur) = cur else {
+                error!("mapped must have had initial commit");
+                return;
+            };
+
             if state.niri.keyboard_focus.surface() == Some(wl_surface) {
                 focused = Some((mapped.window.clone(), output.cloned()));
             } else {
-                refresh_toplevel(protocol_state, wl_surface, role, output, false);
+                refresh_toplevel(protocol_state, wl_surface, role, cur, output, false);
             }
         });
     });
@@ -109,8 +116,13 @@ pub fn refresh(state: &mut State) {
     if let Some((window, output)) = focused {
         let toplevel = window.toplevel().expect("no X11 support");
         let wl_surface = toplevel.wl_surface();
-        with_toplevel_role(toplevel, |role| {
-            refresh_toplevel(protocol_state, wl_surface, role, output.as_ref(), true);
+        with_toplevel_role_and_current(toplevel, |role, cur| {
+            let Some(cur) = cur else {
+                error!("mapped must have had initial commit");
+                return;
+            };
+
+            refresh_toplevel(protocol_state, wl_surface, role, cur, output.as_ref(), true);
         });
     }
 }
@@ -144,10 +156,11 @@ fn refresh_toplevel(
     protocol_state: &mut ForeignToplevelManagerState,
     wl_surface: &WlSurface,
     role: &XdgToplevelSurfaceRoleAttributes,
+    current: &ToplevelState,
     output: Option<&Output>,
     has_focus: bool,
 ) {
-    let states = to_state_vec(&role.current.states, has_focus);
+    let states = to_state_vec(&current.states, has_focus);
 
     match protocol_state.toplevels.entry(wl_surface.clone()) {
         Entry::Occupied(entry) => {

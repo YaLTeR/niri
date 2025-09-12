@@ -199,6 +199,10 @@ impl Client {
         self.event_loop
             .dispatch(Duration::ZERO, &mut self.state)
             .unwrap();
+
+        if let Some(error) = self.connection.protocol_error() {
+            panic!("{error}");
+        }
     }
 
     pub fn send_sync(&self) -> Arc<SyncData> {

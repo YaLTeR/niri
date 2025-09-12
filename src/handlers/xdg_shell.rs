@@ -981,6 +981,7 @@ impl State {
             workspace_name: ws.and_then(|w| w.name().cloned()),
         };
 
+        trace!(surface = %toplevel.wl_surface().id(), "sending initial configure");
         toplevel.send_configure();
     }
 
@@ -1258,8 +1259,9 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
                 .unwrap()
                 .lock()
                 .unwrap();
+            let serial = role.last_acked.as_ref().map(|c| c.serial);
 
-            (got_unmapped, dmabuf, role.configure_serial)
+            (got_unmapped, dmabuf, serial)
         });
 
         let mut transaction_for_dmabuf = None;
@@ -1304,7 +1306,7 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
             }
 
             animate = mapped.should_animate_commit(serial);
-        } else {
+        } else if !got_unmapped {
             error!("commit on a mapped surface without a configured serial");
         };
 
