@@ -12,6 +12,7 @@ use smithay::utils::Rectangle;
 use super::*;
 
 mod animations;
+mod fullscreen;
 
 impl<W: LayoutElement> Default for Layout<W> {
     fn default() -> Self {
@@ -30,9 +31,9 @@ struct TestWindowInner {
     forced_size: Cell<Option<Size<i32, Logical>>>,
     min_size: Size<i32, Logical>,
     max_size: Size<i32, Logical>,
-    pending_fullscreen: Cell<bool>,
+    pending_sizing_mode: Cell<SizingMode>,
     pending_activated: Cell<bool>,
-    is_fullscreen: Cell<bool>,
+    sizing_mode: Cell<SizingMode>,
     is_windowed_fullscreen: Cell<bool>,
     is_pending_windowed_fullscreen: Cell<bool>,
     animate_next_configure: Cell<bool>,
@@ -78,9 +79,9 @@ impl TestWindow {
             forced_size: Cell::new(None),
             min_size: params.min_max_size.0,
             max_size: params.min_max_size.1,
-            pending_fullscreen: Cell::new(false),
+            pending_sizing_mode: Cell::new(SizingMode::Normal),
             pending_activated: Cell::new(false),
-            is_fullscreen: Cell::new(false),
+            sizing_mode: Cell::new(SizingMode::Normal),
             is_windowed_fullscreen: Cell::new(false),
             is_pending_windowed_fullscreen: Cell::new(false),
             animate_next_configure: Cell::new(false),
@@ -123,8 +124,8 @@ impl TestWindow {
 
         self.0.animate_next_configure.set(false);
 
-        if self.0.is_fullscreen.get() != self.0.pending_fullscreen.get() {
-            self.0.is_fullscreen.set(self.0.pending_fullscreen.get());
+        if self.0.sizing_mode.get() != self.0.pending_sizing_mode.get() {
+            self.0.sizing_mode.set(self.0.pending_sizing_mode.get());
             changed = true;
         }
 
@@ -172,7 +173,7 @@ impl LayoutElement for TestWindow {
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
-        is_fullscreen: bool,
+        mode: SizingMode,
         _animate: bool,
         _transaction: Option<Transaction>,
     ) {
@@ -181,9 +182,9 @@ impl LayoutElement for TestWindow {
             self.0.animate_next_configure.set(true);
         }
 
-        self.0.pending_fullscreen.set(is_fullscreen);
+        self.0.pending_sizing_mode.set(mode);
 
-        if is_fullscreen {
+        if mode.is_fullscreen() {
             self.0.is_pending_windowed_fullscreen.set(false);
         }
     }
@@ -232,20 +233,12 @@ impl LayoutElement for TestWindow {
 
     fn set_floating(&mut self, _floating: bool) {}
 
-    fn is_fullscreen(&self) -> bool {
-        if self.0.is_windowed_fullscreen.get() {
-            return false;
-        }
-
-        self.0.is_fullscreen.get()
+    fn sizing_mode(&self) -> SizingMode {
+        self.0.sizing_mode.get()
     }
 
-    fn is_pending_fullscreen(&self) -> bool {
-        if self.0.is_pending_windowed_fullscreen.get() {
-            return false;
-        }
-
-        self.0.pending_fullscreen.get()
+    fn pending_sizing_mode(&self) -> SizingMode {
+        self.0.pending_sizing_mode.get()
     }
 
     fn requested_size(&self) -> Option<Size<i32, Logical>> {
@@ -566,6 +559,10 @@ enum Op {
         id: Option<usize>,
     },
     MaximizeColumn,
+    MaximizeWindowToEdges {
+        #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+        id: Option<usize>,
+    },
     SetColumnWidth(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
     SetWindowWidth {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
@@ -1259,6 +1256,16 @@ impl Op {
                 layout.toggle_window_height(id.as_ref(), false);
             }
             Op::MaximizeColumn => layout.toggle_full_width(),
+            Op::MaximizeWindowToEdges { id } => {
+                let id = id.or_else(|| layout.focus().map(|win| *win.id()));
+                let Some(id) = id else {
+                    return;
+                };
+                if !layout.has_window(&id) {
+                    return;
+                }
+                layout.toggle_maximized(&id);
+            }
             Op::SetColumnWidth(change) => layout.set_column_width(change),
             Op::SetWindowWidth { id, change } => {
                 let id = id.filter(|id| layout.has_window(id));
@@ -1606,6 +1613,9 @@ fn operations_dont_panic() {
         Op::FullscreenWindow(1),
         Op::FullscreenWindow(2),
         Op::FullscreenWindow(3),
+        Op::MaximizeWindowToEdges { id: Some(1) },
+        Op::MaximizeWindowToEdges { id: Some(2) },
+        Op::MaximizeWindowToEdges { id: Some(3) },
         Op::FocusColumnLeft,
         Op::FocusColumnRight,
         Op::FocusColumnRightOrFirst,
@@ -1760,6 +1770,9 @@ fn operations_from_starting_state_dont_panic() {
         Op::FullscreenWindow(1),
         Op::FullscreenWindow(2),
         Op::FullscreenWindow(3),
+        Op::MaximizeWindowToEdges { id: Some(1) },
+        Op::MaximizeWindowToEdges { id: Some(2) },
+        Op::MaximizeWindowToEdges { id: Some(3) },
         Op::SetFullscreenWindow {
             window: 1,
             is_fullscreen: false,
@@ -2181,39 +2194,6 @@ fn move_workspace_to_output() {
 }
 
 #[test]
-fn fullscreen() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(1),
-        },
-        Op::FullscreenWindow(1),
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn unfullscreen_window_in_column() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(1),
-        },
-        Op::AddWindow {
-            params: TestWindowParams::new(2),
-        },
-        Op::ConsumeOrExpelWindowLeft { id: None },
-        Op::SetFullscreenWindow {
-            window: 2,
-            is_fullscreen: false,
-        },
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
 fn open_right_of_on_different_workspace() {
     let ops = [
         Op::AddOutput(1),
@@ -2286,95 +2266,6 @@ fn open_right_of_on_different_workspace_ewaf() {
         1,
         "the new window must become active"
     );
-}
-
-#[test]
-fn unfullscreen_view_offset_not_reset_on_removal() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(0),
-        },
-        Op::FullscreenWindow(0),
-        Op::AddWindow {
-            params: TestWindowParams::new(1),
-        },
-        Op::ConsumeOrExpelWindowRight { id: None },
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn unfullscreen_view_offset_not_reset_on_consume() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(0),
-        },
-        Op::FullscreenWindow(0),
-        Op::AddWindow {
-            params: TestWindowParams::new(1),
-        },
-        Op::ConsumeWindowIntoColumn,
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn unfullscreen_view_offset_not_reset_on_quick_double_toggle() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(0),
-        },
-        Op::FullscreenWindow(0),
-        Op::FullscreenWindow(0),
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn unfullscreen_view_offset_set_on_fullscreening_inactive_tile_in_column() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(0),
-        },
-        Op::AddWindow {
-            params: TestWindowParams::new(1),
-        },
-        Op::ConsumeOrExpelWindowLeft { id: None },
-        Op::FullscreenWindow(0),
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn unfullscreen_view_offset_not_reset_on_gesture() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(0),
-        },
-        Op::AddWindow {
-            params: TestWindowParams::new(1),
-        },
-        Op::FullscreenWindow(1),
-        Op::ViewOffsetGestureBegin {
-            output_idx: 1,
-            workspace_idx: None,
-            is_touchpad: true,
-        },
-        Op::ViewOffsetGestureEnd {
-            is_touchpad: Some(true),
-        },
-    ];
-
-    check_ops(&ops);
 }
 
 #[test]
@@ -2511,39 +2402,6 @@ fn one_window_in_column_becomes_weight_1() {
         Op::Communicate(1),
         Op::CloseWindow(0),
         Op::CloseWindow(1),
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn one_window_in_column_becomes_weight_1_after_fullscreen() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(0),
-        },
-        Op::AddWindow {
-            params: TestWindowParams::new(1),
-        },
-        Op::ConsumeOrExpelWindowLeft { id: None },
-        Op::AddWindow {
-            params: TestWindowParams::new(2),
-        },
-        Op::ConsumeOrExpelWindowLeft { id: None },
-        Op::SetWindowHeight {
-            id: None,
-            change: SizeChange::SetFixed(100),
-        },
-        Op::Communicate(2),
-        Op::FocusWindowUp,
-        Op::SetWindowHeight {
-            id: None,
-            change: SizeChange::SetFixed(200),
-        },
-        Op::Communicate(1),
-        Op::CloseWindow(0),
-        Op::FullscreenWindow(1),
     ];
 
     check_ops(&ops);
@@ -3298,146 +3156,6 @@ fn preset_column_width_reset_after_set_width() {
 }
 
 #[test]
-fn disable_tabbed_mode_in_fullscreen() {
-    let ops = [
-        Op::AddOutput(0),
-        Op::AddWindow {
-            params: TestWindowParams::new(0),
-        },
-        Op::AddWindow {
-            params: TestWindowParams::new(1),
-        },
-        Op::ConsumeOrExpelWindowLeft { id: None },
-        Op::ToggleColumnTabbedDisplay,
-        Op::FullscreenWindow(0),
-        Op::ToggleColumnTabbedDisplay,
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn unfullscreen_with_large_border() {
-    let ops = [
-        Op::AddWindow {
-            params: TestWindowParams::new(0),
-        },
-        Op::FullscreenWindow(0),
-        Op::Communicate(0),
-        Op::FullscreenWindow(0),
-    ];
-
-    let options = Options {
-        border: niri_config::Border {
-            off: false,
-            width: niri_config::FloatOrInt(10000.),
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    check_ops_with_options(options, &ops);
-}
-
-#[test]
-fn fullscreen_to_windowed_fullscreen() {
-    let ops = [
-        Op::AddOutput(0),
-        Op::AddWindow {
-            params: TestWindowParams::new(0),
-        },
-        Op::FullscreenWindow(0),
-        Op::Communicate(0), // Make sure it goes into fullscreen.
-        Op::ToggleWindowedFullscreen(0),
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn windowed_fullscreen_to_fullscreen() {
-    let ops = [
-        Op::AddOutput(0),
-        Op::AddWindow {
-            params: TestWindowParams::new(0),
-        },
-        Op::FullscreenWindow(0),
-        Op::Communicate(0),              // Commit fullscreen state.
-        Op::ToggleWindowedFullscreen(0), // Switch is_fullscreen() to false.
-        Op::FullscreenWindow(0),         // Switch is_fullscreen() back to true.
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn move_pending_unfullscreen_window_out_of_active_column() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(1),
-        },
-        Op::FullscreenWindow(1),
-        Op::Communicate(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(2),
-        },
-        Op::ConsumeWindowIntoColumn,
-        // Window 1 is now pending unfullscreen.
-        // Moving it out should reset view_offset_before_fullscreen.
-        Op::MoveWindowToWorkspaceDown(true),
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn move_unfocused_pending_unfullscreen_window_out_of_active_column() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(1),
-        },
-        Op::FullscreenWindow(1),
-        Op::Communicate(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(2),
-        },
-        Op::ConsumeWindowIntoColumn,
-        // Window 1 is now pending unfullscreen.
-        // Moving it out should reset view_offset_before_fullscreen.
-        Op::FocusWindowDown,
-        Op::MoveWindowToWorkspace {
-            window_id: Some(1),
-            workspace_idx: 1,
-        },
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn interactive_resize_on_pending_unfullscreen_column() {
-    let ops = [
-        Op::AddWindow {
-            params: TestWindowParams::new(2),
-        },
-        Op::FullscreenWindow(2),
-        Op::Communicate(2),
-        Op::SetFullscreenWindow {
-            window: 2,
-            is_fullscreen: false,
-        },
-        Op::InteractiveResizeBegin {
-            window: 2,
-            edges: ResizeEdge::RIGHT,
-        },
-        Op::Communicate(2),
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
 fn move_column_to_workspace_unfocused_with_multiple_monitors() {
     let ops = [
         Op::AddOutput(1),
@@ -3498,107 +3216,6 @@ fn move_column_to_workspace_unfocused_with_multiple_monitors() {
             }
         );
     }
-}
-
-#[test]
-fn interactive_move_unfullscreen_to_floating_stops_dnd_scroll() {
-    let ops = [
-        Op::AddOutput(3),
-        Op::AddWindow {
-            params: TestWindowParams {
-                is_floating: true,
-                ..TestWindowParams::new(4)
-            },
-        },
-        // This moves the window to tiling.
-        Op::SetFullscreenWindow {
-            window: 4,
-            is_fullscreen: true,
-        },
-        // This starts a DnD scroll since we're dragging a tiled window.
-        Op::InteractiveMoveBegin {
-            window: 4,
-            output_idx: 3,
-            px: 0.0,
-            py: 0.0,
-        },
-        // This will cause the window to unfullscreen to floating, and should stop the DnD scroll
-        // since we're no longer dragging a tiled window, but rather a floating one.
-        Op::InteractiveMoveUpdate {
-            window: 4,
-            dx: 0.0,
-            dy: 15035.31210741684,
-            output_idx: 3,
-            px: 0.0,
-            py: 0.0,
-        },
-        Op::InteractiveMoveEnd { window: 4 },
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn unfullscreen_view_offset_not_reset_during_dnd_gesture() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(3),
-        },
-        Op::FullscreenWindow(3),
-        Op::Communicate(3),
-        Op::DndUpdate {
-            output_idx: 1,
-            px: 0.0,
-            py: 0.0,
-        },
-        Op::FullscreenWindow(3),
-        Op::Communicate(3),
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn unfullscreen_view_offset_not_reset_during_gesture() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(3),
-        },
-        Op::FullscreenWindow(3),
-        Op::Communicate(3),
-        Op::ViewOffsetGestureBegin {
-            output_idx: 1,
-            workspace_idx: None,
-            is_touchpad: false,
-        },
-        Op::FullscreenWindow(3),
-        Op::Communicate(3),
-    ];
-
-    check_ops(&ops);
-}
-
-#[test]
-fn unfullscreen_view_offset_not_reset_during_ongoing_gesture() {
-    let ops = [
-        Op::AddOutput(1),
-        Op::AddWindow {
-            params: TestWindowParams::new(3),
-        },
-        Op::ViewOffsetGestureBegin {
-            output_idx: 1,
-            workspace_idx: None,
-            is_touchpad: false,
-        },
-        Op::FullscreenWindow(3),
-        Op::Communicate(3),
-        Op::FullscreenWindow(3),
-        Op::Communicate(3),
-    ];
-
-    check_ops(&ops);
 }
 
 #[test]

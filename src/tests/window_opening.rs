@@ -5,7 +5,7 @@ use niri_config::Config;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::*;
-use crate::layout::LayoutElement;
+use crate::layout::LayoutElement as _;
 use crate::utils::with_toplevel_role;
 
 #[test]
@@ -65,6 +65,7 @@ fn simple() {
 }
 
 #[test]
+#[should_panic(expected = "Protocol error 3 on object xdg_surface")]
 fn dont_ack_initial_configure() {
     let mut f = Fixture::new();
     f.add_output(1, (1920, 1080));
@@ -80,19 +81,6 @@ fn dont_ack_initial_configure() {
     // Don't ack the configure.
     window.commit();
     f.double_roundtrip(id);
-
-    // FIXME: Technically this is a protocol violation but uh. Smithay currently doesn't check it,
-    // and I'm not sure if it can be done generically in Smithay (because a compositor may not use
-    // its rendering helpers). I might add a check in niri itself sometime; I'm just not sure if
-    // there might be clients that this could break.
-    let window = f.client(id).window(&surface);
-    assert_snapshot!(
-        window.format_recent_configures(),
-        @r"
-    size: 936 × 1048, bounds: 1888 × 1048, states: []
-    size: 936 × 1048, bounds: 1888 × 1048, states: [Activated]
-    "
-    );
 }
 
 #[derive(Clone, Copy)]
@@ -363,7 +351,7 @@ window-rule {{
             })
         })
         .unwrap();
-    let is_fullscreen = mapped.is_fullscreen();
+    let is_fullscreen = mapped.sizing_mode().is_fullscreen();
     let win = mapped.window.clone();
     let mon = mon.unwrap().output_name().clone();
     let ws = ws.name().cloned().unwrap_or(String::from("unnamed"));
@@ -623,7 +611,7 @@ layout {
     // If the window ended up fullscreen, unfullscreen it and output the configure.
     let mut post_unfullscreen = String::new();
     let mapped = f.niri().layout.windows().next().unwrap().1;
-    let is_fullscreen = mapped.is_fullscreen();
+    let is_fullscreen = mapped.sizing_mode().is_fullscreen();
     let win = mapped.window.clone();
     if is_fullscreen {
         f.niri().layout.set_fullscreen(&win, false);
