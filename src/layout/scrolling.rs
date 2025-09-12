@@ -857,7 +857,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.scale,
             width,
             is_full_width,
-            true,
         );
 
         self.add_column(col_idx, column, activate, anim_config);
@@ -876,7 +875,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let tile_idx = tile_idx.unwrap_or(target_column.tiles.len());
         let mut prev_active_tile_idx = target_column.active_tile_idx;
 
-        target_column.add_tile_at(tile_idx, tile, true);
+        target_column.add_tile_at(tile_idx, tile);
         self.data[col_idx].update(target_column);
 
         if tile_idx <= prev_active_tile_idx {
@@ -3795,7 +3794,6 @@ impl<W: LayoutElement> Column<W> {
         scale: f64,
         width: ColumnWidth,
         is_full_width: bool,
-        animate_resize: bool,
     ) -> Self {
         let options = tile.options.clone();
 
@@ -3825,7 +3823,7 @@ impl<W: LayoutElement> Column<W> {
 
         let is_pending_fullscreen = tile.window().is_pending_fullscreen();
 
-        rv.add_tile_at(0, tile, animate_resize);
+        rv.add_tile_at(0, tile);
 
         if is_pending_fullscreen {
             rv.set_fullscreen(true);
@@ -4088,7 +4086,7 @@ impl<W: LayoutElement> Column<W> {
         self.activate_idx(idx);
     }
 
-    fn add_tile_at(&mut self, idx: usize, mut tile: Tile<W>, animate: bool) {
+    fn add_tile_at(&mut self, idx: usize, mut tile: Tile<W>) {
         tile.update_config(self.view_size, self.scale, self.options.clone());
 
         // Inserting a tile pushes down all tiles below it, but also in always-centering mode it
@@ -4103,7 +4101,7 @@ impl<W: LayoutElement> Column<W> {
         self.data
             .insert(idx, TileData::new(&tile, WindowHeight::auto_1()));
         self.tiles.insert(idx, tile);
-        self.update_tile_sizes(animate);
+        self.update_tile_sizes(true);
 
         // Animate tiles according to the offset changes.
         prev_offsets.insert(idx, Point::default());
