@@ -33,6 +33,7 @@
 
 use std::cmp::min;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::mem;
 use std::rc::Rc;
 use std::time::Duration;
@@ -618,7 +619,7 @@ impl HitType {
 }
 
 impl Options {
-    fn from_config(config: &Config) -> Self {
+    pub(crate) fn from_config(config: &Config) -> Self {
         let layout = &config.layout;
 
         let preset_column_widths = if layout.preset_column_widths.is_empty() {
@@ -1393,6 +1394,18 @@ impl<W: LayoutElement> Layout<W> {
                 WorkspaceReference::Index(_) => unreachable!(),
             })
         }
+    }
+
+    pub fn find_tile_by_id(&self, id: &W::Id) -> Option<&Tile<W>> {
+        self.workspaces()
+            .flat_map(|(_, _, ws)| ws.tiles())
+            .find(|t| t.window().id() == id)
+    }
+
+    pub fn find_tile_by_id_mut(&mut self, id: &W::Id) -> Option<&mut Tile<W>> {
+        self.workspaces_mut()
+            .flat_map(|ws| ws.tiles_mut())
+            .find(|t| t.window().id() == id)
     }
 
     pub fn unname_workspace(&mut self, workspace_name: &str) {
@@ -2922,13 +2935,13 @@ impl<W: LayoutElement> Layout<W> {
     pub fn are_animations_ongoing(&self, output: Option<&Output>) -> bool {
         // Keep advancing animations if we might need to scroll the view.
         if let Some(dnd) = &self.dnd {
-            if output.map_or(true, |output| *output == dnd.output) {
+            if output.is_none_or(|output| *output == dnd.output) {
                 return true;
             }
         }
 
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if output.map_or(true, |output| *output == move_.output) {
+            if output.is_none_or(|output| *output == move_.output) {
                 if move_.tile.are_animations_ongoing() {
                     return true;
                 }
@@ -2972,7 +2985,7 @@ impl<W: LayoutElement> Layout<W> {
 
         let zoom = self.overview_zoom();
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            if output.map_or(true, |output| move_.output == *output) {
+            if output.is_none_or(|output| move_.output == *output) {
                 let pos_within_output = move_.tile_render_location(zoom);
                 let view_rect =
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output));
@@ -2993,7 +3006,7 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         for (idx, mon) in monitors.iter_mut().enumerate() {
-            if output.map_or(true, |output| mon.output == *output) {
+            if output.is_none_or(|output| mon.output == *output) {
                 let is_active = self.is_active
                     && idx == *active_monitor_idx
                     && !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_)));
@@ -3523,7 +3536,7 @@ impl<W: LayoutElement> Layout<W> {
 
             let mon = &mut monitors[mon_idx];
             let activate = activate.map_smart(|| {
-                window.map_or(true, |win| {
+                window.is_none_or(|win| {
                     mon_idx == *active_monitor_idx
                         && mon.active_window().map(|win| win.id()) == Some(win)
                 })

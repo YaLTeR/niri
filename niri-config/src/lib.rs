@@ -18,6 +18,7 @@ pub mod layer_rule;
 pub mod layout;
 pub mod misc;
 pub mod output;
+pub mod recent_windows;
 pub mod utils;
 pub mod window_rule;
 pub mod workspace;
@@ -32,6 +33,7 @@ pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
+pub use crate::recent_windows::{RecentWindows, DEFAULT_MRU_COMMIT_MS};
 pub use crate::utils::FloatOrInt;
 pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
 pub use crate::workspace::Workspace;
@@ -88,6 +90,8 @@ pub struct Config {
     pub debug: Debug,
     #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
+    #[knuffel(child, default)]
+    pub recent_windows: RecentWindows,
 }
 
 #[derive(Debug, Clone)]
@@ -525,6 +529,11 @@ mod tests {
             }
             workspace "workspace-2"
             workspace "workspace-3"
+
+            recent-windows {
+                off
+                mod-key "Alt"
+            }
             "##,
         );
 
@@ -1125,6 +1134,30 @@ mod tests {
                     },
                 ),
                 overview_open_close: OverviewOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                window_mru_ui_open_close: WindowMruUiOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                thumbnail_select: ThumbnailSelectAnim(
                     Animation {
                         off: false,
                         kind: Spring(
@@ -1750,6 +1783,11 @@ mod tests {
                     open_on_output: None,
                 },
             ],
+            recent_windows: RecentWindows {
+                off: true,
+                mod_key: Alt,
+                enable_selection_animation: false,
+            },
         }
         "#);
     }
