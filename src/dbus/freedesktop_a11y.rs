@@ -450,7 +450,8 @@ impl State {
         });
 
         let config = self.niri.config.borrow();
-        let repeat_delay = Duration::from_millis(u64::from(config.input.keyboard.repeat_delay));
+        let repeat_delay =
+            Duration::from_millis(u64::from(config.input.keyboard.resolved_repeat_delay()));
         let released = state == KeyState::Released;
 
         let Some(monitor) = &self.niri.a11y_keyboard_monitor else {

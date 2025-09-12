@@ -3,15 +3,16 @@ use std::str::FromStr;
 
 use knuffel::errors::DecodeError;
 use miette::{miette, IntoDiagnostic as _};
+use niri_macros::Mergeable;
 use smithay::backend::renderer::Color32F;
 
-use crate::FloatOrInt;
+use crate::{BoolFlag, FloatOrInt, MaybeSet};
 
 pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.25, 0.25, 0.25, 1.]);
 pub const DEFAULT_BACKDROP_COLOR: Color = Color::from_array_unpremul([0.15, 0.15, 0.15, 1.]);
 
 /// RGB color in [0, 1] with unpremultiplied alpha.
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
@@ -76,7 +77,7 @@ impl MulAssign<f32> for Color {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct Gradient {
     #[knuffel(property, str)]
     pub from: Color,
@@ -102,20 +103,20 @@ impl From<Color> for Gradient {
     }
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq, Mergeable)]
 pub enum GradientRelativeTo {
     #[default]
     Window,
     WorkspaceView,
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct GradientInterpolation {
     pub color_space: GradientColorSpace,
     pub hue_interpolation: HueInterpolation,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Mergeable)]
 pub enum GradientColorSpace {
     #[default]
     Srgb,
@@ -124,7 +125,7 @@ pub enum GradientColorSpace {
     Oklch,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Mergeable)]
 pub enum HueInterpolation {
     #[default]
     Shorter,
@@ -133,7 +134,7 @@ pub enum HueInterpolation {
     Decreasing,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct CornerRadius {
     pub top_left: f32,
     pub top_right: f32,
@@ -221,18 +222,18 @@ impl CornerRadius {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct FocusRing {
-    #[knuffel(child)]
-    pub off: bool,
-    #[knuffel(child, unwrap(argument), default = Self::default().width)]
-    pub width: FloatOrInt<0, 65535>,
-    #[knuffel(child, default = Self::default().active_color)]
-    pub active_color: Color,
-    #[knuffel(child, default = Self::default().inactive_color)]
-    pub inactive_color: Color,
-    #[knuffel(child, default = Self::default().urgent_color)]
-    pub urgent_color: Color,
+    #[knuffel(child, default)]
+    pub off: BoolFlag,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(FloatOrInt(4.)))]
+    pub width: MaybeSet<FloatOrInt<0, 65535>>,
+    #[knuffel(child, default = MaybeSet::unset(Color::from_rgba8_unpremul(127, 200, 255, 255)))]
+    pub active_color: MaybeSet<Color>,
+    #[knuffel(child, default = MaybeSet::unset(Color::from_rgba8_unpremul(80, 80, 80, 255)))]
+    pub inactive_color: MaybeSet<Color>,
+    #[knuffel(child, default = MaybeSet::unset(Color::from_rgba8_unpremul(255, 180, 171, 255)))]
+    pub urgent_color: MaybeSet<Color>,
     #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
@@ -244,11 +245,11 @@ pub struct FocusRing {
 impl Default for FocusRing {
     fn default() -> Self {
         Self {
-            off: false,
-            width: FloatOrInt(4.),
-            active_color: Color::from_rgba8_unpremul(127, 200, 255, 255),
-            inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
-            urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
+            off: false.into(),
+            width: FloatOrInt(4.).into(),
+            active_color: Color::from_rgba8_unpremul(127, 200, 255, 255).into(),
+            inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255).into(),
+            urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255).into(),
             active_gradient: None,
             inactive_gradient: None,
             urgent_gradient: None,
@@ -256,18 +257,36 @@ impl Default for FocusRing {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+impl FocusRing {
+    pub fn resolved_width(&self) -> FloatOrInt<0, 65535> {
+        *self.width.value()
+    }
+
+    pub fn resolved_active_color(&self) -> Color {
+        *self.active_color.value()
+    }
+
+    pub fn resolved_inactive_color(&self) -> Color {
+        *self.inactive_color.value()
+    }
+
+    pub fn resolved_urgent_color(&self) -> Color {
+        *self.urgent_color.value()
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct Border {
-    #[knuffel(child)]
-    pub off: bool,
-    #[knuffel(child, unwrap(argument), default = Self::default().width)]
-    pub width: FloatOrInt<0, 65535>,
-    #[knuffel(child, default = Self::default().active_color)]
-    pub active_color: Color,
-    #[knuffel(child, default = Self::default().inactive_color)]
-    pub inactive_color: Color,
-    #[knuffel(child, default = Self::default().urgent_color)]
-    pub urgent_color: Color,
+    #[knuffel(child, default)]
+    pub off: BoolFlag,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(FloatOrInt(4.)))]
+    pub width: MaybeSet<FloatOrInt<0, 65535>>,
+    #[knuffel(child, default = MaybeSet::unset(Color::from_rgba8_unpremul(255, 200, 127, 255)))]
+    pub active_color: MaybeSet<Color>,
+    #[knuffel(child, default = MaybeSet::unset(Color::from_rgba8_unpremul(80, 80, 80, 255)))]
+    pub inactive_color: MaybeSet<Color>,
+    #[knuffel(child, default = MaybeSet::unset(Color::from_rgba8_unpremul(155, 0, 0, 255)))]
+    pub urgent_color: MaybeSet<Color>,
     #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
     #[knuffel(child)]
@@ -279,15 +298,33 @@ pub struct Border {
 impl Default for Border {
     fn default() -> Self {
         Self {
-            off: true,
-            width: FloatOrInt(4.),
-            active_color: Color::from_rgba8_unpremul(255, 200, 127, 255),
-            inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
-            urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
+            off: true.into(),
+            width: FloatOrInt(4.).into(),
+            active_color: Color::from_rgba8_unpremul(255, 200, 127, 255).into(),
+            inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255).into(),
+            urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255).into(),
             active_gradient: None,
             inactive_gradient: None,
             urgent_gradient: None,
         }
+    }
+}
+
+impl Border {
+    pub fn resolved_width(&self) -> FloatOrInt<0, 65535> {
+        *self.width.value()
+    }
+
+    pub fn resolved_active_color(&self) -> Color {
+        *self.active_color.value()
+    }
+
+    pub fn resolved_inactive_color(&self) -> Color {
+        *self.inactive_color.value()
+    }
+
+    pub fn resolved_urgent_color(&self) -> Color {
+        *self.urgent_color.value()
     }
 }
 
@@ -321,20 +358,20 @@ impl From<FocusRing> for Border {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct Shadow {
-    #[knuffel(child)]
-    pub on: bool,
-    #[knuffel(child, default = Self::default().offset)]
-    pub offset: ShadowOffset,
-    #[knuffel(child, unwrap(argument), default = Self::default().softness)]
-    pub softness: FloatOrInt<0, 1024>,
-    #[knuffel(child, unwrap(argument), default = Self::default().spread)]
-    pub spread: FloatOrInt<-1024, 1024>,
-    #[knuffel(child, unwrap(argument), default = Self::default().draw_behind_window)]
-    pub draw_behind_window: bool,
-    #[knuffel(child, default = Self::default().color)]
-    pub color: Color,
+    #[knuffel(child, default)]
+    pub on: BoolFlag,
+    #[knuffel(child, default = MaybeSet::unset(ShadowOffset::default()))]
+    pub offset: MaybeSet<ShadowOffset>,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(FloatOrInt(30.)))]
+    pub softness: MaybeSet<FloatOrInt<0, 1024>>,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(FloatOrInt(5.)))]
+    pub spread: MaybeSet<FloatOrInt<-1024, 1024>>,
+    #[knuffel(child, unwrap(argument), default)]
+    pub draw_behind_window: BoolFlag,
+    #[knuffel(child, default = MaybeSet::unset(Color::from_rgba8_unpremul(0, 0, 0, 68)))]
+    pub color: MaybeSet<Color>,
     #[knuffel(child)]
     pub inactive_color: Option<Color>,
 }
@@ -342,21 +379,40 @@ pub struct Shadow {
 impl Default for Shadow {
     fn default() -> Self {
         Self {
-            on: false,
+            on: false.into(),
             offset: ShadowOffset {
                 x: FloatOrInt(0.),
                 y: FloatOrInt(5.),
-            },
-            softness: FloatOrInt(30.),
-            spread: FloatOrInt(5.),
-            draw_behind_window: false,
-            color: Color::from_rgba8_unpremul(0, 0, 0, 0x70),
+            }
+            .into(),
+            softness: FloatOrInt(30.).into(),
+            spread: FloatOrInt(5.).into(),
+            draw_behind_window: false.into(),
+            color: Color::from_rgba8_unpremul(0, 0, 0, 0x70).into(),
             inactive_color: None,
         }
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+impl Shadow {
+    pub fn resolved_offset(&self) -> ShadowOffset {
+        *self.offset.value()
+    }
+
+    pub fn resolved_softness(&self) -> FloatOrInt<0, 1024> {
+        *self.softness.value()
+    }
+
+    pub fn resolved_spread(&self) -> FloatOrInt<-1024, 1024> {
+        *self.spread.value()
+    }
+
+    pub fn resolved_color(&self) -> Color {
+        *self.color.value()
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable, Default)]
 pub struct ShadowOffset {
     #[knuffel(property, default)]
     pub x: FloatOrInt<-65535, 65535>,
@@ -364,7 +420,7 @@ pub struct ShadowOffset {
     pub y: FloatOrInt<-65535, 65535>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct WorkspaceShadow {
     #[knuffel(child)]
     pub off: bool,
@@ -396,37 +452,37 @@ impl Default for WorkspaceShadow {
 impl From<WorkspaceShadow> for Shadow {
     fn from(value: WorkspaceShadow) -> Self {
         Self {
-            on: !value.off,
-            offset: value.offset,
-            softness: value.softness,
-            spread: value.spread,
-            draw_behind_window: false,
-            color: value.color,
+            on: BoolFlag::from(!value.off),
+            offset: value.offset.into(),
+            softness: value.softness.into(),
+            spread: value.spread.into(),
+            draw_behind_window: false.into(),
+            color: value.color.into(),
             inactive_color: None,
         }
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct TabIndicator {
-    #[knuffel(child)]
-    pub off: bool,
-    #[knuffel(child)]
-    pub hide_when_single_tab: bool,
-    #[knuffel(child)]
-    pub place_within_column: bool,
-    #[knuffel(child, unwrap(argument), default = Self::default().gap)]
-    pub gap: FloatOrInt<-65535, 65535>,
-    #[knuffel(child, unwrap(argument), default = Self::default().width)]
-    pub width: FloatOrInt<0, 65535>,
-    #[knuffel(child, default = Self::default().length)]
-    pub length: TabIndicatorLength,
-    #[knuffel(child, unwrap(argument), default = Self::default().position)]
-    pub position: TabIndicatorPosition,
-    #[knuffel(child, unwrap(argument), default = Self::default().gaps_between_tabs)]
-    pub gaps_between_tabs: FloatOrInt<0, 65535>,
-    #[knuffel(child, unwrap(argument), default = Self::default().corner_radius)]
-    pub corner_radius: FloatOrInt<0, 65535>,
+    #[knuffel(child, default)]
+    pub off: BoolFlag,
+    #[knuffel(child, default)]
+    pub hide_when_single_tab: BoolFlag,
+    #[knuffel(child, default)]
+    pub place_within_column: BoolFlag,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(FloatOrInt(0.)))]
+    pub gap: MaybeSet<FloatOrInt<-65535, 65535>>,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(FloatOrInt(3.)))]
+    pub width: MaybeSet<FloatOrInt<0, 65535>>,
+    #[knuffel(child, default = MaybeSet::unset(TabIndicatorLength::default()))]
+    pub length: MaybeSet<TabIndicatorLength>,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(TabIndicatorPosition::Left))]
+    pub position: MaybeSet<TabIndicatorPosition>,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(FloatOrInt(0.)))]
+    pub gaps_between_tabs: MaybeSet<FloatOrInt<0, 65535>>,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(FloatOrInt(0.)))]
+    pub corner_radius: MaybeSet<FloatOrInt<0, 65535>>,
     #[knuffel(child)]
     pub active_color: Option<Color>,
     #[knuffel(child)]
@@ -444,17 +500,18 @@ pub struct TabIndicator {
 impl Default for TabIndicator {
     fn default() -> Self {
         Self {
-            off: false,
-            hide_when_single_tab: false,
-            place_within_column: false,
-            gap: FloatOrInt(5.),
-            width: FloatOrInt(4.),
+            off: false.into(),
+            hide_when_single_tab: false.into(),
+            place_within_column: false.into(),
+            gap: FloatOrInt(5.).into(),
+            width: FloatOrInt(4.).into(),
             length: TabIndicatorLength {
                 total_proportion: Some(0.5),
-            },
-            position: TabIndicatorPosition::Left,
-            gaps_between_tabs: FloatOrInt(0.),
-            corner_radius: FloatOrInt(0.),
+            }
+            .into(),
+            position: TabIndicatorPosition::Left.into(),
+            gaps_between_tabs: FloatOrInt(0.).into(),
+            corner_radius: FloatOrInt(0.).into(),
             active_color: None,
             inactive_color: None,
             urgent_color: None,
@@ -465,13 +522,39 @@ impl Default for TabIndicator {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+impl TabIndicator {
+    pub fn resolved_gap(&self) -> FloatOrInt<-65535, 65535> {
+        *self.gap.value()
+    }
+
+    pub fn resolved_width(&self) -> FloatOrInt<0, 65535> {
+        *self.width.value()
+    }
+
+    pub fn resolved_length(&self) -> TabIndicatorLength {
+        *self.length.value()
+    }
+
+    pub fn resolved_position(&self) -> TabIndicatorPosition {
+        *self.position.value()
+    }
+
+    pub fn resolved_gaps_between_tabs(&self) -> FloatOrInt<0, 65535> {
+        *self.gaps_between_tabs.value()
+    }
+
+    pub fn resolved_corner_radius(&self) -> FloatOrInt<0, 65535> {
+        *self.corner_radius.value()
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable, Default)]
 pub struct TabIndicatorLength {
     #[knuffel(property)]
     pub total_proportion: Option<f64>,
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub enum TabIndicatorPosition {
     Left,
     Right,
@@ -479,12 +562,12 @@ pub enum TabIndicatorPosition {
     Bottom,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct InsertHint {
-    #[knuffel(child)]
-    pub off: bool,
-    #[knuffel(child, default = Self::default().color)]
-    pub color: Color,
+    #[knuffel(child, default)]
+    pub off: BoolFlag,
+    #[knuffel(child, default = MaybeSet::unset(Color::from_rgba8_unpremul(127, 200, 255, 128)))]
+    pub color: MaybeSet<Color>,
     #[knuffel(child)]
     pub gradient: Option<Gradient>,
 }
@@ -492,24 +575,32 @@ pub struct InsertHint {
 impl Default for InsertHint {
     fn default() -> Self {
         Self {
-            off: false,
-            color: Color::from_rgba8_unpremul(127, 200, 255, 128),
+            off: false.into(),
+            color: Color::from_rgba8_unpremul(127, 200, 255, 128).into(),
             gradient: None,
         }
     }
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
+impl InsertHint {
+    pub fn resolved_color(&self) -> Color {
+        *self.color.value()
+    }
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq, Mergeable)]
 pub enum BlockOutFrom {
     Screencast,
     ScreenCapture,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct BorderRule {
     #[knuffel(child)]
+    #[mergeable(mutex)]
     pub off: bool,
     #[knuffel(child)]
+    #[mergeable(mutex)]
     pub on: bool,
     #[knuffel(child, unwrap(argument))]
     pub width: Option<FloatOrInt<0, 65535>>,
@@ -527,11 +618,13 @@ pub struct BorderRule {
     pub urgent_gradient: Option<Gradient>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct ShadowRule {
     #[knuffel(child)]
+    #[mergeable(mutex)]
     pub off: bool,
     #[knuffel(child)]
+    #[mergeable(mutex)]
     pub on: bool,
     #[knuffel(child)]
     pub offset: Option<ShadowOffset>,
@@ -547,7 +640,7 @@ pub struct ShadowRule {
     pub inactive_color: Option<Color>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct TabIndicatorRule {
     #[knuffel(child)]
     pub active_color: Option<Color>,
@@ -564,59 +657,25 @@ pub struct TabIndicatorRule {
 }
 
 impl BorderRule {
-    pub fn merge_with(&mut self, other: &Self) {
-        if other.off {
-            self.off = true;
-            self.on = false;
-        }
-
-        if other.on {
-            self.off = false;
-            self.on = true;
-        }
-
-        if let Some(x) = other.width {
-            self.width = Some(x);
-        }
-        if let Some(x) = other.active_color {
-            self.active_color = Some(x);
-        }
-        if let Some(x) = other.inactive_color {
-            self.inactive_color = Some(x);
-        }
-        if let Some(x) = other.urgent_color {
-            self.urgent_color = Some(x);
-        }
-        if let Some(x) = other.active_gradient {
-            self.active_gradient = Some(x);
-        }
-        if let Some(x) = other.inactive_gradient {
-            self.inactive_gradient = Some(x);
-        }
-        if let Some(x) = other.urgent_gradient {
-            self.urgent_gradient = Some(x);
-        }
-    }
-
     pub fn resolve_against(&self, mut config: Border) -> Border {
-        config.off |= self.off;
+        *config.off.0.value_mut() |= self.off;
         if self.on {
-            config.off = false;
+            config.off = false.into();
         }
 
         if let Some(x) = self.width {
-            config.width = x;
+            config.width = x.into();
         }
         if let Some(x) = self.active_color {
-            config.active_color = x;
+            config.active_color = x.into();
             config.active_gradient = None;
         }
         if let Some(x) = self.inactive_color {
-            config.inactive_color = x;
+            config.inactive_color = x.into();
             config.inactive_gradient = None;
         }
         if let Some(x) = self.urgent_color {
-            config.urgent_color = x;
+            config.urgent_color = x.into();
             config.urgent_gradient = None;
         }
         if let Some(x) = self.active_gradient {
@@ -634,86 +693,32 @@ impl BorderRule {
 }
 
 impl ShadowRule {
-    pub fn merge_with(&mut self, other: &Self) {
-        if other.off {
-            self.off = true;
-            self.on = false;
-        }
-
-        if other.on {
-            self.off = false;
-            self.on = true;
-        }
-
-        if let Some(x) = other.offset {
-            self.offset = Some(x);
-        }
-        if let Some(x) = other.softness {
-            self.softness = Some(x);
-        }
-        if let Some(x) = other.spread {
-            self.spread = Some(x);
-        }
-        if let Some(x) = other.draw_behind_window {
-            self.draw_behind_window = Some(x);
-        }
-        if let Some(x) = other.color {
-            self.color = Some(x);
-        }
-        if let Some(x) = other.inactive_color {
-            self.inactive_color = Some(x);
-        }
-    }
-
     pub fn resolve_against(&self, mut config: Shadow) -> Shadow {
         config.on |= self.on;
         if self.off {
-            config.on = false;
+            config.on = false.into();
         }
 
         if let Some(x) = self.offset {
-            config.offset = x;
+            config.offset = x.into();
         }
         if let Some(x) = self.softness {
-            config.softness = x;
+            config.softness = x.into();
         }
         if let Some(x) = self.spread {
-            config.spread = x;
+            config.spread = x.into();
         }
         if let Some(x) = self.draw_behind_window {
-            config.draw_behind_window = x;
+            config.draw_behind_window = x.into();
         }
         if let Some(x) = self.color {
-            config.color = x;
+            config.color = x.into();
         }
         if let Some(x) = self.inactive_color {
             config.inactive_color = Some(x);
         }
 
         config
-    }
-}
-
-impl TabIndicatorRule {
-    pub fn merge_with(&mut self, other: &Self) {
-        if let Some(x) = other.active_color {
-            self.active_color = Some(x);
-        }
-        if let Some(x) = other.inactive_color {
-            self.inactive_color = Some(x);
-        }
-        if let Some(x) = other.urgent_color {
-            self.urgent_color = Some(x);
-        }
-        if let Some(x) = other.active_gradient {
-            self.active_gradient = Some(x);
-        }
-        if let Some(x) = other.inactive_gradient {
-            self.inactive_gradient = Some(x);
-        }
-        if let Some(x) = other.urgent_gradient {
-            self.urgent_gradient = Some(x);
-        }
     }
 }
 
@@ -1006,6 +1011,7 @@ mod tests {
     use insta::assert_snapshot;
 
     use super::*;
+    use crate::mergeable::Mergeable;
 
     #[test]
     fn parse_gradient_interpolation() {
@@ -1108,11 +1114,11 @@ mod tests {
             }
 
             let config = Border {
-                off: config == "off",
+                off: BoolFlag::from(config == "off"),
                 ..Default::default()
             };
 
-            if resolved.resolve_against(config).off {
+            if *resolved.resolve_against(config).off {
                 "off"
             } else {
                 "on"
