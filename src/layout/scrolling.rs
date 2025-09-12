@@ -2629,7 +2629,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             (&mut self.columns[self.active_column_idx], None)
         };
 
-        col.reset_window_height(tile_idx, true);
+        col.reset_window_height(tile_idx);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -2677,7 +2677,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             (&mut self.columns[self.active_column_idx], None)
         };
 
-        col.toggle_window_height(tile_idx, true, forwards);
+        col.toggle_window_height(tile_idx, forwards);
 
         cancel_resize_for_column(&mut self.interactive_resize, col);
     }
@@ -4766,7 +4766,7 @@ impl<W: LayoutElement> Column<W> {
         self.update_tile_sizes(animate);
     }
 
-    fn reset_window_height(&mut self, tile_idx: Option<usize>, animate: bool) {
+    fn reset_window_height(&mut self, tile_idx: Option<usize>) {
         if self.display_mode == ColumnDisplay::Tabbed {
             // When tabbed, reset window height should work on any window, not just the fixed-size
             // one.
@@ -4778,10 +4778,10 @@ impl<W: LayoutElement> Column<W> {
             self.data[tile_idx].height = WindowHeight::auto_1();
         }
 
-        self.update_tile_sizes(animate);
+        self.update_tile_sizes(true);
     }
 
-    fn toggle_window_height(&mut self, tile_idx: Option<usize>, animate: bool, forwards: bool) {
+    fn toggle_window_height(&mut self, tile_idx: Option<usize>, forwards: bool) {
         let tile_idx = tile_idx.unwrap_or(self.active_tile_idx);
 
         // Start by converting all heights to automatic, since only one window in the column can be
@@ -4829,7 +4829,7 @@ impl<W: LayoutElement> Column<W> {
             }
         };
         self.data[tile_idx].height = WindowHeight::Preset(preset_idx);
-        self.update_tile_sizes(animate);
+        self.update_tile_sizes(true);
     }
 
     /// Converts all heights in the column to automatic, preserving the apparent heights.
