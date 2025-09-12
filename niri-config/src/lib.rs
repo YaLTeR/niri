@@ -960,6 +960,7 @@ mod tests {
                 center_focused_column: OnOverflow,
                 always_center_single_column: false,
                 empty_workspace_above_first: false,
+                hide_floating_layout_if_unfocused: false,
                 default_column_display: Tabbed,
                 gaps: FloatOrInt(
                     8.0,

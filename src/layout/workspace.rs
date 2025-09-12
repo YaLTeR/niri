@@ -1489,11 +1489,15 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn is_floating_visible(&self) -> bool {
-        // If the focus is on a fullscreen scrolling window, hide the floating windows.
+        // The floating layout is visible when either:
+        // 1. It's currently active, or
+        // 2. We're not in a state that forces it to be hidden:
+        //    - Not focusing on a fullscreen scrolling window, and
+        //    - Not configured to hide if unfocused
         matches!(
             self.floating_is_active,
             FloatingActive::Yes | FloatingActive::NoButRaised
-        ) || !self.render_above_top_layer()
+        ) || !(self.render_above_top_layer() || self.options.hide_floating_layout_if_unfocused)
     }
 
     pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer, window: &W::Id) {
