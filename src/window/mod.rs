@@ -361,7 +361,7 @@ impl ResolvedWindowRules {
                     resolved.tiled_state = Some(x);
                 }
                 if let Some(x) = rule.inhibit_idle {
-                    resolved.inhibit_idle = Some(x);
+                    resolved.inhibit_idle = x;
                 }
             }
 

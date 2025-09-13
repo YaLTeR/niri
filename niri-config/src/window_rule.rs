@@ -71,7 +71,7 @@ pub struct WindowRule {
     #[knuffel(child, unwrap(argument))]
     pub tiled_state: Option<bool>,
     #[knuffel(child, unwrap(argument))]
-    pub inhibit_idle: Option<InhibitIdle>,
+    pub inhibit_idle: Option<Option<InhibitIdle>>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]

@@ -3971,7 +3971,6 @@ impl Niri {
                 .any(|a| match a.1.rules().inhibit_idle {
                     Some(InhibitIdle::Always) => true,
                     Some(InhibitIdle::Fullscreen) => a.1.is_fullscreen(),
-                    Some(InhibitIdle::Never) => false,
                     None => false,
                 });
 

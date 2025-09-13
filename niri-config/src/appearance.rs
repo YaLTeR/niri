@@ -509,7 +509,6 @@ pub enum BlockOutFrom {
 pub enum InhibitIdle {
     Always,
     Fullscreen,
-    Never,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
