@@ -14,6 +14,7 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
+use niri_config::gestures::HotCorners;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
@@ -131,8 +132,8 @@ use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
 use crate::input::{
-    apply_libinput_settings, is_inside_hot_corner, mods_with_finger_scroll_binds,
-    mods_with_mouse_binds, mods_with_wheel_binds, TabletData,
+    apply_libinput_settings, mods_with_finger_scroll_binds, mods_with_mouse_binds,
+    mods_with_wheel_binds, TabletData,
 };
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
@@ -536,6 +537,43 @@ pub struct PointContents {
     pub layer: Option<LayerSurface>,
     // Pointer is over a hot corner.
     pub hot_corner: bool,
+}
+
+pub fn is_inside_hot_corner(
+    hot_corners: &HotCorners,
+    output: &Output,
+    pos: Point<f64, Logical>,
+) -> bool {
+    if hot_corners.off {
+        return false;
+    }
+
+    let output_size = output_size(output);
+    let transform = output.current_transform();
+    let size = transform.transform_size(output_size);
+    let hitbox = Size::from((1., 1.));
+
+    if hot_corners.top_right && Rectangle::new(Point::new(size.w - 1., 0.), hitbox).contains(pos) {
+        return true;
+    }
+    if hot_corners.bottom_left && Rectangle::new(Point::new(0., size.h - 1.), hitbox).contains(pos)
+    {
+        return true;
+    }
+    if hot_corners.bottom_right
+        && Rectangle::new(Point::new(size.w - 1., size.h - 1.), hitbox).contains(pos)
+    {
+        return true;
+    }
+
+    // Triggers top left hot corner if enabled or all hot corners left empty
+    if (hot_corners.top_left
+        || !(hot_corners.top_right || hot_corners.bottom_right || hot_corners.bottom_left))
+        && Rectangle::new(Point::new(0., 0.), hitbox).contains(pos)
+    {
+        return true;
+    }
+    false
 }
 
 #[derive(Debug, Default)]
@@ -3169,8 +3207,7 @@ impl Niri {
             .and_then(|name| config.outputs.find(name))
             .and_then(|c| c.hot_corners)
             .unwrap_or(config.gestures.hot_corners);
-        if hot_corners.is_enabled() && is_inside_hot_corner(&hot_corners, output, pos_within_output)
-        {
+        if is_inside_hot_corner(&hot_corners, output, pos_within_output) {
             return true;
         }
 
@@ -3450,9 +3487,7 @@ impl Niri {
                 .and_then(|name| config.outputs.find(name))
                 .and_then(|c| c.hot_corners)
                 .unwrap_or(config.gestures.hot_corners);
-            if hot_corners.is_enabled()
-                && is_inside_hot_corner(&hot_corners, output, pos_within_output)
-            {
+            if is_inside_hot_corner(&hot_corners, output, pos_within_output) {
                 rv.hot_corner = true;
                 return rv;
             }

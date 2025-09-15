@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::gestures::HotCorners;
 use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -30,7 +29,7 @@ use smithay::input::touch::{
 };
 use smithay::input::SeatHandler;
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle, Size, Transform, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::selection::data_device::DnDGrab;
@@ -46,7 +45,7 @@ use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
-use crate::utils::{center, get_monotonic_time, output_size, ResizeEdge};
+use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
 pub mod backend_ext;
 pub mod move_grab;
@@ -4017,39 +4016,6 @@ fn should_intercept_key(
         }
         (None, true) => FilterResult::Forward,
     }
-}
-
-pub fn is_inside_hot_corner(
-    hot_corners: &HotCorners,
-    output: &Output,
-    pos: Point<f64, Logical>,
-) -> bool {
-    let output_size = output_size(output);
-    let transform = output.current_transform();
-    let size = transform.transform_size(output_size);
-
-    if hot_corners.top_right
-        && Rectangle::new(Point::new(size.w - 1., 0.), Size::from((1., 1.))).contains(pos)
-    {
-        return true;
-    }
-    if hot_corners.bottom_left
-        && Rectangle::new(Point::new(0., size.h - 1.), Size::from((1., 1.))).contains(pos)
-    {
-        return true;
-    }
-    if hot_corners.bottom_right
-        && Rectangle::new(Point::new(size.w - 1., size.h - 1.), Size::from((1., 1.))).contains(pos)
-    {
-        return true;
-    }
-    if (hot_corners.top_left
-        || !(hot_corners.top_right || hot_corners.bottom_right || hot_corners.bottom_left))
-        && Rectangle::new(Point::new(0., 0.), Size::from((1., 1.))).contains(pos)
-    {
-        return true;
-    }
-    false
 }
 
 fn find_bind(
