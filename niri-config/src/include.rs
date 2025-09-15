@@ -109,27 +109,110 @@ fn resolve_includes_recursive(
 }
 
 fn parse_include_directive(line: &str) -> miette::Result<Option<String>> {
-    let trimmed = line.trim();
-
-    // Match: include "path/to/file.kdl"
-    if let Some(rest) = trimmed.strip_prefix("include") {
-        let rest = rest.trim();
-
-        // Extract quoted string
-        if rest.starts_with('"') && rest.ends_with('"') && rest.len() >= 2 {
-            let path = &rest[1..rest.len() - 1];
-            if path.is_empty() {
-                return Err(miette::miette!("include directive has empty path: {line}"));
-            }
-            return Ok(Some(path.to_string()));
-        } else {
-            return Err(miette::miette!(
-                "include directive must have quoted path: {line}"
-            ));
-        }
+    let trimmed = line.trim_start();
+    if !trimmed.starts_with("include") {
+        return Ok(None);
     }
 
-    Ok(None)
+    let mut rest = &trimmed["include".len()..];
+    rest = rest.trim_start();
+
+    if let Some(path) = parse_raw_string(rest) {
+        if path.is_empty() {
+            return Err(miette::miette!("include directive has empty path: {line}"));
+        }
+        return Ok(Some(path));
+    }
+
+    if let Some(path) = parse_normal_string(rest) {
+        if path.is_empty() {
+            return Err(miette::miette!("include directive has empty path: {line}"));
+        }
+        return Ok(Some(path));
+    }
+
+    Err(miette::miette!(
+        "include directive must have quoted path: {line}"
+    ))
+}
+
+fn parse_raw_string(s: &str) -> Option<String> {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+
+    let has_r = matches!(bytes.get(0), Some(b'r'));
+    if has_r {
+        i += 1;
+    }
+
+    let mut hashes = 0;
+    while matches!(bytes.get(i), Some(b'#')) {
+        hashes += 1;
+        i += 1;
+    }
+
+    if hashes == 0 && !has_r {
+        return None;
+    }
+
+    if !matches!(bytes.get(i), Some(b'"')) {
+        return None;
+    }
+    i += 1;
+
+    let start_content = i;
+
+    while i < bytes.len() {
+        if bytes[i] == b'"' {
+            let mut j = i + 1;
+            let mut k = 0;
+            while k < hashes && matches!(bytes.get(j), Some(b'#')) {
+                j += 1;
+                k += 1;
+            }
+            if k == hashes {
+                let content = &s[start_content..i];
+                return Some(content.to_string());
+            }
+        }
+        i += 1;
+    }
+
+    None
+}
+
+fn parse_normal_string(s: &str) -> Option<String> {
+    let mut iter = s.chars();
+    if iter.next()? != '"' {
+        return None;
+    }
+
+    let mut out = String::new();
+    let mut escaped = false;
+
+    for ch in iter {
+        if escaped {
+            match ch {
+                'n' => out.push('\n'),
+                'r' => out.push('\r'),
+                't' => out.push('\t'),
+                '\\' => out.push('\\'),
+                '"' => out.push('"'),
+                other => {
+                    out.push('\\');
+                    out.push(other);
+                }
+            }
+            escaped = false;
+        } else {
+            match ch {
+                '\\' => escaped = true,
+                '"' => return Some(out),
+                c => out.push(c),
+            }
+        }
+    }
+    None
 }
 
 fn resolve_include_path(include_path: &str, current_dir: &Path) -> miette::Result<PathBuf> {
@@ -171,10 +254,85 @@ mod tests {
             Some("path/to/file.kdl".to_string())
         );
 
+        assert_eq!(
+            parse_include_directive("include r#\"config.kdl\"#").unwrap(),
+            Some("config.kdl".to_string())
+        );
+
+        assert_eq!(
+            parse_include_directive("  include r#\"path/to/file.kdl\"#  ").unwrap(),
+            Some("path/to/file.kdl".to_string())
+        );
+
         assert_eq!(parse_include_directive("layout { gaps 10 }").unwrap(), None);
 
         assert!(parse_include_directive("include").is_err());
         assert!(parse_include_directive("include \"\"").is_err());
+        assert!(parse_include_directive("include r#\"\"#").is_err());
+        assert!(parse_include_directive("include unquoted").is_err());
+    }
+
+    #[test]
+    fn include_normal_unescapes_backslashes() {
+        assert_eq!(
+            parse_include_directive(r#"include "my\\dir""#).unwrap(),
+            Some(r"my\dir".to_string())
+        );
+    }
+
+    #[test]
+    fn include_raw_preserves_backslashes() {
+        assert_eq!(
+            parse_include_directive(r##"include r#"my\\dir"#"##).unwrap(),
+            Some(r"my\\dir".to_string())
+        );
+    }
+
+    #[test]
+    fn include_kdl_shorthand_raw_preserves_backslashes() {
+        assert_eq!(
+            parse_include_directive(r##"include #"my\\dir"#"##).unwrap(),
+            Some(r"my\\dir".to_string())
+        );
+    }
+
+    #[test]
+    fn include_allows_trailing_comment() {
+        assert_eq!(
+            parse_include_directive(r#"include "a.kdl" // note"#).unwrap(),
+            Some("a.kdl".to_string())
+        );
+    }
+
+    #[test]
+    fn include_handles_quotes_and_common_escapes() {
+        assert_eq!(
+            parse_include_directive(r#"include "quote:\"x\"""#).unwrap(),
+            Some(r#"quote:"x""#.to_string())
+        );
+        assert_eq!(
+            parse_include_directive(r#"include "line1\nline2""#).unwrap(),
+            Some("line1\nline2".to_string())
+        );
+    }
+
+    #[test]
+    fn include_multi_hash_raw() {
+        assert_eq!(
+            parse_include_directive(r####"include r###"weird "# inside"###"####).unwrap(),
+            Some("weird \"# inside".to_string())
+        );
+        assert_eq!(
+            parse_include_directive(r####"include ###"/some/file\withbackslash"###"####).unwrap(),
+            Some("/some/file\\withbackslash".to_string())
+        );
+    }
+
+    #[test]
+    fn include_errors_on_empty_or_unquoted() {
+        assert!(parse_include_directive("include").is_err());
+        assert!(parse_include_directive(r#"include """#).is_err());
+        assert!(parse_include_directive(r##"include r#""#"##).is_err());
         assert!(parse_include_directive("include unquoted").is_err());
     }
 
