@@ -817,7 +817,7 @@ mod tests {
     #[test]
     fn test_animations_maybesset_slowdown() {
         let mut base = Animations::default();
-        assert_eq!(*base.slowdown, FloatOrInt(1.0));
+        assert_eq!(*base.slowdown.value(), FloatOrInt(1.0));
         assert!(!base.slowdown.is_set());
 
         let overlay = Animations {
@@ -826,7 +826,7 @@ mod tests {
         };
 
         base.merge_with(&overlay);
-        assert_eq!(*base.slowdown, FloatOrInt(2.0));
+        assert_eq!(*base.slowdown.value(), FloatOrInt(2.0));
         assert!(base.slowdown.is_set());
 
         let overlay_unset = Animations {
@@ -835,7 +835,7 @@ mod tests {
         };
 
         base.merge_with(&overlay_unset);
-        assert_eq!(*base.slowdown, FloatOrInt(2.0));
+        assert_eq!(*base.slowdown.value(), FloatOrInt(2.0));
         assert!(base.slowdown.is_set());
     }
 }

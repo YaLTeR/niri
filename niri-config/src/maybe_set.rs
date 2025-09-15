@@ -1,5 +1,3 @@
-use std::ops::{Deref, DerefMut};
-
 use knuffel::errors::DecodeError;
 
 use crate::mergeable::Mergeable;
@@ -54,20 +52,6 @@ impl<T> MaybeSet<T> {
 impl<T: Default> Default for MaybeSet<T> {
     fn default() -> Self {
         Self::unset(T::default())
-    }
-}
-
-impl<T> Deref for MaybeSet<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-impl<T> DerefMut for MaybeSet<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.value
     }
 }
 
@@ -230,7 +214,7 @@ mod tests {
     #[test]
     fn new_creates_set_value() {
         let maybe_set = MaybeSet::new(42);
-        assert_eq!(*maybe_set, 42);
+        assert_eq!(*maybe_set.value(), 42);
         assert!(maybe_set.is_set());
         assert_eq!(maybe_set.value(), &42);
         assert_eq!(maybe_set.into_value(), 42);
@@ -239,7 +223,7 @@ mod tests {
     #[test]
     fn unset_creates_unset_value() {
         let maybe_set = MaybeSet::unset(42);
-        assert_eq!(*maybe_set, 42);
+        assert_eq!(*maybe_set.value(), 42);
         assert!(!maybe_set.is_set());
         assert_eq!(maybe_set.value(), &42);
     }
@@ -247,29 +231,29 @@ mod tests {
     #[test]
     fn default_is_unset() {
         let maybe_set: MaybeSet<i32> = MaybeSet::default();
-        assert_eq!(*maybe_set, 0);
+        assert_eq!(*maybe_set.value(), 0);
         assert!(!maybe_set.is_set());
     }
 
     #[test]
     fn from_creates_set_value() {
         let maybe_set: MaybeSet<i32> = 42.into();
-        assert_eq!(*maybe_set, 42);
+        assert_eq!(*maybe_set.value(), 42);
         assert!(maybe_set.is_set());
     }
 
     #[test]
-    fn deref_works() {
+    fn value_access_works() {
         let maybe_set = MaybeSet::new(String::from("test"));
-        assert_eq!(maybe_set.len(), 4);
-        assert_eq!(&*maybe_set, "test");
+        assert_eq!(maybe_set.value().len(), 4);
+        assert_eq!(maybe_set.value(), "test");
     }
 
     #[test]
     fn value_mut_works() {
         let mut maybe_set = MaybeSet::new(42);
         *maybe_set.value_mut() = 100;
-        assert_eq!(*maybe_set, 100);
+        assert_eq!(*maybe_set.value(), 100);
         assert!(maybe_set.is_set());
     }
 
@@ -279,7 +263,7 @@ mod tests {
         assert!(!maybe_set.is_set());
 
         maybe_set.set(42);
-        assert_eq!(*maybe_set, 42);
+        assert_eq!(*maybe_set.value(), 42);
         assert!(maybe_set.is_set());
     }
 
@@ -289,7 +273,7 @@ mod tests {
         assert!(maybe_set.is_set());
 
         maybe_set.unset_self();
-        assert_eq!(*maybe_set, 42);
+        assert_eq!(*maybe_set.value(), 42);
         assert!(!maybe_set.is_set());
     }
 
@@ -312,7 +296,7 @@ mod tests {
 
         assert_eq!(original, cloned);
         assert!(cloned.is_set());
-        assert_eq!(*cloned, "test");
+        assert_eq!(cloned.value(), "test");
     }
 
     #[test]
@@ -326,15 +310,15 @@ mod tests {
     fn value_mut_methods_work() {
         let mut maybe_set = MaybeSet::new(42);
         *maybe_set.value_mut() = 100;
-        assert_eq!(*maybe_set, 100);
+        assert_eq!(*maybe_set.value(), 100);
         assert!(maybe_set.is_set());
     }
 
     #[test]
-    fn deref_mut_works() {
+    fn value_mut_string_works() {
         let mut maybe_set = MaybeSet::new(String::from("test"));
-        maybe_set.push_str("ing");
-        assert_eq!(&*maybe_set, "testing");
+        maybe_set.value_mut().push_str("ing");
+        assert_eq!(maybe_set.value(), "testing");
         assert!(maybe_set.is_set());
     }
 
@@ -346,12 +330,12 @@ mod tests {
 
         // Merging unset value should not change base
         base.merge_with(&overlay_unset);
-        assert_eq!(*base, 100);
+        assert_eq!(*base.value(), 100);
         assert!(base.is_set());
 
         // Merging set value should update base
         base.merge_with(&overlay_set);
-        assert_eq!(*base, 300);
+        assert_eq!(*base.value(), 300);
         assert!(base.is_set());
     }
 
@@ -361,7 +345,7 @@ mod tests {
         let overlay = MaybeSet::new(200);
 
         base.merge_with(&overlay);
-        assert_eq!(*base, 200);
+        assert_eq!(*base.value(), 200);
         assert!(base.is_set());
     }
 
@@ -388,8 +372,8 @@ mod tests {
         let mut base = TestStruct::default();
         assert!(!base.duration.is_set());
         assert!(!base.name.is_set());
-        assert_eq!(*base.duration, 200);
-        assert_eq!(*base.name, "default");
+        assert_eq!(*base.duration.value(), 200);
+        assert_eq!(base.name.value(), "default");
 
         // First config sets duration explicitly
         let overlay1 = TestStruct {
@@ -400,8 +384,8 @@ mod tests {
         base.merge_with(&overlay1);
         assert!(base.duration.is_set());
         assert!(!base.name.is_set());
-        assert_eq!(*base.duration, 500);
-        assert_eq!(*base.name, "default");
+        assert_eq!(*base.duration.value(), 500);
+        assert_eq!(base.name.value(), "default");
 
         // Second config sets name explicitly but NOT duration
         let overlay2 = TestStruct {
@@ -412,11 +396,11 @@ mod tests {
         base.merge_with(&overlay2);
         // Duration should stay 500 (previously set, new config didn't override)
         assert!(base.duration.is_set());
-        assert_eq!(*base.duration, 500);
+        assert_eq!(*base.duration.value(), 500);
 
         // Name should be updated to custom
         assert!(base.name.is_set());
-        assert_eq!(*base.name, "custom");
+        assert_eq!(base.name.value(), "custom");
     }
 
     #[test]
@@ -440,18 +424,18 @@ mod tests {
         };
 
         base.merge_with(&overlay);
-        assert_eq!(*base.duration, 1000); // Overridden
-        assert_eq!(*base.name, "base"); // Preserved
+        assert_eq!(*base.duration.value(), 1000); // Overridden
+        assert_eq!(base.name.value(), "base"); // Preserved
     }
 
     #[test]
     fn bool_flag_from_bool() {
         let flag: BoolFlag = true.into();
-        assert_eq!(*flag, true);
+        assert_eq!(*flag.value(), true);
         assert!(flag.0.is_set());
 
         let flag: BoolFlag = false.into();
-        assert_eq!(*flag, false);
+        assert_eq!(*flag.value(), false);
         assert!(flag.0.is_set());
     }
 }

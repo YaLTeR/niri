@@ -83,17 +83,17 @@ impl TabIndicator {
 
         let progress = self.open_anim.as_ref().map_or(1., |a| a.value().max(0.));
 
-        let width = round_max1(self.config.width.0);
-        let gap = self.config.gap.0;
+        let width = round_max1(self.config.width.value().0);
+        let gap = self.config.gap.value().0;
         let gap = round_max1(gap.abs()).copysign(gap);
-        let gaps_between = round_max1(self.config.gaps_between_tabs.0);
+        let gaps_between = round_max1(self.config.gaps_between_tabs.value().0);
 
-        let position = *self.config.position;
+        let position = *self.config.position.value();
         let side = match position {
             TabIndicatorPosition::Left | TabIndicatorPosition::Right => area.size.h,
             TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => area.size.w,
         };
-        let total_prop = self.config.length.total_proportion.unwrap_or(0.5);
+        let total_prop = self.config.length.value().total_proportion.unwrap_or(0.5);
         let min_length = round(side * total_prop.clamp(0., 2.));
 
         // Compute px_per_tab before applying the animation to gaps_between in order to avoid it
@@ -104,7 +104,7 @@ impl TabIndicator {
         let px_per_tab = (length + gaps_between) / count as f64 - gaps_between;
 
         let px_per_tab = px_per_tab * progress;
-        let gaps_between = round(self.config.gaps_between_tabs.0 * progress);
+        let gaps_between = round(self.config.gaps_between_tabs.value().0 * progress);
 
         let length = count as f64 * (px_per_tab + gaps_between) - gaps_between;
         let px_per_tab = floor_logical_in_physical_max1(scale, px_per_tab);
@@ -184,9 +184,9 @@ impl TabIndicator {
         self.shaders.resize_with(count, Default::default);
         self.shader_locs.resize_with(count, Default::default);
 
-        let position = *self.config.position;
-        let radius = self.config.corner_radius.0 as f32;
-        let shared_rounded_corners = self.config.gaps_between_tabs.0 == 0.;
+        let position = *self.config.position.value();
+        let radius = self.config.corner_radius.value().0 as f32;
+        let shared_rounded_corners = self.config.gaps_between_tabs.value().0 == 0.;
         let mut tabs_left = tab_count;
 
         let rects = self.tab_rects(area, count, scale);
@@ -317,14 +317,14 @@ impl TabIndicator {
         }
 
         let round = |logical: f64| round_logical_in_physical(scale, logical);
-        let width = round(self.config.width.0);
-        let gap = round(self.config.gap.0);
+        let width = round(self.config.width.value().0);
+        let gap = round(self.config.gap.value().0);
 
         // No, I am *not* falling into the rabbit hole of "what if the tab indicator is wide enough
         // that it peeks from the other side of the window".
         let size = f64::max(0., width + gap);
 
-        match *self.config.position {
+        match *self.config.position.value() {
             TabIndicatorPosition::Left | TabIndicatorPosition::Right => Size::from((size, 0.)),
             TabIndicatorPosition::Top | TabIndicatorPosition::Bottom => Size::from((0., size)),
         }
@@ -332,7 +332,7 @@ impl TabIndicator {
 
     /// Offset of the tabbed content due to space occupied by the tab indicator.
     pub fn content_offset(&self, tab_count: usize, scale: f64) -> Point<f64, Logical> {
-        match *self.config.position {
+        match *self.config.position.value() {
             TabIndicatorPosition::Left | TabIndicatorPosition::Top => {
                 self.extra_size(tab_count, scale).to_point()
             }
@@ -398,7 +398,7 @@ impl TabInfo {
             } else {
                 (config.inactive_color, config.inactive_gradient)
             };
-            gradient.unwrap_or_else(|| Gradient::from(*color))
+            gradient.unwrap_or_else(|| Gradient::from(*color.value()))
         };
 
         let gradient = gradient_from_rule()

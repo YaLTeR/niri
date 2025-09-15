@@ -65,7 +65,7 @@ impl FocusRing {
         scale: f64,
         alpha: f32,
     ) {
-        let width = self.config.width.0;
+        let width = self.config.width.value().0;
         self.full_size = win_size + Size::from((width, width)).upscale(2.);
 
         let color = if is_urgent {
@@ -77,7 +77,7 @@ impl FocusRing {
         };
 
         for buf in &mut self.buffers {
-            buf.set_color(color.to_array_premul());
+            buf.set_color(color.value().to_array_premul());
         }
 
         let radius = radius.fit_to(self.full_size.w as f32, self.full_size.h as f32);
@@ -93,7 +93,7 @@ impl FocusRing {
         self.use_border_shader = radius != CornerRadius::default() || gradient.is_some();
 
         // Set the defaults for solid color + rounded corners.
-        let gradient = gradient.unwrap_or_else(|| Gradient::from(*color));
+        let gradient = gradient.unwrap_or_else(|| Gradient::from(*color.value()));
 
         let full_rect = Rectangle::new(Point::from((-width, -width)), self.full_size);
         let gradient_area = match gradient.relative_to {
@@ -261,7 +261,7 @@ impl FocusRing {
     }
 
     pub fn width(&self) -> f64 {
-        self.config.width.0
+        self.config.width.value().0
     }
 
     pub fn is_off(&self) -> bool {

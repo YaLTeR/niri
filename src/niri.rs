@@ -1382,7 +1382,7 @@ impl State {
             self.niri.layout.ensure_named_workspace(ws_config);
         }
 
-        let rate = 1.0 / config.animations.slowdown.0.max(0.001);
+        let rate = 1.0 / config.animations.slowdown.value().0.max(0.001);
         self.niri.clock.set_rate(rate);
         self.niri
             .clock
@@ -1659,7 +1659,7 @@ impl State {
 
             let background_color = config
                 .and_then(|c| c.background_color)
-                .unwrap_or(*full_config.layout.background_color)
+                .unwrap_or(*full_config.layout.background_color.value())
                 .to_array_unpremul();
             let background_color = Color32F::from(background_color);
 
@@ -2313,7 +2313,7 @@ impl Niri {
 
         let mut animation_clock = Clock::default();
 
-        let rate = 1.0 / config_.animations.slowdown.0.max(0.001);
+        let rate = 1.0 / config_.animations.slowdown.value().0.max(0.001);
         animation_clock.set_rate(rate);
         animation_clock.set_complete_instantly(config_.animations.off);
 
@@ -2908,7 +2908,7 @@ impl Niri {
 
         let background_color = c
             .and_then(|c| c.background_color)
-            .unwrap_or(*config.layout.background_color)
+            .unwrap_or(*config.layout.background_color.value())
             .to_array_unpremul();
 
         let mut backdrop_color = c

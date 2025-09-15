@@ -1226,7 +1226,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 let size = match resolve_preset_size(size, working_area_size) {
                     ResolvedSize::Tile(mut size) => {
                         if !border.off {
-                            size -= border.width.0 * 2.;
+                            size -= border.width.value().0 * 2.;
                         }
                         size
                     }
@@ -1364,7 +1364,7 @@ fn compute_toplevel_bounds(
 ) -> Size<i32, Logical> {
     let mut border = 0.;
     if !border_config.off {
-        border = border_config.width.0 * 2.;
+        border = border_config.width.value().0 * 2.;
     }
 
     Size::from((
