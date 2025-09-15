@@ -225,17 +225,33 @@ output "HDMI-A-1" {
 }
 ```
 
-### Hot Corners
+### `hot-corners`
 
-<sup>Since: TODO</sup>
+<sup>Since: next release</sup>
 
-Defines hot corners for the specific monitor.
+Defines hot corners for the specific output.
 
-Put your mouse at a corner of your monitor (by default, top-left) to toggle the overview.
+Put your mouse at a corner of your monitor (by default, top-left) to toggle the overview. Falls back to the [gesture hot-corners](./Configuration:-Gestures.md#hot-corners) if undefined.
 Also works during drag-and-dropping something.
 
-- `off` disables the hot corners for this monitor.
-- `top-left` enables the top left hot corner for this monitor.
-- `top-right` enables the top right hot corner for this monitor.
-- `bottom-left` enables the bottom left hot corner for this monitor.
-- `bottom-right` enables the bottom right hot corner for this monitor.
+- `off` disables the hot corners for this output.
+- `top-left` enables the top left hot corner for this output.
+- `top-right` enables the top right hot corner for this output.
+- `bottom-left` enables the bottom left hot corner for this output.
+- `bottom-right` enables the bottom right hot corner for this output.
+
+```kdl
+// Enable the bottom left hot corner on HDMI-A-1.
+output "HDMI-A-1" {
+    hot-corners {
+        bottom-left
+    }
+}
+
+// Disable hot corners on DP-2.
+output "DP-2" {
+    hot-corners {
+        off
+    }
+}
+```
