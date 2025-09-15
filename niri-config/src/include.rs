@@ -20,6 +20,7 @@ pub fn resolve_includes(main_path: &Path) -> miette::Result<IncludeResult> {
         &mut included_files,
         &mut inclusion_stack,
         &mut visited,
+        0,
     )?;
 
     Ok(IncludeResult {
@@ -28,12 +29,21 @@ pub fn resolve_includes(main_path: &Path) -> miette::Result<IncludeResult> {
     })
 }
 
+const MAX_INCLUDE_DEPTH: usize = 16;
+
 fn resolve_includes_recursive(
     path: &Path,
     included_files: &mut Vec<PathBuf>,
     inclusion_stack: &mut Vec<PathBuf>,
     visited: &mut HashSet<PathBuf>,
+    depth: usize,
 ) -> miette::Result<String> {
+    if depth > MAX_INCLUDE_DEPTH {
+        return Err(miette::miette!(
+            "maximum include depth ({}) exceeded, possible infinite recursion",
+            MAX_INCLUDE_DEPTH
+        ));
+    }
     let canonical_path = path
         .canonicalize()
         .into_diagnostic()
@@ -86,6 +96,7 @@ fn resolve_includes_recursive(
                     included_files,
                     inclusion_stack,
                     visited,
+                    depth + 1,
                 )?;
 
                 if !included_content.is_empty() {
@@ -686,6 +697,35 @@ layout {
                 || err_msg.to_lowercase().contains("not found")
                 || err_msg.to_lowercase().contains("failed to canonicalize")
         );
+    }
+
+    #[test]
+    fn test_recursion_depth_limit() {
+        let sh = Shell::new().unwrap();
+        let temp_dir = sh.create_temp_dir().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create a chain of 20 include files (more than MAX_INCLUDE_DEPTH)
+        for i in 0..20 {
+            let content = if i < 19 {
+                format!(
+                    r#"include "file{}.kdl"
+layout {{ gaps {} }}"#,
+                    i + 1,
+                    i
+                )
+            } else {
+                format!("layout {{ gaps {} }}", i)
+            };
+            fs::write(temp_path.join(format!("file{}.kdl", i)), content).unwrap();
+        }
+
+        let result = resolve_includes(&temp_path.join("file0.kdl"));
+
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(err_msg.contains("maximum include depth"));
+        assert!(err_msg.contains("exceeded"));
     }
 
     #[test]
