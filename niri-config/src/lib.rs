@@ -16,6 +16,8 @@ pub mod gestures;
 pub mod input;
 pub mod layer_rule;
 pub mod layout;
+pub mod maybe_set;
+pub mod mergeable;
 pub mod misc;
 pub mod output;
 pub mod utils;
@@ -30,6 +32,8 @@ pub use crate::gestures::Gestures;
 pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
+pub use crate::maybe_set::{BoolFlag, MaybeSet};
+pub use crate::mergeable::Mergeable;
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
 pub use crate::utils::FloatOrInt;
@@ -38,7 +42,9 @@ pub use crate::workspace::Workspace;
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {
-    #[knuffel(child, default)]
+    #[knuffel(children(name = "input"))]
+    input_vec: Vec<Input>,
+    #[knuffel(default)]
     pub input: Input,
     #[knuffel(children(name = "output"))]
     pub outputs: Outputs,
@@ -46,7 +52,9 @@ pub struct Config {
     pub spawn_at_startup: Vec<SpawnAtStartup>,
     #[knuffel(children(name = "spawn-sh-at-startup"))]
     pub spawn_sh_at_startup: Vec<SpawnShAtStartup>,
-    #[knuffel(child, default)]
+    #[knuffel(children(name = "layout"))]
+    layout_vec: Vec<Layout>,
+    #[knuffel(default)]
     pub layout: Layout,
     #[knuffel(child, default)]
     pub prefer_no_csd: bool,
@@ -66,9 +74,11 @@ pub struct Config {
     pub hotkey_overlay: HotkeyOverlay,
     #[knuffel(child, default)]
     pub config_notification: ConfigNotification,
-    #[knuffel(child, default)]
-    pub animations: Animations,
-    #[knuffel(child, default)]
+    #[knuffel(children(name = "animations"))]
+    animations_vec: Vec<Animations>,
+    #[knuffel(children(name = "gestures"))]
+    gestures_vec: Vec<Gestures>,
+    #[knuffel(default)]
     pub gestures: Gestures,
     #[knuffel(child, default)]
     pub overview: Overview,
@@ -80,33 +90,21 @@ pub struct Config {
     pub window_rules: Vec<WindowRule>,
     #[knuffel(children(name = "layer-rule"))]
     pub layer_rules: Vec<LayerRule>,
-    #[knuffel(child, default)]
+    #[knuffel(children(name = "binds"))]
+    binds_vec: Vec<Binds>,
+    #[knuffel(default)]
     pub binds: Binds,
     #[knuffel(child, default)]
     pub switch_events: SwitchBinds,
-    #[knuffel(child, default)]
+    #[knuffel(children(name = "debug"))]
+    debug_vec: Vec<Debug>,
+    #[knuffel(default)]
     pub debug: Debug,
     #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
-}
 
-#[derive(Debug, Clone)]
-pub enum ConfigPath {
-    /// Explicitly set config path.
-    ///
-    /// Load the config only from this path, never create it.
-    Explicit(PathBuf),
-
-    /// Default config path.
-    ///
-    /// Prioritize the user path, fallback to the system path, fallback to creating the user path
-    /// at compositor startup.
-    Regular {
-        /// User config path, usually `$XDG_CONFIG_HOME/niri/config.kdl`.
-        user_path: PathBuf,
-        /// System config path, usually `/etc/niri/config.kdl`.
-        system_path: PathBuf,
-    },
+    #[knuffel(default)]
+    pub animations: Animations,
 }
 
 impl Config {
@@ -128,8 +126,65 @@ impl Config {
 
     pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
         let _span = tracy_client::span!("Config::parse");
-        knuffel::parse(filename, text)
+        let mut config: Self = knuffel::parse(filename, text)?;
+
+        let mut animations = Animations::default();
+        for anim in &config.animations_vec {
+            animations.merge_with(anim);
+        }
+        config.animations = animations;
+
+        let mut binds = Binds::default();
+        for bind in &config.binds_vec {
+            binds.merge_with(bind);
+        }
+        config.binds = binds;
+
+        let mut debug = Debug::default();
+        for d in &config.debug_vec {
+            debug.merge_with(d);
+        }
+        config.debug = debug;
+
+        let mut gestures = Gestures::default();
+        for g in &config.gestures_vec {
+            gestures.merge_with(g);
+        }
+        config.gestures = gestures;
+
+        let mut input = Input::default();
+        for inp in &config.input_vec {
+            input.merge_with(inp);
+        }
+        config.input = input;
+
+        let mut layout = Layout::default();
+        for l in &config.layout_vec {
+            layout.merge_with(l);
+        }
+        config.layout = layout;
+
+        Ok(config)
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum ConfigPath {
+    /// Explicitly set config path.
+    ///
+    /// Load the config only from this path, never create it.
+    Explicit(PathBuf),
+
+    /// Default config path.
+    ///
+    /// Prioritize the user path, fallback to the system path, fallback to creating the user path
+    /// at compositor startup.
+    Regular {
+        /// User config path, usually `$XDG_CONFIG_HOME/niri/config.kdl`.
+        user_path: PathBuf,
+        /// System config path, usually `/etc/niri/config.kdl`.
+        system_path: PathBuf,
+    },
 }
 
 impl Default for Config {
@@ -537,6 +592,179 @@ mod tests {
 
         assert_debug_snapshot!(parsed, @r#"
         Config {
+            input_vec: [
+                Input {
+                    keyboard: Keyboard {
+                        xkb: Xkb {
+                            rules: "",
+                            model: "",
+                            layout: "us,ru",
+                            variant: "",
+                            options: Some(
+                                "grp:win_space_toggle",
+                            ),
+                            file: None,
+                        },
+                        repeat_delay: 600,
+                        repeat_rate: 25,
+                        track_layout: Window,
+                        numlock: false,
+                    },
+                    touchpad: Touchpad {
+                        off: false,
+                        tap: true,
+                        dwt: true,
+                        dwtp: true,
+                        drag: Some(
+                            true,
+                        ),
+                        drag_lock: false,
+                        natural_scroll: false,
+                        click_method: Some(
+                            Clickfinger,
+                        ),
+                        accel_speed: FloatOrInt(
+                            0.2,
+                        ),
+                        accel_profile: Some(
+                            Flat,
+                        ),
+                        scroll_method: Some(
+                            TwoFinger,
+                        ),
+                        scroll_button: Some(
+                            272,
+                        ),
+                        scroll_button_lock: true,
+                        tap_button_map: Some(
+                            LeftMiddleRight,
+                        ),
+                        left_handed: false,
+                        disabled_on_external_mouse: true,
+                        middle_emulation: false,
+                        scroll_factor: Some(
+                            ScrollFactor {
+                                base: Some(
+                                    FloatOrInt(
+                                        0.9,
+                                    ),
+                                ),
+                                horizontal: None,
+                                vertical: None,
+                            },
+                        ),
+                    },
+                    mouse: Mouse {
+                        off: false,
+                        natural_scroll: true,
+                        accel_speed: FloatOrInt(
+                            0.4,
+                        ),
+                        accel_profile: Some(
+                            Flat,
+                        ),
+                        scroll_method: Some(
+                            NoScroll,
+                        ),
+                        scroll_button: Some(
+                            273,
+                        ),
+                        scroll_button_lock: false,
+                        left_handed: false,
+                        middle_emulation: true,
+                        scroll_factor: Some(
+                            ScrollFactor {
+                                base: Some(
+                                    FloatOrInt(
+                                        0.2,
+                                    ),
+                                ),
+                                horizontal: None,
+                                vertical: None,
+                            },
+                        ),
+                    },
+                    trackpoint: Trackpoint {
+                        off: true,
+                        natural_scroll: true,
+                        accel_speed: FloatOrInt(
+                            0.0,
+                        ),
+                        accel_profile: Some(
+                            Flat,
+                        ),
+                        scroll_method: Some(
+                            OnButtonDown,
+                        ),
+                        scroll_button: Some(
+                            274,
+                        ),
+                        scroll_button_lock: false,
+                        left_handed: false,
+                        middle_emulation: false,
+                    },
+                    trackball: Trackball {
+                        off: true,
+                        natural_scroll: true,
+                        accel_speed: FloatOrInt(
+                            0.0,
+                        ),
+                        accel_profile: Some(
+                            Flat,
+                        ),
+                        scroll_method: Some(
+                            Edge,
+                        ),
+                        scroll_button: Some(
+                            275,
+                        ),
+                        scroll_button_lock: true,
+                        left_handed: true,
+                        middle_emulation: true,
+                    },
+                    tablet: Tablet {
+                        off: false,
+                        calibration_matrix: Some(
+                            [
+                                1.0,
+                                2.0,
+                                3.0,
+                                4.0,
+                                5.0,
+                                6.0,
+                            ],
+                        ),
+                        map_to_output: Some(
+                            "eDP-1",
+                        ),
+                        left_handed: false,
+                    },
+                    touch: Touch {
+                        off: false,
+                        map_to_output: Some(
+                            "eDP-1",
+                        ),
+                    },
+                    disable_power_key_handling: true,
+                    warp_mouse_to_focus: Some(
+                        WarpMouseToFocus {
+                            mode: None,
+                        },
+                    ),
+                    focus_follows_mouse: Some(
+                        FocusFollowsMouse {
+                            max_scroll_amount: None,
+                        },
+                    ),
+                    workspace_auto_back_and_forth: true,
+                    mod_key: Some(
+                        IsoLevel3Shift,
+                    ),
+                    mod_key_nested: Some(
+                        Super,
+                    ),
+                },
+            ],
             input: Input {
                 keyboard: Keyboard {
                     xkb: Xkb {
@@ -773,6 +1001,234 @@ mod tests {
             spawn_sh_at_startup: [
                 SpawnShAtStartup {
                     command: "qs -c ~/source/qs/MyAwesomeShell",
+                },
+            ],
+            layout_vec: [
+                Layout {
+                    focus_ring: FocusRing {
+                        off: false,
+                        width: FloatOrInt(
+                            5.0,
+                        ),
+                        active_color: Color {
+                            r: 0.0,
+                            g: 0.39215687,
+                            b: 0.78431374,
+                            a: 1.0,
+                        },
+                        inactive_color: Color {
+                            r: 1.0,
+                            g: 0.78431374,
+                            b: 0.39215687,
+                            a: 0.0,
+                        },
+                        urgent_color: Color {
+                            r: 0.60784316,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        },
+                        active_gradient: Some(
+                            Gradient {
+                                from: Color {
+                                    r: 0.039215688,
+                                    g: 0.078431375,
+                                    b: 0.11764706,
+                                    a: 1.0,
+                                },
+                                to: Color {
+                                    r: 0.0,
+                                    g: 0.5019608,
+                                    b: 1.0,
+                                    a: 1.0,
+                                },
+                                angle: 180,
+                                relative_to: WorkspaceView,
+                                in_: GradientInterpolation {
+                                    color_space: Srgb,
+                                    hue_interpolation: Shorter,
+                                },
+                            },
+                        ),
+                        inactive_gradient: None,
+                        urgent_gradient: None,
+                    },
+                    border: Border {
+                        off: false,
+                        width: FloatOrInt(
+                            3.0,
+                        ),
+                        active_color: Color {
+                            r: 1.0,
+                            g: 0.78431374,
+                            b: 0.49803922,
+                            a: 1.0,
+                        },
+                        inactive_color: Color {
+                            r: 1.0,
+                            g: 0.78431374,
+                            b: 0.39215687,
+                            a: 0.0,
+                        },
+                        urgent_color: Color {
+                            r: 0.60784316,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        },
+                        active_gradient: None,
+                        inactive_gradient: None,
+                        urgent_gradient: None,
+                    },
+                    shadow: Shadow {
+                        on: false,
+                        offset: ShadowOffset {
+                            x: FloatOrInt(
+                                10.0,
+                            ),
+                            y: FloatOrInt(
+                                -20.0,
+                            ),
+                        },
+                        softness: FloatOrInt(
+                            30.0,
+                        ),
+                        spread: FloatOrInt(
+                            5.0,
+                        ),
+                        draw_behind_window: false,
+                        color: Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 0.4392157,
+                        },
+                        inactive_color: None,
+                    },
+                    tab_indicator: TabIndicator {
+                        off: false,
+                        hide_when_single_tab: false,
+                        place_within_column: false,
+                        gap: FloatOrInt(
+                            5.0,
+                        ),
+                        width: FloatOrInt(
+                            10.0,
+                        ),
+                        length: TabIndicatorLength {
+                            total_proportion: Some(
+                                0.5,
+                            ),
+                        },
+                        position: Top,
+                        gaps_between_tabs: FloatOrInt(
+                            0.0,
+                        ),
+                        corner_radius: FloatOrInt(
+                            0.0,
+                        ),
+                        active_color: None,
+                        inactive_color: None,
+                        urgent_color: None,
+                        active_gradient: None,
+                        inactive_gradient: None,
+                        urgent_gradient: None,
+                    },
+                    insert_hint: InsertHint {
+                        off: false,
+                        color: Color {
+                            r: 1.0,
+                            g: 0.78431374,
+                            b: 0.49803922,
+                            a: 1.0,
+                        },
+                        gradient: Some(
+                            Gradient {
+                                from: Color {
+                                    r: 0.039215688,
+                                    g: 0.078431375,
+                                    b: 0.11764706,
+                                    a: 1.0,
+                                },
+                                to: Color {
+                                    r: 0.0,
+                                    g: 0.5019608,
+                                    b: 1.0,
+                                    a: 1.0,
+                                },
+                                angle: 180,
+                                relative_to: WorkspaceView,
+                                in_: GradientInterpolation {
+                                    color_space: Srgb,
+                                    hue_interpolation: Shorter,
+                                },
+                            },
+                        ),
+                    },
+                    preset_column_widths: [
+                        Proportion(
+                            0.25,
+                        ),
+                        Proportion(
+                            0.5,
+                        ),
+                        Fixed(
+                            960,
+                        ),
+                        Fixed(
+                            1280,
+                        ),
+                    ],
+                    default_column_width: Some(
+                        DefaultPresetSize(
+                            Some(
+                                Proportion(
+                                    0.25,
+                                ),
+                            ),
+                        ),
+                    ),
+                    preset_window_heights: [
+                        Proportion(
+                            0.25,
+                        ),
+                        Proportion(
+                            0.5,
+                        ),
+                        Fixed(
+                            960,
+                        ),
+                        Fixed(
+                            1280,
+                        ),
+                    ],
+                    center_focused_column: OnOverflow,
+                    always_center_single_column: false,
+                    empty_workspace_above_first: false,
+                    default_column_display: Tabbed,
+                    gaps: FloatOrInt(
+                        8.0,
+                    ),
+                    struts: Struts {
+                        left: FloatOrInt(
+                            1.0,
+                        ),
+                        right: FloatOrInt(
+                            2.0,
+                        ),
+                        top: FloatOrInt(
+                            3.0,
+                        ),
+                        bottom: FloatOrInt(
+                            0.0,
+                        ),
+                    },
+                    background_color: Color {
+                        r: 0.25,
+                        g: 0.25,
+                        b: 0.25,
+                        a: 1.0,
+                    },
                 },
             ],
             layout: Layout {
@@ -1023,136 +1479,166 @@ mod tests {
             config_notification: ConfigNotification {
                 disable_failed: false,
             },
-            animations: Animations {
-                off: false,
-                slowdown: FloatOrInt(
-                    2.0,
-                ),
-                workspace_switch: WorkspaceSwitchAnim(
-                    Animation {
-                        off: false,
-                        kind: Spring(
-                            SpringParams {
-                                damping_ratio: 1.0,
-                                stiffness: 1000,
-                                epsilon: 0.0001,
-                            },
+            animations_vec: [
+                Animations {
+                    off: false,
+                    slowdown: MaybeSet {
+                        value: FloatOrInt(
+                            2.0,
                         ),
+                        is_set: true,
                     },
-                ),
-                window_open: WindowOpenAnim {
-                    anim: Animation {
-                        off: true,
-                        kind: Easing(
-                            EasingParams {
-                                duration_ms: 150,
-                                curve: EaseOutExpo,
-                            },
-                        ),
+                    workspace_switch: WorkspaceSwitchAnim(
+                        Animation {
+                            off: false,
+                            kind: Spring(
+                                SpringParams {
+                                    damping_ratio: 1.0,
+                                    stiffness: 1000,
+                                    epsilon: 0.0001,
+                                },
+                            ),
+                        },
+                    ),
+                    window_open: WindowOpenAnim {
+                        anim: Animation {
+                            off: true,
+                            kind: Easing(
+                                EasingParams {
+                                    duration_ms: 150,
+                                    curve: EaseOutExpo,
+                                },
+                            ),
+                        },
+                        custom_shader: None,
                     },
-                    custom_shader: None,
+                    window_close: WindowCloseAnim {
+                        anim: Animation {
+                            off: false,
+                            kind: Easing(
+                                EasingParams {
+                                    duration_ms: 150,
+                                    curve: CubicBezier(
+                                        0.05,
+                                        0.7,
+                                        0.1,
+                                        1.0,
+                                    ),
+                                },
+                            ),
+                        },
+                        custom_shader: None,
+                    },
+                    horizontal_view_movement: HorizontalViewMovementAnim(
+                        Animation {
+                            off: false,
+                            kind: Easing(
+                                EasingParams {
+                                    duration_ms: 100,
+                                    curve: EaseOutExpo,
+                                },
+                            ),
+                        },
+                    ),
+                    window_movement: WindowMovementAnim(
+                        Animation {
+                            off: false,
+                            kind: Spring(
+                                SpringParams {
+                                    damping_ratio: 1.0,
+                                    stiffness: 800,
+                                    epsilon: 0.0001,
+                                },
+                            ),
+                        },
+                    ),
+                    window_resize: WindowResizeAnim {
+                        anim: Animation {
+                            off: false,
+                            kind: Spring(
+                                SpringParams {
+                                    damping_ratio: 1.0,
+                                    stiffness: 800,
+                                    epsilon: 0.0001,
+                                },
+                            ),
+                        },
+                        custom_shader: None,
+                    },
+                    config_notification_open_close: ConfigNotificationOpenCloseAnim(
+                        Animation {
+                            off: false,
+                            kind: Spring(
+                                SpringParams {
+                                    damping_ratio: 0.6,
+                                    stiffness: 1000,
+                                    epsilon: 0.001,
+                                },
+                            ),
+                        },
+                    ),
+                    exit_confirmation_open_close: ExitConfirmationOpenCloseAnim(
+                        Animation {
+                            off: false,
+                            kind: Spring(
+                                SpringParams {
+                                    damping_ratio: 0.6,
+                                    stiffness: 500,
+                                    epsilon: 0.01,
+                                },
+                            ),
+                        },
+                    ),
+                    screenshot_ui_open: ScreenshotUiOpenAnim(
+                        Animation {
+                            off: false,
+                            kind: Easing(
+                                EasingParams {
+                                    duration_ms: 200,
+                                    curve: EaseOutQuad,
+                                },
+                            ),
+                        },
+                    ),
+                    overview_open_close: OverviewOpenCloseAnim(
+                        Animation {
+                            off: false,
+                            kind: Spring(
+                                SpringParams {
+                                    damping_ratio: 1.0,
+                                    stiffness: 800,
+                                    epsilon: 0.0001,
+                                },
+                            ),
+                        },
+                    ),
                 },
-                window_close: WindowCloseAnim {
-                    anim: Animation {
-                        off: false,
-                        kind: Easing(
-                            EasingParams {
-                                duration_ms: 150,
-                                curve: CubicBezier(
-                                    0.05,
-                                    0.7,
-                                    0.1,
-                                    1.0,
-                                ),
-                            },
+            ],
+            gestures_vec: [
+                Gestures {
+                    dnd_edge_view_scroll: DndEdgeViewScroll {
+                        trigger_width: FloatOrInt(
+                            10.0,
+                        ),
+                        delay_ms: 100,
+                        max_speed: FloatOrInt(
+                            50.0,
                         ),
                     },
-                    custom_shader: None,
+                    dnd_edge_workspace_switch: DndEdgeWorkspaceSwitch {
+                        trigger_height: FloatOrInt(
+                            50.0,
+                        ),
+                        delay_ms: 100,
+                        max_speed: FloatOrInt(
+                            1500.0,
+                        ),
+                    },
+                    hot_corners: HotCorners {
+                        off: false,
+                    },
                 },
-                horizontal_view_movement: HorizontalViewMovementAnim(
-                    Animation {
-                        off: false,
-                        kind: Easing(
-                            EasingParams {
-                                duration_ms: 100,
-                                curve: EaseOutExpo,
-                            },
-                        ),
-                    },
-                ),
-                window_movement: WindowMovementAnim(
-                    Animation {
-                        off: false,
-                        kind: Spring(
-                            SpringParams {
-                                damping_ratio: 1.0,
-                                stiffness: 800,
-                                epsilon: 0.0001,
-                            },
-                        ),
-                    },
-                ),
-                window_resize: WindowResizeAnim {
-                    anim: Animation {
-                        off: false,
-                        kind: Spring(
-                            SpringParams {
-                                damping_ratio: 1.0,
-                                stiffness: 800,
-                                epsilon: 0.0001,
-                            },
-                        ),
-                    },
-                    custom_shader: None,
-                },
-                config_notification_open_close: ConfigNotificationOpenCloseAnim(
-                    Animation {
-                        off: false,
-                        kind: Spring(
-                            SpringParams {
-                                damping_ratio: 0.6,
-                                stiffness: 1000,
-                                epsilon: 0.001,
-                            },
-                        ),
-                    },
-                ),
-                exit_confirmation_open_close: ExitConfirmationOpenCloseAnim(
-                    Animation {
-                        off: false,
-                        kind: Spring(
-                            SpringParams {
-                                damping_ratio: 0.6,
-                                stiffness: 500,
-                                epsilon: 0.01,
-                            },
-                        ),
-                    },
-                ),
-                screenshot_ui_open: ScreenshotUiOpenAnim(
-                    Animation {
-                        off: false,
-                        kind: Easing(
-                            EasingParams {
-                                duration_ms: 200,
-                                curve: EaseOutQuad,
-                            },
-                        ),
-                    },
-                ),
-                overview_open_close: OverviewOpenCloseAnim(
-                    Animation {
-                        off: false,
-                        kind: Spring(
-                            SpringParams {
-                                damping_ratio: 1.0,
-                                stiffness: 800,
-                                epsilon: 0.0001,
-                            },
-                        ),
-                    },
-                ),
-            },
+            ],
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
                     trigger_width: FloatOrInt(
@@ -1430,6 +1916,280 @@ mod tests {
                     place_within_backdrop: None,
                     baba_is_float: None,
                 },
+            ],
+            binds_vec: [
+                Binds(
+                    [
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_Escape,
+                                ),
+                                modifiers: Modifiers(
+                                    COMPOSITOR,
+                                ),
+                            },
+                            action: ToggleKeyboardShortcutsInhibit,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: Some(
+                                Some(
+                                    "Inhibit",
+                                ),
+                            ),
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_Escape,
+                                ),
+                                modifiers: Modifiers(
+                                    SHIFT | COMPOSITOR,
+                                ),
+                            },
+                            action: ToggleKeyboardShortcutsInhibit,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_t,
+                                ),
+                                modifiers: Modifiers(
+                                    COMPOSITOR,
+                                ),
+                            },
+                            action: Spawn(
+                                [
+                                    "alacritty",
+                                ],
+                            ),
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: true,
+                            allow_inhibiting: true,
+                            hotkey_overlay_title: None,
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_q,
+                                ),
+                                modifiers: Modifiers(
+                                    COMPOSITOR,
+                                ),
+                            },
+                            action: CloseWindow,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: true,
+                            hotkey_overlay_title: Some(
+                                None,
+                            ),
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_h,
+                                ),
+                                modifiers: Modifiers(
+                                    SHIFT | COMPOSITOR,
+                                ),
+                            },
+                            action: FocusMonitorLeft,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: true,
+                            hotkey_overlay_title: None,
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_o,
+                                ),
+                                modifiers: Modifiers(
+                                    SHIFT | COMPOSITOR,
+                                ),
+                            },
+                            action: FocusMonitor(
+                                "eDP-1",
+                            ),
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: true,
+                            hotkey_overlay_title: None,
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_l,
+                                ),
+                                modifiers: Modifiers(
+                                    CTRL | SHIFT | COMPOSITOR,
+                                ),
+                            },
+                            action: MoveWindowToMonitorRight,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: true,
+                            hotkey_overlay_title: None,
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_o,
+                                ),
+                                modifiers: Modifiers(
+                                    CTRL | ALT | COMPOSITOR,
+                                ),
+                            },
+                            action: MoveWindowToMonitor(
+                                "eDP-1",
+                            ),
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: true,
+                            hotkey_overlay_title: None,
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_p,
+                                ),
+                                modifiers: Modifiers(
+                                    CTRL | ALT | COMPOSITOR,
+                                ),
+                            },
+                            action: MoveColumnToMonitor(
+                                "DP-1",
+                            ),
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: true,
+                            hotkey_overlay_title: None,
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_comma,
+                                ),
+                                modifiers: Modifiers(
+                                    COMPOSITOR,
+                                ),
+                            },
+                            action: ConsumeWindowIntoColumn,
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: true,
+                            hotkey_overlay_title: None,
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_1,
+                                ),
+                                modifiers: Modifiers(
+                                    COMPOSITOR,
+                                ),
+                            },
+                            action: FocusWorkspace(
+                                Index(
+                                    1,
+                                ),
+                            ),
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: true,
+                            hotkey_overlay_title: None,
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_1,
+                                ),
+                                modifiers: Modifiers(
+                                    SHIFT | COMPOSITOR,
+                                ),
+                            },
+                            action: FocusWorkspace(
+                                Name(
+                                    "workspace-1",
+                                ),
+                            ),
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: true,
+                            hotkey_overlay_title: None,
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_e,
+                                ),
+                                modifiers: Modifiers(
+                                    SHIFT | COMPOSITOR,
+                                ),
+                            },
+                            action: Quit(
+                                true,
+                            ),
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: false,
+                            allow_inhibiting: false,
+                            hotkey_overlay_title: None,
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: WheelScrollDown,
+                                modifiers: Modifiers(
+                                    COMPOSITOR,
+                                ),
+                            },
+                            action: FocusWorkspaceDown,
+                            repeat: true,
+                            cooldown: Some(
+                                150ms,
+                            ),
+                            allow_when_locked: false,
+                            allow_inhibiting: true,
+                            hotkey_overlay_title: None,
+                        },
+                        Bind {
+                            key: Key {
+                                trigger: Keysym(
+                                    XK_s,
+                                ),
+                                modifiers: Modifiers(
+                                    ALT | SUPER,
+                                ),
+                            },
+                            action: SpawnSh(
+                                "pkill orca || exec orca",
+                            ),
+                            repeat: true,
+                            cooldown: None,
+                            allow_when_locked: true,
+                            allow_inhibiting: true,
+                            hotkey_overlay_title: None,
+                        },
+                    ],
+                ),
             ],
             binds: Binds(
                 [
@@ -1725,28 +2485,223 @@ mod tests {
                     },
                 ),
             },
+            debug_vec: [
+                Debug {
+                    preview_render: None,
+                    dbus_interfaces_in_non_session_instances: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    wait_for_frame_completion_before_queueing: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    enable_overlay_planes: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    disable_cursor_plane: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    disable_direct_scanout: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    keep_max_bpc_unchanged: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    restrict_primary_scanout_to_matching_format: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    render_drm_device: Some(
+                        "/dev/dri/renderD129",
+                    ),
+                    force_pipewire_invalid_modifier: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    emulate_zero_presentation_time: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    disable_resize_throttling: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    disable_transactions: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    keep_laptop_panel_on_when_lid_is_closed: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    disable_monitor_names: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    strict_new_window_focus_policy: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    honor_xdg_activation_with_invalid_serial: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    deactivate_unfocused_windows: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                    skip_cursor_only_updates_during_vrr: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: false,
+                        },
+                    ),
+                },
+            ],
             debug: Debug {
                 preview_render: None,
-                dbus_interfaces_in_non_session_instances: false,
-                wait_for_frame_completion_before_queueing: false,
-                enable_overlay_planes: false,
-                disable_cursor_plane: false,
-                disable_direct_scanout: false,
-                keep_max_bpc_unchanged: false,
-                restrict_primary_scanout_to_matching_format: false,
+                dbus_interfaces_in_non_session_instances: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                wait_for_frame_completion_before_queueing: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                enable_overlay_planes: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                disable_cursor_plane: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                disable_direct_scanout: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                keep_max_bpc_unchanged: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                restrict_primary_scanout_to_matching_format: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
                 render_drm_device: Some(
                     "/dev/dri/renderD129",
                 ),
-                force_pipewire_invalid_modifier: false,
-                emulate_zero_presentation_time: false,
-                disable_resize_throttling: false,
-                disable_transactions: false,
-                keep_laptop_panel_on_when_lid_is_closed: false,
-                disable_monitor_names: false,
-                strict_new_window_focus_policy: false,
-                honor_xdg_activation_with_invalid_serial: false,
-                deactivate_unfocused_windows: false,
-                skip_cursor_only_updates_during_vrr: false,
+                force_pipewire_invalid_modifier: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                emulate_zero_presentation_time: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                disable_resize_throttling: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                disable_transactions: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                keep_laptop_panel_on_when_lid_is_closed: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                disable_monitor_names: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                strict_new_window_focus_policy: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                honor_xdg_activation_with_invalid_serial: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                deactivate_unfocused_windows: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
+                skip_cursor_only_updates_during_vrr: BoolFlag(
+                    MaybeSet {
+                        value: false,
+                        is_set: false,
+                    },
+                ),
             },
             workspaces: [
                 Workspace {
@@ -1770,6 +2725,139 @@ mod tests {
                     open_on_output: None,
                 },
             ],
+            animations: Animations {
+                off: false,
+                slowdown: MaybeSet {
+                    value: FloatOrInt(
+                        2.0,
+                    ),
+                    is_set: true,
+                },
+                workspace_switch: WorkspaceSwitchAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 1000,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                window_open: WindowOpenAnim {
+                    anim: Animation {
+                        off: true,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 150,
+                                curve: EaseOutExpo,
+                            },
+                        ),
+                    },
+                    custom_shader: None,
+                },
+                window_close: WindowCloseAnim {
+                    anim: Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 150,
+                                curve: CubicBezier(
+                                    0.05,
+                                    0.7,
+                                    0.1,
+                                    1.0,
+                                ),
+                            },
+                        ),
+                    },
+                    custom_shader: None,
+                },
+                horizontal_view_movement: HorizontalViewMovementAnim(
+                    Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 100,
+                                curve: EaseOutExpo,
+                            },
+                        ),
+                    },
+                ),
+                window_movement: WindowMovementAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                window_resize: WindowResizeAnim {
+                    anim: Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                    custom_shader: None,
+                },
+                config_notification_open_close: ConfigNotificationOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 0.6,
+                                stiffness: 1000,
+                                epsilon: 0.001,
+                            },
+                        ),
+                    },
+                ),
+                exit_confirmation_open_close: ExitConfirmationOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 0.6,
+                                stiffness: 500,
+                                epsilon: 0.01,
+                            },
+                        ),
+                    },
+                ),
+                screenshot_ui_open: ScreenshotUiOpenAnim(
+                    Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 200,
+                                curve: EaseOutQuad,
+                            },
+                        ),
+                    },
+                ),
+                overview_open_close: OverviewOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+            },
         }
         "#);
     }

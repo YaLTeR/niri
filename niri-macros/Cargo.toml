@@ -1,0 +1,16 @@
+[package]
+name = "niri-macros"
+version.workspace = true
+description = "Procedural macros for niri"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "2.0"
+quote = "1.0"
+proc-macro2 = "1.0"

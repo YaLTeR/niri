@@ -206,7 +206,7 @@ impl Winit {
 
         let rv;
         if let Some(damage) = res.damage {
-            if self
+            if *self
                 .config
                 .borrow()
                 .debug

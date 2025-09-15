@@ -2,7 +2,7 @@ use std::cmp::{max, min};
 
 use niri_config::window_rule::{Match, WindowRule};
 use niri_config::{
-    BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize, ShadowRule,
+    BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, Mergeable, PresetSize, ShadowRule,
     TabIndicatorRule,
 };
 use niri_ipc::ColumnDisplay;

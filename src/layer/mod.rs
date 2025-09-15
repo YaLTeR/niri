@@ -1,5 +1,5 @@
 use niri_config::layer_rule::{LayerRule, Match};
-use niri_config::{BlockOutFrom, CornerRadius, ShadowRule};
+use niri_config::{BlockOutFrom, CornerRadius, Mergeable, ShadowRule};
 use smithay::desktop::LayerSurface;
 
 pub mod mapped;

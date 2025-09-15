@@ -2130,7 +2130,7 @@ impl State {
 
                 {
                     let config = self.niri.config.borrow();
-                    if config.debug.force_pipewire_invalid_modifier {
+                    if *config.debug.force_pipewire_invalid_modifier {
                         render_formats = render_formats
                             .into_iter()
                             .filter(|f| f.modifier == Modifier::Invalid)

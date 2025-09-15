@@ -1,15 +1,16 @@
 use knuffel::errors::DecodeError;
 use knuffel::Decode as _;
+use niri_macros::Mergeable;
 
 use crate::utils::{expect_only_children, parse_arg_node};
-use crate::FloatOrInt;
+use crate::{FloatOrInt, MaybeSet};
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, PartialEq, Mergeable)]
 pub struct Animations {
     #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child, unwrap(argument), default = FloatOrInt(1.))]
-    pub slowdown: FloatOrInt<0, { i32::MAX }>,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(FloatOrInt(1.)))]
+    pub slowdown: MaybeSet<FloatOrInt<0, { i32::MAX }>>,
     #[knuffel(child, default)]
     pub workspace_switch: WorkspaceSwitchAnim,
     #[knuffel(child, default)]
@@ -36,7 +37,7 @@ impl Default for Animations {
     fn default() -> Self {
         Self {
             off: false,
-            slowdown: FloatOrInt(1.),
+            slowdown: MaybeSet::unset(FloatOrInt(1.)),
             workspace_switch: Default::default(),
             horizontal_view_movement: Default::default(),
             window_movement: Default::default(),
@@ -51,25 +52,25 @@ impl Default for Animations {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct Animation {
     pub off: bool,
     pub kind: Kind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Mergeable)]
 pub enum Kind {
     Easing(EasingParams),
     Spring(SpringParams),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct EasingParams {
     pub duration_ms: u32,
     pub curve: Curve,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Mergeable)]
 pub enum Curve {
     Linear,
     EaseOutQuad,
@@ -78,14 +79,14 @@ pub enum Curve {
     CubicBezier(f64, f64, f64, f64),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct SpringParams {
     pub damping_ratio: f64,
     pub stiffness: u32,
     pub epsilon: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct WorkspaceSwitchAnim(pub Animation);
 
 impl Default for WorkspaceSwitchAnim {
@@ -101,7 +102,7 @@ impl Default for WorkspaceSwitchAnim {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Mergeable)]
 pub struct WindowOpenAnim {
     pub anim: Animation,
     pub custom_shader: Option<String>,
@@ -122,7 +123,7 @@ impl Default for WindowOpenAnim {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Mergeable)]
 pub struct WindowCloseAnim {
     pub anim: Animation,
     pub custom_shader: Option<String>,
@@ -143,7 +144,7 @@ impl Default for WindowCloseAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct HorizontalViewMovementAnim(pub Animation);
 
 impl Default for HorizontalViewMovementAnim {
@@ -159,7 +160,7 @@ impl Default for HorizontalViewMovementAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct WindowMovementAnim(pub Animation);
 
 impl Default for WindowMovementAnim {
@@ -175,7 +176,7 @@ impl Default for WindowMovementAnim {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Mergeable)]
 pub struct WindowResizeAnim {
     pub anim: Animation,
     pub custom_shader: Option<String>,
@@ -197,7 +198,7 @@ impl Default for WindowResizeAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct ConfigNotificationOpenCloseAnim(pub Animation);
 
 impl Default for ConfigNotificationOpenCloseAnim {
@@ -213,7 +214,7 @@ impl Default for ConfigNotificationOpenCloseAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct ExitConfirmationOpenCloseAnim(pub Animation);
 
 impl Default for ExitConfirmationOpenCloseAnim {
@@ -229,7 +230,7 @@ impl Default for ExitConfirmationOpenCloseAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct ScreenshotUiOpenAnim(pub Animation);
 
 impl Default for ScreenshotUiOpenAnim {
@@ -244,7 +245,7 @@ impl Default for ScreenshotUiOpenAnim {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct OverviewOpenCloseAnim(pub Animation);
 
 impl Default for OverviewOpenCloseAnim {
@@ -752,5 +753,89 @@ where
             stiffness,
             epsilon,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Mergeable;
+
+    #[test]
+    fn test_animation_mutex_behavior() {
+        let mut base = Animation {
+            off: false,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 200,
+                curve: Curve::EaseOutQuad,
+            }),
+        };
+
+        let overlay = Animation {
+            off: true,
+            kind: Kind::Spring(SpringParams {
+                damping_ratio: 1.0,
+                stiffness: 800,
+                epsilon: 0.001,
+            }),
+        };
+
+        base.merge_with(&overlay);
+
+        assert_eq!(base.off, true);
+        if let Kind::Spring(params) = base.kind {
+            assert_eq!(params.damping_ratio, 1.0);
+            assert_eq!(params.stiffness, 800);
+            assert_eq!(params.epsilon, 0.001);
+        } else {
+            panic!("Expected spring parameters");
+        }
+    }
+
+    #[test]
+    fn test_animations_regular_bool_merging() {
+        let mut base = Animations::default();
+        assert!(!base.off);
+
+        let overlay = Animations {
+            off: true,
+            ..Default::default()
+        };
+
+        base.merge_with(&overlay);
+        assert!(base.off);
+
+        let overlay2 = Animations {
+            off: false,
+            ..Default::default()
+        };
+
+        base.merge_with(&overlay2);
+        assert!(!base.off);
+    }
+
+    #[test]
+    fn test_animations_maybesset_slowdown() {
+        let mut base = Animations::default();
+        assert_eq!(*base.slowdown, FloatOrInt(1.0));
+        assert!(!base.slowdown.is_set());
+
+        let overlay = Animations {
+            slowdown: MaybeSet::new(FloatOrInt(2.0)),
+            ..Default::default()
+        };
+
+        base.merge_with(&overlay);
+        assert_eq!(*base.slowdown, FloatOrInt(2.0));
+        assert!(base.slowdown.is_set());
+
+        let overlay_unset = Animations {
+            slowdown: MaybeSet::unset(FloatOrInt(5.0)),
+            ..Default::default()
+        };
+
+        base.merge_with(&overlay_unset);
+        assert_eq!(*base.slowdown, FloatOrInt(2.0));
+        assert!(base.slowdown.is_set());
     }
 }

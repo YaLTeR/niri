@@ -816,7 +816,7 @@ impl Tty {
         let device = self.devices.get_mut(&node).context("missing device")?;
 
         let disable_monitor_names = self.config.borrow().debug.disable_monitor_names;
-        let output_name = device.known_crtc_name(&crtc, &connector, disable_monitor_names);
+        let output_name = device.known_crtc_name(&crtc, &connector, *disable_monitor_names);
 
         let non_desktop = find_drm_property(&device.drm, connector.handle(), "non-desktop")
             .and_then(|(_, info, value)| info.value_type().convert_value(value).as_boolean())
@@ -869,7 +869,7 @@ impl Tty {
                 Err(err) => debug!("error resetting HDR properties: {err:?}"),
             }
 
-            if !niri.config.borrow().debug.keep_max_bpc_unchanged {
+            if !*niri.config.borrow().debug.keep_max_bpc_unchanged {
                 // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to
                 // run.
                 match set_max_bpc(&props, 8) {
@@ -1196,7 +1196,7 @@ impl Tty {
                 Duration::ZERO
             }
         };
-        let presentation_time = if niri.config.borrow().debug.emulate_zero_presentation_time {
+        let presentation_time = if *niri.config.borrow().debug.emulate_zero_presentation_time {
             Duration::ZERO
         } else {
             presentation_time
@@ -1429,24 +1429,24 @@ impl Tty {
         let flags = {
             let debug = &self.config.borrow().debug;
 
-            let primary_scanout_flag = if debug.restrict_primary_scanout_to_matching_format {
+            let primary_scanout_flag = if *debug.restrict_primary_scanout_to_matching_format {
                 FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT
             } else {
                 FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT_ANY
             };
             let mut flags = primary_scanout_flag | FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT;
 
-            if debug.enable_overlay_planes {
+            if *debug.enable_overlay_planes {
                 flags.insert(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
             }
-            if debug.disable_direct_scanout {
+            if *debug.disable_direct_scanout {
                 flags.remove(primary_scanout_flag);
                 flags.remove(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
             }
-            if debug.disable_cursor_plane {
+            if *debug.disable_cursor_plane {
                 flags.remove(FrameFlags::ALLOW_CURSOR_PLANE_SCANOUT);
             }
-            if debug.skip_cursor_only_updates_during_vrr {
+            if *debug.skip_cursor_only_updates_during_vrr {
                 let output_state = niri.output_state.get(output).unwrap();
                 if output_state.frame_clock.vrr() {
                     flags.insert(FrameFlags::SKIP_CURSOR_ONLY_UPDATES);
@@ -1461,7 +1461,7 @@ impl Tty {
         match drm_compositor.render_frame::<_, _>(&mut renderer, &elements, [0.; 4], flags) {
             Ok(res) => {
                 let needs_sync = res.needs_sync()
-                    || self
+                    || *self
                         .config
                         .borrow()
                         .debug
@@ -1645,7 +1645,7 @@ impl Tty {
             for (connector, crtc) in device.drm_scanner.crtcs() {
                 let connector_name = format_connector_name(connector);
                 let physical_size = connector.size();
-                let output_name = device.known_crtc_name(&crtc, connector, disable_monitor_names);
+                let output_name = device.known_crtc_name(&crtc, connector, *disable_monitor_names);
 
                 let surface = device.surfaces.get(&crtc);
                 let current_crtc_mode = surface.map(|surface| surface.compositor.pending_mode());
@@ -1809,7 +1809,7 @@ impl Tty {
         let mut disable_laptop_panels = false;
         if niri.is_lid_closed {
             let config = self.config.borrow();
-            if !config.debug.keep_laptop_panel_on_when_lid_is_closed {
+            if !*config.debug.keep_laptop_panel_on_when_lid_is_closed {
                 // Check if any external monitor is connected.
                 'outer: for device in self.devices.values() {
                     for (connector, _crtc) in device.drm_scanner.crtcs() {
@@ -1962,7 +1962,7 @@ impl Tty {
                     continue;
                 }
 
-                let output_name = device.known_crtc_name(&crtc, connector, disable_monitor_names);
+                let output_name = device.known_crtc_name(&crtc, connector, *disable_monitor_names);
 
                 let config = config
                     .outputs
@@ -2015,7 +2015,7 @@ impl Tty {
                     continue;
                 }
 
-                let output_name = device.known_crtc_name(&crtc, connector, disable_monitor_names);
+                let output_name = device.known_crtc_name(&crtc, connector, *disable_monitor_names);
                 if output_name.matches(target) {
                     return Some(output_name);
                 }

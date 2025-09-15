@@ -765,7 +765,7 @@ impl XdgActivationHandler for State {
         // notification daemon, but alas they ignore it. Maybe in the future the clients are fixed,
         // and we can remove this debug flag.
         let config = self.niri.config.borrow();
-        if config.debug.honor_xdg_activation_with_invalid_serial {
+        if *config.debug.honor_xdg_activation_with_invalid_serial {
             return true;
         }
 

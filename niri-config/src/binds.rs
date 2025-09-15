@@ -12,10 +12,31 @@ use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::Keysym;
 
+use crate::mergeable::Mergeable;
 use crate::utils::expect_only_children;
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Clone)]
 pub struct Binds(pub Vec<Bind>);
+
+impl Mergeable for Binds {
+    fn merge_with(&mut self, other: &Self) {
+        let mut key_positions: std::collections::HashMap<Key, usize> =
+            std::collections::HashMap::new();
+
+        for (i, bind) in self.0.iter().enumerate() {
+            key_positions.insert(bind.key, i);
+        }
+
+        for bind in &other.0 {
+            if let Some(&existing_pos) = key_positions.get(&bind.key) {
+                self.0[existing_pos] = bind.clone();
+            } else {
+                key_positions.insert(bind.key, self.0.len());
+                self.0.push(bind.clone());
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bind {

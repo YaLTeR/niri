@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use miette::miette;
+use niri_macros::Mergeable;
 use smithay::input::keyboard::XkbConfig;
 use smithay::reexports::input;
 
@@ -8,7 +9,7 @@ use crate::binds::Modifiers;
 use crate::utils::Percent;
 use crate::FloatOrInt;
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone, Mergeable)]
 pub struct Input {
     #[knuffel(child, default)]
     pub keyboard: Keyboard,
@@ -38,7 +39,7 @@ pub struct Input {
     pub mod_key_nested: Option<ModKey>,
 }
 
-#[derive(knuffel::Decode, Debug, PartialEq, Eq)]
+#[derive(knuffel::Decode, Debug, PartialEq, Eq, Clone, Mergeable)]
 pub struct Keyboard {
     #[knuffel(child, default)]
     pub xkb: Xkb,
@@ -65,7 +66,7 @@ impl Default for Keyboard {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq, Eq, Clone)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Eq, Clone, Mergeable)]
 pub struct Xkb {
     #[knuffel(child, unwrap(argument), default)]
     pub rules: String,
@@ -93,7 +94,7 @@ impl Xkb {
     }
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq)]
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Mergeable)]
 pub enum TrackLayout {
     /// The layout change is global.
     #[default]
@@ -102,7 +103,7 @@ pub enum TrackLayout {
     Window,
 }
 
-#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Mergeable)]
 pub struct ScrollFactor {
     #[knuffel(argument)]
     pub base: Option<FloatOrInt<0, 100>>,
@@ -121,7 +122,7 @@ impl ScrollFactor {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone, Mergeable)]
 pub struct Touchpad {
     #[knuffel(child)]
     pub off: bool,
@@ -161,7 +162,7 @@ pub struct Touchpad {
     pub scroll_factor: Option<ScrollFactor>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone, Mergeable)]
 pub struct Mouse {
     #[knuffel(child)]
     pub off: bool,
@@ -185,7 +186,7 @@ pub struct Mouse {
     pub scroll_factor: Option<ScrollFactor>,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone, Mergeable)]
 pub struct Trackpoint {
     #[knuffel(child)]
     pub off: bool,
@@ -207,7 +208,7 @@ pub struct Trackpoint {
     pub middle_emulation: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone, Mergeable)]
 pub struct Trackball {
     #[knuffel(child)]
     pub off: bool,
@@ -229,7 +230,7 @@ pub struct Trackball {
     pub middle_emulation: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Mergeable)]
 pub enum ClickMethod {
     Clickfinger,
     ButtonAreas,
@@ -244,7 +245,7 @@ impl From<ClickMethod> for input::ClickMethod {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Mergeable)]
 pub enum AccelProfile {
     Adaptive,
     Flat,
@@ -259,7 +260,7 @@ impl From<AccelProfile> for input::AccelProfile {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Mergeable)]
 pub enum ScrollMethod {
     NoScroll,
     TwoFinger,
@@ -278,7 +279,7 @@ impl From<ScrollMethod> for input::ScrollMethod {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Mergeable)]
 pub enum TapButtonMap {
     LeftRightMiddle,
     LeftMiddleRight,
@@ -293,7 +294,7 @@ impl From<TapButtonMap> for input::TapButtonMap {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone, Mergeable)]
 pub struct Tablet {
     #[knuffel(child)]
     pub off: bool,
@@ -305,7 +306,7 @@ pub struct Tablet {
     pub left_handed: bool,
 }
 
-#[derive(knuffel::Decode, Debug, Default, PartialEq)]
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Clone, Mergeable)]
 pub struct Touch {
     #[knuffel(child)]
     pub off: bool,
@@ -313,19 +314,19 @@ pub struct Touch {
     pub map_to_output: Option<String>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Mergeable)]
 pub struct FocusFollowsMouse {
     #[knuffel(property, str)]
     pub max_scroll_amount: Option<Percent>,
 }
 
-#[derive(knuffel::Decode, Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(knuffel::Decode, Debug, PartialEq, Eq, Clone, Copy, Mergeable)]
 pub struct WarpMouseToFocus {
     #[knuffel(property, str)]
     pub mode: Option<WarpMouseToFocusMode>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Mergeable)]
 pub enum WarpMouseToFocusMode {
     CenterXy,
     CenterXyAlways,
@@ -345,7 +346,7 @@ impl FromStr for WarpMouseToFocusMode {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Mergeable)]
 pub enum ModKey {
     Ctrl,
     Shift,

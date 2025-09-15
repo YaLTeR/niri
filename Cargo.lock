@@ -2419,6 +2419,7 @@ dependencies = [
  "knuffel",
  "miette",
  "niri-ipc",
+ "niri-macros",
  "pretty_assertions",
  "regex",
  "smithay",
@@ -2434,6 +2435,15 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "niri-macros"
+version = "25.8.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]
