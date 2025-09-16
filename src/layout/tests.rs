@@ -1575,6 +1575,11 @@ fn check_ops_with_options(options: Options, ops: &[Op]) -> Layout<TestWindow> {
 
 #[test]
 fn operations_dont_panic() {
+    if std::env::var_os("RUN_SLOW_TESTS").is_none() {
+        eprintln!("ignoring slow test");
+        return;
+    }
+
     let every_op = [
         Op::AddOutput(0),
         Op::AddOutput(1),

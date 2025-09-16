@@ -57,4 +57,5 @@
 
 .md-typeset table:not([class]) td {
     padding: .5em 1.25em;
+    vertical-align: middle;
 }

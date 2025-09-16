@@ -2,7 +2,9 @@
 
 <sup>Since: 25.08</sup>
 
-Niri has basic support for screen readers (specifically, [Orca](https://orca.gnome.org)) when running as a full desktop session, i.e. not as a nested window.
+Niri has basic support for screen readers (specifically, [Orca](https://orca.gnome.org)) when running as a full desktop session, i.e. you need to start niri through a display manager or through `niri-session`.
+To avoid conflicts with an already running compositor, niri won't expose accessibility interfaces when started as a nested window, or as a plain `/usr/bin/niri` on a TTY.
+
 We implement the `org.freedesktop.a11y.KeyboardMonitor` D-Bus interface for Orca to listen and grab keyboard keys, and we expose the main niri UI elements via [AccessKit](https://accesskit.dev).
 Specifically, niri will announce:
 
@@ -23,7 +25,13 @@ https://github.com/user-attachments/assets/afceba6f-79f1-47ec-b859-a0fcb7f8eae3
 Make sure [Xwayland](./Xwayland.md) works, then run `orca`.
 The default config binds <kbd>Super</kbd><kbd>Alt</kbd><kbd>S</kbd> to toggle Orca, which is the standard key binding.
 
-Note that we don't have an Alt-Tab window switcher yet (it's in the works), and we also don't have a bind to move focus to layer-shell panels.
+Note that there are some limitations:
+
+- We don't have an Alt-Tab window switcher yet; it's in the works.
+- We don't have a bind to move focus to layer-shell panels. This is not hard to add, but it would be good to have some consensus or prior art with LXQt/Xfce on how exactly this should work.
+- You need to have a screen connected and enabled. Without a screen, niri won't give focus any window. This makes sense for sighted users, and I'm not entirely sure what makes the most sense for accessibility purposes (maybe, it'd be better solved with virtual monitors).
+- You need working EGL (hardware acceleration).
+- We don't have screen curtain functionality yet.
 
 If you're shipping niri and would like to make it work better for screen readers out of the box, consider the following changes to the default niri config:
 
