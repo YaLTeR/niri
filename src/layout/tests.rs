@@ -2938,6 +2938,39 @@ fn interactive_move_drop_on_other_output_during_animation() {
 }
 
 #[test]
+fn add_window_next_to_only_interactively_moved_without_outputs() {
+    let ops = [
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddOutput(1),
+        Op::InteractiveMoveBegin {
+            window: 2,
+            output_idx: 1,
+            px: 0.0,
+            py: 0.0,
+        },
+        Op::InteractiveMoveUpdate {
+            window: 2,
+            dx: 0.0,
+            dy: 3586.692842955048,
+            output_idx: 1,
+            px: 0.0,
+            py: 0.0,
+        },
+        Op::RemoveOutput(1),
+        // We have no outputs, and the only existing window is interactively moved, meaning there
+        // are no workspaces either.
+        Op::AddWindowNextTo {
+            params: TestWindowParams::new(3),
+            next_to_id: 2,
+        },
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
 fn set_width_fixed_negative() {
     let ops = [
         Op::AddOutput(3),
