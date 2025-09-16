@@ -3358,6 +3358,11 @@ impl<W: LayoutElement> Layout<W> {
                         1.,
                         self.options.animations.window_movement.0,
                     );
+
+                    // Unlock the view on the workspaces.
+                    for ws in self.workspaces_mut() {
+                        ws.dnd_scroll_gesture_end();
+                    }
                 } else {
                     // Animate the tile back to semitransparent.
                     move_.tile.animate_alpha(

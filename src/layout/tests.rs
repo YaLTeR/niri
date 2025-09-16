@@ -2971,6 +2971,35 @@ fn add_window_next_to_only_interactively_moved_without_outputs() {
 }
 
 #[test]
+fn interactive_move_toggle_floating_ends_dnd_gesture() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::InteractiveMoveBegin {
+            window: 2,
+            output_idx: 1,
+            px: 0.0,
+            py: 0.0,
+        },
+        Op::InteractiveMoveUpdate {
+            window: 2,
+            dx: 0.0,
+            dy: 3586.692842955048,
+            output_idx: 1,
+            px: 0.0,
+            py: 0.0,
+        },
+        Op::Refresh { is_active: false },
+        Op::ToggleWindowFloating { id: None },
+        Op::InteractiveMoveEnd { window: 2 },
+    ];
+
+    check_ops(&ops);
+}
+
+#[test]
 fn set_width_fixed_negative() {
     let ops = [
         Op::AddOutput(3),
