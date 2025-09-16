@@ -348,6 +348,13 @@ mod tests {
                 mode "1920x1080@144"
                 variable-refresh-rate on-demand=true
                 background-color "rgba(25, 25, 102, 1.0)"
+                hot-corners {
+                    off
+                    top-left
+                    top-right
+                    bottom-left
+                    bottom-right
+                }
             }
 
             layout {
@@ -742,6 +749,15 @@ mod tests {
                             },
                         ),
                         backdrop_color: None,
+                        hot_corners: Some(
+                            HotCorners {
+                                off: true,
+                                top_left: true,
+                                top_right: true,
+                                bottom_left: true,
+                                bottom_right: true,
+                            },
+                        ),
                     },
                 ],
             ),
@@ -1158,6 +1174,10 @@ mod tests {
                 },
                 hot_corners: HotCorners {
                     off: false,
+                    top_left: false,
+                    top_right: false,
+                    bottom_left: false,
+                    bottom_right: false,
                 },
             },
             overview: Overview {
