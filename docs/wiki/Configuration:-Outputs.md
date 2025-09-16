@@ -16,12 +16,13 @@ output "eDP-1" {
     focus-at-startup
     background-color "#003300"
     backdrop-color "#001100"
+
     hot-corners {
-        off
+        // off
         top-left
-        top-right
-        bottom-left
-        bottom-right
+        // top-right
+        // bottom-left
+        // bottom-right
     }
 }
 
@@ -229,26 +230,23 @@ output "HDMI-A-1" {
 
 <sup>Since: next release</sup>
 
-Defines hot corners for the specific output.
+Customize the hot corners for this output.
+By default, hot corners [in the gestures settings](./Configuration:-Gestures.md#hot-corners) are used for all outputs.
 
-Put your mouse at a corner of your monitor (by default, top-left) to toggle the overview. Falls back to the [gesture hot-corners](./Configuration:-Gestures.md#hot-corners) if undefined.
-Also works during drag-and-dropping something.
+Hot corners toggle the overview when you put your mouse at the very corner of a monitor.
 
-- `off` disables the hot corners for this output.
-- `top-left` enables the top left hot corner for this output.
-- `top-right` enables the top right hot corner for this output.
-- `bottom-left` enables the bottom left hot corner for this output.
-- `bottom-right` enables the bottom right hot corner for this output.
+`off` will disable the hot corners on this output, and writing specific corners will enable only those hot corners on this output.
 
 ```kdl
-// Enable the bottom left hot corner on HDMI-A-1.
+// Enable the bottom-left and bottom-right hot corners on HDMI-A-1.
 output "HDMI-A-1" {
     hot-corners {
         bottom-left
+        bottom-right
     }
 }
 
-// Disable hot corners on DP-2.
+// Disable the hot corners on DP-2.
 output "DP-2" {
     hot-corners {
         off

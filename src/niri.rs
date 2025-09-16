@@ -14,7 +14,6 @@ use _server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as 
 use anyhow::{bail, ensure, Context};
 use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
-use niri_config::gestures::HotCorners;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
@@ -537,43 +536,6 @@ pub struct PointContents {
     pub layer: Option<LayerSurface>,
     // Pointer is over a hot corner.
     pub hot_corner: bool,
-}
-
-pub fn is_inside_hot_corner(
-    hot_corners: &HotCorners,
-    output: &Output,
-    pos: Point<f64, Logical>,
-) -> bool {
-    if hot_corners.off {
-        return false;
-    }
-
-    let output_size = output_size(output);
-    let transform = output.current_transform();
-    let size = transform.transform_size(output_size);
-    let hitbox = Size::from((1., 1.));
-
-    if hot_corners.top_right && Rectangle::new(Point::new(size.w - 1., 0.), hitbox).contains(pos) {
-        return true;
-    }
-    if hot_corners.bottom_left && Rectangle::new(Point::new(0., size.h - 1.), hitbox).contains(pos)
-    {
-        return true;
-    }
-    if hot_corners.bottom_right
-        && Rectangle::new(Point::new(size.w - 1., size.h - 1.), hitbox).contains(pos)
-    {
-        return true;
-    }
-
-    // Triggers top left hot corner if enabled or all hot corners left empty
-    if (hot_corners.top_left
-        || !(hot_corners.top_right || hot_corners.bottom_right || hot_corners.bottom_left))
-        && Rectangle::new(Point::new(0., 0.), hitbox).contains(pos)
-    {
-        return true;
-    }
-    false
 }
 
 #[derive(Debug, Default)]
@@ -3156,6 +3118,49 @@ impl Niri {
         Some((output, pos_within_output))
     }
 
+    fn is_inside_hot_corner(&self, output: &Output, pos: Point<f64, Logical>) -> bool {
+        let config = self.config.borrow();
+        let hot_corners = output
+            .user_data()
+            .get::<OutputName>()
+            .and_then(|name| config.outputs.find(name))
+            .and_then(|c| c.hot_corners)
+            .unwrap_or(config.gestures.hot_corners);
+
+        if hot_corners.off {
+            return false;
+        }
+
+        // Use size from the ceiled output geometry, since that's what we currently use for pointer
+        // motion clamping.
+        let geom = self.global_space.output_geometry(output).unwrap();
+        let size = geom.size.to_f64();
+
+        let contains = move |corner: Point<f64, Logical>| {
+            Rectangle::new(corner, Size::new(1., 1.)).contains(pos)
+        };
+
+        if hot_corners.top_right && contains(Point::new(size.w - 1., 0.)) {
+            return true;
+        }
+        if hot_corners.bottom_left && contains(Point::new(0., size.h - 1.)) {
+            return true;
+        }
+        if hot_corners.bottom_right && contains(Point::new(size.w - 1., size.h - 1.)) {
+            return true;
+        }
+
+        // If the user didn't explicitly set any corners, we default to top-left.
+        if (hot_corners.top_left
+            || !(hot_corners.top_right || hot_corners.bottom_right || hot_corners.bottom_left))
+            && contains(Point::new(0., 0.))
+        {
+            return true;
+        }
+
+        false
+    }
+
     pub fn is_sticky_obscured_under(
         &self,
         output: &Output,
@@ -3199,15 +3204,7 @@ impl Niri {
             return false;
         }
 
-        // Prioritize monitor specific hot corners first
-        let config = self.config.borrow();
-        let hot_corners = output
-            .user_data()
-            .get::<OutputName>()
-            .and_then(|name| config.outputs.find(name))
-            .and_then(|c| c.hot_corners)
-            .unwrap_or(config.gestures.hot_corners);
-        if is_inside_hot_corner(&hot_corners, output, pos_within_output) {
+        if self.is_inside_hot_corner(output, pos_within_output) {
             return true;
         }
 
@@ -3480,14 +3477,7 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
-            let config = self.config.borrow();
-            let hot_corners = output
-                .user_data()
-                .get::<OutputName>()
-                .and_then(|name| config.outputs.find(name))
-                .and_then(|c| c.hot_corners)
-                .unwrap_or(config.gestures.hot_corners);
-            if is_inside_hot_corner(&hot_corners, output, pos_within_output) {
+            if self.is_inside_hot_corner(output, pos_within_output) {
                 rv.hot_corner = true;
                 return rv;
             }

@@ -99,17 +99,11 @@ gestures {
 }
 ```
 
-<sup>Since: next release</sup>
-
-Hot corners can be defined by corner name, falling back to top-left if none are defined.
-
-- `top-left` enables the top left hot corner.
-- `top-right` enables the top right hot corner.
-- `bottom-left` enables the bottom left hot corner.
-- `bottom-right` enables the bottom right hot corner.
+<sup>Since: next release</sup> You can choose specific hot corners by name: `top-left`, `top-right`, `bottom-left`, `bottom-right`.
+If no corners are explicitly set, the top-left corner will be active by default.
 
 ```kdl
-// Enable bottom right and top right hot corners.
+// Enable the top-right and bottom-right hot corners.
 gestures {
     hot-corners {
         top-right
@@ -117,3 +111,5 @@ gestures {
     }
 }
 ```
+
+You can also customize hot corners per-output [in the output config](./Configuration:-Outputs.md#hot-corners).
