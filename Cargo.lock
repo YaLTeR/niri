@@ -2425,6 +2425,7 @@ dependencies = [
  "smithay",
  "tracing",
  "tracy-client",
+ "xshell",
 ]
 
 [[package]]
@@ -2441,7 +2442,6 @@ dependencies = [
 name = "niri-macros"
 version = "25.8.0"
 dependencies = [
- "proc-macro2",
  "quote",
  "syn 2.0.106",
 ]

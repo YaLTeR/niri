@@ -13,6 +13,7 @@ pub mod appearance;
 pub mod binds;
 pub mod debug;
 pub mod gestures;
+pub mod include;
 pub mod input;
 pub mod layer_rule;
 pub mod layout;
@@ -109,19 +110,27 @@ pub struct Config {
 
 impl Config {
     pub fn load(path: &Path) -> miette::Result<Self> {
-        let contents = fs::read_to_string(path)
-            .into_diagnostic()
-            .with_context(|| format!("error reading {path:?}"))?;
+        let (config, _) = Self::load_with_includes(path)?;
+        Ok(config)
+    }
+
+    pub fn load_with_includes(path: &Path) -> miette::Result<(Self, Vec<PathBuf>)> {
+        let include_result = crate::include::resolve_includes(path)
+            .with_context(|| format!("error resolving includes for {path:?}"))?;
 
         let config = Self::parse(
             path.file_name()
                 .and_then(OsStr::to_str)
                 .unwrap_or("config.kdl"),
-            &contents,
+            &include_result.content,
         )
         .context("error parsing")?;
-        debug!("loaded config from {path:?}");
-        Ok(config)
+
+        debug!(
+            "loaded config from {path:?} (including {} files)",
+            include_result.included_files.len()
+        );
+        Ok((config, include_result.included_files))
     }
 
     pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
@@ -210,6 +219,18 @@ impl ConfigPath {
         .context("error loading config")
     }
 
+    /// Loads the config with include information, returns an error if it doesn't exist.
+    pub fn load_with_includes(&self) -> miette::Result<(Config, Vec<PathBuf>)> {
+        let _span = tracy_client::span!("ConfigPath::load_with_includes");
+
+        self.load_inner_with_includes(|user_path, system_path| {
+            Err(miette::miette!(
+                "no config file found; create one at {user_path:?} or {system_path:?}",
+            ))
+        })
+        .context("error loading config")
+    }
+
     /// Loads the config, or creates it if it doesn't exist.
     ///
     /// Returns a tuple containing the path that was created, if any, and the loaded config.
@@ -252,6 +273,28 @@ impl ConfigPath {
             }
         };
         Config::load(path)
+    }
+
+    fn load_inner_with_includes<'a>(
+        &'a self,
+        maybe_create: impl FnOnce(&'a Path, &'a Path) -> miette::Result<&'a Path>,
+    ) -> miette::Result<(Config, Vec<PathBuf>)> {
+        let path = match self {
+            ConfigPath::Explicit(path) => path.as_path(),
+            ConfigPath::Regular {
+                user_path,
+                system_path,
+            } => {
+                if user_path.exists() {
+                    user_path.as_path()
+                } else if system_path.exists() {
+                    system_path.as_path()
+                } else {
+                    maybe_create(user_path.as_path(), system_path.as_path())?
+                }
+            }
+        };
+        Config::load_with_includes(path)
     }
 
     fn create<'a>(path: &'a Path, created_at: &mut Option<&'a Path>) -> miette::Result<()> {
@@ -302,8 +345,8 @@ mod tests {
     #[test]
     fn default_repeat_params() {
         let config = Config::parse("config.kdl", "").unwrap();
-        assert_eq!(config.input.keyboard.repeat_delay, 600);
-        assert_eq!(config.input.keyboard.repeat_rate, 25);
+        assert_eq!(config.input.keyboard.resolved_repeat_delay(), 600);
+        assert_eq!(config.input.keyboard.resolved_repeat_rate(), 25);
     }
 
     #[track_caller]
@@ -605,8 +648,14 @@ mod tests {
                             ),
                             file: None,
                         },
-                        repeat_delay: 600,
-                        repeat_rate: 25,
+                        repeat_delay: MaybeSet {
+                            value: 600,
+                            is_set: true,
+                        },
+                        repeat_rate: MaybeSet {
+                            value: 25,
+                            is_set: true,
+                        },
                         track_layout: Window,
                         numlock: false,
                     },
@@ -777,8 +826,14 @@ mod tests {
                         ),
                         file: None,
                     },
-                    repeat_delay: 600,
-                    repeat_rate: 25,
+                    repeat_delay: MaybeSet {
+                        value: 600,
+                        is_set: true,
+                    },
+                    repeat_rate: MaybeSet {
+                        value: 25,
+                        is_set: true,
+                    },
                     track_layout: Window,
                     numlock: false,
                 },
@@ -1006,27 +1061,44 @@ mod tests {
             layout_vec: [
                 Layout {
                     focus_ring: FocusRing {
-                        off: false,
-                        width: FloatOrInt(
-                            5.0,
+                        off: BoolFlag(
+                            MaybeSet {
+                                value: false,
+                                is_set: false,
+                            },
                         ),
-                        active_color: Color {
-                            r: 0.0,
-                            g: 0.39215687,
-                            b: 0.78431374,
-                            a: 1.0,
+                        width: MaybeSet {
+                            value: FloatOrInt(
+                                5.0,
+                            ),
+                            is_set: true,
                         },
-                        inactive_color: Color {
-                            r: 1.0,
-                            g: 0.78431374,
-                            b: 0.39215687,
-                            a: 0.0,
+                        active_color: MaybeSet {
+                            value: Color {
+                                r: 0.0,
+                                g: 0.39215687,
+                                b: 0.78431374,
+                                a: 1.0,
+                            },
+                            is_set: true,
                         },
-                        urgent_color: Color {
-                            r: 0.60784316,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 1.0,
+                        inactive_color: MaybeSet {
+                            value: Color {
+                                r: 1.0,
+                                g: 0.78431374,
+                                b: 0.39215687,
+                                a: 0.0,
+                            },
+                            is_set: true,
+                        },
+                        urgent_color: MaybeSet {
+                            value: Color {
+                                r: 1.0,
+                                g: 0.7058824,
+                                b: 0.67058825,
+                                a: 1.0,
+                            },
+                            is_set: false,
                         },
                         active_gradient: Some(
                             Gradient {
@@ -1054,79 +1126,149 @@ mod tests {
                         urgent_gradient: None,
                     },
                     border: Border {
-                        off: false,
-                        width: FloatOrInt(
-                            3.0,
+                        off: BoolFlag(
+                            MaybeSet {
+                                value: false,
+                                is_set: false,
+                            },
                         ),
-                        active_color: Color {
-                            r: 1.0,
-                            g: 0.78431374,
-                            b: 0.49803922,
-                            a: 1.0,
+                        width: MaybeSet {
+                            value: FloatOrInt(
+                                3.0,
+                            ),
+                            is_set: true,
                         },
-                        inactive_color: Color {
-                            r: 1.0,
-                            g: 0.78431374,
-                            b: 0.39215687,
-                            a: 0.0,
+                        active_color: MaybeSet {
+                            value: Color {
+                                r: 1.0,
+                                g: 0.78431374,
+                                b: 0.49803922,
+                                a: 1.0,
+                            },
+                            is_set: false,
                         },
-                        urgent_color: Color {
-                            r: 0.60784316,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 1.0,
+                        inactive_color: MaybeSet {
+                            value: Color {
+                                r: 1.0,
+                                g: 0.78431374,
+                                b: 0.39215687,
+                                a: 0.0,
+                            },
+                            is_set: true,
+                        },
+                        urgent_color: MaybeSet {
+                            value: Color {
+                                r: 0.60784316,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0,
+                            },
+                            is_set: false,
                         },
                         active_gradient: None,
                         inactive_gradient: None,
                         urgent_gradient: None,
                     },
                     shadow: Shadow {
-                        on: false,
-                        offset: ShadowOffset {
-                            x: FloatOrInt(
-                                10.0,
-                            ),
-                            y: FloatOrInt(
-                                -20.0,
-                            ),
+                        on: BoolFlag(
+                            MaybeSet {
+                                value: false,
+                                is_set: false,
+                            },
+                        ),
+                        offset: MaybeSet {
+                            value: ShadowOffset {
+                                x: FloatOrInt(
+                                    10.0,
+                                ),
+                                y: FloatOrInt(
+                                    -20.0,
+                                ),
+                            },
+                            is_set: true,
                         },
-                        softness: FloatOrInt(
-                            30.0,
+                        softness: MaybeSet {
+                            value: FloatOrInt(
+                                30.0,
+                            ),
+                            is_set: false,
+                        },
+                        spread: MaybeSet {
+                            value: FloatOrInt(
+                                5.0,
+                            ),
+                            is_set: false,
+                        },
+                        draw_behind_window: BoolFlag(
+                            MaybeSet {
+                                value: false,
+                                is_set: false,
+                            },
                         ),
-                        spread: FloatOrInt(
-                            5.0,
-                        ),
-                        draw_behind_window: false,
-                        color: Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 0.4392157,
+                        color: MaybeSet {
+                            value: Color {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 0.26666668,
+                            },
+                            is_set: false,
                         },
                         inactive_color: None,
                     },
                     tab_indicator: TabIndicator {
-                        off: false,
-                        hide_when_single_tab: false,
-                        place_within_column: false,
-                        gap: FloatOrInt(
-                            5.0,
+                        off: BoolFlag(
+                            MaybeSet {
+                                value: false,
+                                is_set: false,
+                            },
                         ),
-                        width: FloatOrInt(
-                            10.0,
+                        hide_when_single_tab: BoolFlag(
+                            MaybeSet {
+                                value: false,
+                                is_set: false,
+                            },
                         ),
-                        length: TabIndicatorLength {
-                            total_proportion: Some(
-                                0.5,
+                        place_within_column: BoolFlag(
+                            MaybeSet {
+                                value: false,
+                                is_set: false,
+                            },
+                        ),
+                        gap: MaybeSet {
+                            value: FloatOrInt(
+                                0.0,
                             ),
+                            is_set: false,
                         },
-                        position: Top,
-                        gaps_between_tabs: FloatOrInt(
-                            0.0,
-                        ),
-                        corner_radius: FloatOrInt(
-                            0.0,
-                        ),
+                        width: MaybeSet {
+                            value: FloatOrInt(
+                                10.0,
+                            ),
+                            is_set: true,
+                        },
+                        length: MaybeSet {
+                            value: TabIndicatorLength {
+                                total_proportion: None,
+                            },
+                            is_set: false,
+                        },
+                        position: MaybeSet {
+                            value: Top,
+                            is_set: true,
+                        },
+                        gaps_between_tabs: MaybeSet {
+                            value: FloatOrInt(
+                                0.0,
+                            ),
+                            is_set: false,
+                        },
+                        corner_radius: MaybeSet {
+                            value: FloatOrInt(
+                                0.0,
+                            ),
+                            is_set: false,
+                        },
                         active_color: None,
                         inactive_color: None,
                         urgent_color: None,
@@ -1135,12 +1277,20 @@ mod tests {
                         urgent_gradient: None,
                     },
                     insert_hint: InsertHint {
-                        off: false,
-                        color: Color {
-                            r: 1.0,
-                            g: 0.78431374,
-                            b: 0.49803922,
-                            a: 1.0,
+                        off: BoolFlag(
+                            MaybeSet {
+                                value: false,
+                                is_set: false,
+                            },
+                        ),
+                        color: MaybeSet {
+                            value: Color {
+                                r: 1.0,
+                                g: 0.78431374,
+                                b: 0.49803922,
+                                a: 1.0,
+                            },
+                            is_set: true,
                         },
                         gradient: Some(
                             Gradient {
@@ -1206,9 +1356,12 @@ mod tests {
                     always_center_single_column: false,
                     empty_workspace_above_first: false,
                     default_column_display: Tabbed,
-                    gaps: FloatOrInt(
-                        8.0,
-                    ),
+                    gaps: MaybeSet {
+                        value: FloatOrInt(
+                            8.0,
+                        ),
+                        is_set: true,
+                    },
                     struts: Struts {
                         left: FloatOrInt(
                             1.0,
@@ -1223,37 +1376,57 @@ mod tests {
                             0.0,
                         ),
                     },
-                    background_color: Color {
-                        r: 0.25,
-                        g: 0.25,
-                        b: 0.25,
-                        a: 1.0,
+                    background_color: MaybeSet {
+                        value: Color {
+                            r: 0.25,
+                            g: 0.25,
+                            b: 0.25,
+                            a: 1.0,
+                        },
+                        is_set: false,
                     },
                 },
             ],
             layout: Layout {
                 focus_ring: FocusRing {
-                    off: false,
-                    width: FloatOrInt(
-                        5.0,
+                    off: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: true,
+                        },
                     ),
-                    active_color: Color {
-                        r: 0.0,
-                        g: 0.39215687,
-                        b: 0.78431374,
-                        a: 1.0,
+                    width: MaybeSet {
+                        value: FloatOrInt(
+                            5.0,
+                        ),
+                        is_set: true,
                     },
-                    inactive_color: Color {
-                        r: 1.0,
-                        g: 0.78431374,
-                        b: 0.39215687,
-                        a: 0.0,
+                    active_color: MaybeSet {
+                        value: Color {
+                            r: 0.0,
+                            g: 0.39215687,
+                            b: 0.78431374,
+                            a: 1.0,
+                        },
+                        is_set: true,
                     },
-                    urgent_color: Color {
-                        r: 0.60784316,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 1.0,
+                    inactive_color: MaybeSet {
+                        value: Color {
+                            r: 1.0,
+                            g: 0.78431374,
+                            b: 0.39215687,
+                            a: 0.0,
+                        },
+                        is_set: true,
+                    },
+                    urgent_color: MaybeSet {
+                        value: Color {
+                            r: 0.60784316,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        },
+                        is_set: true,
                     },
                     active_gradient: Some(
                         Gradient {
@@ -1281,79 +1454,151 @@ mod tests {
                     urgent_gradient: None,
                 },
                 border: Border {
-                    off: false,
-                    width: FloatOrInt(
-                        3.0,
+                    off: BoolFlag(
+                        MaybeSet {
+                            value: true,
+                            is_set: true,
+                        },
                     ),
-                    active_color: Color {
-                        r: 1.0,
-                        g: 0.78431374,
-                        b: 0.49803922,
-                        a: 1.0,
+                    width: MaybeSet {
+                        value: FloatOrInt(
+                            3.0,
+                        ),
+                        is_set: true,
                     },
-                    inactive_color: Color {
-                        r: 1.0,
-                        g: 0.78431374,
-                        b: 0.39215687,
-                        a: 0.0,
+                    active_color: MaybeSet {
+                        value: Color {
+                            r: 1.0,
+                            g: 0.78431374,
+                            b: 0.49803922,
+                            a: 1.0,
+                        },
+                        is_set: true,
                     },
-                    urgent_color: Color {
-                        r: 0.60784316,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 1.0,
+                    inactive_color: MaybeSet {
+                        value: Color {
+                            r: 1.0,
+                            g: 0.78431374,
+                            b: 0.39215687,
+                            a: 0.0,
+                        },
+                        is_set: true,
+                    },
+                    urgent_color: MaybeSet {
+                        value: Color {
+                            r: 0.60784316,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        },
+                        is_set: true,
                     },
                     active_gradient: None,
                     inactive_gradient: None,
                     urgent_gradient: None,
                 },
                 shadow: Shadow {
-                    on: false,
-                    offset: ShadowOffset {
-                        x: FloatOrInt(
-                            10.0,
-                        ),
-                        y: FloatOrInt(
-                            -20.0,
-                        ),
+                    on: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: true,
+                        },
+                    ),
+                    offset: MaybeSet {
+                        value: ShadowOffset {
+                            x: FloatOrInt(
+                                10.0,
+                            ),
+                            y: FloatOrInt(
+                                -20.0,
+                            ),
+                        },
+                        is_set: true,
                     },
-                    softness: FloatOrInt(
-                        30.0,
+                    softness: MaybeSet {
+                        value: FloatOrInt(
+                            30.0,
+                        ),
+                        is_set: true,
+                    },
+                    spread: MaybeSet {
+                        value: FloatOrInt(
+                            5.0,
+                        ),
+                        is_set: true,
+                    },
+                    draw_behind_window: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: true,
+                        },
                     ),
-                    spread: FloatOrInt(
-                        5.0,
-                    ),
-                    draw_behind_window: false,
-                    color: Color {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 0.4392157,
+                    color: MaybeSet {
+                        value: Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 0.4392157,
+                        },
+                        is_set: true,
                     },
                     inactive_color: None,
                 },
                 tab_indicator: TabIndicator {
-                    off: false,
-                    hide_when_single_tab: false,
-                    place_within_column: false,
-                    gap: FloatOrInt(
-                        5.0,
+                    off: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: true,
+                        },
                     ),
-                    width: FloatOrInt(
-                        10.0,
+                    hide_when_single_tab: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: true,
+                        },
                     ),
-                    length: TabIndicatorLength {
-                        total_proportion: Some(
-                            0.5,
+                    place_within_column: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: true,
+                        },
+                    ),
+                    gap: MaybeSet {
+                        value: FloatOrInt(
+                            5.0,
                         ),
+                        is_set: true,
                     },
-                    position: Top,
-                    gaps_between_tabs: FloatOrInt(
-                        0.0,
-                    ),
-                    corner_radius: FloatOrInt(
-                        0.0,
-                    ),
+                    width: MaybeSet {
+                        value: FloatOrInt(
+                            10.0,
+                        ),
+                        is_set: true,
+                    },
+                    length: MaybeSet {
+                        value: TabIndicatorLength {
+                            total_proportion: Some(
+                                0.5,
+                            ),
+                        },
+                        is_set: true,
+                    },
+                    position: MaybeSet {
+                        value: Top,
+                        is_set: true,
+                    },
+                    gaps_between_tabs: MaybeSet {
+                        value: FloatOrInt(
+                            0.0,
+                        ),
+                        is_set: true,
+                    },
+                    corner_radius: MaybeSet {
+                        value: FloatOrInt(
+                            0.0,
+                        ),
+                        is_set: true,
+                    },
                     active_color: None,
                     inactive_color: None,
                     urgent_color: None,
@@ -1362,12 +1607,20 @@ mod tests {
                     urgent_gradient: None,
                 },
                 insert_hint: InsertHint {
-                    off: false,
-                    color: Color {
-                        r: 1.0,
-                        g: 0.78431374,
-                        b: 0.49803922,
-                        a: 1.0,
+                    off: BoolFlag(
+                        MaybeSet {
+                            value: false,
+                            is_set: true,
+                        },
+                    ),
+                    color: MaybeSet {
+                        value: Color {
+                            r: 1.0,
+                            g: 0.78431374,
+                            b: 0.49803922,
+                            a: 1.0,
+                        },
+                        is_set: true,
                     },
                     gradient: Some(
                         Gradient {
@@ -1433,9 +1686,12 @@ mod tests {
                 always_center_single_column: false,
                 empty_workspace_above_first: false,
                 default_column_display: Tabbed,
-                gaps: FloatOrInt(
-                    8.0,
-                ),
+                gaps: MaybeSet {
+                    value: FloatOrInt(
+                        8.0,
+                    ),
+                    is_set: true,
+                },
                 struts: Struts {
                     left: FloatOrInt(
                         1.0,
@@ -1450,11 +1706,14 @@ mod tests {
                         0.0,
                     ),
                 },
-                background_color: Color {
-                    r: 0.25,
-                    g: 0.25,
-                    b: 0.25,
-                    a: 1.0,
+                background_color: MaybeSet {
+                    value: Color {
+                        r: 0.25,
+                        g: 0.25,
+                        b: 0.25,
+                        a: 1.0,
+                    },
+                    is_set: true,
                 },
             },
             prefer_no_csd: true,
@@ -1617,22 +1876,40 @@ mod tests {
             gestures_vec: [
                 Gestures {
                     dnd_edge_view_scroll: DndEdgeViewScroll {
-                        trigger_width: FloatOrInt(
-                            10.0,
-                        ),
-                        delay_ms: 100,
-                        max_speed: FloatOrInt(
-                            50.0,
-                        ),
+                        trigger_width: MaybeSet {
+                            value: FloatOrInt(
+                                10.0,
+                            ),
+                            is_set: true,
+                        },
+                        delay_ms: MaybeSet {
+                            value: 100,
+                            is_set: false,
+                        },
+                        max_speed: MaybeSet {
+                            value: FloatOrInt(
+                                50.0,
+                            ),
+                            is_set: true,
+                        },
                     },
                     dnd_edge_workspace_switch: DndEdgeWorkspaceSwitch {
-                        trigger_height: FloatOrInt(
-                            50.0,
-                        ),
-                        delay_ms: 100,
-                        max_speed: FloatOrInt(
-                            1500.0,
-                        ),
+                        trigger_height: MaybeSet {
+                            value: FloatOrInt(
+                                50.0,
+                            ),
+                            is_set: true,
+                        },
+                        delay_ms: MaybeSet {
+                            value: 100,
+                            is_set: true,
+                        },
+                        max_speed: MaybeSet {
+                            value: FloatOrInt(
+                                1500.0,
+                            ),
+                            is_set: true,
+                        },
                     },
                     hot_corners: HotCorners {
                         off: false,
@@ -1641,22 +1918,40 @@ mod tests {
             ],
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
-                    trigger_width: FloatOrInt(
-                        10.0,
-                    ),
-                    delay_ms: 100,
-                    max_speed: FloatOrInt(
-                        50.0,
-                    ),
+                    trigger_width: MaybeSet {
+                        value: FloatOrInt(
+                            10.0,
+                        ),
+                        is_set: true,
+                    },
+                    delay_ms: MaybeSet {
+                        value: 100,
+                        is_set: true,
+                    },
+                    max_speed: MaybeSet {
+                        value: FloatOrInt(
+                            50.0,
+                        ),
+                        is_set: true,
+                    },
                 },
                 dnd_edge_workspace_switch: DndEdgeWorkspaceSwitch {
-                    trigger_height: FloatOrInt(
-                        50.0,
-                    ),
-                    delay_ms: 100,
-                    max_speed: FloatOrInt(
-                        1500.0,
-                    ),
+                    trigger_height: MaybeSet {
+                        value: FloatOrInt(
+                            50.0,
+                        ),
+                        is_set: true,
+                    },
+                    delay_ms: MaybeSet {
+                        value: 100,
+                        is_set: true,
+                    },
+                    max_speed: MaybeSet {
+                        value: FloatOrInt(
+                            1500.0,
+                        ),
+                        is_set: true,
+                    },
                 },
                 hot_corners: HotCorners {
                     off: false,

@@ -7,7 +7,7 @@ use smithay::reexports::input;
 
 use crate::binds::Modifiers;
 use crate::utils::Percent;
-use crate::FloatOrInt;
+use crate::{FloatOrInt, MaybeSet};
 
 #[derive(knuffel::Decode, Debug, Default, PartialEq, Clone, Mergeable)]
 pub struct Input {
@@ -44,10 +44,10 @@ pub struct Keyboard {
     #[knuffel(child, default)]
     pub xkb: Xkb,
     // The defaults were chosen to match wlroots and sway.
-    #[knuffel(child, unwrap(argument), default = Self::default().repeat_delay)]
-    pub repeat_delay: u16,
-    #[knuffel(child, unwrap(argument), default = Self::default().repeat_rate)]
-    pub repeat_rate: u8,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(600))]
+    pub repeat_delay: MaybeSet<u16>,
+    #[knuffel(child, unwrap(argument), default = MaybeSet::unset(25))]
+    pub repeat_rate: MaybeSet<u8>,
     #[knuffel(child, unwrap(argument), default)]
     pub track_layout: TrackLayout,
     #[knuffel(child)]
@@ -58,11 +58,21 @@ impl Default for Keyboard {
     fn default() -> Self {
         Self {
             xkb: Default::default(),
-            repeat_delay: 600,
-            repeat_rate: 25,
+            repeat_delay: 600.into(),
+            repeat_rate: 25.into(),
             track_layout: Default::default(),
             numlock: Default::default(),
         }
+    }
+}
+
+impl Keyboard {
+    pub fn resolved_repeat_delay(&self) -> u16 {
+        *self.repeat_delay.value()
+    }
+
+    pub fn resolved_repeat_rate(&self) -> u8 {
+        *self.repeat_rate.value()
     }
 }
 

@@ -470,14 +470,15 @@ impl State {
         let config = self.niri.config.borrow();
         let config = &config.input.keyboard;
 
-        let repeat_rate = config.repeat_rate;
+        let repeat_rate = config.resolved_repeat_rate();
         if repeat_rate == 0 {
             return;
         }
         let repeat_duration = Duration::from_secs_f64(1. / f64::from(repeat_rate));
 
-        let repeat_timer =
-            Timer::from_duration(Duration::from_millis(u64::from(config.repeat_delay)));
+        let repeat_timer = Timer::from_duration(Duration::from_millis(u64::from(
+            config.resolved_repeat_delay(),
+        )));
 
         let token = self
             .niri

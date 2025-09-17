@@ -25,6 +25,7 @@ serde_json = "1.0.143"
 tracing = { version = "0.1.41", features = ["max_level_trace", "release_max_level_debug"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracy-client = { version = "0.18.2", default-features = false }
+xshell = "0.2.7"
 
 [workspace.dependencies.smithay]
 # version = "0.4.1"
@@ -123,7 +124,7 @@ proptest = "1.7.0"
 proptest-derive = { version = "0.6.0", features = ["boxed_union"] }
 rayon = "1.11.0"
 wayland-client = "0.31.11"
-xshell = "0.2.7"
+xshell.workspace = true
 
 [features]
 default = ["dbus", "systemd", "xdp-gnome-screencast"]

@@ -93,7 +93,7 @@ impl FocusRing {
         self.use_border_shader = radius != CornerRadius::default() || gradient.is_some();
 
         // Set the defaults for solid color + rounded corners.
-        let gradient = gradient.unwrap_or_else(|| Gradient::from(color));
+        let gradient = gradient.unwrap_or_else(|| Gradient::from(*color));
 
         let full_rect = Rectangle::new(Point::from((-width, -width)), self.full_size);
         let gradient_area = match gradient.relative_to {
@@ -221,7 +221,7 @@ impl FocusRing {
     ) -> impl Iterator<Item = FocusRingRenderElement> {
         let mut rv = ArrayVec::<_, 8>::new();
 
-        if self.config.off {
+        if *self.config.off {
             return rv.into_iter();
         }
 
@@ -265,7 +265,7 @@ impl FocusRing {
     }
 
     pub fn is_off(&self) -> bool {
-        self.config.off
+        *self.config.off
     }
 
     pub fn config(&self) -> &niri_config::FocusRing {

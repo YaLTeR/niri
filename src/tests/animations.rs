@@ -74,7 +74,7 @@ fn set_up() -> Fixture {
     });
 
     let mut config = Config::default();
-    config.layout.gaps = FloatOrInt(0.0);
+    config.layout.gaps = FloatOrInt(0.0).into();
     config.animations.window_resize.anim.kind = LINEAR;
     config.animations.window_movement.0.kind = LINEAR;
 

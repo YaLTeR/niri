@@ -78,7 +78,7 @@ input {
 
 #### Sections
 
-Most sections that are repeated will be merged top-down in a where where "last one wins":
+Most sections that are repeated will be merged top-down so that the "last one wins":
 
 ```kdl
 input {
@@ -92,6 +92,19 @@ input {
     touchpad {
         scroll-factor 0.75
     }
+}
+```
+
+Some configurations are not mergeable, for example environment:
+
+```kdl,must-fail
+// This is NOT valid: environment cannot appear twice
+environment {
+    DISPLAY ":0"
+}
+
+environment {
+    DISPLAY: "1"
 }
 ```
 

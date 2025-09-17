@@ -1724,7 +1724,7 @@ impl<W: LayoutElement> Monitor<W> {
         };
 
         let config = &self.options.gestures.dnd_edge_workspace_switch;
-        let trigger_height = config.trigger_height.0;
+        let trigger_height = config.resolved_trigger_height().0;
 
         // Restrict the scrolling horizontally to the strip of workspaces to avoid unwanted trigger
         // after using the hot corner or during horizontal scroll.
@@ -1771,14 +1771,14 @@ impl<W: LayoutElement> Monitor<W> {
 
         // Delay starting the gesture a bit to avoid unwanted movement when dragging across
         // monitors.
-        let delay = Duration::from_millis(u64::from(config.delay_ms));
+        let delay = Duration::from_millis(u64::from(config.resolved_delay_ms()));
         if now.saturating_sub(nonzero_start) < delay {
             return true;
         }
 
         let time_delta = now.saturating_sub(last_time).as_secs_f64();
 
-        let delta = delta * time_delta * config.max_speed.0;
+        let delta = delta * time_delta * config.resolved_max_speed().0;
 
         gesture.tracker.push(delta, now);
 

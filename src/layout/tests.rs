@@ -2062,8 +2062,8 @@ fn large_negative_height_change() {
     ];
 
     let mut options = Options::default();
-    options.border.off = false;
-    options.border.width = FloatOrInt(1.);
+    options.border.off = false.into();
+    options.border.width = FloatOrInt(1.).into();
 
     check_ops_with_options(options, &ops);
 }
@@ -2081,8 +2081,8 @@ fn large_max_size() {
     ];
 
     let mut options = Options::default();
-    options.border.off = false;
-    options.border.width = FloatOrInt(1.);
+    options.border.off = false.into();
+    options.border.width = FloatOrInt(1.).into();
 
     check_ops_with_options(options, &ops);
 }
@@ -2288,8 +2288,8 @@ fn removing_all_outputs_preserves_empty_named_workspaces() {
 #[test]
 fn config_change_updates_cached_sizes() {
     let mut config = Config::default();
-    config.layout.border.off = false;
-    config.layout.border.width = FloatOrInt(2.);
+    config.layout.border.off = false.into();
+    config.layout.border.width = FloatOrInt(2.).into();
 
     let mut layout = Layout::new(Clock::default(), &config);
 
@@ -2301,7 +2301,7 @@ fn config_change_updates_cached_sizes() {
     }
     .apply(&mut layout);
 
-    config.layout.border.width = FloatOrInt(4.);
+    config.layout.border.width = FloatOrInt(4.).into();
     layout.update_config(&config);
 
     layout.verify_invariants();
@@ -2419,8 +2419,8 @@ fn fixed_height_takes_max_non_auto_into_account() {
 
     let options = Options {
         border: niri_config::Border {
-            off: false,
-            width: niri_config::FloatOrInt(4.),
+            off: false.into(),
+            width: niri_config::FloatOrInt(4.).into(),
             ..Default::default()
         },
         gaps: 0.,
@@ -3168,8 +3168,8 @@ fn preset_column_width_fixed_correct_with_border() {
     let options = Options {
         preset_column_widths: vec![PresetSize::Fixed(500)],
         border: niri_config::Border {
-            off: false,
-            width: FloatOrInt(5.),
+            off: false.into(),
+            width: FloatOrInt(5.).into(),
             ..Default::default()
         },
         ..Default::default()
@@ -3403,8 +3403,8 @@ prop_compose! {
         width in arbitrary_spacing(),
     ) -> niri_config::FocusRing {
         niri_config::FocusRing {
-            off,
-            width: FloatOrInt(width),
+            off: off.into(),
+            width: FloatOrInt(width).into(),
             ..Default::default()
         }
     }
@@ -3416,8 +3416,8 @@ prop_compose! {
         width in arbitrary_spacing(),
     ) -> niri_config::Border {
         niri_config::Border {
-            off,
-            width: FloatOrInt(width),
+            off: off.into(),
+            width: FloatOrInt(width).into(),
             ..Default::default()
         }
     }
@@ -3429,8 +3429,8 @@ prop_compose! {
         width in arbitrary_spacing(),
     ) -> niri_config::Shadow {
         niri_config::Shadow {
-            on,
-            softness: FloatOrInt(width),
+            on: on.into(),
+            softness: FloatOrInt(width).into(),
             ..Default::default()
         }
     }
@@ -3447,13 +3447,13 @@ prop_compose! {
         position in arbitrary_tab_indicator_position(),
     ) -> niri_config::TabIndicator {
         niri_config::TabIndicator {
-            off,
-            hide_when_single_tab,
-            place_within_column,
-            width: FloatOrInt(width),
-            gap: FloatOrInt(gap),
-            length: TabIndicatorLength { total_proportion: Some(length) },
-            position,
+            off: off.into(),
+            hide_when_single_tab: hide_when_single_tab.into(),
+            place_within_column: place_within_column.into(),
+            width: FloatOrInt(width).into(),
+            gap: FloatOrInt(gap).into(),
+            length: TabIndicatorLength { total_proportion: Some(length) }.into(),
+            position: position.into(),
             ..Default::default()
         }
     }

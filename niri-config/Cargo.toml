@@ -22,3 +22,4 @@ tracy-client.workspace = true
 [dev-dependencies]
 insta.workspace = true
 pretty_assertions = "1.4.1"
+xshell.workspace = true

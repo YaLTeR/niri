@@ -59,13 +59,13 @@ impl Tile {
 
         let options = Options {
             focus_ring: niri_config::FocusRing {
-                off: true,
+                off: true.into(),
                 ..Default::default()
             },
             border: niri_config::Border {
-                off: false,
-                width: FloatOrInt(32.),
-                active_color: Color::from_rgba8_unpremul(255, 163, 72, 255),
+                off: false.into(),
+                width: FloatOrInt(32.).into(),
+                active_color: Color::from_rgba8_unpremul(255, 163, 72, 255).into(),
                 ..Default::default()
             },
             ..Default::default()

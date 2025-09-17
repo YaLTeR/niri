@@ -4,7 +4,7 @@ use knuffel::errors::DecodeError;
 
 use crate::mergeable::Mergeable;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MaybeSet<T> {
     value: T,
     is_set: bool,
@@ -27,18 +27,6 @@ impl<T> MaybeSet<T> {
 
     pub fn is_set(&self) -> bool {
         self.is_set
-    }
-
-    pub fn get(&self) -> &T {
-        &self.value
-    }
-
-    pub fn get_mut(&mut self) -> &mut T {
-        &mut self.value
-    }
-
-    pub fn into_inner(self) -> T {
-        self.value
     }
 
     pub fn value(&self) -> &T {
@@ -129,17 +117,69 @@ impl Default for BoolFlag {
     }
 }
 
+impl BoolFlag {
+    pub fn value(&self) -> &bool {
+        self.0.value()
+    }
+}
+
 impl std::ops::Deref for BoolFlag {
     type Target = bool;
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        self.0.value()
     }
 }
 
 impl Mergeable for BoolFlag {
     fn merge_with(&mut self, other: &Self) {
         self.0.merge_with(&other.0);
+    }
+}
+
+impl std::ops::Not for BoolFlag {
+    type Output = bool;
+    fn not(self) -> Self::Output {
+        !*self
+    }
+}
+
+impl std::ops::Not for &BoolFlag {
+    type Output = bool;
+    fn not(self) -> Self::Output {
+        !**self
+    }
+}
+
+impl std::ops::BitOrAssign<bool> for BoolFlag {
+    fn bitor_assign(&mut self, rhs: bool) {
+        *self.0.value_mut() |= rhs;
+    }
+}
+
+impl From<bool> for BoolFlag {
+    fn from(value: bool) -> Self {
+        BoolFlag(value.into())
+    }
+}
+
+impl<S> knuffel::DecodeScalar<S> for BoolFlag
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        bool::type_check(type_name, ctx);
+    }
+
+    fn raw_decode(
+        node: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, knuffel::errors::DecodeError<S>> {
+        let value = bool::raw_decode(node, ctx)?;
+        Ok(BoolFlag(value.into()))
     }
 }
 
@@ -152,7 +192,7 @@ where
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
         knuffel::decode::check_flag_node(node, ctx);
-        Ok(Self(MaybeSet::new(true)))
+        Ok(Self(true.into()))
     }
 }
 
@@ -276,16 +316,16 @@ mod tests {
     }
 
     #[test]
-    fn get_methods_work() {
+    fn value_methods_work() {
         let maybe_set = MaybeSet::new(42);
-        assert_eq!(maybe_set.get(), &42);
-        assert_eq!(maybe_set.into_inner(), 42);
+        assert_eq!(maybe_set.value(), &42);
+        assert_eq!(maybe_set.into_value(), 42);
     }
 
     #[test]
-    fn get_mut_methods_work() {
+    fn value_mut_methods_work() {
         let mut maybe_set = MaybeSet::new(42);
-        *maybe_set.get_mut() = 100;
+        *maybe_set.value_mut() = 100;
         assert_eq!(*maybe_set, 100);
         assert!(maybe_set.is_set());
     }
@@ -402,5 +442,16 @@ mod tests {
         base.merge_with(&overlay);
         assert_eq!(*base.duration, 1000); // Overridden
         assert_eq!(*base.name, "base"); // Preserved
+    }
+
+    #[test]
+    fn bool_flag_from_bool() {
+        let flag: BoolFlag = true.into();
+        assert_eq!(*flag, true);
+        assert!(flag.0.is_set());
+
+        let flag: BoolFlag = false.into();
+        assert_eq!(*flag, false);
+        assert!(flag.0.is_set());
     }
 }
