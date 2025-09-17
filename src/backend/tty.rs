@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::iter::zip;
 use std::num::NonZeroU64;
-use std::os::fd::AsFd;
+use std::os::fd::{AsFd, OwnedFd};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -756,6 +756,7 @@ impl Tty {
         }
 
         let mut device = self.devices.remove(&node).unwrap();
+        let device_fd = device.drm.device_fd().device_fd();
 
         if let Some(lease_state) = &mut device.drm_lease_state {
             lease_state.disable_global::<State>();
@@ -798,9 +799,25 @@ impl Tty {
         }
 
         self.gpu_manager.as_mut().remove_node(&device.render_node);
+        // Trigger re-enumeration in order to remove the device from gpu_manager.
+        let _ = self.gpu_manager.devices();
+
         niri.event_loop.remove(device.token);
 
         self.refresh_ipc_outputs(niri);
+
+        drop(device);
+
+        match TryInto::<OwnedFd>::try_into(device_fd) {
+            Ok(fd) => {
+                if let Err(err) = self.session.close(fd) {
+                    warn!("error closing DRM device fd: {err:?}");
+                }
+            }
+            Err(_) => {
+                error!("unable to close DRM device cleanly: fd has unexpected references");
+            }
+        }
     }
 
     fn connector_connected(
