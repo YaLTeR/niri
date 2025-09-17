@@ -107,6 +107,8 @@ pub enum Msg {
     RequestError,
     /// Print the overview state.
     OverviewState,
+    /// Print all the key binds.
+    Binds,
 }
 
 #[derive(Clone, Debug, clap::ValueEnum)]
