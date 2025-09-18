@@ -350,7 +350,7 @@ impl Default for Shadow {
             softness: FloatOrInt(30.),
             spread: FloatOrInt(5.),
             draw_behind_window: false,
-            color: Color::from_rgba8_unpremul(0, 0, 0, 0x70),
+            color: Color::from_rgba8_unpremul(0, 0, 0, 0x77),
             inactive_color: None,
         }
     }

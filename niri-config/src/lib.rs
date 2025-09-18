@@ -872,7 +872,7 @@ mod tests {
                         r: 0.0,
                         g: 0.0,
                         b: 0.0,
-                        a: 0.4392157,
+                        a: 0.46666667,
                     },
                     inactive_color: None,
                 },
@@ -1843,9 +1843,6 @@ mod tests {
         +            ],
         +        },
         +    ],
-
-        -                a: 0.4392157,
-        +                a: 0.46666667,
 
         -        preset_column_widths: [],
         -        default_column_width: None,
