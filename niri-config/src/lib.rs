@@ -234,7 +234,7 @@ impl ConfigPath {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_debug_snapshot;
+    use insta::{assert_debug_snapshot, assert_snapshot};
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -1772,5 +1772,104 @@ mod tests {
             ],
         }
         "#);
+    }
+
+    fn diff_lines(expected: &str, actual: &str) -> String {
+        let mut output = String::new();
+        let mut in_change = false;
+
+        for change in diff::lines(expected, actual) {
+            match change {
+                diff::Result::Both(_, _) => {
+                    in_change = false;
+                }
+                diff::Result::Left(line) => {
+                    if !output.is_empty() && !in_change {
+                        output.push('\n');
+                    }
+                    output.push('-');
+                    output.push_str(line);
+                    output.push('\n');
+                    in_change = true;
+                }
+                diff::Result::Right(line) => {
+                    if !output.is_empty() && !in_change {
+                        output.push('\n');
+                    }
+                    output.push('+');
+                    output.push_str(line);
+                    output.push('\n');
+                    in_change = true;
+                }
+            }
+        }
+
+        output
+    }
+
+    #[test]
+    fn diff_empty_to_default() {
+        // We try to write the config defaults in such a way that empty sections (and an empty
+        // config) give the same outcome as the default config bundled with niri. This test
+        // verifies the actual differences between the two.
+        let mut default_config = Config::default();
+        let empty_config = Config::parse("empty.kdl", "").unwrap();
+
+        // Some notable omissions: the default config has some window rules, and an empty config
+        // will not have any binds. Clear them out so they don't spam the diff.
+        default_config.window_rules.clear();
+        default_config.binds.0.clear();
+
+        assert_snapshot!(
+            diff_lines(
+                &format!("{empty_config:#?}"),
+                &format!("{default_config:#?}")
+            ),
+            @r#"
+        -            numlock: false,
+        +            numlock: true,
+
+        -            tap: false,
+        +            tap: true,
+
+        -            natural_scroll: false,
+        +            natural_scroll: true,
+
+        -    spawn_at_startup: [],
+        +    spawn_at_startup: [
+        +        SpawnAtStartup {
+        +            command: [
+        +                "waybar",
+        +            ],
+        +        },
+        +    ],
+
+        -                a: 0.4392157,
+        +                a: 0.46666667,
+
+        -        preset_column_widths: [],
+        -        default_column_width: None,
+        +        preset_column_widths: [
+        +            Proportion(
+        +                0.33333,
+        +            ),
+        +            Proportion(
+        +                0.5,
+        +            ),
+        +            Proportion(
+        +                0.66667,
+        +            ),
+        +        ],
+        +        default_column_width: Some(
+        +            DefaultPresetSize(
+        +                Some(
+        +                    Proportion(
+        +                        0.5,
+        +                    ),
+        +                ),
+        +            ),
+        +        ),
+        "#
+        );
     }
 }

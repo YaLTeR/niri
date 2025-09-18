@@ -2415,6 +2415,7 @@ version = "25.8.0"
 dependencies = [
  "bitflags 2.9.3",
  "csscolorparser",
+ "diff",
  "insta",
  "knuffel",
  "miette",
