@@ -13,9 +13,7 @@ use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
 use smithay::backend::input::{InputEvent, TabletToolDescriptor};
 use smithay::desktop::{PopupKind, PopupManager};
-use smithay::input::pointer::{
-    CursorIcon, CursorImageStatus, CursorImageSurfaceData, PointerHandle,
-};
+use smithay::input::pointer::{CursorIcon, CursorImageStatus, PointerHandle};
 use smithay::input::{keyboard, Seat, SeatHandler, SeatState};
 use smithay::output::Output;
 use smithay::reexports::rustix::fs::{fcntl_setfl, OFlags};
@@ -323,23 +321,10 @@ impl ClientDndGrabHandler for State {
         icon: Option<WlSurface>,
         _seat: Seat<Self>,
     ) {
-        let offset = if let CursorImageStatus::Surface(ref surface) =
-            self.niri.cursor_manager.cursor_image()
-        {
-            with_states(surface, |states| {
-                let hotspot = states
-                    .data_map
-                    .get::<CursorImageSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .hotspot;
-                Point::from((-hotspot.x, -hotspot.y))
-            })
-        } else {
-            (0, 0).into()
-        };
-        self.niri.dnd_icon = icon.map(|surface| DndIcon { surface, offset });
+        self.niri.dnd_icon = icon.map(|surface| DndIcon {
+            surface,
+            offset: Point::new(0, 0),
+        });
         // FIXME: more granular
         self.niri.queue_redraw_all();
     }
