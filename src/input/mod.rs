@@ -478,11 +478,15 @@ impl State {
                     mods_changed,
                 );
                 self.handle_bind(bind.clone());
-                self.start_key_repeat(bind);
+                if pressed {
+                    self.start_key_repeat(bind);
+                }
             }
             ShouldInterceptResult::InterceptAndHandle(bind) => {
                 self.handle_bind(bind.clone());
-                self.start_key_repeat(bind);
+                if pressed {
+                    self.start_key_repeat(bind);
+                }
             }
             ShouldInterceptResult::InterceptOnly => {}
         }
