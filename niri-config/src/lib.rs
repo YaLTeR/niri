@@ -38,7 +38,7 @@ pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
 pub use crate::utils::FloatOrInt;
 use crate::utils::MergeWith as _;
 pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
-pub use crate::workspace::Workspace;
+pub use crate::workspace::{Workspace, WorkspaceLayoutPart};
 
 #[derive(knuffel::Decode, Debug, PartialEq)]
 pub struct Config {
@@ -1795,18 +1795,21 @@ mod tests {
                     open_on_output: Some(
                         "eDP-1",
                     ),
+                    layout: None,
                 },
                 Workspace {
                     name: WorkspaceName(
                         "workspace-2",
                     ),
                     open_on_output: None,
+                    layout: None,
                 },
                 Workspace {
                     name: WorkspaceName(
                         "workspace-3",
                     ),
                     open_on_output: None,
+                    layout: None,
                 },
             ],
         }

@@ -380,6 +380,12 @@ struct InteractiveMoveData<W: LayoutElement> {
     ///
     /// This helps the pointer remain inside the window as it resizes.
     pub(self) pointer_ratio_within_window: (f64, f64),
+    /// Config overrides for the workspace where the window is currently located.
+    ///
+    /// To avoid sudden window changes when starting an interactive move, it will remember the
+    /// config overrides for the workspace where the move originated from. As soon as the window
+    /// moves over some different workspace though, this override will reset.
+    pub(self) workspace_config: Option<(WorkspaceId, niri_config::LayoutPart)>,
 }
 
 #[derive(Debug)]
@@ -574,6 +580,13 @@ impl Options {
             disable_transactions: config.debug.disable_transactions,
             deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
         }
+    }
+
+    fn with_merged_layout(mut self, part: Option<&niri_config::LayoutPart>) -> Self {
+        if let Some(part) = part {
+            self.layout.merge_with(part);
+        }
+        self
     }
 
     fn adjusted_for_scale(mut self, scale: f64) -> Self {
@@ -2296,7 +2309,9 @@ impl<W: LayoutElement> Layout<W> {
                     move_.tile.verify_invariants();
 
                     let scale = move_.output.current_scale().fractional_scale();
-                    let options = Options::clone(&self.options).adjusted_for_scale(scale);
+                    let options = Options::clone(&self.options)
+                        .with_merged_layout(move_.workspace_config.as_ref().map(|(_, c)| c))
+                        .adjusted_for_scale(scale);
                     assert_eq!(
                         &*move_.tile.options, &options,
                         "interactive moved tile options must be \
@@ -2830,6 +2845,14 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn update_config(&mut self, config: &Config) {
+        // Update workspace-specific config for all named workspaces.
+        for ws in self.workspaces_mut() {
+            let Some(name) = ws.name() else { continue };
+            if let Some(config) = config.workspaces.iter().find(|w| &w.name.0 == name) {
+                ws.update_layout_config(config.layout.clone().map(|x| x.0));
+            }
+        }
+
         self.update_options(Options::from_config(config));
     }
 
@@ -2839,11 +2862,10 @@ impl<W: LayoutElement> Layout<W> {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             let view_size = output_size(&move_.output);
             let scale = move_.output.current_scale().fractional_scale();
-            move_.tile.update_config(
-                view_size,
-                scale,
-                Rc::new(Options::clone(&options).adjusted_for_scale(scale)),
-            );
+            let options = Options::clone(&options)
+                .with_merged_layout(move_.workspace_config.as_ref().map(|(_, c)| c))
+                .adjusted_for_scale(scale);
+            move_.tile.update_config(view_size, scale, Rc::new(options));
         }
 
         match &mut self.monitor_set {
@@ -3737,15 +3759,17 @@ impl<W: LayoutElement> Layout<W> {
                 }
                 .band(sq_dist / INTERACTIVE_MOVE_START_THRESHOLD);
 
-                let (is_floating, tile) = self
+                let (is_floating, tile, workspace_config) = self
                     .workspaces_mut()
                     .find(|ws| ws.has_window(&window_id))
                     .map(|ws| {
+                        let workspace_config = ws.layout_config().cloned().map(|c| (ws.id(), c));
                         (
                             ws.is_floating(&window_id),
                             ws.tiles_mut()
                                 .find(|tile| *tile.window().id() == window_id)
                                 .unwrap(),
+                            workspace_config,
                         )
                     })
                     .unwrap();
@@ -3807,11 +3831,10 @@ impl<W: LayoutElement> Layout<W> {
 
                 let view_size = output_size(&output);
                 let scale = output.current_scale().fractional_scale();
-                tile.update_config(
-                    view_size,
-                    scale,
-                    Rc::new(Options::clone(&self.options).adjusted_for_scale(scale)),
-                );
+                let options = Options::clone(&self.options)
+                    .with_merged_layout(workspace_config.as_ref().map(|(_, c)| c))
+                    .adjusted_for_scale(scale);
+                tile.update_config(view_size, scale, Rc::new(options));
 
                 // Unfullscreen.
                 let floating_size = tile.floating_window_size;
@@ -3864,6 +3887,7 @@ impl<W: LayoutElement> Layout<W> {
                     is_full_width,
                     is_floating,
                     pointer_ratio_within_window,
+                    workspace_config,
                 };
 
                 if let Some((tile_pos, zoom)) = tile_pos {
@@ -3880,6 +3904,23 @@ impl<W: LayoutElement> Layout<W> {
                     return false;
                 }
 
+                let mut ws_id = None;
+                if let Some(mon) = self.monitor_for_output(&output) {
+                    let (insert_ws, _) = mon.insert_position(move_.pointer_pos_within_output);
+                    if let InsertWorkspace::Existing(id) = insert_ws {
+                        ws_id = Some(id);
+                    }
+                }
+
+                // If moved over a different workspace, reset the config override.
+                let mut update_config = false;
+                if let Some((id, _)) = &move_.workspace_config {
+                    if Some(*id) != ws_id {
+                        move_.workspace_config = None;
+                        update_config = true;
+                    }
+                }
+
                 if output != move_.output {
                     move_.tile.window().output_leave(&move_.output);
                     move_.tile.window().output_enter(&output);
@@ -3887,15 +3928,18 @@ impl<W: LayoutElement> Layout<W> {
                         output.current_scale(),
                         output.current_transform(),
                     );
-                    let view_size = output_size(&output);
-                    let scale = output.current_scale().fractional_scale();
-                    move_.tile.update_config(
-                        view_size,
-                        scale,
-                        Rc::new(Options::clone(&self.options).adjusted_for_scale(scale)),
-                    );
                     move_.output = output.clone();
                     self.focus_output(&output);
+                    update_config = true;
+                }
+
+                if update_config {
+                    let view_size = output_size(&output);
+                    let scale = output.current_scale().fractional_scale();
+                    let options = Options::clone(&self.options)
+                        .with_merged_layout(move_.workspace_config.as_ref().map(|(_, c)| c))
+                        .adjusted_for_scale(scale);
+                    move_.tile.update_config(view_size, scale, Rc::new(options));
                 }
 
                 move_.pointer_pos_within_output = pointer_pos_within_output;
