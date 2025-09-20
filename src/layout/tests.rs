@@ -31,9 +31,9 @@ struct TestWindowInner {
     forced_size: Cell<Option<Size<i32, Logical>>>,
     min_size: Size<i32, Logical>,
     max_size: Size<i32, Logical>,
-    pending_fullscreen: Cell<bool>,
+    pending_sizing_mode: Cell<SizingMode>,
     pending_activated: Cell<bool>,
-    is_fullscreen: Cell<bool>,
+    sizing_mode: Cell<SizingMode>,
     is_windowed_fullscreen: Cell<bool>,
     is_pending_windowed_fullscreen: Cell<bool>,
     animate_next_configure: Cell<bool>,
@@ -79,9 +79,9 @@ impl TestWindow {
             forced_size: Cell::new(None),
             min_size: params.min_max_size.0,
             max_size: params.min_max_size.1,
-            pending_fullscreen: Cell::new(false),
+            pending_sizing_mode: Cell::new(SizingMode::Normal),
             pending_activated: Cell::new(false),
-            is_fullscreen: Cell::new(false),
+            sizing_mode: Cell::new(SizingMode::Normal),
             is_windowed_fullscreen: Cell::new(false),
             is_pending_windowed_fullscreen: Cell::new(false),
             animate_next_configure: Cell::new(false),
@@ -124,8 +124,8 @@ impl TestWindow {
 
         self.0.animate_next_configure.set(false);
 
-        if self.0.is_fullscreen.get() != self.0.pending_fullscreen.get() {
-            self.0.is_fullscreen.set(self.0.pending_fullscreen.get());
+        if self.0.sizing_mode.get() != self.0.pending_sizing_mode.get() {
+            self.0.sizing_mode.set(self.0.pending_sizing_mode.get());
             changed = true;
         }
 
@@ -173,7 +173,7 @@ impl LayoutElement for TestWindow {
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
-        is_fullscreen: bool,
+        mode: SizingMode,
         _animate: bool,
         _transaction: Option<Transaction>,
     ) {
@@ -182,9 +182,9 @@ impl LayoutElement for TestWindow {
             self.0.animate_next_configure.set(true);
         }
 
-        self.0.pending_fullscreen.set(is_fullscreen);
+        self.0.pending_sizing_mode.set(mode);
 
-        if is_fullscreen {
+        if mode.is_fullscreen() {
             self.0.is_pending_windowed_fullscreen.set(false);
         }
     }
@@ -233,20 +233,12 @@ impl LayoutElement for TestWindow {
 
     fn set_floating(&mut self, _floating: bool) {}
 
-    fn is_fullscreen(&self) -> bool {
-        if self.0.is_windowed_fullscreen.get() {
-            return false;
-        }
-
-        self.0.is_fullscreen.get()
+    fn sizing_mode(&self) -> SizingMode {
+        self.0.sizing_mode.get()
     }
 
-    fn is_pending_fullscreen(&self) -> bool {
-        if self.0.is_pending_windowed_fullscreen.get() {
-            return false;
-        }
-
-        self.0.pending_fullscreen.get()
+    fn pending_sizing_mode(&self) -> SizingMode {
+        self.0.pending_sizing_mode.get()
     }
 
     fn requested_size(&self) -> Option<Size<i32, Logical>> {
@@ -567,6 +559,10 @@ enum Op {
         id: Option<usize>,
     },
     MaximizeColumn,
+    MaximizeWindowToEdges {
+        #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+        id: Option<usize>,
+    },
     SetColumnWidth(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
     SetWindowWidth {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
@@ -1260,6 +1256,16 @@ impl Op {
                 layout.toggle_window_height(id.as_ref(), false);
             }
             Op::MaximizeColumn => layout.toggle_full_width(),
+            Op::MaximizeWindowToEdges { id } => {
+                let id = id.or_else(|| layout.focus().map(|win| *win.id()));
+                let Some(id) = id else {
+                    return;
+                };
+                if !layout.has_window(&id) {
+                    return;
+                }
+                layout.toggle_maximized(&id);
+            }
             Op::SetColumnWidth(change) => layout.set_column_width(change),
             Op::SetWindowWidth { id, change } => {
                 let id = id.filter(|id| layout.has_window(id));
@@ -1612,6 +1618,9 @@ fn operations_dont_panic() {
         Op::FullscreenWindow(1),
         Op::FullscreenWindow(2),
         Op::FullscreenWindow(3),
+        Op::MaximizeWindowToEdges { id: Some(1) },
+        Op::MaximizeWindowToEdges { id: Some(2) },
+        Op::MaximizeWindowToEdges { id: Some(3) },
         Op::FocusColumnLeft,
         Op::FocusColumnRight,
         Op::FocusColumnRightOrFirst,
@@ -1766,6 +1775,9 @@ fn operations_from_starting_state_dont_panic() {
         Op::FullscreenWindow(1),
         Op::FullscreenWindow(2),
         Op::FullscreenWindow(3),
+        Op::MaximizeWindowToEdges { id: Some(1) },
+        Op::MaximizeWindowToEdges { id: Some(2) },
+        Op::MaximizeWindowToEdges { id: Some(3) },
         Op::SetFullscreenWindow {
             window: 1,
             is_fullscreen: false,

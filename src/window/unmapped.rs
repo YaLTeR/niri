@@ -21,6 +21,9 @@ pub enum InitialConfigureState {
     NotConfigured {
         /// Whether the window requested to be fullscreened, and the requested output, if any.
         wants_fullscreen: Option<Option<Output>>,
+
+        /// Whether the window requested to be maximized.
+        wants_maximized: bool,
     },
     /// The window has been configured.
     Configured {
@@ -74,6 +77,7 @@ impl Unmapped {
             window,
             state: InitialConfigureState::NotConfigured {
                 wants_fullscreen: None,
+                wants_maximized: false,
             },
             activation_token_data: None,
         }

@@ -5,7 +5,7 @@ use niri_config::Config;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::*;
-use crate::layout::LayoutElement;
+use crate::layout::LayoutElement as _;
 use crate::utils::with_toplevel_role;
 
 #[test]
@@ -351,7 +351,7 @@ window-rule {{
             })
         })
         .unwrap();
-    let is_fullscreen = mapped.is_fullscreen();
+    let is_fullscreen = mapped.sizing_mode().is_fullscreen();
     let win = mapped.window.clone();
     let mon = mon.unwrap().output_name().clone();
     let ws = ws.name().cloned().unwrap_or(String::from("unnamed"));
@@ -611,7 +611,7 @@ layout {
     // If the window ended up fullscreen, unfullscreen it and output the configure.
     let mut post_unfullscreen = String::new();
     let mapped = f.niri().layout.windows().next().unwrap().1;
-    let is_fullscreen = mapped.is_fullscreen();
+    let is_fullscreen = mapped.sizing_mode().is_fullscreen();
     let win = mapped.window.clone();
     if is_fullscreen {
         f.niri().layout.set_fullscreen(&win, false);
