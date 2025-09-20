@@ -2561,13 +2561,6 @@ impl<W: LayoutElement> Layout<W> {
                         "workspace base options must be synchronized with layout"
                     );
 
-                    let options = Options::clone(&workspace.base_options)
-                        .adjusted_for_scale(workspace.scale().fractional_scale());
-                    assert_eq!(
-                        &*workspace.options, &options,
-                        "workspace options must be base options adjusted for workspace scale"
-                    );
-
                     assert!(
                         seen_workspace_id.insert(workspace.id()),
                         "workspace id must be unique"
@@ -2723,13 +2716,6 @@ impl<W: LayoutElement> Layout<W> {
                 assert_eq!(
                     workspace.base_options, self.options,
                     "workspace options must be synchronized with layout"
-                );
-
-                let options = Options::clone(&workspace.base_options)
-                    .adjusted_for_scale(workspace.scale().fractional_scale());
-                assert_eq!(
-                    &*workspace.options, &options,
-                    "workspace options must be base options adjusted for workspace scale"
                 );
 
                 assert!(

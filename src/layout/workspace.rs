@@ -1787,6 +1787,12 @@ impl<W: LayoutElement> Workspace<W> {
         assert!(scale > 0.);
         assert!(scale.is_finite());
 
+        let options = Options::clone(&self.base_options).adjusted_for_scale(scale);
+        assert_eq!(
+            &*self.options, &options,
+            "options must be base options adjusted for scale"
+        );
+
         assert!(self.view_size.w > 0.);
         assert!(self.view_size.h > 0.);
 
