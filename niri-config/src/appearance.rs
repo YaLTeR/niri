@@ -322,6 +322,32 @@ impl From<FocusRing> for Border {
     }
 }
 
+impl MergeWith<BorderRule> for Border {
+    fn merge_with(&mut self, part: &BorderRule) {
+        self.off |= part.off;
+        if part.on {
+            self.off = false;
+        }
+
+        merge_clone!((self, part), width);
+
+        merge_color_gradient!(
+            (self, part),
+            (active_color, active_gradient),
+            (inactive_color, inactive_gradient),
+            (urgent_color, urgent_gradient),
+        );
+    }
+}
+
+impl MergeWith<BorderRule> for FocusRing {
+    fn merge_with(&mut self, part: &BorderRule) {
+        let mut x = Border::from(*self);
+        x.merge_with(part);
+        *self = FocusRing::from(x);
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct Shadow {
     #[knuffel(child)]
@@ -354,6 +380,21 @@ impl Default for Shadow {
             color: Color::from_rgba8_unpremul(0, 0, 0, 0x77),
             inactive_color: None,
         }
+    }
+}
+
+impl MergeWith<ShadowRule> for Shadow {
+    fn merge_with(&mut self, part: &ShadowRule) {
+        self.on |= part.on;
+        if part.off {
+            self.on = false;
+        }
+
+        merge_clone!((self, part), softness, spread);
+
+        merge_clone!((self, part), offset, draw_behind_window, color);
+
+        merge_clone_opt!((self, part), inactive_color);
     }
 }
 
@@ -579,42 +620,6 @@ impl MergeWith<Self> for BorderRule {
     }
 }
 
-impl BorderRule {
-    pub fn resolve_against(&self, mut config: Border) -> Border {
-        config.off |= self.off;
-        if self.on {
-            config.off = false;
-        }
-
-        if let Some(x) = self.width {
-            config.width = x;
-        }
-        if let Some(x) = self.active_color {
-            config.active_color = x;
-            config.active_gradient = None;
-        }
-        if let Some(x) = self.inactive_color {
-            config.inactive_color = x;
-            config.inactive_gradient = None;
-        }
-        if let Some(x) = self.urgent_color {
-            config.urgent_color = x;
-            config.urgent_gradient = None;
-        }
-        if let Some(x) = self.active_gradient {
-            config.active_gradient = Some(x);
-        }
-        if let Some(x) = self.inactive_gradient {
-            config.inactive_gradient = Some(x);
-        }
-        if let Some(x) = self.urgent_gradient {
-            config.urgent_gradient = Some(x);
-        }
-
-        config
-    }
-}
-
 impl MergeWith<Self> for ShadowRule {
     fn merge_with(&mut self, part: &Self) {
         merge_on_off!((self, part));
@@ -628,36 +633,6 @@ impl MergeWith<Self> for ShadowRule {
             color,
             inactive_color,
         );
-    }
-}
-
-impl ShadowRule {
-    pub fn resolve_against(&self, mut config: Shadow) -> Shadow {
-        config.on |= self.on;
-        if self.off {
-            config.on = false;
-        }
-
-        if let Some(x) = self.offset {
-            config.offset = x;
-        }
-        if let Some(x) = self.softness {
-            config.softness = x;
-        }
-        if let Some(x) = self.spread {
-            config.spread = x;
-        }
-        if let Some(x) = self.draw_behind_window {
-            config.draw_behind_window = x;
-        }
-        if let Some(x) = self.color {
-            config.color = x;
-        }
-        if let Some(x) = self.inactive_color {
-            config.inactive_color = Some(x);
-        }
-
-        config
     }
 }
 
@@ -1063,17 +1038,14 @@ mod tests {
                 resolved.merge_with(&rule);
             }
 
-            let config = Border {
+            let mut border = Border {
                 off: config == "off",
                 ..Default::default()
             };
 
-            if resolved.resolve_against(config).off {
-                "off"
-            } else {
-                "on"
-            }
-            .to_owned()
+            border.merge_with(&resolved);
+
+            if border.off { "off" } else { "on" }.to_owned()
         }
 
         assert_snapshot!(is_on("off", &[]), @"off");
@@ -1128,7 +1100,7 @@ mod tests {
             border_rule.merge_with(&rule.border);
         }
 
-        let border = border_rule.resolve_against(config.layout.border);
+        let border = config.layout.border.merged_with(&border_rule);
 
         // Gradient should be None because it's overwritten.
         assert_debug_snapshot!(
@@ -1201,7 +1173,7 @@ mod tests {
             tab_indicator_rule.merge_with(&rule.tab_indicator);
         }
 
-        let border = border_rule.resolve_against(config.layout.border);
+        let border = config.layout.border.merged_with(&border_rule);
 
         // Gradient should be None because it's overwritten.
         assert_debug_snapshot!(
