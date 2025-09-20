@@ -1,5 +1,6 @@
 use std::cmp::{max, min};
 
+use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, WindowRule};
 use niri_config::{
     BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize, ShadowRule,
