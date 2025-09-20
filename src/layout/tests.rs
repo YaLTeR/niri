@@ -2067,7 +2067,7 @@ fn large_negative_height_change() {
 
     let mut options = Options::default();
     options.border.off = false;
-    options.border.width = FloatOrInt(1.);
+    options.border.width = 1.;
 
     check_ops_with_options(options, ops);
 }
@@ -2086,7 +2086,7 @@ fn large_max_size() {
 
     let mut options = Options::default();
     options.border.off = false;
-    options.border.width = FloatOrInt(1.);
+    options.border.width = 1.;
 
     check_ops_with_options(options, ops);
 }
@@ -2292,8 +2292,9 @@ fn removing_all_outputs_preserves_empty_named_workspaces() {
 #[test]
 fn config_change_updates_cached_sizes() {
     let mut config = Config::default();
-    config.layout.border.off = false;
-    config.layout.border.width = FloatOrInt(2.);
+    let border = config.layout.border.get_or_insert_with(Default::default);
+    border.off = false;
+    border.width = Some(FloatOrInt(2.));
 
     let mut layout = Layout::new(Clock::default(), &config);
 
@@ -2305,7 +2306,11 @@ fn config_change_updates_cached_sizes() {
     }
     .apply(&mut layout);
 
-    config.layout.border.width = FloatOrInt(4.);
+    config
+        .layout
+        .border
+        .get_or_insert_with(Default::default)
+        .width = Some(FloatOrInt(4.));
     layout.update_config(&config);
 
     layout.verify_invariants();
@@ -2314,7 +2319,7 @@ fn config_change_updates_cached_sizes() {
 #[test]
 fn preset_height_change_removes_preset() {
     let mut config = Config::default();
-    config.layout.preset_window_heights = vec![PresetSize::Fixed(1), PresetSize::Fixed(2)];
+    config.layout.preset_window_heights = Some(vec![PresetSize::Fixed(1), PresetSize::Fixed(2)]);
 
     let mut layout = Layout::new(Clock::default(), &config);
 
@@ -2335,7 +2340,7 @@ fn preset_height_change_removes_preset() {
     }
 
     // Leave only one.
-    config.layout.preset_window_heights = vec![PresetSize::Fixed(1)];
+    config.layout.preset_window_heights = Some(vec![PresetSize::Fixed(1)]);
 
     layout.update_config(&config);
 
@@ -2424,7 +2429,7 @@ fn fixed_height_takes_max_non_auto_into_account() {
     let options = Options {
         border: niri_config::Border {
             off: false,
-            width: niri_config::FloatOrInt(4.),
+            width: 4.,
             ..Default::default()
         },
         gaps: 0.,
@@ -3173,7 +3178,7 @@ fn preset_column_width_fixed_correct_with_border() {
         preset_column_widths: vec![PresetSize::Fixed(500)],
         border: niri_config::Border {
             off: false,
-            width: FloatOrInt(5.),
+            width: 5.,
             ..Default::default()
         },
         ..Default::default()
@@ -3408,7 +3413,7 @@ prop_compose! {
     ) -> niri_config::FocusRing {
         niri_config::FocusRing {
             off,
-            width: FloatOrInt(width),
+            width,
             ..Default::default()
         }
     }
@@ -3421,7 +3426,7 @@ prop_compose! {
     ) -> niri_config::Border {
         niri_config::Border {
             off,
-            width: FloatOrInt(width),
+            width,
             ..Default::default()
         }
     }
@@ -3434,7 +3439,7 @@ prop_compose! {
     ) -> niri_config::Shadow {
         niri_config::Shadow {
             on,
-            softness: FloatOrInt(width),
+            softness: width,
             ..Default::default()
         }
     }
@@ -3454,8 +3459,8 @@ prop_compose! {
             off,
             hide_when_single_tab,
             place_within_column,
-            width: FloatOrInt(width),
-            gap: FloatOrInt(gap),
+            width,
+            gap,
             length: TabIndicatorLength { total_proportion: Some(length) },
             position,
             ..Default::default()

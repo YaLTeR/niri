@@ -5,7 +5,7 @@ use knuffel::errors::DecodeError;
 use miette::{miette, IntoDiagnostic as _};
 use smithay::backend::renderer::Color32F;
 
-use crate::utils::MergeWith;
+use crate::utils::{Flag, MergeWith};
 use crate::FloatOrInt;
 
 pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.25, 0.25, 0.25, 1.]);
@@ -222,23 +222,15 @@ impl CornerRadius {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FocusRing {
-    #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child, unwrap(argument), default = Self::default().width)]
-    pub width: FloatOrInt<0, 65535>,
-    #[knuffel(child, default = Self::default().active_color)]
+    pub width: f64,
     pub active_color: Color,
-    #[knuffel(child, default = Self::default().inactive_color)]
     pub inactive_color: Color,
-    #[knuffel(child, default = Self::default().urgent_color)]
     pub urgent_color: Color,
-    #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
-    #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
-    #[knuffel(child)]
     pub urgent_gradient: Option<Gradient>,
 }
 
@@ -246,7 +238,7 @@ impl Default for FocusRing {
     fn default() -> Self {
         Self {
             off: false,
-            width: FloatOrInt(4.),
+            width: 4.,
             active_color: Color::from_rgba8_unpremul(127, 200, 255, 255),
             inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
             urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
@@ -257,23 +249,15 @@ impl Default for FocusRing {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Border {
-    #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child, unwrap(argument), default = Self::default().width)]
-    pub width: FloatOrInt<0, 65535>,
-    #[knuffel(child, default = Self::default().active_color)]
+    pub width: f64,
     pub active_color: Color,
-    #[knuffel(child, default = Self::default().inactive_color)]
     pub inactive_color: Color,
-    #[knuffel(child, default = Self::default().urgent_color)]
     pub urgent_color: Color,
-    #[knuffel(child)]
     pub active_gradient: Option<Gradient>,
-    #[knuffel(child)]
     pub inactive_gradient: Option<Gradient>,
-    #[knuffel(child)]
     pub urgent_gradient: Option<Gradient>,
 }
 
@@ -281,7 +265,7 @@ impl Default for Border {
     fn default() -> Self {
         Self {
             off: true,
-            width: FloatOrInt(4.),
+            width: 4.,
             active_color: Color::from_rgba8_unpremul(255, 200, 127, 255),
             inactive_color: Color::from_rgba8_unpremul(80, 80, 80, 255),
             urgent_color: Color::from_rgba8_unpremul(155, 0, 0, 255),
@@ -329,7 +313,7 @@ impl MergeWith<BorderRule> for Border {
             self.off = false;
         }
 
-        merge_clone!((self, part), width);
+        merge!((self, part), width);
 
         merge_color_gradient!(
             (self, part),
@@ -348,21 +332,14 @@ impl MergeWith<BorderRule> for FocusRing {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Shadow {
-    #[knuffel(child)]
     pub on: bool,
-    #[knuffel(child, default = Self::default().offset)]
     pub offset: ShadowOffset,
-    #[knuffel(child, unwrap(argument), default = Self::default().softness)]
-    pub softness: FloatOrInt<0, 1024>,
-    #[knuffel(child, unwrap(argument), default = Self::default().spread)]
-    pub spread: FloatOrInt<-1024, 1024>,
-    #[knuffel(child, unwrap(argument), default = Self::default().draw_behind_window)]
+    pub softness: f64,
+    pub spread: f64,
     pub draw_behind_window: bool,
-    #[knuffel(child, default = Self::default().color)]
     pub color: Color,
-    #[knuffel(child)]
     pub inactive_color: Option<Color>,
 }
 
@@ -374,8 +351,8 @@ impl Default for Shadow {
                 x: FloatOrInt(0.),
                 y: FloatOrInt(5.),
             },
-            softness: FloatOrInt(30.),
-            spread: FloatOrInt(5.),
+            softness: 30.,
+            spread: 5.,
             draw_behind_window: false,
             color: Color::from_rgba8_unpremul(0, 0, 0, 0x77),
             inactive_color: None,
@@ -390,7 +367,7 @@ impl MergeWith<ShadowRule> for Shadow {
             self.on = false;
         }
 
-        merge_clone!((self, part), softness, spread);
+        merge!((self, part), softness, spread);
 
         merge_clone!((self, part), offset, draw_behind_window, color);
 
@@ -440,8 +417,8 @@ impl From<WorkspaceShadow> for Shadow {
         Self {
             on: !value.off,
             offset: value.offset,
-            softness: value.softness,
-            spread: value.spread,
+            softness: value.softness.0,
+            spread: value.spread.0,
             draw_behind_window: false,
             color: value.color,
             inactive_color: None,
@@ -449,26 +426,99 @@ impl From<WorkspaceShadow> for Shadow {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabIndicator {
+    pub off: bool,
+    pub hide_when_single_tab: bool,
+    pub place_within_column: bool,
+    pub gap: f64,
+    pub width: f64,
+    pub length: TabIndicatorLength,
+    pub position: TabIndicatorPosition,
+    pub gaps_between_tabs: f64,
+    pub corner_radius: f64,
+    pub active_color: Option<Color>,
+    pub inactive_color: Option<Color>,
+    pub urgent_color: Option<Color>,
+    pub active_gradient: Option<Gradient>,
+    pub inactive_gradient: Option<Gradient>,
+    pub urgent_gradient: Option<Gradient>,
+}
+
+impl Default for TabIndicator {
+    fn default() -> Self {
+        Self {
+            off: false,
+            hide_when_single_tab: false,
+            place_within_column: false,
+            gap: 5.,
+            width: 4.,
+            length: TabIndicatorLength {
+                total_proportion: Some(0.5),
+            },
+            position: TabIndicatorPosition::Left,
+            gaps_between_tabs: 0.,
+            corner_radius: 0.,
+            active_color: None,
+            inactive_color: None,
+            urgent_color: None,
+            active_gradient: None,
+            inactive_gradient: None,
+            urgent_gradient: None,
+        }
+    }
+}
+
+impl MergeWith<TabIndicatorPart> for TabIndicator {
+    fn merge_with(&mut self, part: &TabIndicatorPart) {
+        self.off |= part.off;
+        if part.on {
+            self.off = false;
+        }
+
+        merge!(
+            (self, part),
+            hide_when_single_tab,
+            place_within_column,
+            gap,
+            width,
+            gaps_between_tabs,
+            corner_radius,
+        );
+
+        merge_clone!((self, part), length, position);
+
+        merge_color_gradient_opt!(
+            (self, part),
+            (active_color, active_gradient),
+            (inactive_color, inactive_gradient),
+            (urgent_color, urgent_gradient),
+        );
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct TabIndicatorPart {
     #[knuffel(child)]
     pub off: bool,
     #[knuffel(child)]
-    pub hide_when_single_tab: bool,
+    pub on: bool,
     #[knuffel(child)]
-    pub place_within_column: bool,
-    #[knuffel(child, unwrap(argument), default = Self::default().gap)]
-    pub gap: FloatOrInt<-65535, 65535>,
-    #[knuffel(child, unwrap(argument), default = Self::default().width)]
-    pub width: FloatOrInt<0, 65535>,
-    #[knuffel(child, default = Self::default().length)]
-    pub length: TabIndicatorLength,
-    #[knuffel(child, unwrap(argument), default = Self::default().position)]
-    pub position: TabIndicatorPosition,
-    #[knuffel(child, unwrap(argument), default = Self::default().gaps_between_tabs)]
-    pub gaps_between_tabs: FloatOrInt<0, 65535>,
-    #[knuffel(child, unwrap(argument), default = Self::default().corner_radius)]
-    pub corner_radius: FloatOrInt<0, 65535>,
+    pub hide_when_single_tab: Option<Flag>,
+    #[knuffel(child)]
+    pub place_within_column: Option<Flag>,
+    #[knuffel(child, unwrap(argument))]
+    pub gap: Option<FloatOrInt<-65535, 65535>>,
+    #[knuffel(child, unwrap(argument))]
+    pub width: Option<FloatOrInt<0, 65535>>,
+    #[knuffel(child)]
+    pub length: Option<TabIndicatorLength>,
+    #[knuffel(child, unwrap(argument))]
+    pub position: Option<TabIndicatorPosition>,
+    #[knuffel(child, unwrap(argument))]
+    pub gaps_between_tabs: Option<FloatOrInt<0, 65535>>,
+    #[knuffel(child, unwrap(argument))]
+    pub corner_radius: Option<FloatOrInt<0, 65535>>,
     #[knuffel(child)]
     pub active_color: Option<Color>,
     #[knuffel(child)]
@@ -481,30 +531,6 @@ pub struct TabIndicator {
     pub inactive_gradient: Option<Gradient>,
     #[knuffel(child)]
     pub urgent_gradient: Option<Gradient>,
-}
-
-impl Default for TabIndicator {
-    fn default() -> Self {
-        Self {
-            off: false,
-            hide_when_single_tab: false,
-            place_within_column: false,
-            gap: FloatOrInt(5.),
-            width: FloatOrInt(4.),
-            length: TabIndicatorLength {
-                total_proportion: Some(0.5),
-            },
-            position: TabIndicatorPosition::Left,
-            gaps_between_tabs: FloatOrInt(0.),
-            corner_radius: FloatOrInt(0.),
-            active_color: None,
-            inactive_color: None,
-            urgent_color: None,
-            active_gradient: None,
-            inactive_gradient: None,
-            urgent_gradient: None,
-        }
-    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -521,13 +547,10 @@ pub enum TabIndicatorPosition {
     Bottom,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InsertHint {
-    #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child, default = Self::default().color)]
     pub color: Color,
-    #[knuffel(child)]
     pub gradient: Option<Gradient>,
 }
 
@@ -539,6 +562,29 @@ impl Default for InsertHint {
             gradient: None,
         }
     }
+}
+
+impl MergeWith<InsertHintPart> for InsertHint {
+    fn merge_with(&mut self, part: &InsertHintPart) {
+        self.off |= part.off;
+        if part.on {
+            self.off = false;
+        }
+
+        merge_color_gradient!((self, part), (color, gradient));
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct InsertHintPart {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child)]
+    pub color: Option<Color>,
+    #[knuffel(child)]
+    pub gradient: Option<Gradient>,
 }
 
 #[derive(knuffel::DecodeScalar, Debug, Clone, Copy, PartialEq, Eq)]
@@ -1016,16 +1062,9 @@ mod tests {
     #[test]
     fn test_border_rule_on_off_merging() {
         fn is_on(config: &str, rules: &[&str]) -> String {
-            let mut resolved = BorderRule {
-                off: false,
-                on: false,
-                width: None,
-                active_color: None,
-                inactive_color: None,
-                urgent_color: None,
-                active_gradient: None,
-                inactive_gradient: None,
-                urgent_gradient: None,
+            let mut resolved = Border {
+                off: config == "off",
+                ..Default::default()
             };
 
             for rule in rules.iter().copied() {
@@ -1038,14 +1077,7 @@ mod tests {
                 resolved.merge_with(&rule);
             }
 
-            let mut border = Border {
-                off: config == "off",
-                ..Default::default()
-            };
-
-            border.merge_with(&resolved);
-
-            if border.off { "off" } else { "on" }.to_owned()
+            if resolved.off { "off" } else { "on" }.to_owned()
         }
 
         assert_snapshot!(is_on("off", &[]), @"off");
@@ -1095,12 +1127,10 @@ mod tests {
         )
         .unwrap();
 
-        let mut border_rule = BorderRule::default();
+        let mut border = config.resolve_layout().border;
         for rule in &config.window_rules {
-            border_rule.merge_with(&rule.border);
+            border.merge_with(&rule.border);
         }
-
-        let border = config.layout.border.merged_with(&border_rule);
 
         // Gradient should be None because it's overwritten.
         assert_debug_snapshot!(
@@ -1166,14 +1196,12 @@ mod tests {
         )
         .unwrap();
 
-        let mut border_rule = BorderRule::default();
+        let mut border = config.resolve_layout().border;
         let mut tab_indicator_rule = TabIndicatorRule::default();
         for rule in &config.window_rules {
-            border_rule.merge_with(&rule.border);
+            border.merge_with(&rule.border);
             tab_indicator_rule.merge_with(&rule.tab_indicator);
         }
-
-        let border = config.layout.border.merged_with(&border_rule);
 
         // Gradient should be None because it's overwritten.
         assert_debug_snapshot!(
