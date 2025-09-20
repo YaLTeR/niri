@@ -8,6 +8,9 @@ use std::path::{Path, PathBuf};
 
 use miette::{Context as _, IntoDiagnostic as _};
 
+#[macro_use]
+pub mod macros;
+
 pub mod animations;
 pub mod appearance;
 pub mod binds;
