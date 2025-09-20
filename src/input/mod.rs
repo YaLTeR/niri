@@ -4032,6 +4032,11 @@ fn should_intercept_key(
         }
     }
 
+    if pressed {
+        // Mark all existing suppressions as invalid release binds
+        suppressed_keys.iter_mut().for_each(|(_, v)| *v = false);
+    }
+
     // If the bind is modifer-only, we need to forward and handle it. Otherwise, only forward.
     let is_compositor_trigger = final_bind
         .as_ref()
@@ -4043,23 +4048,18 @@ fn should_intercept_key(
             if is_inhibiting_shortcuts && bind.allow_inhibiting {
                 ShouldInterceptResult::Forward
             } else {
+                suppressed_keys.insert(key_code, true);
                 // If this is a release bind, intercept it and mark supressed but don't handle it
                 if bind.release {
-                    suppressed_keys.insert(key_code, true);
                     if is_compositor_trigger {
                         ShouldInterceptResult::Forward
                     } else {
                         ShouldInterceptResult::InterceptOnly
                     }
+                } else if is_compositor_trigger {
+                    ShouldInterceptResult::ForwardAndHandle(bind)
                 } else {
-                    // Since we're handling a bind, set all other suppressed keys to false
-                    suppressed_keys.iter_mut().for_each(|(_, v)| *v = false);
-                    suppressed_keys.insert(key_code, true);
-                    if is_compositor_trigger {
-                        ShouldInterceptResult::ForwardAndHandle(bind)
-                    } else {
-                        ShouldInterceptResult::InterceptAndHandle(bind)
-                    }
+                    ShouldInterceptResult::InterceptAndHandle(bind)
                 }
             }
         }
@@ -5107,8 +5107,8 @@ mod tests {
         assert_matches!(result, ShouldInterceptResult::InterceptOnly);
         assert!(suppressed_keys.is_empty());
 
-        // Test case: The same thing, but with two release bindings.
-        // The first action should run since the second didn't run in-between.
+        // Test case: Press release binding, press another release binding, release first key
+        // Neither binding should trigger because the two together are not a binding
         mods.logo = false;
 
         // Press first key (toggle overview; release binding)
@@ -5128,7 +5128,7 @@ mod tests {
         assert!(suppressed_keys.contains_key(&MOD_KEY_CODE));
         assert!(suppressed_keys.contains_key(&CLOSE_KEY_CODE));
 
-        // Release first key - should trigger action
+        // Release first key - should not trigger action
         let result = process_mod_key(
             &mut suppressed_keys,
             &bindings,
@@ -5136,13 +5136,7 @@ mod tests {
             &mut mods,
             false,
         );
-        assert_matches!(
-            result,
-            ShouldInterceptResult::ForwardAndHandle(Bind {
-                action: Action::ToggleOverview,
-                ..
-            })
-        );
+        assert_matches!(result, ShouldInterceptResult::Forward);
         assert!(suppressed_keys.contains_key(&CLOSE_KEY_CODE));
 
         // Release second key - should be intercepted but not trigger action
