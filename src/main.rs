@@ -258,6 +258,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.niri.config_error_notification.show_created(path);
     }
 
+    niri::utils::realtime::set_rt_scheduling();
+
     // Run the compositor.
     event_loop
         .run(None, &mut state, |state| state.refresh_and_flush_clients())
