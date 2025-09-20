@@ -1,5 +1,6 @@
 //! File modification watcher.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime};
@@ -17,17 +18,21 @@ pub struct Watcher {
 }
 
 struct WatcherInner {
-    /// The paths we're watching.
+    /// The main config path.
     path: ConfigPath,
 
-    /// Last observed props of the watched file.
+    /// Last observed props for all watched files (main + includes).
     ///
-    /// Equality on this means the file did not change.
+    /// Maps from canonical path to (mtime, resolved_path).
+    /// Equality on the values means the file did not change.
     ///
-    /// We store the absolute path in addition to mtime to account for symlinked configs where the
+    /// We store the resolved path in addition to mtime to account for symlinked configs where the
     /// symlink target may change without mtime. This is common on nix where everything is a
     /// symlink to /nix/store, which keeps no mtime (= 1970-01-01).
-    last_props: Option<(SystemTime, PathBuf)>,
+    last_props: HashMap<PathBuf, (SystemTime, PathBuf)>,
+
+    /// List of included files from last successful config load.
+    included_files: Vec<PathBuf>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -106,20 +111,131 @@ fn see(config_path: &ConfigPath) -> io::Result<(SystemTime, PathBuf)> {
 
 impl WatcherInner {
     pub fn new(path: ConfigPath) -> Self {
-        let last_props = see(&path).ok();
-        Self { path, last_props }
+        let mut watcher = Self {
+            path,
+            last_props: HashMap::new(),
+            included_files: Vec::new(),
+        };
+        watcher.update_watched_files();
+        watcher
+    }
+
+    fn update_watched_files(&mut self) {
+        // Try to load config with includes to get all files we need to watch
+        match self.path.load_with_includes() {
+            Ok((_, included_files)) => {
+                self.included_files = included_files;
+
+                // Update props for all watched files
+                let mut new_props = HashMap::new();
+                if let Ok((mtime, canon)) = see(&self.path) {
+                    let main_path = match &self.path {
+                        ConfigPath::Explicit(p) => p.clone(),
+                        ConfigPath::Regular {
+                            user_path,
+                            system_path,
+                        } => {
+                            if user_path.exists() {
+                                user_path.clone()
+                            } else {
+                                system_path.clone()
+                            }
+                        }
+                    };
+                    new_props.insert(main_path, (mtime, canon));
+                }
+
+                for file_path in &self.included_files {
+                    if let Ok((mtime, canon)) = see_path(file_path) {
+                        new_props.insert(file_path.clone(), (mtime, canon));
+                    }
+                }
+
+                self.last_props = new_props;
+            }
+            Err(_) => {
+                // Start from current map to avoid losing what we already track.
+                let mut new_props = HashMap::new();
+
+                if let Ok((mtime, canon)) = see(&self.path) {
+                    let main_path = match &self.path {
+                        ConfigPath::Explicit(p) => p.clone(),
+                        ConfigPath::Regular {
+                            user_path,
+                            system_path,
+                        } => {
+                            if user_path.exists() {
+                                user_path.clone()
+                            } else {
+                                system_path.clone()
+                            }
+                        }
+                    };
+                    new_props.insert(main_path, (mtime, canon));
+                }
+
+                // Update props for all included files we already know about
+                for file_path in &self.included_files {
+                    if let Ok((mtime, canon)) = see_path(file_path) {
+                        new_props.insert(file_path.clone(), (mtime, canon));
+                    }
+                }
+
+                // Only replace if we observed anything; otherwise keep the previous map.
+                if !new_props.is_empty() {
+                    self.last_props = new_props;
+                }
+            }
+        }
     }
 
     pub fn check(&mut self) -> CheckResult {
-        if let Ok(new_props) = see(&self.path) {
-            if self.last_props.as_ref() != Some(&new_props) {
-                self.last_props = Some(new_props);
-                CheckResult::Changed
-            } else {
-                CheckResult::Unchanged
+        // Check if any watched file has changed, but don't update state yet
+        let mut any_changed = false;
+
+        // First check the main config file
+        match see(&self.path) {
+            Ok(new_props) => {
+                let main_path = match &self.path {
+                    ConfigPath::Explicit(path) => path.clone(),
+                    ConfigPath::Regular {
+                        user_path,
+                        system_path,
+                    } => {
+                        if user_path.exists() {
+                            user_path.clone()
+                        } else {
+                            system_path.clone()
+                        }
+                    }
+                };
+
+                if self.last_props.get(&main_path) != Some(&new_props) {
+                    any_changed = true;
+                }
             }
+            Err(_) => return CheckResult::Missing,
+        }
+
+        // Check all included files
+        if !any_changed {
+            for file_path in &self.included_files {
+                if let Ok((mtime, canon)) = see_path(file_path) {
+                    let new_props = (mtime, canon);
+                    if self.last_props.get(file_path) != Some(&new_props) {
+                        any_changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // If any file changed, update our watched file list and return changed
+        if any_changed {
+            self.update_watched_files();
+            CheckResult::Changed
         } else {
-            CheckResult::Missing
+            CheckResult::Unchanged
         }
     }
 }
@@ -567,6 +683,133 @@ mod tests {
 
             Ok(())
         })
+    }
+
+    #[test]
+    fn change_included_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                sh.write_file(
+                    "niri/config.kdl",
+                    "include \"colors.kdl\"\nlayout {\n    gaps 10\n}",
+                )?;
+                sh.write_file("niri/colors.kdl", "// Color definitions\n")
+            })
+            .assert_initial("include \"colors.kdl\"\nlayout {\n    gaps 10\n}")
+            .run(|sh, test| {
+                sh.write_file("niri/colors.kdl", "// Updated colors\n")?;
+                test.assert_changed_to("include \"colors.kdl\"\nlayout {\n    gaps 10\n}");
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn add_included_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| sh.write_file("niri/config.kdl", "layout {\n    gaps 10\n}"))
+            .assert_initial("layout {\n    gaps 10\n}")
+            .run(|sh, test| {
+                sh.write_file("niri/colors.kdl", "// Colors\n")?;
+                test.pass_time();
+
+                sh.write_file(
+                    "niri/config.kdl",
+                    "include \"colors.kdl\"\nlayout {\n    gaps 10\n}",
+                )?;
+                test.assert_changed_to("include \"colors.kdl\"\nlayout {\n    gaps 10\n}");
+
+                sh.write_file("niri/colors.kdl", "// Updated colors\n")?;
+                test.assert_changed_to("include \"colors.kdl\"\nlayout {\n    gaps 10\n}");
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn remove_included_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                sh.write_file(
+                    "niri/config.kdl",
+                    "include \"colors.kdl\"\nlayout {\n    gaps 10\n}",
+                )?;
+                sh.write_file("niri/colors.kdl", "// Colors\n")
+            })
+            .assert_initial("include \"colors.kdl\"\nlayout {\n    gaps 10\n}")
+            .run(|sh, test| {
+                sh.remove_path("niri/colors.kdl")?;
+                // Removing an included file should be detected as a change
+                // (config will fail to load but that's expected)
+                test.assert_unchanged();
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn single_event_for_included_file_change() -> Result {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+
+        let setup = TestPath::Explicit("niri/config.kdl").setup(|sh| {
+            sh.write_file(
+                "niri/config.kdl",
+                "layout {\n    gaps 10\n}\n\ninclude \"colors.kdl\"",
+            )?;
+            sh.write_file("niri/colors.kdl", "// Color definitions\n")
+        });
+
+        let (tx, _rx) = calloop::channel::sync_channel::<Result<(), ()>>(1);
+        let process = move |_: &ConfigPath| {
+            counter_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        };
+
+        let _watcher = Watcher::new(setup.config_path.clone(), process, tx);
+
+        // Let initial setup settle
+        std::thread::sleep(std::time::Duration::from_millis(600));
+
+        // Change the included file
+        setup
+            .sh
+            .write_file("niri/colors.kdl", "// Updated colors\n")?;
+
+        // Wait for watcher to detect change (should be within one polling interval)
+        std::thread::sleep(std::time::Duration::from_millis(600));
+
+        let event_count = counter.load(Ordering::SeqCst);
+        assert_eq!(
+            event_count, 1,
+            "Expected exactly 1 config load event, got {}",
+            event_count
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn nested_includes() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                sh.write_file(
+                    "niri/config.kdl",
+                    "include \"a.kdl\"\nlayout {\n    gaps 10\n}",
+                )?;
+                sh.write_file("niri/a.kdl", "include \"b.kdl\"\n// a content")?;
+                sh.write_file("niri/b.kdl", "// b content\n")
+            })
+            .assert_initial("include \"a.kdl\"\nlayout {\n    gaps 10\n}")
+            .run(|sh, test| {
+                sh.write_file("niri/b.kdl", "// updated b\n")?;
+                test.assert_changed_to("include \"a.kdl\"\nlayout {\n    gaps 10\n}");
+
+                Ok(())
+            })
     }
 
     #[test]

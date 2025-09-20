@@ -4,12 +4,20 @@ use knuffel::errors::DecodeError;
 use miette::miette;
 use regex::Regex;
 
+use crate::mergeable::Mergeable;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Percent(pub f64);
 
 // MIN and MAX generics are only used during parsing to check the value.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct FloatOrInt<const MIN: i32, const MAX: i32>(pub f64);
+
+impl<const MIN: i32, const MAX: i32> Mergeable for FloatOrInt<MIN, MAX> {
+    fn merge_with(&mut self, other: &Self) {
+        self.0 = other.0;
+    }
+}
 
 /// `Regex` that implements `PartialEq` by its string form.
 #[derive(Debug, Clone)]

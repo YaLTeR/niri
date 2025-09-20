@@ -641,7 +641,7 @@ impl Options {
             .unwrap_or(Some(PresetSize::Proportion(0.5)));
 
         Self {
-            gaps: layout.gaps.0,
+            gaps: layout.gaps.value().0,
             struts: layout.struts,
             focus_ring: layout.focus_ring,
             border: layout.border,
@@ -657,9 +657,9 @@ impl Options {
             animations: config.animations.clone(),
             gestures: config.gestures,
             overview: config.overview,
-            disable_resize_throttling: config.debug.disable_resize_throttling,
-            disable_transactions: config.debug.disable_transactions,
-            deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
+            disable_resize_throttling: *config.debug.disable_resize_throttling,
+            disable_transactions: *config.debug.disable_transactions,
+            deactivate_unfocused_windows: *config.debug.deactivate_unfocused_windows,
             preset_window_heights,
         }
     }
@@ -668,8 +668,8 @@ impl Options {
         let round = |logical: f64| round_logical_in_physical_max1(scale, logical);
 
         self.gaps = round(self.gaps);
-        self.focus_ring.width = FloatOrInt(round(self.focus_ring.width.0));
-        self.border.width = FloatOrInt(round(self.border.width.0));
+        self.focus_ring.width = FloatOrInt(round(self.focus_ring.width.value().0)).into();
+        self.border.width = FloatOrInt(round(self.border.width.value().0)).into();
 
         self
     }
@@ -5251,7 +5251,7 @@ impl<W: LayoutElement> Layout<W> {
                 let rules = window.rules();
                 let border = rules.border.resolve_against(self.options.border);
                 if !border.off {
-                    fixed += border.width.0 * 2.;
+                    fixed += border.width.value().0 * 2.;
                 }
 
                 ColumnWidth::Fixed(fixed)

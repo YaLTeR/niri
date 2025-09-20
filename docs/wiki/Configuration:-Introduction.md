@@ -78,33 +78,33 @@ input {
 
 #### Sections
 
-Most sections cannot be repeated. For example:
+Most sections that are repeated will be merged top-down so that the "last one wins":
 
 ```kdl
-// This is valid: every section appears once.
 input {
-    keyboard {
-        // ...
-    }
-
     touchpad {
-        // ...
+        scroll-factor 0.3
+    }
+}
+
+// Scroll factor becomes 0.75, the previous value 0.3 is overridden
+input {
+    touchpad {
+        scroll-factor 0.75
     }
 }
 ```
 
+Some configurations are not mergeable, for example environment:
+
 ```kdl,must-fail
-// This is NOT valid: input section appears twice.
-input {
-    keyboard {
-        // ...
-    }
+// This is NOT valid: environment cannot appear twice
+environment {
+    DISPLAY ":0"
 }
 
-input {
-    touchpad {
-        // ...
-    }
+environment {
+    DISPLAY: "1"
 }
 ```
 

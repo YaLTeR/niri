@@ -487,7 +487,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let size = match resolve_preset_size(size, &self.options, working_size.w, extra.w) {
                 ResolvedSize::Tile(mut size) => {
                     if !border.off {
-                        size -= border.width.0 * 2.;
+                        size -= border.width.value().0 * 2.;
                     }
                     size
                 }
@@ -501,14 +501,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let mut full_height = self.working_area.size.h - self.options.gaps * 2.;
         if !border.off {
-            full_height -= border.width.0 * 2.;
+            full_height -= border.width.value().0 * 2.;
         }
 
         let height = if let Some(height) = height {
             let height = match resolve_preset_size(height, &self.options, working_size.h, extra.h) {
                 ResolvedSize::Tile(mut size) => {
                     if !border.off {
-                        size -= border.width.0 * 2.;
+                        size -= border.width.value().0 * 2.;
                     }
                     size
                 }
@@ -3033,14 +3033,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Delay starting the gesture a bit to avoid unwanted movement when dragging across
         // monitors.
-        let delay = Duration::from_millis(u64::from(config.delay_ms));
+        let delay = Duration::from_millis(u64::from(config.resolved_delay_ms()));
         if now.saturating_sub(nonzero_start) < delay {
             return true;
         }
 
         let time_delta = now.saturating_sub(last_time).as_secs_f64();
 
-        let delta = delta * time_delta * config.max_speed.0;
+        let delta = delta * time_delta * config.resolved_max_speed().0;
 
         gesture.tracker.push(delta, now);
 
@@ -3831,7 +3831,7 @@ impl<W: LayoutElement> Column<W> {
 
         // Animate the tab indicator for new columns.
         if display_mode == ColumnDisplay::Tabbed
-            && !rv.options.tab_indicator.hide_when_single_tab
+            && !*rv.options.tab_indicator.hide_when_single_tab
             && !rv.is_fullscreen()
         {
             // Usually new columns are created together with window movement actions. For new
@@ -5090,7 +5090,7 @@ impl<W: LayoutElement> Column<W> {
                 if self.display_mode == ColumnDisplay::Tabbed
                     && !self.is_fullscreen()
                     && self.tiles.len() == 1
-                    && !self.tab_indicator.config().hide_when_single_tab
+                    && !*self.tab_indicator.config().hide_when_single_tab
                 {
                     self.tab_indicator.start_open_animation(
                         self.clock.clone(),
@@ -5279,7 +5279,7 @@ fn compute_toplevel_bounds(
 ) -> Size<i32, Logical> {
     let mut border = 0.;
     if !border_config.off {
-        border = border_config.width.0 * 2.;
+        border = border_config.width.value().0 * 2.;
     }
 
     Size::from((
