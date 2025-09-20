@@ -293,7 +293,7 @@ impl<W: LayoutElement> Monitor<W> {
             active_workspace_idx: 0,
             previous_workspace_id: None,
             insert_hint: None,
-            insert_hint_element: InsertHintElement::new(options.insert_hint),
+            insert_hint_element: InsertHintElement::new(options.layout.insert_hint),
             insert_hint_render_loc: None,
             overview_open: false,
             overview_progress: None,
@@ -463,7 +463,7 @@ impl<W: LayoutElement> Monitor<W> {
         if workspace_idx == self.workspaces.len() - 1 {
             self.add_workspace_bottom();
         }
-        if self.options.empty_workspace_above_first && workspace_idx == 0 {
+        if self.options.layout.empty_workspace_above_first && workspace_idx == 0 {
             self.add_workspace_top();
             workspace_idx += 1;
         }
@@ -522,7 +522,7 @@ impl<W: LayoutElement> Monitor<W> {
             self.add_workspace_bottom();
         }
 
-        if self.options.empty_workspace_above_first && workspace_idx == 0 {
+        if self.options.layout.empty_workspace_above_first && workspace_idx == 0 {
             self.add_workspace_top();
             workspace_idx += 1;
         }
@@ -562,7 +562,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn clean_up_workspaces(&mut self) {
         assert!(self.workspace_switch.is_none());
 
-        let range_start = if self.options.empty_workspace_above_first {
+        let range_start = if self.options.layout.empty_workspace_above_first {
             1
         } else {
             0
@@ -582,7 +582,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         // Special case handling when empty_workspace_above_first is set and all workspaces
         // are empty.
-        if self.options.empty_workspace_above_first && self.workspaces.len() == 2 {
+        if self.options.layout.empty_workspace_above_first && self.workspaces.len() == 2 {
             assert!(!self.workspaces[0].has_windows_or_name());
             assert!(!self.workspaces[1].has_windows_or_name());
             self.workspaces.remove(1);
@@ -1023,10 +1023,11 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn update_config(&mut self, options: Rc<Options>) {
-        if self.options.empty_workspace_above_first != options.empty_workspace_above_first
+        if self.options.layout.empty_workspace_above_first
+            != options.layout.empty_workspace_above_first
             && self.workspaces.len() > 1
         {
-            if options.empty_workspace_above_first {
+            if options.layout.empty_workspace_above_first {
                 self.add_workspace_top();
             } else if self.workspace_switch.is_none() && self.active_workspace_idx != 0 {
                 self.workspaces.remove(0);
@@ -1038,7 +1039,8 @@ impl<W: LayoutElement> Monitor<W> {
             ws.update_config(options.clone());
         }
 
-        self.insert_hint_element.update_config(options.insert_hint);
+        self.insert_hint_element
+            .update_config(options.layout.insert_hint);
 
         self.options = options;
     }
@@ -1074,7 +1076,7 @@ impl<W: LayoutElement> Monitor<W> {
             self.add_workspace_bottom();
         }
 
-        if self.options.empty_workspace_above_first && self.active_workspace_idx == 0 {
+        if self.options.layout.empty_workspace_above_first && self.active_workspace_idx == 0 {
             self.add_workspace_top();
             new_idx += 1;
         }
@@ -1100,7 +1102,7 @@ impl<W: LayoutElement> Monitor<W> {
             self.add_workspace_bottom();
         }
 
-        if self.options.empty_workspace_above_first && new_idx == 0 {
+        if self.options.layout.empty_workspace_above_first && new_idx == 0 {
             self.add_workspace_top();
             new_idx += 1;
         }
@@ -1132,7 +1134,7 @@ impl<W: LayoutElement> Monitor<W> {
                 self.add_workspace_bottom();
             }
 
-            if self.options.empty_workspace_above_first && old_idx == 0 {
+            if self.options.layout.empty_workspace_above_first && old_idx == 0 {
                 self.add_workspace_top();
                 new_idx += 1;
             }
@@ -1142,7 +1144,7 @@ impl<W: LayoutElement> Monitor<W> {
                 self.add_workspace_bottom();
             }
 
-            if self.options.empty_workspace_above_first && new_idx == 0 {
+            if self.options.layout.empty_workspace_above_first && new_idx == 0 {
                 self.add_workspace_top();
                 new_idx += 1;
             }
@@ -1464,7 +1466,7 @@ impl<W: LayoutElement> Monitor<W> {
     ) -> impl Iterator<Item = MonitorRenderElement<R>> {
         let mut rv = None;
 
-        if !self.options.insert_hint.off {
+        if !self.options.layout.insert_hint.off {
             if let Some(render_loc) = self.insert_hint_render_loc {
                 if let InsertWorkspace::NewAt(_) = render_loc.workspace {
                     let iter = self
@@ -1525,7 +1527,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         // Draw the insert hint.
         let mut insert_hint = None;
-        if !self.options.insert_hint.off {
+        if !self.options.layout.insert_hint.off {
             if let Some(render_loc) = self.insert_hint_render_loc {
                 if let InsertWorkspace::Existing(workspace_id) = render_loc.workspace {
                     insert_hint = Some((

@@ -58,14 +58,17 @@ impl Tile {
         let Args { size, clock } = args;
 
         let options = Options {
-            focus_ring: niri_config::FocusRing {
-                off: true,
-                ..Default::default()
-            },
-            border: niri_config::Border {
-                off: false,
-                width: 32.,
-                active_color: Color::from_rgba8_unpremul(255, 163, 72, 255),
+            layout: niri_config::Layout {
+                focus_ring: niri_config::FocusRing {
+                    off: true,
+                    ..Default::default()
+                },
+                border: niri_config::Border {
+                    off: false,
+                    width: 32.,
+                    active_color: Color::from_rgba8_unpremul(255, 163, 72, 255),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             ..Default::default()

@@ -754,7 +754,7 @@ impl<W: LayoutElement> Workspace<W> {
             Some(Some(width)) => Some(width),
             Some(None) => None,
             None if is_floating => None,
-            None => self.options.default_column_width,
+            None => self.options.layout.default_column_width,
         }
     }
 
@@ -1272,11 +1272,12 @@ impl<W: LayoutElement> Workspace<W> {
             // Come up with a default floating position close to the tile position.
             let stored_or_default = self.floating.stored_or_default_tile_pos(&removed.tile);
             if stored_or_default.is_none() {
-                let offset = if self.options.center_focused_column == CenterFocusedColumn::Always {
-                    Point::from((0., 0.))
-                } else {
-                    Point::from((50., 50.))
-                };
+                let offset =
+                    if self.options.layout.center_focused_column == CenterFocusedColumn::Always {
+                        Point::from((0., 0.))
+                    } else {
+                        Point::from((50., 50.))
+                    };
                 let pos = render_pos + offset;
                 let size = removed.tile.tile_size();
                 let pos = self.floating.clamp_within_working_area(pos, size);

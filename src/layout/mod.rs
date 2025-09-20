@@ -40,8 +40,7 @@ use std::time::Duration;
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
 use niri_config::utils::MergeWith as _;
 use niri_config::{
-    CenterFocusedColumn, Config, CornerRadius, PresetSize, Struts, Workspace as WorkspaceConfig,
-    WorkspaceReference,
+    Config, CornerRadius, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use scrolling::{Column, ColumnWidth};
@@ -334,27 +333,9 @@ enum MonitorSet<W: LayoutElement> {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Options {
-    /// Padding around windows in logical pixels.
-    pub gaps: f64,
-    /// Extra padding around the working area in logical pixels.
-    pub struts: Struts,
-    pub focus_ring: niri_config::FocusRing,
-    pub border: niri_config::Border,
-    pub shadow: niri_config::Shadow,
-    pub tab_indicator: niri_config::TabIndicator,
-    pub insert_hint: niri_config::InsertHint,
-    pub center_focused_column: CenterFocusedColumn,
-    pub always_center_single_column: bool,
-    pub empty_workspace_above_first: bool,
-    pub default_column_display: ColumnDisplay,
-    /// Column or window widths that `toggle_width()` switches between.
-    pub preset_column_widths: Vec<PresetSize>,
-    /// Initial width for new columns.
-    pub default_column_width: Option<PresetSize>,
-    /// Window height that `toggle_window_height()` switches between.
-    pub preset_window_heights: Vec<PresetSize>,
+    pub layout: niri_config::Layout,
     pub animations: niri_config::Animations,
     pub gestures: niri_config::Gestures,
     pub overview: niri_config::Overview,
@@ -362,41 +343,6 @@ pub struct Options {
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
     pub deactivate_unfocused_windows: bool,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Self {
-            gaps: 16.,
-            struts: Default::default(),
-            focus_ring: Default::default(),
-            border: Default::default(),
-            shadow: Default::default(),
-            tab_indicator: Default::default(),
-            insert_hint: Default::default(),
-            center_focused_column: Default::default(),
-            always_center_single_column: false,
-            empty_workspace_above_first: false,
-            default_column_display: ColumnDisplay::Normal,
-            preset_column_widths: vec![
-                PresetSize::Proportion(1. / 3.),
-                PresetSize::Proportion(0.5),
-                PresetSize::Proportion(2. / 3.),
-            ],
-            default_column_width: None,
-            animations: Default::default(),
-            gestures: Default::default(),
-            overview: Default::default(),
-            disable_resize_throttling: false,
-            disable_transactions: false,
-            preset_window_heights: vec![
-                PresetSize::Proportion(1. / 3.),
-                PresetSize::Proportion(0.5),
-                PresetSize::Proportion(2. / 3.),
-            ],
-            deactivate_unfocused_windows: false,
-        }
-    }
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -620,49 +566,23 @@ impl HitType {
 
 impl Options {
     fn from_config(config: &Config) -> Self {
-        let layout = config.resolve_layout();
-
-        let preset_column_widths = if layout.preset_column_widths.is_empty() {
-            Options::default().preset_column_widths
-        } else {
-            layout.preset_column_widths.clone()
-        };
-        let preset_window_heights = if layout.preset_window_heights.is_empty() {
-            Options::default().preset_window_heights
-        } else {
-            layout.preset_window_heights.clone()
-        };
-
         Self {
-            gaps: layout.gaps,
-            struts: layout.struts,
-            focus_ring: layout.focus_ring,
-            border: layout.border,
-            shadow: layout.shadow,
-            tab_indicator: layout.tab_indicator,
-            insert_hint: layout.insert_hint,
-            center_focused_column: layout.center_focused_column,
-            always_center_single_column: layout.always_center_single_column,
-            empty_workspace_above_first: layout.empty_workspace_above_first,
-            default_column_display: layout.default_column_display,
-            preset_column_widths,
-            default_column_width: layout.default_column_width,
+            layout: config.resolve_layout(),
             animations: config.animations.clone(),
             gestures: config.gestures,
             overview: config.overview,
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
             deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
-            preset_window_heights,
         }
     }
 
     fn adjusted_for_scale(mut self, scale: f64) -> Self {
         let round = |logical: f64| round_logical_in_physical_max1(scale, logical);
 
-        self.gaps = round(self.gaps);
-        self.focus_ring.width = round(self.focus_ring.width);
-        self.border.width = round(self.border.width);
+        self.layout.gaps = round(self.layout.gaps);
+        self.layout.focus_ring.width = round(self.layout.focus_ring.width);
+        self.layout.border.width = round(self.layout.border.width);
 
         self
     }
@@ -775,7 +695,7 @@ impl<W: LayoutElement> Layout<W> {
                             // workspaces set up across multiple monitors. Without this check, the
                             // first monitor to connect can end up with the first empty workspace
                             // focused instead of the first named workspace.
-                            && !(self.options.empty_workspace_above_first
+                            && !(self.options.layout.empty_workspace_above_first
                                 && primary.active_workspace_idx == 1)
                         {
                             primary.active_workspace_idx =
@@ -790,7 +710,7 @@ impl<W: LayoutElement> Layout<W> {
                 // takes care of this.
 
                 if stopped_primary_ws_switch
-                    || (primary.options.empty_workspace_above_first
+                    || (primary.options.layout.empty_workspace_above_first
                         && primary.workspaces.len() == 2)
                 {
                     primary.clean_up_workspaces();
@@ -810,7 +730,7 @@ impl<W: LayoutElement> Layout<W> {
                     self.options.clone(),
                 ));
 
-                if self.options.empty_workspace_above_first && workspaces.len() > 1 {
+                if self.options.layout.empty_workspace_above_first && workspaces.len() > 1 {
                     workspaces.insert(
                         0,
                         Workspace::new(output.clone(), self.clock.clone(), self.options.clone()),
@@ -844,7 +764,7 @@ impl<W: LayoutElement> Layout<W> {
                 ));
 
                 let mut active_workspace_idx = 0;
-                if self.options.empty_workspace_above_first && workspaces.len() > 1 {
+                if self.options.layout.empty_workspace_above_first && workspaces.len() > 1 {
                     workspaces.insert(
                         0,
                         Workspace::new(output.clone(), self.clock.clone(), self.options.clone()),
@@ -944,7 +864,7 @@ impl<W: LayoutElement> Layout<W> {
 
                     // If empty_workspace_above_first is set and the first workspace is now no
                     // longer empty, add a new empty workspace on top.
-                    if primary.options.empty_workspace_above_first
+                    if primary.options.layout.empty_workspace_above_first
                         && primary.workspaces[0].has_windows_or_name()
                     {
                         primary.add_workspace_top();
@@ -1242,7 +1162,7 @@ impl<W: LayoutElement> Layout<W> {
 
                             // Special case handling when empty_workspace_above_first is set and all
                             // workspaces are empty.
-                            if mon.options.empty_workspace_above_first
+                            if mon.options.layout.empty_workspace_above_first
                                 && mon.workspaces.len() == 2
                                 && mon.workspace_switch.is_none()
                             {
@@ -2637,7 +2557,7 @@ impl<W: LayoutElement> Layout<W> {
                 !monitor.workspaces.last().unwrap().has_windows(),
                 "monitor must have an empty workspace in the end"
             );
-            if monitor.options.empty_workspace_above_first {
+            if monitor.options.layout.empty_workspace_above_first {
                 assert!(
                     !monitor.workspaces.first().unwrap().has_windows(),
                     "first workspace must be empty when empty_workspace_above_first is set"
@@ -2648,14 +2568,14 @@ impl<W: LayoutElement> Layout<W> {
                 monitor.workspaces.last().unwrap().name.is_none(),
                 "monitor must have an unnamed workspace in the end"
             );
-            if monitor.options.empty_workspace_above_first {
+            if monitor.options.layout.empty_workspace_above_first {
                 assert!(
                     monitor.workspaces.first().unwrap().name.is_none(),
                     "first workspace must be unnamed when empty_workspace_above_first is set"
                 )
             }
 
-            if monitor.options.empty_workspace_above_first {
+            if monitor.options.layout.empty_workspace_above_first {
                 assert!(
                     monitor.workspaces.len() != 2,
                     "if empty_workspace_above_first is set there must be just 1 or 3+ workspaces"
@@ -2665,7 +2585,7 @@ impl<W: LayoutElement> Layout<W> {
             // If there's no workspace switch in progress, there can't be any non-last non-active
             // empty workspaces. If empty_workspace_above_first is set then the first workspace
             // will be empty too.
-            let pre_skip = if monitor.options.empty_workspace_above_first {
+            let pre_skip = if monitor.options.layout.empty_workspace_above_first {
                 1
             } else {
                 0
@@ -3107,7 +3027,7 @@ impl<W: LayoutElement> Layout<W> {
                 let mon = &mut monitors[mon_idx];
 
                 let mut insert_idx = 0;
-                if mon.options.empty_workspace_above_first {
+                if mon.options.layout.empty_workspace_above_first {
                     // need to insert new empty workspace on top
                     mon.add_workspace_top();
                     insert_idx += 1;
@@ -3622,7 +3542,7 @@ impl<W: LayoutElement> Layout<W> {
             // Insert a new empty workspace.
             current.add_workspace_bottom();
         }
-        if current.options.empty_workspace_above_first && current.active_workspace_idx == 0 {
+        if current.options.layout.empty_workspace_above_first && current.active_workspace_idx == 0 {
             current.add_workspace_top();
         }
 
@@ -3642,7 +3562,7 @@ impl<W: LayoutElement> Layout<W> {
 
         target.previous_workspace_id = Some(target.workspaces[target.active_workspace_idx].id());
 
-        if target.options.empty_workspace_above_first && target.workspaces.len() == 1 {
+        if target.options.layout.empty_workspace_above_first && target.workspaces.len() == 1 {
             // Insert a new empty workspace on top to prepare for insertion of new workspace.
             target.add_workspace_top();
         }
@@ -3711,7 +3631,7 @@ impl<W: LayoutElement> Layout<W> {
 
         let mut ws = current.workspaces.remove(old_idx);
 
-        if current.options.empty_workspace_above_first && old_idx == 0 {
+        if current.options.layout.empty_workspace_above_first && old_idx == 0 {
             current.add_workspace_top();
         }
 
@@ -3728,7 +3648,7 @@ impl<W: LayoutElement> Layout<W> {
 
         target.previous_workspace_id = Some(target.workspaces[target.active_workspace_idx].id());
 
-        if target.options.empty_workspace_above_first && target.workspaces.len() == 1 {
+        if target.options.layout.empty_workspace_above_first && target.workspaces.len() == 1 {
             // Insert a new empty workspace on top to prepare for insertion of new workspace.
             target.add_workspace_top();
         }
@@ -4480,7 +4400,7 @@ impl<W: LayoutElement> Layout<W> {
                         .position(|ws| ws.id() == ws_id)
                         .unwrap(),
                     InsertWorkspace::NewAt(ws_idx) => {
-                        if self.options.empty_workspace_above_first && ws_idx == 0 {
+                        if self.options.layout.empty_workspace_above_first && ws_idx == 0 {
                             // Reuse the top empty workspace.
                             0
                         } else if mon.workspaces.len() - 1 <= ws_idx {
@@ -4813,7 +4733,7 @@ impl<W: LayoutElement> Layout<W> {
         } = &mut self.monitor_set
         {
             let monitor = &mut monitors[*active_monitor_idx];
-            if self.options.empty_workspace_above_first
+            if self.options.layout.empty_workspace_above_first
                 && monitor
                     .workspaces
                     .first()
@@ -5242,7 +5162,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 // Add border width since ColumnWidth includes borders.
                 let rules = window.rules();
-                let border = self.options.border.merged_with(&rules.border);
+                let border = self.options.layout.border.merged_with(&rules.border);
                 if !border.off {
                     fixed += border.width * 2.;
                 }

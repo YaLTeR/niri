@@ -175,9 +175,9 @@ impl<W: LayoutElement> Tile<W> {
         options: Rc<Options>,
     ) -> Self {
         let rules = window.rules();
-        let border_config = options.border.merged_with(&rules.border);
-        let focus_ring_config = options.focus_ring.merged_with(&rules.focus_ring);
-        let shadow_config = options.shadow.merged_with(&rules.shadow);
+        let border_config = options.layout.border.merged_with(&rules.border);
+        let focus_ring_config = options.layout.focus_ring.merged_with(&rules.focus_ring);
+        let shadow_config = options.layout.shadow.merged_with(&rules.shadow);
         let is_fullscreen = window.is_fullscreen();
 
         Self {
@@ -214,10 +214,10 @@ impl<W: LayoutElement> Tile<W> {
         options: Rc<Options>,
     ) {
         // If preset widths or heights changed, clear our stored preset index.
-        if self.options.preset_column_widths != options.preset_column_widths {
+        if self.options.layout.preset_column_widths != options.layout.preset_column_widths {
             self.floating_preset_width_idx = None;
         }
-        if self.options.preset_window_heights != options.preset_window_heights {
+        if self.options.layout.preset_window_heights != options.layout.preset_window_heights {
             self.floating_preset_height_idx = None;
         }
 
@@ -227,13 +227,17 @@ impl<W: LayoutElement> Tile<W> {
 
         let rules = self.window.rules();
 
-        let border_config = self.options.border.merged_with(&rules.border);
+        let border_config = self.options.layout.border.merged_with(&rules.border);
         self.border.update_config(border_config.into());
 
-        let focus_ring_config = self.options.focus_ring.merged_with(&rules.focus_ring);
+        let focus_ring_config = self
+            .options
+            .layout
+            .focus_ring
+            .merged_with(&rules.focus_ring);
         self.focus_ring.update_config(focus_ring_config);
 
-        let shadow_config = self.options.shadow.merged_with(&rules.shadow);
+        let shadow_config = self.options.layout.shadow.merged_with(&rules.shadow);
         self.shadow.update_config(shadow_config);
     }
 
@@ -332,12 +336,16 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         let rules = self.window.rules();
-        let border_config = self.options.border.merged_with(&rules.border);
+        let border_config = self.options.layout.border.merged_with(&rules.border);
         self.border.update_config(border_config.into());
-        let focus_ring_config = self.options.focus_ring.merged_with(&rules.focus_ring);
+        let focus_ring_config = self
+            .options
+            .layout
+            .focus_ring
+            .merged_with(&rules.focus_ring);
         self.focus_ring.update_config(focus_ring_config);
 
-        let shadow_config = self.options.shadow.merged_with(&rules.shadow);
+        let shadow_config = self.options.layout.shadow.merged_with(&rules.shadow);
         self.shadow.update_config(shadow_config);
 
         let window_size = self.window_size();
