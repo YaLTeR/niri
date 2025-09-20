@@ -36,6 +36,7 @@ pub use crate::layout::*;
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
 pub use crate::utils::FloatOrInt;
+use crate::utils::MergeWith as _;
 pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
 pub use crate::workspace::Workspace;
 
@@ -50,7 +51,7 @@ pub struct Config {
     #[knuffel(children(name = "spawn-sh-at-startup"))]
     pub spawn_sh_at_startup: Vec<SpawnShAtStartup>,
     #[knuffel(child, default)]
-    pub layout: Layout,
+    pub layout: LayoutPart,
     #[knuffel(child, default)]
     pub prefer_no_csd: bool,
     #[knuffel(child, default)]
@@ -132,6 +133,35 @@ impl Config {
     pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
         let _span = tracy_client::span!("Config::parse");
         knuffel::parse(filename, text)
+    }
+
+    pub fn resolve_layout(&self) -> Layout {
+        let mut rv = Layout::from_part(&self.layout);
+
+        // Preserve the behavior we'd always had for the border section:
+        // - `layout {}` gives border = off
+        // - `layout { border {} }` gives border = on
+        // - `layout { border { off } }` gives border = off
+        //
+        // This behavior is inconsistent with the rest of the config where adding an empty section
+        // generally doesn't change the outcome. Particularly, shadows are also disabled by default
+        // (like borders), and they always had an `on` instead of an `off` for this reason, so that
+        // writing `layout { shadow {} }` still results in shadow = off, as it should.
+        //
+        // Unfortunately, the default config has always had wording that heavily implies that
+        // `layout { border {} }` enables the borders. This wording is sure to be present in a lot
+        // of users' configs by now, which we can't change.
+        //
+        // Another way to make things consistent would be to default borders to on. However, that
+        // is annoying because it would mean changing many tests that rely on borders being off by
+        // default. This would also contradict the intended default borders value (off).
+        //
+        // So, let's just work around the problem here, preserving the original behavior.
+        if self.layout.border.is_some_and(|x| !x.on && !x.off) {
+            rv.border.off = false;
+        }
+
+        rv
     }
 }
 
@@ -778,181 +808,182 @@ mod tests {
                     command: "qs -c ~/source/qs/MyAwesomeShell",
                 },
             ],
-            layout: Layout {
-                focus_ring: FocusRing {
-                    off: false,
-                    width: FloatOrInt(
-                        5.0,
-                    ),
-                    active_color: Color {
-                        r: 0.0,
-                        g: 0.39215687,
-                        b: 0.78431374,
-                        a: 1.0,
-                    },
-                    inactive_color: Color {
-                        r: 1.0,
-                        g: 0.78431374,
-                        b: 0.39215687,
-                        a: 0.0,
-                    },
-                    urgent_color: Color {
-                        r: 0.60784316,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 1.0,
-                    },
-                    active_gradient: Some(
-                        Gradient {
-                            from: Color {
-                                r: 0.039215688,
-                                g: 0.078431375,
-                                b: 0.11764706,
-                                a: 1.0,
-                            },
-                            to: Color {
+            layout: LayoutPart {
+                focus_ring: Some(
+                    BorderRule {
+                        off: false,
+                        on: false,
+                        width: Some(
+                            FloatOrInt(
+                                5.0,
+                            ),
+                        ),
+                        active_color: Some(
+                            Color {
                                 r: 0.0,
-                                g: 0.5019608,
-                                b: 1.0,
+                                g: 0.39215687,
+                                b: 0.78431374,
                                 a: 1.0,
                             },
-                            angle: 180,
-                            relative_to: WorkspaceView,
-                            in_: GradientInterpolation {
-                                color_space: Srgb,
-                                hue_interpolation: Shorter,
+                        ),
+                        inactive_color: Some(
+                            Color {
+                                r: 1.0,
+                                g: 0.78431374,
+                                b: 0.39215687,
+                                a: 0.0,
                             },
-                        },
-                    ),
-                    inactive_gradient: None,
-                    urgent_gradient: None,
-                },
-                border: Border {
-                    off: false,
-                    width: FloatOrInt(
-                        3.0,
-                    ),
-                    active_color: Color {
-                        r: 1.0,
-                        g: 0.78431374,
-                        b: 0.49803922,
-                        a: 1.0,
-                    },
-                    inactive_color: Color {
-                        r: 1.0,
-                        g: 0.78431374,
-                        b: 0.39215687,
-                        a: 0.0,
-                    },
-                    urgent_color: Color {
-                        r: 0.60784316,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 1.0,
-                    },
-                    active_gradient: None,
-                    inactive_gradient: None,
-                    urgent_gradient: None,
-                },
-                shadow: Shadow {
-                    on: false,
-                    offset: ShadowOffset {
-                        x: FloatOrInt(
-                            10.0,
                         ),
-                        y: FloatOrInt(
-                            -20.0,
+                        urgent_color: None,
+                        active_gradient: Some(
+                            Gradient {
+                                from: Color {
+                                    r: 0.039215688,
+                                    g: 0.078431375,
+                                    b: 0.11764706,
+                                    a: 1.0,
+                                },
+                                to: Color {
+                                    r: 0.0,
+                                    g: 0.5019608,
+                                    b: 1.0,
+                                    a: 1.0,
+                                },
+                                angle: 180,
+                                relative_to: WorkspaceView,
+                                in_: GradientInterpolation {
+                                    color_space: Srgb,
+                                    hue_interpolation: Shorter,
+                                },
+                            },
+                        ),
+                        inactive_gradient: None,
+                        urgent_gradient: None,
+                    },
+                ),
+                border: Some(
+                    BorderRule {
+                        off: false,
+                        on: false,
+                        width: Some(
+                            FloatOrInt(
+                                3.0,
+                            ),
+                        ),
+                        active_color: None,
+                        inactive_color: Some(
+                            Color {
+                                r: 1.0,
+                                g: 0.78431374,
+                                b: 0.39215687,
+                                a: 0.0,
+                            },
+                        ),
+                        urgent_color: None,
+                        active_gradient: None,
+                        inactive_gradient: None,
+                        urgent_gradient: None,
+                    },
+                ),
+                shadow: Some(
+                    ShadowRule {
+                        off: false,
+                        on: false,
+                        offset: Some(
+                            ShadowOffset {
+                                x: FloatOrInt(
+                                    10.0,
+                                ),
+                                y: FloatOrInt(
+                                    -20.0,
+                                ),
+                            },
+                        ),
+                        softness: None,
+                        spread: None,
+                        draw_behind_window: None,
+                        color: None,
+                        inactive_color: None,
+                    },
+                ),
+                tab_indicator: Some(
+                    TabIndicatorPart {
+                        off: false,
+                        on: false,
+                        hide_when_single_tab: None,
+                        place_within_column: None,
+                        gap: None,
+                        width: Some(
+                            FloatOrInt(
+                                10.0,
+                            ),
+                        ),
+                        length: None,
+                        position: Some(
+                            Top,
+                        ),
+                        gaps_between_tabs: None,
+                        corner_radius: None,
+                        active_color: None,
+                        inactive_color: None,
+                        urgent_color: None,
+                        active_gradient: None,
+                        inactive_gradient: None,
+                        urgent_gradient: None,
+                    },
+                ),
+                insert_hint: Some(
+                    InsertHintPart {
+                        off: false,
+                        on: false,
+                        color: Some(
+                            Color {
+                                r: 1.0,
+                                g: 0.78431374,
+                                b: 0.49803922,
+                                a: 1.0,
+                            },
+                        ),
+                        gradient: Some(
+                            Gradient {
+                                from: Color {
+                                    r: 0.039215688,
+                                    g: 0.078431375,
+                                    b: 0.11764706,
+                                    a: 1.0,
+                                },
+                                to: Color {
+                                    r: 0.0,
+                                    g: 0.5019608,
+                                    b: 1.0,
+                                    a: 1.0,
+                                },
+                                angle: 180,
+                                relative_to: WorkspaceView,
+                                in_: GradientInterpolation {
+                                    color_space: Srgb,
+                                    hue_interpolation: Shorter,
+                                },
+                            },
                         ),
                     },
-                    softness: FloatOrInt(
-                        30.0,
-                    ),
-                    spread: FloatOrInt(
-                        5.0,
-                    ),
-                    draw_behind_window: false,
-                    color: Color {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 0.46666667,
-                    },
-                    inactive_color: None,
-                },
-                tab_indicator: TabIndicator {
-                    off: false,
-                    hide_when_single_tab: false,
-                    place_within_column: false,
-                    gap: FloatOrInt(
-                        5.0,
-                    ),
-                    width: FloatOrInt(
-                        10.0,
-                    ),
-                    length: TabIndicatorLength {
-                        total_proportion: Some(
+                ),
+                preset_column_widths: Some(
+                    [
+                        Proportion(
+                            0.25,
+                        ),
+                        Proportion(
                             0.5,
                         ),
-                    },
-                    position: Top,
-                    gaps_between_tabs: FloatOrInt(
-                        0.0,
-                    ),
-                    corner_radius: FloatOrInt(
-                        0.0,
-                    ),
-                    active_color: None,
-                    inactive_color: None,
-                    urgent_color: None,
-                    active_gradient: None,
-                    inactive_gradient: None,
-                    urgent_gradient: None,
-                },
-                insert_hint: InsertHint {
-                    off: false,
-                    color: Color {
-                        r: 1.0,
-                        g: 0.78431374,
-                        b: 0.49803922,
-                        a: 1.0,
-                    },
-                    gradient: Some(
-                        Gradient {
-                            from: Color {
-                                r: 0.039215688,
-                                g: 0.078431375,
-                                b: 0.11764706,
-                                a: 1.0,
-                            },
-                            to: Color {
-                                r: 0.0,
-                                g: 0.5019608,
-                                b: 1.0,
-                                a: 1.0,
-                            },
-                            angle: 180,
-                            relative_to: WorkspaceView,
-                            in_: GradientInterpolation {
-                                color_space: Srgb,
-                                hue_interpolation: Shorter,
-                            },
-                        },
-                    ),
-                },
-                preset_column_widths: [
-                    Proportion(
-                        0.25,
-                    ),
-                    Proportion(
-                        0.5,
-                    ),
-                    Fixed(
-                        960,
-                    ),
-                    Fixed(
-                        1280,
-                    ),
-                ],
+                        Fixed(
+                            960,
+                        ),
+                        Fixed(
+                            1280,
+                        ),
+                    ],
+                ),
                 default_column_width: Some(
                     DefaultPresetSize(
                         Some(
@@ -962,47 +993,52 @@ mod tests {
                         ),
                     ),
                 ),
-                preset_window_heights: [
-                    Proportion(
-                        0.25,
-                    ),
-                    Proportion(
-                        0.5,
-                    ),
-                    Fixed(
-                        960,
-                    ),
-                    Fixed(
-                        1280,
-                    ),
-                ],
-                center_focused_column: OnOverflow,
-                always_center_single_column: false,
-                empty_workspace_above_first: false,
-                default_column_display: Tabbed,
-                gaps: FloatOrInt(
-                    8.0,
+                preset_window_heights: Some(
+                    [
+                        Proportion(
+                            0.25,
+                        ),
+                        Proportion(
+                            0.5,
+                        ),
+                        Fixed(
+                            960,
+                        ),
+                        Fixed(
+                            1280,
+                        ),
+                    ],
                 ),
-                struts: Struts {
-                    left: FloatOrInt(
-                        1.0,
+                center_focused_column: Some(
+                    OnOverflow,
+                ),
+                always_center_single_column: None,
+                empty_workspace_above_first: None,
+                default_column_display: Some(
+                    Tabbed,
+                ),
+                gaps: Some(
+                    FloatOrInt(
+                        8.0,
                     ),
-                    right: FloatOrInt(
-                        2.0,
-                    ),
-                    top: FloatOrInt(
-                        3.0,
-                    ),
-                    bottom: FloatOrInt(
-                        0.0,
-                    ),
-                },
-                background_color: Color {
-                    r: 0.25,
-                    g: 0.25,
-                    b: 0.25,
-                    a: 1.0,
-                },
+                ),
+                struts: Some(
+                    Struts {
+                        left: FloatOrInt(
+                            1.0,
+                        ),
+                        right: FloatOrInt(
+                            2.0,
+                        ),
+                        top: FloatOrInt(
+                            3.0,
+                        ),
+                        bottom: FloatOrInt(
+                            0.0,
+                        ),
+                    },
+                ),
+                background_color: None,
             },
             prefer_no_csd: true,
             cursor: Cursor {
@@ -1823,6 +1859,23 @@ mod tests {
         default_config.window_rules.clear();
         default_config.binds.0.clear();
 
+        let default_layout = default_config.resolve_layout();
+        let empty_layout = empty_config.resolve_layout();
+        default_config.layout = Default::default();
+        assert_snapshot!(
+            diff_lines(
+                &format!("{empty_layout:#?}"),
+                &format!("{default_layout:#?}")
+            ),
+            @r"
+        -            0.3333333333333333,
+        +            0.33333,
+
+        -            0.6666666666666666,
+        +            0.66667,
+        ",
+        );
+
         assert_snapshot!(
             diff_lines(
                 &format!("{empty_config:#?}"),
@@ -1846,30 +1899,7 @@ mod tests {
         +            ],
         +        },
         +    ],
-
-        -        preset_column_widths: [],
-        -        default_column_width: None,
-        +        preset_column_widths: [
-        +            Proportion(
-        +                0.33333,
-        +            ),
-        +            Proportion(
-        +                0.5,
-        +            ),
-        +            Proportion(
-        +                0.66667,
-        +            ),
-        +        ],
-        +        default_column_width: Some(
-        +            DefaultPresetSize(
-        +                Some(
-        +                    Proportion(
-        +                        0.5,
-        +                    ),
-        +                ),
-        +            ),
-        +        ),
-        "#
+        "#,
         );
     }
 }

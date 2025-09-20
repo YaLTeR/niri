@@ -1657,7 +1657,7 @@ impl State {
 
             let background_color = config
                 .and_then(|c| c.background_color)
-                .unwrap_or(full_config.layout.background_color)
+                .unwrap_or_else(|| full_config.resolve_layout().background_color)
                 .to_array_unpremul();
             let background_color = Color32F::from(background_color);
 
@@ -2906,7 +2906,7 @@ impl Niri {
 
         let background_color = c
             .and_then(|c| c.background_color)
-            .unwrap_or(config.layout.background_color)
+            .unwrap_or_else(|| config.resolve_layout().background_color)
             .to_array_unpremul();
 
         let mut backdrop_color = c

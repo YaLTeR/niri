@@ -1,3 +1,13 @@
+macro_rules! merge {
+    (($self:expr, $part:expr), $($field:ident),+ $(,)*) => {
+        $(
+            if let Some(x) = &$part.$field {
+                $self.$field.merge_with(x);
+            }
+        )+
+    };
+}
+
 macro_rules! merge_clone {
     (($self:expr, $part:expr), $($field:ident),+ $(,)*) => {
         $(

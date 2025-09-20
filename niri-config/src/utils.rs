@@ -14,6 +14,15 @@ pub struct Percent(pub f64);
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct FloatOrInt<const MIN: i32, const MAX: i32>(pub f64);
 
+/// Flag, with an optional explicit value.
+///
+/// Intended to be used as an `Option<MaybeBool>` field, as a tri-state:
+/// - (missing): unset, `None`
+/// - just `field`: set, `Some(true)`
+/// - explicitly `field true` or `field false`: set, `Some(true)` or `Some(false)`
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Flag(#[knuffel(argument, default = true)] pub bool);
+
 /// `Regex` that implements `PartialEq` by its string form.
 #[derive(Debug, Clone)]
 pub struct RegexEq(pub Regex);
@@ -53,6 +62,12 @@ impl FromStr for Percent {
 
 impl<const MIN: i32, const MAX: i32> MergeWith<FloatOrInt<MIN, MAX>> for f64 {
     fn merge_with(&mut self, part: &FloatOrInt<MIN, MAX>) {
+        *self = part.0;
+    }
+}
+
+impl MergeWith<Flag> for bool {
+    fn merge_with(&mut self, part: &Flag) {
         *self = part.0;
     }
 }

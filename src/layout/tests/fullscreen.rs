@@ -190,7 +190,7 @@ fn unfullscreen_with_large_border() {
     let options = Options {
         border: niri_config::Border {
             off: false,
-            width: niri_config::FloatOrInt(10000.),
+            width: 10000.,
             ..Default::default()
         },
         ..Default::default()
