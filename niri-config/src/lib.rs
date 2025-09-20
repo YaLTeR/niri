@@ -799,6 +799,12 @@ mod tests {
                         b: 0.0,
                         a: 1.0,
                     },
+                    view_lock_color: Color {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 0.49803922,
+                        a: 1.0,
+                    },
                     active_gradient: Some(
                         Gradient {
                             from: Color {
@@ -845,6 +851,12 @@ mod tests {
                         r: 0.60784316,
                         g: 0.0,
                         b: 0.0,
+                        a: 1.0,
+                    },
+                    view_lock_color: Color {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 0.49803922,
                         a: 1.0,
                     },
                     active_gradient: None,
