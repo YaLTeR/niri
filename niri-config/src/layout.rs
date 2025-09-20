@@ -31,6 +31,8 @@ pub struct Layout {
     pub always_center_single_column: bool,
     #[knuffel(child)]
     pub empty_workspace_above_first: bool,
+    #[knuffel(child)]
+    pub hide_floating_layout_if_unfocused: bool,
     #[knuffel(child, unwrap(argument, str), default = Self::default().default_column_display)]
     pub default_column_display: ColumnDisplay,
     #[knuffel(child, unwrap(argument), default = Self::default().gaps)]
@@ -54,6 +56,7 @@ impl Default for Layout {
             center_focused_column: Default::default(),
             always_center_single_column: false,
             empty_workspace_above_first: false,
+            hide_floating_layout_if_unfocused: false,
             default_column_display: ColumnDisplay::Normal,
             gaps: FloatOrInt(16.),
             struts: Default::default(),

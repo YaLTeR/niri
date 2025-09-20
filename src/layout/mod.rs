@@ -347,6 +347,7 @@ pub struct Options {
     pub center_focused_column: CenterFocusedColumn,
     pub always_center_single_column: bool,
     pub empty_workspace_above_first: bool,
+    pub hide_floating_layout_if_unfocused: bool,
     pub default_column_display: ColumnDisplay,
     /// Column or window widths that `toggle_width()` switches between.
     pub preset_column_widths: Vec<PresetSize>,
@@ -376,6 +377,7 @@ impl Default for Options {
             center_focused_column: Default::default(),
             always_center_single_column: false,
             empty_workspace_above_first: false,
+            hide_floating_layout_if_unfocused: false,
             default_column_display: ColumnDisplay::Normal,
             preset_column_widths: vec![
                 PresetSize::Proportion(1. / 3.),
@@ -651,6 +653,7 @@ impl Options {
             center_focused_column: layout.center_focused_column,
             always_center_single_column: layout.always_center_single_column,
             empty_workspace_above_first: layout.empty_workspace_above_first,
+            hide_floating_layout_if_unfocused: layout.hide_floating_layout_if_unfocused,
             default_column_display: layout.default_column_display,
             preset_column_widths,
             default_column_width,
