@@ -1859,8 +1859,8 @@ fn compute_workspace_shadow_config(
     let norm = view_size.h / 1080.;
 
     let mut config = niri_config::Shadow::from(config);
-    config.softness.0 *= norm;
-    config.spread.0 *= norm;
+    config.softness *= norm;
+    config.spread *= norm;
     config.offset.x.0 *= norm;
     config.offset.y.0 *= norm;
 

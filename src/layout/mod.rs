@@ -40,8 +40,8 @@ use std::time::Duration;
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
 use niri_config::utils::MergeWith as _;
 use niri_config::{
-    CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
-    Workspace as WorkspaceConfig, WorkspaceReference,
+    CenterFocusedColumn, Config, CornerRadius, PresetSize, Struts, Workspace as WorkspaceConfig,
+    WorkspaceReference,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use scrolling::{Column, ColumnWidth};
@@ -620,7 +620,7 @@ impl HitType {
 
 impl Options {
     fn from_config(config: &Config) -> Self {
-        let layout = &config.layout;
+        let layout = config.resolve_layout();
 
         let preset_column_widths = if layout.preset_column_widths.is_empty() {
             Options::default().preset_column_widths
@@ -633,16 +633,8 @@ impl Options {
             layout.preset_window_heights.clone()
         };
 
-        // Missing default_column_width maps to Some(PresetSize::Proportion(0.5)),
-        // while present, but empty, maps to None.
-        let default_column_width = layout
-            .default_column_width
-            .as_ref()
-            .map(|w| w.0)
-            .unwrap_or(Some(PresetSize::Proportion(0.5)));
-
         Self {
-            gaps: layout.gaps.0,
+            gaps: layout.gaps,
             struts: layout.struts,
             focus_ring: layout.focus_ring,
             border: layout.border,
@@ -654,7 +646,7 @@ impl Options {
             empty_workspace_above_first: layout.empty_workspace_above_first,
             default_column_display: layout.default_column_display,
             preset_column_widths,
-            default_column_width,
+            default_column_width: layout.default_column_width,
             animations: config.animations.clone(),
             gestures: config.gestures,
             overview: config.overview,
@@ -669,8 +661,8 @@ impl Options {
         let round = |logical: f64| round_logical_in_physical_max1(scale, logical);
 
         self.gaps = round(self.gaps);
-        self.focus_ring.width = FloatOrInt(round(self.focus_ring.width.0));
-        self.border.width = FloatOrInt(round(self.border.width.0));
+        self.focus_ring.width = round(self.focus_ring.width);
+        self.border.width = round(self.border.width);
 
         self
     }
@@ -5252,7 +5244,7 @@ impl<W: LayoutElement> Layout<W> {
                 let rules = window.rules();
                 let border = self.options.border.merged_with(&rules.border);
                 if !border.off {
-                    fixed += border.width.0 * 2.;
+                    fixed += border.width * 2.;
                 }
 
                 ColumnWidth::Fixed(fixed)
