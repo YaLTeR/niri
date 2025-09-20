@@ -414,10 +414,18 @@ enum Op {
         ws_name: usize,
         #[proptest(strategy = "prop::option::of(1..=5usize)")]
         output_name: Option<usize>,
+        #[proptest(strategy = "prop::option::of(arbitrary_layout_part().prop_map(Box::new))")]
+        layout_config: Option<Box<niri_config::LayoutPart>>,
     },
     UnnameWorkspace {
         #[proptest(strategy = "1..=5usize")]
         ws_name: usize,
+    },
+    UpdateWorkspaceLayoutConfig {
+        #[proptest(strategy = "1..=5usize")]
+        ws_name: usize,
+        #[proptest(strategy = "prop::option::of(arbitrary_layout_part().prop_map(Box::new))")]
+        layout_config: Option<Box<niri_config::LayoutPart>>,
     },
     AddWindow {
         params: TestWindowParams,
@@ -817,14 +825,30 @@ impl Op {
             Op::AddNamedWorkspace {
                 ws_name,
                 output_name,
+                layout_config,
             } => {
                 layout.ensure_named_workspace(&WorkspaceConfig {
                     name: WorkspaceName(format!("ws{ws_name}")),
                     open_on_output: output_name.map(|name| format!("output{name}")),
+                    layout: layout_config.map(|x| niri_config::WorkspaceLayoutPart(*x)),
                 });
             }
             Op::UnnameWorkspace { ws_name } => {
                 layout.unname_workspace(&format!("ws{ws_name}"));
+            }
+            Op::UpdateWorkspaceLayoutConfig {
+                ws_name,
+                layout_config,
+            } => {
+                let ws_name = format!("ws{ws_name}");
+                let Some(ws) = layout
+                    .workspaces_mut()
+                    .find(|ws| ws.name() == Some(&ws_name))
+                else {
+                    return;
+                };
+
+                ws.update_layout_config(layout_config.map(|x| *x));
             }
             Op::SetWorkspaceName {
                 new_ws_name,
@@ -1607,6 +1631,7 @@ fn operations_dont_panic() {
         Op::AddNamedWorkspace {
             ws_name: 1,
             output_name: Some(1),
+            layout_config: None,
         },
         Op::UnnameWorkspace { ws_name: 1 },
         Op::AddWindow {
@@ -1754,6 +1779,7 @@ fn operations_from_starting_state_dont_panic() {
         Op::AddNamedWorkspace {
             ws_name: 1,
             output_name: Some(1),
+            layout_config: None,
         },
         Op::UnnameWorkspace { ws_name: 1 },
         Op::AddWindow {
@@ -2289,10 +2315,12 @@ fn removing_all_outputs_preserves_empty_named_workspaces() {
         Op::AddNamedWorkspace {
             ws_name: 1,
             output_name: None,
+            layout_config: None,
         },
         Op::AddNamedWorkspace {
             ws_name: 2,
             output_name: None,
+            layout_config: None,
         },
         Op::RemoveOutput(1),
     ];
@@ -2655,6 +2683,7 @@ fn named_workspace_to_output() {
         Op::AddNamedWorkspace {
             ws_name: 1,
             output_name: None,
+            layout_config: None,
         },
         Op::AddOutput(1),
         Op::MoveWorkspaceToOutput(1),
@@ -2670,6 +2699,7 @@ fn named_workspace_to_output_ewaf() {
         Op::AddNamedWorkspace {
             ws_name: 1,
             output_name: Some(2),
+            layout_config: None,
         },
         Op::AddOutput(1),
         Op::AddOutput(2),
@@ -2892,6 +2922,65 @@ fn interactive_move_toggle_floating_ends_dnd_gesture() {
         Op::Refresh { is_active: false },
         Op::ToggleWindowFloating { id: None },
         Op::InteractiveMoveEnd { window: 2 },
+    ];
+
+    check_ops(ops);
+}
+
+#[test]
+fn interactive_move_from_workspace_with_layout_config() {
+    let ops = [
+        Op::AddNamedWorkspace {
+            ws_name: 1,
+            output_name: Some(2),
+            layout_config: Some(Box::new(niri_config::LayoutPart {
+                border: Some(niri_config::BorderRule {
+                    on: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })),
+        },
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::InteractiveMoveBegin {
+            window: 2,
+            output_idx: 1,
+            px: 0.0,
+            py: 0.0,
+        },
+        Op::InteractiveMoveUpdate {
+            window: 2,
+            dx: 0.0,
+            dy: 3586.692842955048,
+            output_idx: 1,
+            px: 0.0,
+            py: 0.0,
+        },
+        // Now remove and add the output. It will have the same workspace.
+        Op::RemoveOutput(1),
+        Op::AddOutput(1),
+        Op::InteractiveMoveUpdate {
+            window: 2,
+            dx: 0.0,
+            dy: 0.0,
+            output_idx: 1,
+            px: 0.0,
+            py: 0.0,
+        },
+        // Now move onto a different workspace.
+        Op::FocusWorkspaceDown,
+        Op::CompleteAnimations,
+        Op::InteractiveMoveUpdate {
+            window: 2,
+            dx: 0.0,
+            dy: 0.0,
+            output_idx: 1,
+            px: 0.0,
+            py: 0.0,
+        },
     ];
 
     check_ops(ops);

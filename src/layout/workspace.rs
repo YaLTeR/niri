@@ -99,6 +99,9 @@ pub struct Workspace<W: LayoutElement> {
     /// Optional name of this workspace.
     pub(super) name: Option<String>,
 
+    /// Layout config overrides for this workspace.
+    layout_config: Option<niri_config::LayoutPart>,
+
     /// Unique ID of this workspace.
     id: WorkspaceId,
 }
@@ -202,7 +205,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn new_with_config(
         output: Output,
-        config: Option<WorkspaceConfig>,
+        mut config: Option<WorkspaceConfig>,
         clock: Clock,
         base_options: Rc<Options>,
     ) -> Self {
@@ -212,9 +215,14 @@ impl<W: LayoutElement> Workspace<W> {
             .map(OutputId)
             .unwrap_or(OutputId::new(&output));
 
+        let layout_config = config.as_mut().and_then(|c| c.layout.take().map(|x| x.0));
+
         let scale = output.current_scale();
-        let options =
-            Rc::new(Options::clone(&base_options).adjusted_for_scale(scale.fractional_scale()));
+        let options = Rc::new(
+            Options::clone(&base_options)
+                .with_merged_layout(layout_config.as_ref())
+                .adjusted_for_scale(scale.fractional_scale()),
+        );
 
         let view_size = output_size(&output);
         let working_area = compute_working_area(&output);
@@ -253,12 +261,13 @@ impl<W: LayoutElement> Workspace<W> {
             base_options,
             options,
             name: config.map(|c| c.name.0),
+            layout_config,
             id: WorkspaceId::next(),
         }
     }
 
     pub fn new_with_config_no_outputs(
-        config: Option<WorkspaceConfig>,
+        mut config: Option<WorkspaceConfig>,
         clock: Clock,
         base_options: Rc<Options>,
     ) -> Self {
@@ -269,9 +278,14 @@ impl<W: LayoutElement> Workspace<W> {
                 .unwrap_or_default(),
         );
 
+        let layout_config = config.as_mut().and_then(|c| c.layout.take().map(|x| x.0));
+
         let scale = smithay::output::Scale::Integer(1);
-        let options =
-            Rc::new(Options::clone(&base_options).adjusted_for_scale(scale.fractional_scale()));
+        let options = Rc::new(
+            Options::clone(&base_options)
+                .with_merged_layout(layout_config.as_ref())
+                .adjusted_for_scale(scale.fractional_scale()),
+        );
 
         let view_size = Size::from((1280., 720.));
         let working_area = Rectangle::from_size(Size::from((1280., 720.)));
@@ -310,6 +324,7 @@ impl<W: LayoutElement> Workspace<W> {
             base_options,
             options,
             name: config.map(|c| c.name.0),
+            layout_config,
             id: WorkspaceId::next(),
         }
     }
@@ -370,7 +385,11 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn update_config(&mut self, base_options: Rc<Options>) {
         let scale = self.scale.fractional_scale();
-        let options = Rc::new(Options::clone(&base_options).adjusted_for_scale(scale));
+        let options = Rc::new(
+            Options::clone(&base_options)
+                .with_merged_layout(self.layout_config.as_ref())
+                .adjusted_for_scale(scale),
+        );
 
         self.scrolling.update_config(
             self.view_size,
@@ -392,6 +411,15 @@ impl<W: LayoutElement> Workspace<W> {
 
         self.base_options = base_options;
         self.options = options;
+    }
+
+    pub fn update_layout_config(&mut self, layout_config: Option<niri_config::LayoutPart>) {
+        if self.layout_config == layout_config {
+            return;
+        }
+
+        self.layout_config = layout_config;
+        self.update_config(self.base_options.clone());
     }
 
     pub fn update_shaders(&mut self) {
@@ -1770,6 +1798,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.working_area
     }
 
+    pub fn layout_config(&self) -> Option<&niri_config::LayoutPart> {
+        self.layout_config.as_ref()
+    }
+
     #[cfg(test)]
     pub fn scrolling(&self) -> &ScrollingSpace<W> {
         &self.scrolling
@@ -1788,7 +1820,9 @@ impl<W: LayoutElement> Workspace<W> {
         assert!(scale > 0.);
         assert!(scale.is_finite());
 
-        let options = Options::clone(&self.base_options).adjusted_for_scale(scale);
+        let options = Options::clone(&self.base_options)
+            .with_merged_layout(self.layout_config.as_ref())
+            .adjusted_for_scale(scale);
         assert_eq!(
             &*self.options, &options,
             "options must be base options adjusted for scale"
