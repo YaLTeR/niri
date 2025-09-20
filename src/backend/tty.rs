@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::iter::zip;
 use std::num::NonZeroU64;
-use std::os::fd::AsFd;
+use std::os::fd::{AsFd, OwnedFd};
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -83,6 +83,8 @@ pub struct Tty {
     primary_node: DrmNode,
     // DRM render node corresponding to the primary GPU.
     primary_render_node: DrmNode,
+    // Disabled DRM nodes.
+    disabled_nodes: HashSet<DrmNode>,
     // Devices indexed by DRM node (not necessarily the render node).
     devices: HashMap<DrmNode, OutputDevice>,
     // The dma-buf global corresponds to the output device (the primary GPU). It is only `Some()`
@@ -320,6 +322,8 @@ impl Tty {
                 Ok::<_, anyhow::Error>((primary_node, primary_render_node))
             })?;
 
+        let disabled_nodes = disabled_nodes_from_config(&config.borrow());
+
         let mut node_path = String::new();
         if let Some(path) = primary_render_node.dev_path() {
             write!(node_path, "{path:?}").unwrap();
@@ -336,6 +340,7 @@ impl Tty {
             gpu_manager,
             primary_node,
             primary_render_node,
+            disabled_nodes,
             devices: HashMap::new(),
             dmabuf_global: None,
             update_output_config_on_resume: false,
@@ -503,6 +508,11 @@ impl Tty {
         debug!("device added: {device_id} {path:?}");
 
         let node = DrmNode::from_dev_id(device_id)?;
+
+        if self.disabled_nodes.contains(&node) {
+            debug!("node is disabled, skipping");
+            return Ok(());
+        }
 
         let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
         let fd = self.session.open(path, open_flags)?;
@@ -740,22 +750,23 @@ impl Tty {
             return;
         };
 
-        let Some(device) = self.devices.get_mut(&node) else {
+        if let Some(device) = self.devices.get_mut(&node) {
+            let crtcs: Vec<_> = device
+                .drm_scanner
+                .crtcs()
+                .map(|(_info, crtc)| crtc)
+                .collect();
+
+            for crtc in crtcs {
+                self.connector_disconnected(niri, node, crtc);
+            }
+        } else {
             warn!("no such device");
             return;
         };
 
-        let crtcs: Vec<_> = device
-            .drm_scanner
-            .crtcs()
-            .map(|(_info, crtc)| crtc)
-            .collect();
-
-        for crtc in crtcs {
-            self.connector_disconnected(niri, node, crtc);
-        }
-
         let mut device = self.devices.remove(&node).unwrap();
+        let device_fd = device.drm.device_fd().device_fd();
 
         if let Some(lease_state) = &mut device.drm_lease_state {
             lease_state.disable_global::<State>();
@@ -798,9 +809,25 @@ impl Tty {
         }
 
         self.gpu_manager.as_mut().remove_node(&device.render_node);
+        // Trigger re-enumeration in order to remove the device from gpu_manager.
+        let _ = self.gpu_manager.devices();
+
         niri.event_loop.remove(device.token);
 
         self.refresh_ipc_outputs(niri);
+
+        drop(device);
+
+        match TryInto::<OwnedFd>::try_into(device_fd) {
+            Ok(fd) => {
+                if let Err(err) = self.session.close(fd) {
+                    warn!("error closing drm device fd: {err}");
+                }
+            }
+            Err(_) => {
+                warn!("unable to close drm device cleanly");
+            }
+        }
     }
 
     fn connector_connected(
@@ -1805,6 +1832,42 @@ impl Tty {
         }
         self.update_output_config_on_resume = false;
 
+        // Update disabled nodes.
+        let disabled_nodes = disabled_nodes_from_config(&self.config.borrow());
+        if disabled_nodes != self.disabled_nodes {
+            self.disabled_nodes = disabled_nodes;
+
+            let mut device_list = self
+                .udev_dispatcher
+                .as_source_ref()
+                .device_list()
+                .map(|(device_id, path)| (device_id, path.to_owned()))
+                .collect::<HashMap<_, _>>();
+
+            let removed_devices = self
+                .devices
+                .keys()
+                .filter(|node| self.disabled_nodes.contains(&node)
+                        || !device_list.contains_key(&node.dev_id()))
+                .copied()
+                .collect::<Vec<_>>();
+
+            for node in removed_devices {
+                device_list.remove(&node.dev_id());
+                self.device_removed(node.dev_id(), niri);
+            }
+
+            for node in self.devices.keys() {
+                device_list.remove(&node.dev_id());
+            }
+
+            for (device_id, path) in device_list.into_iter() {
+                if let Err(err) = self.device_added(device_id, &path, niri) {
+                    warn!("error adding device {path:?}: {err:?}");
+                }
+            }
+        }
+
         // Figure out if we should disable laptop panels.
         let mut disable_laptop_panels = false;
         if niri.is_lid_closed {
@@ -2164,11 +2227,8 @@ impl GammaProps {
     }
 }
 
-fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
-    let path = config.debug.render_drm_device.as_ref()?;
-    debug!("attempting to use render node from config: {path:?}");
-
-    match DrmNode::from_path(path) {
+fn primary_node_from_render_node(render_path: &Path) -> Option<(DrmNode, DrmNode)> {
+    match DrmNode::from_path(render_path) {
         Ok(node) => {
             if node.ty() == NodeType::Render {
                 match node.node_with_type(NodeType::Primary) {
@@ -2176,29 +2236,50 @@ fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
                         return Some((primary_node, node));
                     }
                     Some(Err(err)) => {
-                        warn!("error opening primary node for render node {path:?}: {err:?}");
+                        warn!("error opening primary node for render node {render_path:?}: {err:?}");
                     }
                     None => {
-                        warn!("error opening primary node for render node {path:?}");
+                        warn!("error opening primary node for render node {render_path:?}");
                     }
                 }
             } else {
-                warn!("DRM node {path:?} is not a render node");
+                warn!("DRM node {render_path:?} is not a render node");
 
                 // Gracefully handle misconfiguration on regular desktop systems.
                 if let Some(Ok(render_node)) = node.node_with_type(NodeType::Render) {
                     return Some((node, render_node));
                 }
 
-                warn!("could not get render node for DRM node {path:?}; proceeding anyway");
+                warn!("could not get render node for DRM node {render_path:?}; proceeding anyway");
                 return Some((node, node));
             }
         }
         Err(err) => {
-            warn!("error opening {path:?} as DRM node: {err:?}");
+            warn!("error opening {render_path:?} as DRM node: {err:?}");
         }
     }
+
     None
+}
+
+fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
+    let path = config.debug.render_drm_device.as_ref()?;
+    debug!("attempting to use render node from config: {path:?}");
+
+    primary_node_from_render_node(path)
+}
+
+fn disabled_nodes_from_config(config: &Config) -> HashSet<DrmNode> {
+    let mut disabled_nodes = HashSet::new();
+
+    for elem in &config.debug.disable_drm_devices {
+        if let Some((primary_node, render_node)) = primary_node_from_render_node(&elem.path) {
+            disabled_nodes.insert(primary_node);
+            disabled_nodes.insert(render_node);
+        }
+    }
+
+    disabled_nodes
 }
 
 fn surface_dmabuf_feedback(

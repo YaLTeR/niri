@@ -20,6 +20,8 @@ pub struct Debug {
     pub restrict_primary_scanout_to_matching_format: bool,
     #[knuffel(child, unwrap(argument))]
     pub render_drm_device: Option<PathBuf>,
+    #[knuffel(children(name = "disable-drm-device"))]
+    pub disable_drm_devices: Vec<DevicePath>,
     #[knuffel(child)]
     pub force_pipewire_invalid_modifier: bool,
     #[knuffel(child)]
@@ -46,4 +48,10 @@ pub struct Debug {
 pub enum PreviewRender {
     Screencast,
     ScreenCapture,
+}
+
+#[derive(knuffel::Decode, Debug, Default, PartialEq, Eq, Hash)]
+pub struct DevicePath {
+    #[knuffel(argument)]
+    pub path: PathBuf,
 }

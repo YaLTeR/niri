@@ -18,6 +18,8 @@ debug {
     disable-direct-scanout
     restrict-primary-scanout-to-matching-format
     render-drm-device "/dev/dri/renderD129"
+    disable-drm-device "/dev/dri/renderD128"
+    disable-drm-device "/dev/dri/renderD130"
     force-pipewire-invalid-modifier
     dbus-interfaces-in-non-session-instances
     wait-for-frame-completion-before-queueing
@@ -112,6 +114,19 @@ You can set this to make niri use a different primary GPU than the default one.
 ```kdl
 debug {
     render-drm-device "/dev/dri/renderD129"
+}
+```
+
+### `disable-drm-device`
+
+<sup>Since: next release</sup>
+
+Disallow niri from binding to the DRM device.
+
+```kdl
+debug {
+    disable-drm-device "/dev/dri/renderD128"
+    disable-drm-device "/dev/dri/renderD130"
 }
 ```
 
