@@ -5,6 +5,7 @@ use knuffel::errors::DecodeError;
 use miette::{miette, IntoDiagnostic as _};
 use smithay::backend::renderer::Color32F;
 
+use crate::utils::MergeWith;
 use crate::FloatOrInt;
 
 pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.25, 0.25, 0.25, 1.]);
@@ -563,8 +564,8 @@ pub struct TabIndicatorRule {
     pub urgent_gradient: Option<Gradient>,
 }
 
-impl BorderRule {
-    pub fn merge_with(&mut self, other: &Self) {
+impl MergeWith<Self> for BorderRule {
+    fn merge_with(&mut self, other: &Self) {
         if other.off {
             self.off = true;
             self.on = false;
@@ -600,7 +601,9 @@ impl BorderRule {
             self.urgent_gradient = Some(x);
         }
     }
+}
 
+impl BorderRule {
     pub fn resolve_against(&self, mut config: Border) -> Border {
         config.off |= self.off;
         if self.on {
@@ -636,8 +639,8 @@ impl BorderRule {
     }
 }
 
-impl ShadowRule {
-    pub fn merge_with(&mut self, other: &Self) {
+impl MergeWith<Self> for ShadowRule {
+    fn merge_with(&mut self, other: &Self) {
         if other.off {
             self.off = true;
             self.on = false;
@@ -667,7 +670,9 @@ impl ShadowRule {
             self.inactive_color = Some(x);
         }
     }
+}
 
+impl ShadowRule {
     pub fn resolve_against(&self, mut config: Shadow) -> Shadow {
         config.on |= self.on;
         if self.off {
@@ -697,8 +702,8 @@ impl ShadowRule {
     }
 }
 
-impl TabIndicatorRule {
-    pub fn merge_with(&mut self, other: &Self) {
+impl MergeWith<Self> for TabIndicatorRule {
+    fn merge_with(&mut self, other: &Self) {
         if let Some(x) = other.active_color {
             self.active_color = Some(x);
             self.active_gradient = None;

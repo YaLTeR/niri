@@ -4,6 +4,9 @@ use knuffel::errors::DecodeError;
 use miette::miette;
 use regex::Regex;
 
+mod merge_with;
+pub use merge_with::*;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Percent(pub f64);
 
