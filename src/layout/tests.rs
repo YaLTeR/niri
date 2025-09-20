@@ -2,7 +2,8 @@ use std::cell::{Cell, OnceCell, RefCell};
 
 use niri_config::workspace::WorkspaceName;
 use niri_config::{
-    FloatOrInt, OutputName, TabIndicatorLength, TabIndicatorPosition, WorkspaceReference,
+    CenterFocusedColumn, FloatOrInt, OutputName, Struts, TabIndicatorLength, TabIndicatorPosition,
+    WorkspaceReference,
 };
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
@@ -2066,8 +2067,8 @@ fn large_negative_height_change() {
     ];
 
     let mut options = Options::default();
-    options.border.off = false;
-    options.border.width = 1.;
+    options.layout.border.off = false;
+    options.layout.border.width = 1.;
 
     check_ops_with_options(options, ops);
 }
@@ -2085,8 +2086,8 @@ fn large_max_size() {
     ];
 
     let mut options = Options::default();
-    options.border.off = false;
-    options.border.width = 1.;
+    options.layout.border.off = false;
+    options.layout.border.width = 1.;
 
     check_ops_with_options(options, ops);
 }
@@ -2244,7 +2245,10 @@ fn open_right_of_on_different_workspace_ewaf() {
     ];
 
     let options = Options {
-        empty_workspace_above_first: true,
+        layout: niri_config::Layout {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
     let layout = check_ops_with_options(options, ops);
@@ -2306,11 +2310,7 @@ fn config_change_updates_cached_sizes() {
     }
     .apply(&mut layout);
 
-    config
-        .layout
-        .border
-        .get_or_insert_with(Default::default)
-        .width = Some(FloatOrInt(4.));
+    config.layout.border.as_mut().unwrap().width = Some(FloatOrInt(4.));
     layout.update_config(&config);
 
     layout.verify_invariants();
@@ -2427,12 +2427,15 @@ fn fixed_height_takes_max_non_auto_into_account() {
     ];
 
     let options = Options {
-        border: niri_config::Border {
-            off: false,
-            width: 4.,
+        layout: niri_config::Layout {
+            border: niri_config::Border {
+                off: false,
+                width: 4.,
+                ..Default::default()
+            },
+            gaps: 0.,
             ..Default::default()
         },
-        gaps: 0.,
         ..Default::default()
     };
     check_ops_with_options(options, ops);
@@ -2511,7 +2514,10 @@ fn interactive_move_onto_empty_output_ewaf() {
     ];
 
     let options = Options {
-        empty_workspace_above_first: true,
+        layout: niri_config::Layout {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
     check_ops_with_options(options, ops);
@@ -2572,7 +2578,10 @@ fn interactive_move_onto_first_empty_workspace() {
         Op::InteractiveMoveEnd { window: 1 },
     ];
     let options = Options {
-        empty_workspace_above_first: true,
+        layout: niri_config::Layout {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
     check_ops_with_options(options, ops);
@@ -2653,7 +2662,10 @@ fn named_workspace_to_output_ewaf() {
         Op::AddOutput(2),
     ];
     let options = Options {
-        empty_workspace_above_first: true,
+        layout: niri_config::Layout {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
     check_ops_with_options(options, ops);
@@ -2672,7 +2684,10 @@ fn move_window_to_empty_workspace_above_first() {
         Op::MoveWorkspaceDown,
     ];
     let options = Options {
-        empty_workspace_above_first: true,
+        layout: niri_config::Layout {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
     check_ops_with_options(options, ops);
@@ -2689,7 +2704,10 @@ fn move_window_to_different_output() {
         Op::MoveWorkspaceToOutput(2),
     ];
     let options = Options {
-        empty_workspace_above_first: true,
+        layout: niri_config::Layout {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
     check_ops_with_options(options, ops);
@@ -2705,7 +2723,10 @@ fn close_window_empty_ws_above_first() {
         Op::CloseWindow(1),
     ];
     let options = Options {
-        empty_workspace_above_first: true,
+        layout: niri_config::Layout {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
     check_ops_with_options(options, ops);
@@ -2722,7 +2743,10 @@ fn add_and_remove_output() {
         Op::RemoveOutput(2),
     ];
     let options = Options {
-        empty_workspace_above_first: true,
+        layout: niri_config::Layout {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
     check_ops_with_options(options, ops);
@@ -2739,7 +2763,10 @@ fn switch_ewaf_on() {
 
     let mut layout = check_ops(ops);
     layout.update_options(Options {
-        empty_workspace_above_first: true,
+        layout: niri_config::Layout {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        },
         ..Default::default()
     });
     layout.verify_invariants();
@@ -2755,7 +2782,10 @@ fn switch_ewaf_off() {
     ];
 
     let options = Options {
-        empty_workspace_above_first: true,
+        layout: niri_config::Layout {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
     let mut layout = check_ops_with_options(options, ops);
@@ -3074,7 +3104,10 @@ fn set_first_workspace_name_ewaf() {
     ];
 
     let options = Options {
-        empty_workspace_above_first: true,
+        layout: niri_config::Layout {
+            empty_workspace_above_first: true,
+            ..Default::default()
+        },
         ..Default::default()
     };
     check_ops_with_options(options, ops);
@@ -3165,7 +3198,10 @@ fn preset_column_width_fixed_correct_with_border() {
     ];
 
     let options = Options {
-        preset_column_widths: vec![PresetSize::Fixed(500)],
+        layout: niri_config::Layout {
+            preset_column_widths: vec![PresetSize::Fixed(500)],
+            ..Default::default()
+        },
         ..Default::default()
     };
     let mut layout = check_ops_with_options(options, ops);
@@ -3175,10 +3211,13 @@ fn preset_column_width_fixed_correct_with_border() {
 
     // Add border.
     let options = Options {
-        preset_column_widths: vec![PresetSize::Fixed(500)],
-        border: niri_config::Border {
-            off: false,
-            width: 5.,
+        layout: niri_config::Layout {
+            preset_column_widths: vec![PresetSize::Fixed(500)],
+            border: niri_config::Border {
+                off: false,
+                width: 5.,
+                ..Default::default()
+            },
             ..Default::default()
         },
         ..Default::default()
@@ -3211,7 +3250,10 @@ fn preset_column_width_reset_after_set_width() {
     ];
 
     let options = Options {
-        preset_column_widths: vec![PresetSize::Fixed(500), PresetSize::Fixed(1000)],
+        layout: niri_config::Layout {
+            preset_column_widths: vec![PresetSize::Fixed(500), PresetSize::Fixed(1000)],
+            ..Default::default()
+        },
         ..Default::default()
     };
     let layout = check_ops_with_options(options, ops);
@@ -3469,7 +3511,7 @@ prop_compose! {
 }
 
 prop_compose! {
-    fn arbitrary_options()(
+    fn arbitrary_layout_config()(
         gaps in arbitrary_spacing(),
         struts in arbitrary_struts(),
         focus_ring in arbitrary_focus_ring(),
@@ -3479,8 +3521,8 @@ prop_compose! {
         center_focused_column in arbitrary_center_focused_column(),
         always_center_single_column in any::<bool>(),
         empty_workspace_above_first in any::<bool>(),
-    ) -> Options {
-        Options {
+    ) -> niri_config::Layout {
+        niri_config::Layout {
             gaps,
             struts,
             center_focused_column,
@@ -3490,6 +3532,17 @@ prop_compose! {
             border,
             shadow,
             tab_indicator,
+            ..Default::default()
+        }
+    }
+}
+
+prop_compose! {
+    fn arbitrary_options()(
+        layout in arbitrary_layout_config()
+    ) -> Options {
+        Options {
+            layout,
             ..Default::default()
         }
     }
