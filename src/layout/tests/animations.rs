@@ -29,7 +29,10 @@ fn make_options() -> Options {
     });
 
     let mut options = Options {
-        gaps: 0.0,
+        layout: niri_config::Layout {
+            gaps: 0.0,
+            ..Default::default()
+        },
         ..Options::default()
     };
     options.animations.window_resize.anim.kind = LINEAR;
