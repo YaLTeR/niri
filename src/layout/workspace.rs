@@ -1784,10 +1784,11 @@ impl<W: LayoutElement> Workspace<W> {
         use approx::assert_abs_diff_eq;
 
         let scale = self.scale.fractional_scale();
-        assert!(self.view_size.w > 0.);
-        assert!(self.view_size.h > 0.);
         assert!(scale > 0.);
         assert!(scale.is_finite());
+
+        assert!(self.view_size.w > 0.);
+        assert!(self.view_size.h > 0.);
 
         assert_eq!(self.view_size, self.scrolling.view_size());
         assert_eq!(self.working_area, self.scrolling.parent_area());
