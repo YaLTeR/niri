@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::iter::zip;
 use std::rc::Rc;
 
+use niri_config::utils::MergeWith as _;
 use niri_config::{PresetSize, RelativeTo};
 use niri_ipc::{PositionChange, SizeChange, WindowLayout};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -339,7 +340,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
     }
 
     pub fn new_window_toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
-        let border_config = rules.border.resolve_against(self.options.border);
+        let border_config = self.options.border.merged_with(&rules.border);
         compute_toplevel_bounds(border_config, self.working_area.size)
     }
 
@@ -1155,7 +1156,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 .map(|resize| resize.data);
             win.set_interactive_resize(resize_data);
 
-            let border_config = win.rules().border.resolve_against(self.options.border);
+            let border_config = self.options.border.merged_with(&win.rules().border);
             let bounds = compute_toplevel_bounds(border_config, self.working_area.size);
             win.set_bounds(bounds);
 
@@ -1219,7 +1220,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         height: Option<PresetSize>,
         rules: &ResolvedWindowRules,
     ) -> Size<i32, Logical> {
-        let border = rules.border.resolve_against(self.options.border);
+        let border = self.options.border.merged_with(&rules.border);
 
         let resolve = |size: Option<PresetSize>, working_area_size: f64| {
             if let Some(size) = size {

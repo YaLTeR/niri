@@ -38,6 +38,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
+use niri_config::utils::MergeWith as _;
 use niri_config::{
     CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
     Workspace as WorkspaceConfig, WorkspaceReference,
@@ -5249,7 +5250,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 // Add border width since ColumnWidth includes borders.
                 let rules = window.rules();
-                let border = rules.border.resolve_against(self.options.border);
+                let border = self.options.border.merged_with(&rules.border);
                 if !border.off {
                     fixed += border.width.0 * 2.;
                 }

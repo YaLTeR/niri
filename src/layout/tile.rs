@@ -1,6 +1,7 @@
 use core::f64;
 use std::rc::Rc;
 
+use niri_config::utils::MergeWith as _;
 use niri_config::{Color, CornerRadius, GradientInterpolation};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
@@ -174,15 +175,15 @@ impl<W: LayoutElement> Tile<W> {
         options: Rc<Options>,
     ) -> Self {
         let rules = window.rules();
-        let border_config = rules.border.resolve_against(options.border);
-        let focus_ring_config = rules.focus_ring.resolve_against(options.focus_ring.into());
-        let shadow_config = rules.shadow.resolve_against(options.shadow);
+        let border_config = options.border.merged_with(&rules.border);
+        let focus_ring_config = options.focus_ring.merged_with(&rules.focus_ring);
+        let shadow_config = options.shadow.merged_with(&rules.shadow);
         let is_fullscreen = window.is_fullscreen();
 
         Self {
             window,
             border: FocusRing::new(border_config.into()),
-            focus_ring: FocusRing::new(focus_ring_config.into()),
+            focus_ring: FocusRing::new(focus_ring_config),
             shadow: Shadow::new(shadow_config),
             is_fullscreen,
             fullscreen_backdrop: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
@@ -226,15 +227,13 @@ impl<W: LayoutElement> Tile<W> {
 
         let rules = self.window.rules();
 
-        let border_config = rules.border.resolve_against(self.options.border);
+        let border_config = self.options.border.merged_with(&rules.border);
         self.border.update_config(border_config.into());
 
-        let focus_ring_config = rules
-            .focus_ring
-            .resolve_against(self.options.focus_ring.into());
-        self.focus_ring.update_config(focus_ring_config.into());
+        let focus_ring_config = self.options.focus_ring.merged_with(&rules.focus_ring);
+        self.focus_ring.update_config(focus_ring_config);
 
-        let shadow_config = rules.shadow.resolve_against(self.options.shadow);
+        let shadow_config = self.options.shadow.merged_with(&rules.shadow);
         self.shadow.update_config(shadow_config);
     }
 
@@ -333,14 +332,12 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         let rules = self.window.rules();
-        let border_config = rules.border.resolve_against(self.options.border);
+        let border_config = self.options.border.merged_with(&rules.border);
         self.border.update_config(border_config.into());
-        let focus_ring_config = rules
-            .focus_ring
-            .resolve_against(self.options.focus_ring.into());
-        self.focus_ring.update_config(focus_ring_config.into());
+        let focus_ring_config = self.options.focus_ring.merged_with(&rules.focus_ring);
+        self.focus_ring.update_config(focus_ring_config);
 
-        let shadow_config = rules.shadow.resolve_against(self.options.shadow);
+        let shadow_config = self.options.shadow.merged_with(&rules.shadow);
         self.shadow.update_config(shadow_config);
 
         let window_size = self.window_size();
