@@ -51,6 +51,12 @@ impl FromStr for Percent {
     }
 }
 
+impl<const MIN: i32, const MAX: i32> MergeWith<FloatOrInt<MIN, MAX>> for f64 {
+    fn merge_with(&mut self, part: &FloatOrInt<MIN, MAX>) {
+        *self = part.0;
+    }
+}
+
 impl<S: knuffel::traits::ErrorSpan, const MIN: i32, const MAX: i32> knuffel::DecodeScalar<S>
     for FloatOrInt<MIN, MAX>
 {

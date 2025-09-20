@@ -565,41 +565,17 @@ pub struct TabIndicatorRule {
 }
 
 impl MergeWith<Self> for BorderRule {
-    fn merge_with(&mut self, other: &Self) {
-        if other.off {
-            self.off = true;
-            self.on = false;
-        }
+    fn merge_with(&mut self, part: &Self) {
+        merge_on_off!((self, part));
 
-        if other.on {
-            self.off = false;
-            self.on = true;
-        }
+        merge_clone_opt!((self, part), width);
 
-        if let Some(x) = other.width {
-            self.width = Some(x);
-        }
-        if let Some(x) = other.active_color {
-            self.active_color = Some(x);
-            self.active_gradient = None;
-        }
-        if let Some(x) = other.inactive_color {
-            self.inactive_color = Some(x);
-            self.inactive_gradient = None;
-        }
-        if let Some(x) = other.urgent_color {
-            self.urgent_color = Some(x);
-            self.urgent_gradient = None;
-        }
-        if let Some(x) = other.active_gradient {
-            self.active_gradient = Some(x);
-        }
-        if let Some(x) = other.inactive_gradient {
-            self.inactive_gradient = Some(x);
-        }
-        if let Some(x) = other.urgent_gradient {
-            self.urgent_gradient = Some(x);
-        }
+        merge_color_gradient_opt!(
+            (self, part),
+            (active_color, active_gradient),
+            (inactive_color, inactive_gradient),
+            (urgent_color, urgent_gradient),
+        );
     }
 }
 
@@ -640,35 +616,18 @@ impl BorderRule {
 }
 
 impl MergeWith<Self> for ShadowRule {
-    fn merge_with(&mut self, other: &Self) {
-        if other.off {
-            self.off = true;
-            self.on = false;
-        }
+    fn merge_with(&mut self, part: &Self) {
+        merge_on_off!((self, part));
 
-        if other.on {
-            self.off = false;
-            self.on = true;
-        }
-
-        if let Some(x) = other.offset {
-            self.offset = Some(x);
-        }
-        if let Some(x) = other.softness {
-            self.softness = Some(x);
-        }
-        if let Some(x) = other.spread {
-            self.spread = Some(x);
-        }
-        if let Some(x) = other.draw_behind_window {
-            self.draw_behind_window = Some(x);
-        }
-        if let Some(x) = other.color {
-            self.color = Some(x);
-        }
-        if let Some(x) = other.inactive_color {
-            self.inactive_color = Some(x);
-        }
+        merge_clone_opt!(
+            (self, part),
+            offset,
+            softness,
+            spread,
+            draw_behind_window,
+            color,
+            inactive_color,
+        );
     }
 }
 
@@ -703,28 +662,13 @@ impl ShadowRule {
 }
 
 impl MergeWith<Self> for TabIndicatorRule {
-    fn merge_with(&mut self, other: &Self) {
-        if let Some(x) = other.active_color {
-            self.active_color = Some(x);
-            self.active_gradient = None;
-        }
-        if let Some(x) = other.inactive_color {
-            self.inactive_color = Some(x);
-            self.inactive_gradient = None;
-        }
-        if let Some(x) = other.urgent_color {
-            self.urgent_color = Some(x);
-            self.urgent_gradient = None;
-        }
-        if let Some(x) = other.active_gradient {
-            self.active_gradient = Some(x);
-        }
-        if let Some(x) = other.inactive_gradient {
-            self.inactive_gradient = Some(x);
-        }
-        if let Some(x) = other.urgent_gradient {
-            self.urgent_gradient = Some(x);
-        }
+    fn merge_with(&mut self, part: &Self) {
+        merge_color_gradient_opt!(
+            (self, part),
+            (active_color, active_gradient),
+            (inactive_color, inactive_gradient),
+            (urgent_color, urgent_gradient),
+        );
     }
 }
 
