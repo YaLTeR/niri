@@ -54,6 +54,7 @@
 
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
@@ -1195,6 +1196,8 @@ pub struct Window {
     pub is_urgent: bool,
     /// Position- and size-related properties of the window.
     pub layout: WindowLayout,
+    /// Timestamp for the most recent focus event
+    pub focus_timestamp: Option<SystemTime>,
 }
 
 /// Position- and size-related properties of a [`Window`].
