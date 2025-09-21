@@ -23,6 +23,7 @@ use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
+use crate::render_helpers::solid_color::SolidColorRenderElement;
 use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::Transaction;
@@ -175,6 +176,7 @@ niri_render_elements! {
         InsertHint = CropRenderElement<InsertHintRenderElement>,
         UncroppedInsertHint = InsertHintRenderElement,
         Shadow = ShadowRenderElement,
+        SolidColor = SolidColorRenderElement,
     }
 }
 
@@ -1619,6 +1621,7 @@ impl<W: LayoutElement> Monitor<W> {
     ) -> impl Iterator<
         Item = (
             Rectangle<f64, Logical>,
+            MonitorRenderElement<R>,
             impl Iterator<Item = MonitorRenderElement<R>> + 'a,
         ),
     > {
@@ -1692,7 +1695,7 @@ impl<W: LayoutElement> Monitor<W> {
 
             let iter = floating.chain(hint).chain(scrolling);
 
-            let iter = iter.map(move |elem| {
+            let scale_relocate = move |elem| {
                 let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
                 RelocateRenderElement::from_element(
                     elem,
@@ -1702,9 +1705,14 @@ impl<W: LayoutElement> Monitor<W> {
                     geo.loc.to_physical_precise_round(scale),
                     Relocate::Relative,
                 )
-            });
+            };
 
-            (geo, iter)
+            let iter = iter.map(scale_relocate);
+
+            let background = ws.render_background();
+            let background = scale_relocate(MonitorInnerRenderElement::SolidColor(background));
+
+            (geo, background, iter)
         })
     }
 

@@ -474,9 +474,8 @@ pub struct OutputState {
     ///    would occur, based on the last presentation time and output refresh interval. Sequence
     ///    is incremented in that timer, before attempting a redraw or sending frame callbacks.
     pub frame_callback_sequence: u32,
-    /// Solid color buffer for the background that we use instead of clearing to avoid damage
+    /// Solid color buffer for the backdrop that we use instead of clearing to avoid damage
     /// tracking issues and make screenshots easier.
-    pub background_buffer: SolidColorBuffer,
     pub backdrop_buffer: SolidColorBuffer,
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
@@ -1655,12 +1654,6 @@ impl State {
                 resized_outputs.push(output.clone());
             }
 
-            let background_color = config
-                .and_then(|c| c.background_color)
-                .unwrap_or_else(|| full_config.resolve_layout().background_color)
-                .to_array_unpremul();
-            let background_color = Color32F::from(background_color);
-
             let mut backdrop_color = config
                 .and_then(|c| c.backdrop_color)
                 .unwrap_or(full_config.overview.backdrop_color)
@@ -1669,10 +1662,6 @@ impl State {
             let backdrop_color = Color32F::from(backdrop_color);
 
             if let Some(state) = self.niri.output_state.get_mut(output) {
-                if state.background_buffer.color() != background_color {
-                    state.background_buffer.set_color(background_color);
-                    recolored_outputs.push(output.clone());
-                }
                 if state.backdrop_buffer.color() != backdrop_color {
                     state.backdrop_buffer.set_color(backdrop_color);
                     recolored_outputs.push(output.clone());
@@ -2904,11 +2893,6 @@ impl Niri {
             .map(|c| ipc_transform_to_smithay(c.transform))
             .unwrap_or(Transform::Normal);
 
-        let background_color = c
-            .and_then(|c| c.background_color)
-            .unwrap_or_else(|| config.resolve_layout().background_color)
-            .to_array_unpremul();
-
         let mut backdrop_color = c
             .and_then(|c| c.backdrop_color)
             .unwrap_or(config.overview.backdrop_color)
@@ -2947,7 +2931,6 @@ impl Niri {
             frame_clock: FrameClock::new(refresh_interval, vrr),
             last_drm_sequence: None,
             frame_callback_sequence: 0,
-            background_buffer: SolidColorBuffer::new(size, background_color),
             backdrop_buffer: SolidColorBuffer::new(size, backdrop_color),
             lock_render_state,
             lock_surface: None,
@@ -3056,7 +3039,6 @@ impl Niri {
         self.layout.update_output_size(output);
 
         if let Some(state) = self.output_state.get_mut(output) {
-            state.background_buffer.resize(output_size);
             state.backdrop_buffer.resize(output_size);
 
             state.lock_color_buffer.resize(output_size);
@@ -4239,13 +4221,6 @@ impl Niri {
 
         // Prepare the background elements.
         let state = self.output_state.get(output).unwrap();
-        let background_buffer = state.background_buffer.clone();
-        let background = SolidColorRenderElement::from_buffer(
-            &background_buffer,
-            (0., 0.),
-            1.,
-            Kind::Unspecified,
-        );
         let backdrop = SolidColorRenderElement::from_buffer(
             &state.backdrop_buffer,
             (0., 0.),
@@ -4286,7 +4261,7 @@ impl Niri {
         let zoom = mon.overview_zoom();
         let monitor_elements = Vec::from_iter(
             mon.render_elements(renderer, target, focus_ring)
-                .map(|(geo, iter)| (geo, Vec::from_iter(iter))),
+                .map(|(geo, bg, iter)| (geo, bg, Vec::from_iter(iter))),
         );
         let workspace_shadow_elements = Vec::from_iter(mon.render_workspace_shadows(renderer));
         let insert_hint_elements = mon.render_insert_hint_between_workspaces(renderer);
@@ -4330,17 +4305,24 @@ impl Niri {
                     .into_iter()
                     .map(OutputRenderElements::from),
             );
+
+            let mut ws_background = None;
             elements.extend(
                 monitor_elements
                     .into_iter()
-                    .flat_map(|(_ws_geo, iter)| iter)
+                    .flat_map(|(_ws_geo, ws_bg, iter)| {
+                        ws_background = Some(ws_bg);
+                        iter
+                    })
                     .map(OutputRenderElements::from),
             );
 
             elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
             elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
 
-            elements.push(OutputRenderElements::from(background));
+            if let Some(ws_background) = ws_background {
+                elements.push(OutputRenderElements::from(ws_background));
+            }
 
             elements.extend(
                 workspace_shadow_elements
@@ -4362,7 +4344,7 @@ impl Niri {
                     .map(OutputRenderElements::from),
             );
 
-            for (ws_geo, ws_elements) in monitor_elements {
+            for (ws_geo, ws_background, ws_elements) in monitor_elements {
                 // Collect all other layer-shell elements.
                 let mut layer_elems = SplitElements::default();
                 extend_from_layer(&mut layer_elems, Layer::Bottom, false);
@@ -4386,11 +4368,7 @@ impl Niri {
                         .map(OutputRenderElements::from),
                 );
 
-                if let Some(elem) =
-                    scale_relocate_crop(background.clone(), output_scale, zoom, ws_geo)
-                {
-                    elements.push(OutputRenderElements::from(elem));
-                }
+                elements.push(OutputRenderElements::from(ws_background));
             }
 
             elements.extend(
@@ -6351,9 +6329,6 @@ niri_render_elements! {
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
-        RelocatedSolidColor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
-            SolidColorRenderElement
-        >>>,
         ScreenshotUi = ScreenshotUiRenderElement,
         ExitConfirmDialog = ExitConfirmDialogRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
