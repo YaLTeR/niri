@@ -1,5 +1,6 @@
 use std::cell::{Cell, OnceCell, RefCell};
 
+use niri_config::utils::{Flag, MergeWith as _};
 use niri_config::workspace::WorkspaceName;
 use niri_config::{
     CenterFocusedColumn, FloatOrInt, OutputName, Struts, TabIndicatorLength, TabIndicatorPosition,
@@ -3451,10 +3452,11 @@ fn arbitrary_tab_indicator_position() -> impl Strategy<Value = TabIndicatorPosit
 prop_compose! {
     fn arbitrary_focus_ring()(
         off in any::<bool>(),
-        width in arbitrary_spacing(),
-    ) -> niri_config::FocusRing {
-        niri_config::FocusRing {
+        width in prop::option::of(arbitrary_spacing().prop_map(FloatOrInt)),
+    ) -> niri_config::BorderRule {
+        niri_config::BorderRule {
             off,
+            on: !off,
             width,
             ..Default::default()
         }
@@ -3464,10 +3466,11 @@ prop_compose! {
 prop_compose! {
     fn arbitrary_border()(
         off in any::<bool>(),
-        width in arbitrary_spacing(),
-    ) -> niri_config::Border {
-        niri_config::Border {
+        width in prop::option::of(arbitrary_spacing().prop_map(FloatOrInt)),
+    ) -> niri_config::BorderRule {
+        niri_config::BorderRule {
             off,
+            on: !off,
             width,
             ..Default::default()
         }
@@ -3476,12 +3479,13 @@ prop_compose! {
 
 prop_compose! {
     fn arbitrary_shadow()(
-        on in any::<bool>(),
-        width in arbitrary_spacing(),
-    ) -> niri_config::Shadow {
-        niri_config::Shadow {
-            on,
-            softness: width,
+        off in any::<bool>(),
+        softness in prop::option::of(arbitrary_spacing().prop_map(FloatOrInt)),
+    ) -> niri_config::ShadowRule {
+        niri_config::ShadowRule {
+            off,
+            on: !off,
+            softness,
             ..Default::default()
         }
     }
@@ -3490,20 +3494,22 @@ prop_compose! {
 prop_compose! {
     fn arbitrary_tab_indicator()(
         off in any::<bool>(),
-        hide_when_single_tab in any::<bool>(),
-        place_within_column in any::<bool>(),
-        width in arbitrary_spacing(),
-        gap in arbitrary_spacing_neg(),
-        length in (0f64..2f64),
-        position in arbitrary_tab_indicator_position(),
-    ) -> niri_config::TabIndicator {
-        niri_config::TabIndicator {
+        hide_when_single_tab in prop::option::of(any::<bool>().prop_map(Flag)),
+        place_within_column in prop::option::of(any::<bool>().prop_map(Flag)),
+        width in prop::option::of(arbitrary_spacing().prop_map(FloatOrInt)),
+        gap in prop::option::of(arbitrary_spacing_neg().prop_map(FloatOrInt)),
+        length in prop::option::of((0f64..2f64)
+            .prop_map(|x| TabIndicatorLength { total_proportion: Some(x) })),
+        position in prop::option::of(arbitrary_tab_indicator_position()),
+    ) -> niri_config::TabIndicatorPart {
+        niri_config::TabIndicatorPart {
             off,
+            on: !off,
             hide_when_single_tab,
             place_within_column,
             width,
             gap,
-            length: TabIndicatorLength { total_proportion: Some(length) },
+            length,
             position,
             ..Default::default()
         }
@@ -3511,18 +3517,18 @@ prop_compose! {
 }
 
 prop_compose! {
-    fn arbitrary_layout_config()(
-        gaps in arbitrary_spacing(),
-        struts in arbitrary_struts(),
-        focus_ring in arbitrary_focus_ring(),
-        border in arbitrary_border(),
-        shadow in arbitrary_shadow(),
-        tab_indicator in arbitrary_tab_indicator(),
-        center_focused_column in arbitrary_center_focused_column(),
-        always_center_single_column in any::<bool>(),
-        empty_workspace_above_first in any::<bool>(),
-    ) -> niri_config::Layout {
-        niri_config::Layout {
+    fn arbitrary_layout_part()(
+        gaps in prop::option::of(arbitrary_spacing().prop_map(FloatOrInt)),
+        struts in prop::option::of(arbitrary_struts()),
+        focus_ring in prop::option::of(arbitrary_focus_ring()),
+        border in prop::option::of(arbitrary_border()),
+        shadow in prop::option::of(arbitrary_shadow()),
+        tab_indicator in prop::option::of(arbitrary_tab_indicator()),
+        center_focused_column in prop::option::of(arbitrary_center_focused_column()),
+        always_center_single_column in prop::option::of(any::<bool>().prop_map(Flag)),
+        empty_workspace_above_first in prop::option::of(any::<bool>().prop_map(Flag)),
+    ) -> niri_config::LayoutPart {
+        niri_config::LayoutPart {
             gaps,
             struts,
             center_focused_column,
@@ -3532,17 +3538,6 @@ prop_compose! {
             border,
             shadow,
             tab_indicator,
-            ..Default::default()
-        }
-    }
-}
-
-prop_compose! {
-    fn arbitrary_options()(
-        layout in arbitrary_layout_config()
-    ) -> Options {
-        Options {
-            layout,
             ..Default::default()
         }
     }
@@ -3562,13 +3557,22 @@ proptest! {
     #[test]
     fn random_operations_dont_panic(
         ops: Vec<Op>,
-        options in arbitrary_options(),
-        post_options in prop::option::of(arbitrary_options()),
+        layout_config in arbitrary_layout_part(),
+        post_layout_config in prop::option::of(arbitrary_layout_part()),
     ) {
         // eprintln!("{ops:?}");
+        let options = Options {
+            layout: niri_config::Layout::from_part(&layout_config),
+            ..Default::default()
+        };
+
         let mut layout = check_ops_with_options(options, ops);
 
-        if let Some(post_options) = post_options {
+        if let Some(layout_config) = post_layout_config {
+            let post_options = Options {
+                layout: niri_config::Layout::from_part(&layout_config),
+                ..Default::default()
+            };
             layout.update_options(post_options);
             layout.verify_invariants();
         }
