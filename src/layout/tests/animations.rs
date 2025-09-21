@@ -62,7 +62,7 @@ fn set_up_two_in_column() -> Layout<TestWindow> {
         Op::CompleteAnimations,
     ];
 
-    check_ops_with_options(make_options(), &ops)
+    check_ops_with_options(make_options(), ops)
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn height_resize_animates_next_y() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // No time had passed yet, so we're at the initial state.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -130,7 +130,7 @@ fn clientside_height_change_doesnt_animate() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // No time had passed yet, but we are at the final state right away.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -166,7 +166,7 @@ fn height_resize_and_back() {
         // Advance the time halfway.
         Op::AdvanceAnimations { msec_delta: 500 },
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // Top window is half-resized at 150 px tall, bottom window is at y=150 matching it.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -189,7 +189,7 @@ fn height_resize_and_back() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // No time had passed yet, and we expect no animation jumps, so this state matches the last.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -243,7 +243,7 @@ fn height_resize_and_cancel() {
         // Advance the time slightly.
         Op::AdvanceAnimations { msec_delta: 50 },
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // Top window is half-resized at 105 px tall, bottom window is at y=105 matching it.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -267,7 +267,7 @@ fn height_resize_and_cancel() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // Since the resize animation is cancelled, the height goes to the new value immediately. The Y
     // position doesn't jump, instead the animation is offset to preserve the current position.
@@ -309,7 +309,7 @@ fn height_resize_and_back_during_another_y_anim() {
         Op::Communicate(2),
         Op::CompleteAnimations,
     ];
-    let mut layout = check_ops_with_options(make_options(), &ops);
+    let mut layout = check_ops_with_options(make_options(), ops);
 
     // The initial state.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -350,7 +350,7 @@ fn height_resize_and_back_during_another_y_anim() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // No time had passed, so no change in state yet.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -383,7 +383,7 @@ fn height_resize_and_back_during_another_y_anim() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // No time had passed, so no change in state yet.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -442,7 +442,7 @@ fn height_resize_and_cancel_during_another_y_anim() {
         Op::Communicate(2),
         Op::CompleteAnimations,
     ];
-    let mut layout = check_ops_with_options(make_options(), &ops);
+    let mut layout = check_ops_with_options(make_options(), ops);
 
     // The initial state.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -485,7 +485,7 @@ fn height_resize_and_cancel_during_another_y_anim() {
         // Advance the time slightly.
         Op::AdvanceAnimations { msec_delta: 50 },
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // X changed by 5, but y changed by 8 since the Y movement from the resize compounds with the Y
     // movement from consume-into-column.
@@ -510,7 +510,7 @@ fn height_resize_and_cancel_during_another_y_anim() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // Since the resize anim was cancelled, second window's Y anim is adjusted to preserve the
     // current position while targeting the new final position.
@@ -577,7 +577,7 @@ fn height_resize_before_another_y_anim_then_back() {
         // Advance the time a bit.
         Op::AdvanceAnimations { msec_delta: 200 },
     ];
-    let mut layout = check_ops_with_options(make_options(), &ops);
+    let mut layout = check_ops_with_options(make_options(), ops);
 
     // The resize is in progress.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -620,7 +620,7 @@ fn height_resize_before_another_y_anim_then_back() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // No time had passed, so no change in state yet.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -692,7 +692,7 @@ fn height_resize_before_another_y_anim_then_cancel() {
         // Advance the time a bit.
         Op::AdvanceAnimations { msec_delta: 20 },
     ];
-    let mut layout = check_ops_with_options(make_options(), &ops);
+    let mut layout = check_ops_with_options(make_options(), ops);
 
     // The resize is in progress.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -734,7 +734,7 @@ fn height_resize_before_another_y_anim_then_cancel() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // The second window's trajectory readjusts to the new final position at 100 px, without jumps.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -781,7 +781,7 @@ fn clientside_height_change_during_another_y_anim() {
         // Advance the time a bit.
         Op::AdvanceAnimations { msec_delta: 200 },
     ];
-    let mut layout = check_ops_with_options(make_options(), &ops);
+    let mut layout = check_ops_with_options(make_options(), ops);
 
     // Second window on its way to the bottom.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -798,7 +798,7 @@ fn clientside_height_change_during_another_y_anim() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // The second window's trajectory readjusts to the new final position at 200 px, without jumps.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -857,7 +857,7 @@ fn height_resize_cancel_with_stationary_second_window() {
     let mut options = make_options();
     // Window movement will happen instantly.
     options.animations.window_movement.0.off = true;
-    let mut layout = check_ops_with_options(options, &ops);
+    let mut layout = check_ops_with_options(options, ops);
 
     // The resize is in progress.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -901,7 +901,7 @@ fn height_resize_cancel_with_stationary_second_window() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // This causes the second window to jump down, which is correct because it hadn't been in an
     // animation, and as far as it's concerned, this is the same case as a window just deciding to
@@ -937,7 +937,7 @@ fn width_resize_and_cancel() {
         Op::Communicate(2),
         Op::CompleteAnimations,
     ];
-    let mut layout = check_ops_with_options(make_options(), &ops);
+    let mut layout = check_ops_with_options(make_options(), ops);
 
     // The initial state.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -962,7 +962,7 @@ fn width_resize_and_cancel() {
         // Advance the time slightly.
         Op::AdvanceAnimations { msec_delta: 50 },
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // Left window is half-resized at 105 px wide, right window is at x=105 matching it.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -986,7 +986,7 @@ fn width_resize_and_cancel() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // Since the resize animation is cancelled, the width goes to the new value immediately. The X
     // position doesn't jump, instead the animation is restarted to preserve the current position.
@@ -1027,7 +1027,7 @@ fn width_resize_and_cancel_of_column_to_the_left() {
         Op::Communicate(2),
         Op::CompleteAnimations,
     ];
-    let mut layout = check_ops_with_options(make_options(), &ops);
+    let mut layout = check_ops_with_options(make_options(), ops);
 
     // The initial state.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -1052,7 +1052,7 @@ fn width_resize_and_cancel_of_column_to_the_left() {
         // Advance the time slightly.
         Op::AdvanceAnimations { msec_delta: 50 },
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // Left window is half-resized at 105 px wide, it's at x=-5 matching the right edge position.
     assert_snapshot!(format_tiles(&layout), @r"
@@ -1076,7 +1076,7 @@ fn width_resize_and_cancel_of_column_to_the_left() {
         Op::Communicate(1),
         Op::Communicate(2),
     ];
-    check_ops_on_layout(&mut layout, &ops);
+    check_ops_on_layout(&mut layout, ops);
 
     // Since the resize animation is cancelled, the width goes to the new value immediately. The X
     // position doesn't jump, instead the animation is restarted to preserve the current position.
