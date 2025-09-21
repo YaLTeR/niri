@@ -6,6 +6,7 @@ use niri_config::{
     CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
+use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
@@ -29,6 +30,7 @@ use crate::animation::Clock;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
+use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::RenderTarget;
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
@@ -86,6 +88,9 @@ pub struct Workspace<W: LayoutElement> {
 
     /// This workspace's shadow in the overview.
     shadow: Shadow,
+
+    /// This workspace's background.
+    background_buffer: SolidColorBuffer,
 
     /// Clock for driving animations.
     pub(super) clock: Clock,
@@ -246,6 +251,8 @@ impl<W: LayoutElement> Workspace<W> {
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
 
+        let background_color = options.layout.background_color.to_array_unpremul();
+
         Self {
             scrolling,
             floating,
@@ -256,6 +263,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
+            background_buffer: SolidColorBuffer::new(view_size, background_color),
             output: Some(output),
             clock,
             base_options,
@@ -309,6 +317,8 @@ impl<W: LayoutElement> Workspace<W> {
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
 
+        let background_color = options.layout.background_color.to_array_unpremul();
+
         Self {
             scrolling,
             floating,
@@ -320,6 +330,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
+            background_buffer: SolidColorBuffer::new(view_size, background_color),
             clock,
             base_options,
             options,
@@ -408,6 +419,9 @@ impl<W: LayoutElement> Workspace<W> {
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, self.view_size);
         self.shadow.update_config(shadow_config);
+
+        let background_color = options.layout.background_color.to_array_unpremul();
+        self.background_buffer.set_color(background_color);
 
         self.base_options = base_options;
         self.options = options;
@@ -562,6 +576,8 @@ impl<W: LayoutElement> Workspace<W> {
                 compute_workspace_shadow_config(self.options.overview.workspace_shadow, size);
             self.shadow.update_config(shadow_config);
         }
+
+        self.background_buffer.resize(size);
 
         if scale_transform_changed {
             for window in self.windows() {
@@ -1513,6 +1529,15 @@ impl<W: LayoutElement> Workspace<W> {
         self.shadow.render(renderer, Point::from((0., 0.)))
     }
 
+    pub fn render_background(&self) -> SolidColorRenderElement {
+        SolidColorRenderElement::from_buffer(
+            &self.background_buffer,
+            Point::new(0., 0.),
+            1.,
+            Kind::Unspecified,
+        )
+    }
+
     pub fn render_above_top_layer(&self) -> bool {
         self.scrolling.render_above_top_layer()
     }
@@ -1830,6 +1855,12 @@ impl<W: LayoutElement> Workspace<W> {
 
         assert!(self.view_size.w > 0.);
         assert!(self.view_size.h > 0.);
+
+        assert_eq!(self.background_buffer.size(), self.view_size);
+        assert_eq!(
+            self.background_buffer.color().components(),
+            options.layout.background_color.to_array_unpremul(),
+        );
 
         assert_eq!(self.view_size, self.scrolling.view_size());
         assert_eq!(self.working_area, self.scrolling.parent_area());
