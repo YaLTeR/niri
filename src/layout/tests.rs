@@ -396,7 +396,7 @@ fn arbitrary_column_display() -> impl Strategy<Value = ColumnDisplay> {
     prop_oneof![Just(ColumnDisplay::Normal), Just(ColumnDisplay::Tabbed)]
 }
 
-#[derive(Debug, Clone, Copy, Arbitrary)]
+#[derive(Debug, Clone, Arbitrary)]
 enum Op {
     AddOutput(#[proptest(strategy = "1..=5usize")] usize),
     AddScaledOutput {
@@ -1549,7 +1549,7 @@ impl Op {
 }
 
 #[track_caller]
-fn check_ops_on_layout(layout: &mut Layout<TestWindow>, ops: &[Op]) {
+fn check_ops_on_layout(layout: &mut Layout<TestWindow>, ops: impl IntoIterator<Item = Op>) {
     for op in ops {
         op.apply(layout);
         layout.verify_invariants();
@@ -1557,14 +1557,17 @@ fn check_ops_on_layout(layout: &mut Layout<TestWindow>, ops: &[Op]) {
 }
 
 #[track_caller]
-fn check_ops(ops: &[Op]) -> Layout<TestWindow> {
+fn check_ops(ops: impl IntoIterator<Item = Op>) -> Layout<TestWindow> {
     let mut layout = Layout::default();
     check_ops_on_layout(&mut layout, ops);
     layout
 }
 
 #[track_caller]
-fn check_ops_with_options(options: Options, ops: &[Op]) -> Layout<TestWindow> {
+fn check_ops_with_options(
+    options: Options,
+    ops: impl IntoIterator<Item = Op>,
+) -> Layout<TestWindow> {
     let mut layout = Layout::with_options(Clock::with_time(Duration::ZERO), options);
     check_ops_on_layout(&mut layout, ops);
     layout
@@ -1663,17 +1666,17 @@ fn operations_dont_panic() {
         Op::ToggleColumnTabbedDisplay,
     ];
 
-    for third in every_op {
-        for second in every_op {
-            for first in every_op {
+    for third in &every_op {
+        for second in &every_op {
+            for first in &every_op {
                 // eprintln!("{first:?}, {second:?}, {third:?}");
 
                 let mut layout = Layout::default();
-                first.apply(&mut layout);
+                first.clone().apply(&mut layout);
                 layout.verify_invariants();
-                second.apply(&mut layout);
+                second.clone().apply(&mut layout);
                 layout.verify_invariants();
-                third.apply(&mut layout);
+                third.clone().apply(&mut layout);
                 layout.verify_invariants();
             }
         }
@@ -1838,21 +1841,22 @@ fn operations_from_starting_state_dont_panic() {
         Op::ToggleColumnTabbedDisplay,
     ];
 
-    for third in every_op {
-        for second in every_op {
-            for first in every_op {
+    for third in &every_op {
+        for second in &every_op {
+            for first in &every_op {
                 // eprintln!("{first:?}, {second:?}, {third:?}");
 
                 let mut layout = Layout::default();
-                for op in setup_ops {
-                    op.apply(&mut layout);
+                for op in &setup_ops {
+                    op.clone().apply(&mut layout);
                 }
 
-                first.apply(&mut layout);
+                let mut layout = Layout::default();
+                first.clone().apply(&mut layout);
                 layout.verify_invariants();
-                second.apply(&mut layout);
+                second.clone().apply(&mut layout);
                 layout.verify_invariants();
-                third.apply(&mut layout);
+                third.clone().apply(&mut layout);
                 layout.verify_invariants();
             }
         }
@@ -1877,7 +1881,7 @@ fn primary_active_workspace_idx_not_updated_on_output_add() {
         Op::AddOutput(2),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -1891,7 +1895,7 @@ fn window_closed_on_previous_workspace() {
         Op::CloseWindow(0),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -1905,7 +1909,7 @@ fn removing_output_must_keep_empty_focus_on_primary() {
         Op::RemoveOutput(1),
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
 
     let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
         unreachable!()
@@ -1935,7 +1939,7 @@ fn move_to_workspace_by_idx_does_not_leave_empty_workspaces() {
         },
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
 
     let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
         unreachable!()
@@ -1962,7 +1966,7 @@ fn empty_workspaces_dont_move_back_to_original_output() {
         Op::AddOutput(1),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -1985,7 +1989,7 @@ fn named_workspaces_dont_update_original_output_on_adding_window() {
         Op::AddOutput(1),
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
     let (mon, _, ws) = layout
         .workspaces()
         .find(|(_, _, ws)| ws.name().is_some())
@@ -2010,7 +2014,7 @@ fn workspaces_update_original_output_on_moving_to_same_output() {
         Op::AddOutput(1),
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
     let (mon, _, ws) = layout
         .workspaces()
         .find(|(_, _, ws)| ws.name().is_some())
@@ -2038,7 +2042,7 @@ fn workspaces_update_original_output_on_moving_to_same_monitor() {
         Op::AddOutput(1),
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
     let (mon, _, ws) = layout
         .workspaces()
         .find(|(_, _, ws)| ws.name().is_some())
@@ -2065,7 +2069,7 @@ fn large_negative_height_change() {
     options.border.off = false;
     options.border.width = FloatOrInt(1.);
 
-    check_ops_with_options(options, &ops);
+    check_ops_with_options(options, ops);
 }
 
 #[test]
@@ -2084,7 +2088,7 @@ fn large_max_size() {
     options.border.off = false;
     options.border.width = FloatOrInt(1.);
 
-    check_ops_with_options(options, &ops);
+    check_ops_with_options(options, ops);
 }
 
 #[test]
@@ -2098,7 +2102,7 @@ fn workspace_cleanup_during_switch() {
         Op::CloseWindow(1),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2119,7 +2123,7 @@ fn workspace_transfer_during_switch() {
         Op::AddOutput(1),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2135,7 +2139,7 @@ fn workspace_transfer_during_switch_from_last() {
         Op::AddOutput(1),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2152,7 +2156,7 @@ fn workspace_transfer_during_switch_gets_cleaned_up() {
         Op::AddOutput(1),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2167,7 +2171,7 @@ fn move_workspace_to_output() {
         Op::MoveWorkspaceToOutput(2),
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
 
     let MonitorSet::Normal {
         monitors,
@@ -2203,7 +2207,7 @@ fn open_right_of_on_different_workspace() {
         },
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
 
     let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
         unreachable!()
@@ -2243,7 +2247,7 @@ fn open_right_of_on_different_workspace_ewaf() {
         empty_workspace_above_first: true,
         ..Default::default()
     };
-    let layout = check_ops_with_options(options, &ops);
+    let layout = check_ops_with_options(options, ops);
 
     let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
         unreachable!()
@@ -2276,7 +2280,7 @@ fn removing_all_outputs_preserves_empty_named_workspaces() {
         Op::RemoveOutput(1),
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
 
     let MonitorSet::NoOutputs { workspaces } = layout.monitor_set else {
         unreachable!()
@@ -2364,7 +2368,7 @@ fn set_window_height_recomputes_to_auto() {
         },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2397,7 +2401,7 @@ fn one_window_in_column_becomes_weight_1() {
         Op::CloseWindow(1),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2426,7 +2430,7 @@ fn fixed_height_takes_max_non_auto_into_account() {
         gaps: 0.,
         ..Default::default()
     };
-    check_ops_with_options(options, &ops);
+    check_ops_with_options(options, ops);
 }
 
 #[test]
@@ -2445,7 +2449,7 @@ fn start_interactive_move_then_remove_window() {
         Op::CloseWindow(0),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2473,7 +2477,7 @@ fn interactive_move_onto_empty_output() {
         Op::InteractiveMoveEnd { window: 0 },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2505,7 +2509,7 @@ fn interactive_move_onto_empty_output_ewaf() {
         empty_workspace_above_first: true,
         ..Default::default()
     };
-    check_ops_with_options(options, &ops);
+    check_ops_with_options(options, ops);
 }
 
 #[test]
@@ -2534,7 +2538,7 @@ fn interactive_move_onto_last_workspace() {
         Op::InteractiveMoveEnd { window: 0 },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2566,7 +2570,7 @@ fn interactive_move_onto_first_empty_workspace() {
         empty_workspace_above_first: true,
         ..Default::default()
     };
-    check_ops_with_options(options, &ops);
+    check_ops_with_options(options, ops);
 }
 
 #[test]
@@ -2584,7 +2588,7 @@ fn output_active_workspace_is_preserved() {
         Op::AddOutput(1),
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
 
     let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
         unreachable!()
@@ -2609,7 +2613,7 @@ fn output_active_workspace_is_preserved_with_other_outputs() {
         Op::AddOutput(1),
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
 
     let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
         unreachable!()
@@ -2629,7 +2633,7 @@ fn named_workspace_to_output() {
         Op::MoveWorkspaceToOutput(1),
         Op::FocusWorkspaceUp,
     ];
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2647,7 +2651,7 @@ fn named_workspace_to_output_ewaf() {
         empty_workspace_above_first: true,
         ..Default::default()
     };
-    check_ops_with_options(options, &ops);
+    check_ops_with_options(options, ops);
 }
 
 #[test]
@@ -2666,7 +2670,7 @@ fn move_window_to_empty_workspace_above_first() {
         empty_workspace_above_first: true,
         ..Default::default()
     };
-    check_ops_with_options(options, &ops);
+    check_ops_with_options(options, ops);
 }
 
 #[test]
@@ -2683,7 +2687,7 @@ fn move_window_to_different_output() {
         empty_workspace_above_first: true,
         ..Default::default()
     };
-    check_ops_with_options(options, &ops);
+    check_ops_with_options(options, ops);
 }
 
 #[test]
@@ -2699,7 +2703,7 @@ fn close_window_empty_ws_above_first() {
         empty_workspace_above_first: true,
         ..Default::default()
     };
-    check_ops_with_options(options, &ops);
+    check_ops_with_options(options, ops);
 }
 
 #[test]
@@ -2716,7 +2720,7 @@ fn add_and_remove_output() {
         empty_workspace_above_first: true,
         ..Default::default()
     };
-    check_ops_with_options(options, &ops);
+    check_ops_with_options(options, ops);
 }
 
 #[test]
@@ -2728,7 +2732,7 @@ fn switch_ewaf_on() {
         },
     ];
 
-    let mut layout = check_ops(&ops);
+    let mut layout = check_ops(ops);
     layout.update_options(Options {
         empty_workspace_above_first: true,
         ..Default::default()
@@ -2749,7 +2753,7 @@ fn switch_ewaf_off() {
         empty_workspace_above_first: true,
         ..Default::default()
     };
-    let mut layout = check_ops_with_options(options, &ops);
+    let mut layout = check_ops_with_options(options, ops);
     layout.update_options(Options::default());
     layout.verify_invariants();
 }
@@ -2780,7 +2784,7 @@ fn interactive_move_drop_on_other_output_during_animation() {
         Op::RemoveOutput(4),
         Op::InteractiveMoveEnd { window: 3 },
     ];
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2813,7 +2817,7 @@ fn add_window_next_to_only_interactively_moved_without_outputs() {
         },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2842,7 +2846,7 @@ fn interactive_move_toggle_floating_ends_dnd_gesture() {
         Op::InteractiveMoveEnd { window: 2 },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2855,7 +2859,7 @@ fn set_width_fixed_negative() {
         Op::ToggleWindowFloating { id: Some(3) },
         Op::SetColumnWidth(SizeChange::SetFixed(-100)),
     ];
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2871,7 +2875,7 @@ fn set_height_fixed_negative() {
             change: SizeChange::SetFixed(-100),
         },
     ];
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2892,7 +2896,7 @@ fn interactive_resize_to_negative() {
             dy: -10000.,
         },
     ];
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2906,7 +2910,7 @@ fn windows_on_other_workspaces_remain_activated() {
         Op::Refresh { is_active: true },
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
     let (_, win) = layout.windows().next().unwrap();
     assert!(win.0.pending_activated.get());
 }
@@ -2930,7 +2934,7 @@ fn stacking_add_parent_brings_up_child() {
         },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2959,7 +2963,7 @@ fn stacking_add_parent_brings_up_descendants() {
         },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -2995,7 +2999,7 @@ fn stacking_activate_brings_up_descendants() {
         Op::FocusWindow(0),
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -3020,7 +3024,7 @@ fn stacking_set_parent_brings_up_child() {
         },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -3038,7 +3042,7 @@ fn move_window_to_workspace_with_different_active_output() {
         },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -3051,7 +3055,7 @@ fn set_first_workspace_name() {
         },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -3068,7 +3072,7 @@ fn set_first_workspace_name_ewaf() {
         empty_workspace_above_first: true,
         ..Default::default()
     };
-    check_ops_with_options(options, &ops);
+    check_ops_with_options(options, ops);
 }
 
 #[test]
@@ -3085,7 +3089,7 @@ fn set_last_workspace_name() {
         },
     ];
 
-    check_ops(&ops);
+    check_ops(ops);
 }
 
 #[test]
@@ -3112,7 +3116,7 @@ fn move_workspace_to_same_monitor_doesnt_reorder() {
         },
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
     let counts: Vec<_> = layout
         .workspaces()
         .map(|(_, _, ws)| ws.windows().count())
@@ -3140,7 +3144,7 @@ fn removing_window_above_preserves_focused_window() {
         Op::CloseWindow(0),
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
     let win = layout.focus().unwrap();
     assert_eq!(win.0.id, 1);
 }
@@ -3159,7 +3163,7 @@ fn preset_column_width_fixed_correct_with_border() {
         preset_column_widths: vec![PresetSize::Fixed(500)],
         ..Default::default()
     };
-    let mut layout = check_ops_with_options(options, &ops);
+    let mut layout = check_ops_with_options(options, ops);
 
     let win = layout.windows().next().unwrap().1;
     assert_eq!(win.requested_size().unwrap().w, 500);
@@ -3205,7 +3209,7 @@ fn preset_column_width_reset_after_set_width() {
         preset_column_widths: vec![PresetSize::Fixed(500), PresetSize::Fixed(1000)],
         ..Default::default()
     };
-    let layout = check_ops_with_options(options, &ops);
+    let layout = check_ops_with_options(options, ops);
     let win = layout.windows().next().unwrap().1;
     assert_eq!(win.requested_size().unwrap().w, 500);
 }
@@ -3249,7 +3253,7 @@ fn move_column_to_workspace_unfocused_with_multiple_monitors() {
         Op::FocusOutput(1),
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
 
     assert_eq!(layout.active_workspace().unwrap().name().unwrap(), "ws102");
 
@@ -3287,7 +3291,7 @@ fn move_column_to_workspace_down_focus_false_on_floating_window() {
         Op::MoveColumnToWorkspaceDown(false),
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
 
     let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
         unreachable!()
@@ -3310,7 +3314,7 @@ fn move_column_to_workspace_focus_false_on_floating_window() {
         Op::MoveColumnToWorkspace(1, false),
     ];
 
-    let layout = check_ops(&ops);
+    let layout = check_ops(ops);
 
     let MonitorSet::Normal { monitors, .. } = layout.monitor_set else {
         unreachable!()
@@ -3504,7 +3508,7 @@ proptest! {
         post_options in prop::option::of(arbitrary_options()),
     ) {
         // eprintln!("{ops:?}");
-        let mut layout = check_ops_with_options(options, &ops);
+        let mut layout = check_ops_with_options(options, ops);
 
         if let Some(post_options) = post_options {
             layout.update_options(post_options);
