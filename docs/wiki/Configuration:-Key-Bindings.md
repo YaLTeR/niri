@@ -81,7 +81,9 @@ binds {
 
 This is mostly useful for the scroll bindings.
 
-Binds can be set to trigger on release instead of on the initial key press. These will only trigger if no other binds were triggered between the press and release.
+### Release bindings
+
+Binds can be set to trigger on release instead of on the initial key press. These will only trigger if no other keys were pressed between their press and release.
 
 This should be set if you want to bind `Mod` to an action.
 

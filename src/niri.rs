@@ -315,7 +315,7 @@ pub struct Niri {
 
     pub seat: Seat<State>,
     /// Scancodes and whether a release keybind is valid of the keys to suppress.
-    /// Release bindings only execute when no other binds are handled between press and release.
+    /// Release bindings only execute when no other keys are pressed between press and release.
     /// Therefore, we set the remaining scancodes to false when handling another keybind so we
     /// don't handle multiple release binds in a single interaction.
     pub suppressed_keys: HashMap<Keycode, bool>,
