@@ -76,7 +76,7 @@ If you still get a black screen, try using each of the `card` devices.
 There's a common problem of mesa drivers going out of sync with niri, so make sure your system mesa version matches the niri mesa version.
 When this happens, you usually see a black screen when trying to start niri from a TTY.
 
-Also, on Intel graphics, you may need a workaround described [here](https://nixos.wiki/wiki/Intel_Graphics).
+Also, on Intel graphics, you may need a workaround described [here](https://wiki.nixos.org/wiki/Intel_Graphics).
 
 ### Virtual Machines
 
