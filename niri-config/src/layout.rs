@@ -27,6 +27,8 @@ pub struct Layout {
     pub preset_window_heights: Vec<PresetSize>,
     #[knuffel(child, unwrap(argument), default)]
     pub center_focused_column: CenterFocusedColumn,
+    #[knuffel(child, unwrap(argument), default)]
+    pub new_column_location: NewColumnLocation,
     #[knuffel(child)]
     pub always_center_single_column: bool,
     #[knuffel(child)]
@@ -103,6 +105,15 @@ pub enum CenterFocusedColumn {
     /// Focusing a column will center it if it doesn't fit on the screen together with the
     /// previously focused column.
     OnOverflow,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum NewColumnLocation {
+    #[default]
+    RightOfActive,
+    LeftOfActive,
+    FirstOfWorkspace,
+    LastOfWorkspace,
 }
 
 impl<S> knuffel::Decode<S> for DefaultPresetSize
