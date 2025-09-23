@@ -83,3 +83,29 @@ For example, [nirius](https://git.sr.ht/~tsdh/nirius) seems to have this feature
 Firefox seems to first open the Bitwarden window with a generic Firefox title, and only later change the window title to Bitwarden, so you can't effectively target it with an `open-floating` window rule.
 
 You'll need to use a script, for example [this one](https://github.com/YaLTeR/niri/discussions/1599) or other ones (search niri issues and discussions for Bitwarden).
+
+### Can I open a window directly in the current column / in the same column as another window?
+
+No, but you can script the behavior you want with the [niri IPC](./IPC.md).
+Listen to the event stream for a new window opening, then call an action like `consume-or-expel-window-left`.
+
+Adding this directly to niri is challenging:
+
+- The act of "opening a window directly in some column" by itself is quite involved. Niri will have to compute the exact initial window size provided how other windows in a column would resize in response. This logic exists, but it isn't directly pluggable to the code computing a size for a new window. Then, it'll need to handle all sorts of edge cases like the column disappearing, or new windows getting added to the column, before the target window had a chance to appear.
+- How do you indicate if a new window should spawn in an existing column (and in which one), as opposed to a new column? Different people seem to have different needs here (including very complex rules based on parent PID, etc.), and it's very unclear design-wise what kind of (simple) setting is actually needed and would be useful. See also https://github.com/YaLTeR/niri/discussions/1125.
+
+### Why does moving the mouse against a monitor edge focus the next window, but only sometimes?
+
+This can happen with [`focus-follows-mouse`](./Configuration:-Input.md#focus-follows-mouse).
+When using client-side decorations, windows are supposed to have some margins outside their geometry for the mouse resizing handles.
+These margins "peek out" of the monitor edges since they're outside the window geometry, and `focus-follows-mouse` triggers when the mouse crosses them.
+
+It doesn't always happen:
+
+- Some toolkits don't put resize handles outside the window geometry. Then there's no input area outside, so nowhere for `focus-follows-mouse` to trigger.
+- If the current window has its own margin for resizing, and it extends all the way to the monitor edge, then `focus-follows-mouse` won't trigger because the mouse will never leave the current window.
+
+To fix this, you can:
+
+- Use `focus-follows-mouse max-scroll-amount="0%"`, which will prevent `focus-follows-mouse` from triggering when it would cause scrolling.
+- Set `prefer-no-csd` which will generally cause clients to remove those resizing margins.
