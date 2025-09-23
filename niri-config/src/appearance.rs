@@ -350,7 +350,7 @@ impl Default for Shadow {
             softness: FloatOrInt(30.),
             spread: FloatOrInt(5.),
             draw_behind_window: false,
-            color: Color::from_rgba8_unpremul(0, 0, 0, 0x70),
+            color: Color::from_rgba8_unpremul(0, 0, 0, 0x77),
             inactive_color: None,
         }
     }
@@ -580,12 +580,15 @@ impl BorderRule {
         }
         if let Some(x) = other.active_color {
             self.active_color = Some(x);
+            self.active_gradient = None;
         }
         if let Some(x) = other.inactive_color {
             self.inactive_color = Some(x);
+            self.inactive_gradient = None;
         }
         if let Some(x) = other.urgent_color {
             self.urgent_color = Some(x);
+            self.urgent_gradient = None;
         }
         if let Some(x) = other.active_gradient {
             self.active_gradient = Some(x);
@@ -698,12 +701,15 @@ impl TabIndicatorRule {
     pub fn merge_with(&mut self, other: &Self) {
         if let Some(x) = other.active_color {
             self.active_color = Some(x);
+            self.active_gradient = None;
         }
         if let Some(x) = other.inactive_color {
             self.inactive_color = Some(x);
+            self.inactive_gradient = None;
         }
         if let Some(x) = other.urgent_color {
             self.urgent_color = Some(x);
+            self.urgent_gradient = None;
         }
         if let Some(x) = other.active_gradient {
             self.active_gradient = Some(x);
@@ -1003,9 +1009,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_snapshot;
+    use insta::{assert_debug_snapshot, assert_snapshot};
 
     use super::*;
+    use crate::Config;
 
     #[test]
     fn parse_gradient_interpolation() {
@@ -1139,5 +1146,134 @@ mod tests {
         assert_snapshot!(is_on("on", &["off", "on"]), @"on");
         assert_snapshot!(is_on("on", &["on", "off"]), @"off");
         assert_snapshot!(is_on("on", &["on", "on"]), @"on");
+    }
+
+    #[test]
+    fn rule_color_can_override_base_gradient() {
+        let config = Config::parse(
+            "test.kdl",
+            r##"
+            // Start with gradient set.
+            layout {
+                border {
+                    active-gradient from="#101010" to="#202020"
+                    inactive-gradient from="#111111" to="#212121"
+                    urgent-gradient from="#121212" to="#222222"
+                }
+            }
+
+            // Override with color.
+            window-rule {
+                border {
+                    active-color "#abcdef"
+                    inactive-color "#123456"
+                    urgent-color "#fedcba"
+                }
+            }
+            "##,
+        )
+        .unwrap();
+
+        let mut border_rule = BorderRule::default();
+        for rule in &config.window_rules {
+            border_rule.merge_with(&rule.border);
+        }
+
+        let border = border_rule.resolve_against(config.layout.border);
+
+        // Gradient should be None because it's overwritten.
+        assert_debug_snapshot!(
+            (
+                border.active_gradient.is_some(),
+                border.inactive_gradient.is_some(),
+                border.urgent_gradient.is_some(),
+            ),
+            @r"
+        (
+            false,
+            false,
+            false,
+        )
+        "
+        );
+    }
+
+    #[test]
+    fn rule_color_can_override_rule_gradient() {
+        let config = Config::parse(
+            "test.kdl",
+            r##"
+            // Start with gradient set.
+            layout {
+                border {
+                    active-gradient from="#101010" to="#202020"
+                    inactive-gradient from="#111111" to="#212121"
+                    urgent-gradient from="#121212" to="#222222"
+                }
+            }
+
+            // Window rule with gradients set.
+            window-rule {
+                border {
+                    active-gradient from="#303030" to="#404040"
+                    inactive-gradient from="#313131" to="#414141"
+                    urgent-gradient from="#323232" to="#424242"
+                }
+
+                tab-indicator {
+                    active-gradient from="#505050" to="#606060"
+                    inactive-gradient from="#515151" to="#616161"
+                    urgent-gradient from="#525252" to="#626262"
+                }
+            }
+
+            // Override with color.
+            window-rule {
+                border {
+                    active-color "#abcdef"
+                    inactive-color "#123456"
+                    urgent-color "#fedcba"
+                }
+
+                tab-indicator {
+                    active-color "#abcdef"
+                    inactive-color "#123456"
+                    urgent-color "#fedcba"
+                }
+            }
+            "##,
+        )
+        .unwrap();
+
+        let mut border_rule = BorderRule::default();
+        let mut tab_indicator_rule = TabIndicatorRule::default();
+        for rule in &config.window_rules {
+            border_rule.merge_with(&rule.border);
+            tab_indicator_rule.merge_with(&rule.tab_indicator);
+        }
+
+        let border = border_rule.resolve_against(config.layout.border);
+
+        // Gradient should be None because it's overwritten.
+        assert_debug_snapshot!(
+            (
+                border.active_gradient.is_some(),
+                border.inactive_gradient.is_some(),
+                border.urgent_gradient.is_some(),
+                tab_indicator_rule.active_gradient.is_some(),
+                tab_indicator_rule.inactive_gradient.is_some(),
+                tab_indicator_rule.urgent_gradient.is_some(),
+            ),
+            @r"
+        (
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+        )
+        "
+        );
     }
 }

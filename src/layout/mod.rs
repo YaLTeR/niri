@@ -1145,7 +1145,15 @@ impl<W: LayoutElement> Layout<W> {
                             .filter(|move_| next_to == move_.tile.window().id())
                             .is_some()
                         {
-                            // The next_to window is being interactively moved.
+                            // The next_to window is being interactively moved. If there are no
+                            // other windows, we may have no workspaces at all.
+                            if workspaces.is_empty() {
+                                workspaces.push(Workspace::new_no_outputs(
+                                    self.clock.clone(),
+                                    self.options.clone(),
+                                ));
+                            }
+
                             (0, WorkspaceAddWindowTarget::Auto)
                         } else {
                             let ws_idx = workspaces
@@ -2556,13 +2564,6 @@ impl<W: LayoutElement> Layout<W> {
                         "workspace base options must be synchronized with layout"
                     );
 
-                    let options = Options::clone(&workspace.base_options)
-                        .adjusted_for_scale(workspace.scale().fractional_scale());
-                    assert_eq!(
-                        &*workspace.options, &options,
-                        "workspace options must be base options adjusted for workspace scale"
-                    );
-
                     assert!(
                         seen_workspace_id.insert(workspace.id()),
                         "workspace id must be unique"
@@ -2718,13 +2719,6 @@ impl<W: LayoutElement> Layout<W> {
                 assert_eq!(
                     workspace.base_options, self.options,
                     "workspace options must be synchronized with layout"
-                );
-
-                let options = Options::clone(&workspace.base_options)
-                    .adjusted_for_scale(workspace.scale().fractional_scale());
-                assert_eq!(
-                    &*workspace.options, &options,
-                    "workspace options must be base options adjusted for workspace scale"
                 );
 
                 assert!(
@@ -3353,6 +3347,11 @@ impl<W: LayoutElement> Layout<W> {
                         1.,
                         self.options.animations.window_movement.0,
                     );
+
+                    // Unlock the view on the workspaces.
+                    for ws in self.workspaces_mut() {
+                        ws.dnd_scroll_gesture_end();
+                    }
                 } else {
                     // Animate the tile back to semitransparent.
                     move_.tile.animate_alpha(

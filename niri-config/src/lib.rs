@@ -234,7 +234,7 @@ impl ConfigPath {
 
 #[cfg(test)]
 mod tests {
-    use insta::assert_debug_snapshot;
+    use insta::{assert_debug_snapshot, assert_snapshot};
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -348,6 +348,13 @@ mod tests {
                 mode "1920x1080@144"
                 variable-refresh-rate on-demand=true
                 background-color "rgba(25, 25, 102, 1.0)"
+                hot-corners {
+                    off
+                    top-left
+                    top-right
+                    bottom-left
+                    bottom-right
+                }
             }
 
             layout {
@@ -742,6 +749,15 @@ mod tests {
                             },
                         ),
                         backdrop_color: None,
+                        hot_corners: Some(
+                            HotCorners {
+                                off: true,
+                                top_left: true,
+                                top_right: true,
+                                bottom_left: true,
+                                bottom_right: true,
+                            },
+                        ),
                     },
                 ],
             ),
@@ -856,7 +872,7 @@ mod tests {
                         r: 0.0,
                         g: 0.0,
                         b: 0.0,
-                        a: 0.4392157,
+                        a: 0.46666667,
                     },
                     inactive_color: None,
                 },
@@ -1159,6 +1175,10 @@ mod tests {
                 },
                 hot_corners: HotCorners {
                     off: false,
+                    top_left: false,
+                    top_right: false,
+                    bottom_left: false,
+                    bottom_right: false,
                 },
             },
             overview: Overview {
@@ -1753,5 +1773,101 @@ mod tests {
             ],
         }
         "#);
+    }
+
+    fn diff_lines(expected: &str, actual: &str) -> String {
+        let mut output = String::new();
+        let mut in_change = false;
+
+        for change in diff::lines(expected, actual) {
+            match change {
+                diff::Result::Both(_, _) => {
+                    in_change = false;
+                }
+                diff::Result::Left(line) => {
+                    if !output.is_empty() && !in_change {
+                        output.push('\n');
+                    }
+                    output.push('-');
+                    output.push_str(line);
+                    output.push('\n');
+                    in_change = true;
+                }
+                diff::Result::Right(line) => {
+                    if !output.is_empty() && !in_change {
+                        output.push('\n');
+                    }
+                    output.push('+');
+                    output.push_str(line);
+                    output.push('\n');
+                    in_change = true;
+                }
+            }
+        }
+
+        output
+    }
+
+    #[test]
+    fn diff_empty_to_default() {
+        // We try to write the config defaults in such a way that empty sections (and an empty
+        // config) give the same outcome as the default config bundled with niri. This test
+        // verifies the actual differences between the two.
+        let mut default_config = Config::default();
+        let empty_config = Config::parse("empty.kdl", "").unwrap();
+
+        // Some notable omissions: the default config has some window rules, and an empty config
+        // will not have any binds. Clear them out so they don't spam the diff.
+        default_config.window_rules.clear();
+        default_config.binds.0.clear();
+
+        assert_snapshot!(
+            diff_lines(
+                &format!("{empty_config:#?}"),
+                &format!("{default_config:#?}")
+            ),
+            @r#"
+        -            numlock: false,
+        +            numlock: true,
+
+        -            tap: false,
+        +            tap: true,
+
+        -            natural_scroll: false,
+        +            natural_scroll: true,
+
+        -    spawn_at_startup: [],
+        +    spawn_at_startup: [
+        +        SpawnAtStartup {
+        +            command: [
+        +                "waybar",
+        +            ],
+        +        },
+        +    ],
+
+        -        preset_column_widths: [],
+        -        default_column_width: None,
+        +        preset_column_widths: [
+        +            Proportion(
+        +                0.33333,
+        +            ),
+        +            Proportion(
+        +                0.5,
+        +            ),
+        +            Proportion(
+        +                0.66667,
+        +            ),
+        +        ],
+        +        default_column_width: Some(
+        +            DefaultPresetSize(
+        +                Some(
+        +                    Proportion(
+        +                        0.5,
+        +                    ),
+        +                ),
+        +            ),
+        +        ),
+        "#
+        );
     }
 }

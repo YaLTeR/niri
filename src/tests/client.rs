@@ -199,6 +199,10 @@ impl Client {
         self.event_loop
             .dispatch(Duration::ZERO, &mut self.state)
             .unwrap();
+
+        if let Some(error) = self.connection.protocol_error() {
+            panic!("{error}");
+        }
     }
 
     pub fn send_sync(&self) -> Arc<SyncData> {
@@ -337,6 +341,10 @@ impl Window {
         self.surface.attach(Some(&buffer), 0, 0);
     }
 
+    pub fn attach_null(&self) {
+        self.surface.attach(None, 0, 0);
+    }
+
     pub fn set_size(&self, w: u16, h: u16) {
         self.viewport.set_destination(i32::from(w), i32::from(h));
     }
@@ -428,6 +436,10 @@ impl LayerSurface {
     pub fn attach_new_buffer(&self) {
         let buffer = self.spbm.create_u32_rgba_buffer(0, 0, 0, 0, &self.qh, ());
         self.surface.attach(Some(&buffer), 0, 0);
+    }
+
+    pub fn attach_null(&self) {
+        self.surface.attach(None, 0, 0);
     }
 
     pub fn set_size(&self, w: u16, h: u16) {

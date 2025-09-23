@@ -14,7 +14,7 @@ use smithay::wayland::compositor::{
     SurfaceAttributes,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
-use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
+use smithay::wayland::shell::xdg::ToplevelCachedState;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
 
@@ -56,7 +56,8 @@ impl CompositorHandler for State {
 
     fn commit(&mut self, surface: &WlSurface) {
         let _span = tracy_client::span!("CompositorHandler::commit");
-        trace!(surface = ?surface.id(), "commit");
+        let _span = trace_span!("commit", surface = %surface.id()).entered();
+        trace!("commit");
 
         on_commit_buffer_handler::<Self>(surface);
         self.backend.early_import(surface);
@@ -114,7 +115,9 @@ impl CompositorHandler for State {
 
                             (rules, width, height, is_full_width, output, workspace_id)
                         } else {
-                            error!("window map must happen after initial configure");
+                            // Can happen when a surface unmaps by attaching a null buffer while
+                            // there are in-flight pending configures.
+                            debug!("window mapped without proper initial configure");
                             (ResolvedWindowRules::empty(), None, None, false, None, None)
                         };
 
@@ -207,6 +210,7 @@ impl CompositorHandler for State {
                 }
 
                 // The toplevel remains unmapped.
+                trace!("toplevel remains unmapped");
                 let unmapped = entry.get();
                 if unmapped.needs_initial_configure() {
                     let toplevel = unmapped.window.toplevel().expect("no x11 support").clone();
@@ -242,6 +246,8 @@ impl CompositorHandler for State {
                     // The toplevel got unmapped.
                     //
                     // Test client: wleird-unmap.
+                    trace!("toplevel got unmapped");
+
                     let active_window = self.niri.layout.focus().map(|m| &m.window);
                     let was_active = active_window == Some(&window);
 
@@ -280,13 +286,14 @@ impl CompositorHandler for State {
                         .buffer_delta
                         .take();
 
-                    let role = states
-                        .data_map
-                        .get::<XdgToplevelSurfaceData>()
-                        .unwrap()
-                        .lock()
-                        .unwrap();
-                    (role.configure_serial, buffer_delta)
+                    let serial = states
+                        .cached_state
+                        .get::<ToplevelCachedState>()
+                        .current()
+                        .last_acked
+                        .as_ref()
+                        .map(|c| c.serial);
+                    (serial, buffer_delta)
                 });
                 if serial.is_none() {
                     error!("commit on a mapped surface without a configured serial");
