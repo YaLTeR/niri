@@ -106,7 +106,10 @@ pub enum Action {
     CancelScreenshot,
     #[knuffel(skip)]
     ScreenshotTogglePointer,
-    Screenshot(#[knuffel(property(name = "show-pointer"), default = true)] bool),
+    Screenshot(
+        #[knuffel(property(name = "show-pointer"), default = true)] bool,
+        #[knuffel(property(name = "auto-confirm"), default = false)] bool,
+    ),
     ScreenshotScreen(
         #[knuffel(property(name = "write-to-disk"), default = true)] bool,
         #[knuffel(property(name = "show-pointer"), default = true)] bool,
@@ -349,7 +352,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
             niri_ipc::Action::SpawnSh { command } => Self::SpawnSh(command),
             niri_ipc::Action::DoScreenTransition { delay_ms } => Self::DoScreenTransition(delay_ms),
-            niri_ipc::Action::Screenshot { show_pointer } => Self::Screenshot(show_pointer),
+            niri_ipc::Action::Screenshot { show_pointer, auto_confirm } => Self::Screenshot(show_pointer, auto_confirm),
             niri_ipc::Action::ScreenshotScreen {
                 write_to_disk,
                 show_pointer,
