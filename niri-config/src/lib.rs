@@ -525,6 +525,8 @@ mod tests {
 
             debug {
                 render-drm-device "/dev/dri/renderD129"
+                disable-drm-device "/dev/dri/renderD128"
+                disable-drm-device "/dev/dri/renderD130"
             }
 
             workspace "workspace-1" {
@@ -1737,6 +1739,14 @@ mod tests {
                 render_drm_device: Some(
                     "/dev/dri/renderD129",
                 ),
+                disable_drm_devices: [
+                    DevicePath {
+                        path: "/dev/dri/renderD128",
+                    },
+                    DevicePath {
+                        path: "/dev/dri/renderD130",
+                    },
+                ],
                 force_pipewire_invalid_modifier: false,
                 emulate_zero_presentation_time: false,
                 disable_resize_throttling: false,
