@@ -255,6 +255,7 @@ impl CompositorHandler for State {
                         .stop_casts_for_target(CastTarget::Window { id: id.get() });
 
                     self.niri.layout.remove_window(&window, transaction.clone());
+                    self.niri.window_mru_ui.remove_window(id);
                     self.add_default_dmabuf_pre_commit_hook(surface);
 
                     // If this is the only instance, then this transaction will complete
