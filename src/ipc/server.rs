@@ -21,6 +21,7 @@ use niri_ipc::{
     Workspace,
 };
 use smithay::desktop::layer_map_for_output;
+use smithay::input::keyboard::xkb::keysym_get_name;
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, Focus, GrabStartData as PointerGrabStartData,
 };
@@ -445,6 +446,81 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let state = ctx.event_stream_state.borrow();
             let is_open = state.overview.is_open;
             Response::OverviewState(Overview { is_open })
+        }
+        Request::Binds => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let binds = state
+                    .niri
+                    .config
+                    .borrow()
+                    .binds
+                    .0
+                    .iter()
+                    .map(|b| {
+                        let trigger = match b.key.trigger {
+                            niri_config::Trigger::Keysym(k) => keysym_get_name(k),
+                            niri_config::Trigger::MouseLeft => String::from("Mouse Left"),
+                            niri_config::Trigger::MouseRight => String::from("Mouse Right"),
+                            niri_config::Trigger::MouseMiddle => String::from("Mouse Middle"),
+                            niri_config::Trigger::MouseBack => String::from("Mouse Back"),
+                            niri_config::Trigger::MouseForward => String::from("Mouse Forward"),
+                            niri_config::Trigger::WheelScrollDown => {
+                                String::from("Wheel Scroll Down")
+                            }
+                            niri_config::Trigger::WheelScrollUp => String::from("Wheel Scroll Up"),
+                            niri_config::Trigger::WheelScrollLeft => {
+                                String::from("Wheel Scroll Left")
+                            }
+                            niri_config::Trigger::WheelScrollRight => {
+                                String::from("Wheel Scroll Right")
+                            }
+                            niri_config::Trigger::TouchpadScrollDown => {
+                                String::from("Touchpad Scroll Down")
+                            }
+                            niri_config::Trigger::TouchpadScrollUp => {
+                                String::from("Touchpad Scroll Up")
+                            }
+                            niri_config::Trigger::TouchpadScrollLeft => {
+                                String::from("Touchpad Scroll Left")
+                            }
+                            niri_config::Trigger::TouchpadScrollRight => {
+                                String::from("Touchpad Scroll Right")
+                            }
+                        };
+                        let modifiers = b
+                            .key
+                            .modifiers
+                            .iter_names()
+                            .map(|(name, _)| String::from(name))
+                            .collect();
+                        let niri_config::Bind {
+                            repeat,
+                            cooldown,
+                            allow_when_locked,
+                            allow_inhibiting,
+                            hotkey_overlay_title,
+                            action,
+                            ..
+                        } = b;
+
+                        niri_ipc::Bind {
+                            trigger,
+                            modifiers,
+                            action: format!("{action:?}"),
+                            repeat: *repeat,
+                            cooldown: *cooldown,
+                            allow_when_locked: *allow_when_locked,
+                            allow_inhibiting: *allow_inhibiting,
+                            hotkey_overlay_title: hotkey_overlay_title.clone().flatten(),
+                        }
+                    })
+                    .collect();
+                let _ = tx.send_blocking(binds);
+            });
+            let result = rx.recv().await;
+            let binds = result.map_err(|_| String::from("error getting key binds info"))?;
+            Response::Binds(niri_ipc::Binds { binds })
         }
     };
 
