@@ -39,7 +39,7 @@ use std::time::Duration;
 
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
 use niri_config::{
-    CenterFocusedColumn, Config, CornerRadius, FloatOrInt, PresetSize, Struts,
+    CenterFocusedColumn, Config, CornerRadius, FloatOrInt, NewColumnLocation, PresetSize, Struts,
     Workspace as WorkspaceConfig, WorkspaceReference,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
@@ -345,6 +345,7 @@ pub struct Options {
     pub tab_indicator: niri_config::TabIndicator,
     pub insert_hint: niri_config::InsertHint,
     pub center_focused_column: CenterFocusedColumn,
+    pub new_column_location: NewColumnLocation,
     pub always_center_single_column: bool,
     pub empty_workspace_above_first: bool,
     pub default_column_display: ColumnDisplay,
@@ -374,6 +375,7 @@ impl Default for Options {
             tab_indicator: Default::default(),
             insert_hint: Default::default(),
             center_focused_column: Default::default(),
+            new_column_location: Default::default(),
             always_center_single_column: false,
             empty_workspace_above_first: false,
             default_column_display: ColumnDisplay::Normal,
@@ -649,6 +651,7 @@ impl Options {
             tab_indicator: layout.tab_indicator,
             insert_hint: layout.insert_hint,
             center_focused_column: layout.center_focused_column,
+            new_column_location: layout.new_column_location,
             always_center_single_column: layout.always_center_single_column,
             empty_workspace_above_first: layout.empty_workspace_above_first,
             default_column_display: layout.default_column_display,
