@@ -5,6 +5,7 @@ use std::rc::Rc;
 use niri_config::{PresetSize, RelativeTo};
 use niri_ipc::{PositionChange, SizeChange, WindowLayout};
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
@@ -1031,6 +1032,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         view_rect: Rectangle<f64, Logical>,
         target: RenderTarget,
         focus_ring: bool,
+        output: &Output,
     ) -> Vec<FloatingSpaceRenderElement<R>> {
         let mut rv = Vec::new();
 
@@ -1050,7 +1052,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             let focus_ring = focus_ring && Some(tile.window().id()) == active.as_ref();
 
             rv.extend(
-                tile.render(renderer, tile_pos, focus_ring, target)
+                tile.render(renderer, tile_pos, focus_ring, target, Some(output))
                     .map(Into::into),
             );
         }

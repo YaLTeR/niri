@@ -207,6 +207,7 @@ pub trait LayoutElement {
     fn set_activated(&mut self, active: bool);
     fn set_active_in_column(&mut self, active: bool);
     fn set_floating(&mut self, floating: bool);
+    fn is_floating(&self) -> bool;
     fn set_bounds(&self, bounds: Size<i32, Logical>);
     fn is_ignoring_opacity_window_rule(&self) -> bool;
 
@@ -342,6 +343,7 @@ pub struct Options {
     pub focus_ring: niri_config::FocusRing,
     pub border: niri_config::Border,
     pub shadow: niri_config::Shadow,
+    pub blur: niri_config::Blur,
     pub tab_indicator: niri_config::TabIndicator,
     pub insert_hint: niri_config::InsertHint,
     pub center_focused_column: CenterFocusedColumn,
@@ -369,6 +371,7 @@ impl Default for Options {
             gaps: 16.,
             struts: Default::default(),
             focus_ring: Default::default(),
+            blur: Default::default(),
             border: Default::default(),
             shadow: Default::default(),
             tab_indicator: Default::default(),
@@ -646,6 +649,7 @@ impl Options {
             focus_ring: layout.focus_ring,
             border: layout.border,
             shadow: layout.shadow,
+            blur: layout.blur,
             tab_indicator: layout.tab_indicator,
             insert_hint: layout.insert_hint,
             center_focused_column: layout.center_focused_column,
@@ -5062,7 +5066,7 @@ impl<W: LayoutElement> Layout<W> {
                 let location = move_.tile_render_location(zoom);
                 let iter = move_
                     .tile
-                    .render(renderer, location, true, target)
+                    .render(renderer, location, true, target, Some(output))
                     .map(move |elem| {
                         RescaleRenderElement::from_element(
                             elem,
