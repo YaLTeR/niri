@@ -126,7 +126,7 @@ fn windowed_fullscreen_chain() {
         let mapped = f.niri().layout.windows().next().unwrap().1;
         format!(
             "fs {}, wfs {}",
-            mapped.is_fullscreen(),
+            mapped.sizing_mode().is_fullscreen(),
             mapped.is_windowed_fullscreen()
         )
     };
