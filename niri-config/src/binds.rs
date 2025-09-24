@@ -22,6 +22,7 @@ pub struct Bind {
     pub key: Key,
     pub action: Action,
     pub repeat: bool,
+    pub release: bool,
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
@@ -37,6 +38,8 @@ pub struct Key {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Trigger {
     Keysym(Keysym),
+    /// Used for mod-only binds that depend on the compositor key.
+    Compositor,
     MouseLeft,
     MouseRight,
     MouseMiddle,
@@ -783,6 +786,7 @@ where
             .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
 
         let mut repeat = true;
+        let mut release = false;
         let mut cooldown = None;
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
@@ -792,6 +796,9 @@ where
             match &***name {
                 "repeat" => {
                     repeat = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
+                "release" => {
+                    release = knuffel::traits::DecodeScalar::decode(val, ctx)?;
                 }
                 "cooldown-ms" => {
                     cooldown = Some(Duration::from_millis(
@@ -818,6 +825,13 @@ where
             }
         }
 
+        if key.trigger == Trigger::Compositor && !release {
+            ctx.emit_error(DecodeError::missing(
+                node,
+                "Mod-only binds must have `release=true` or they would overlap with all other mod binds.",
+            ));
+        }
+
         let mut children = node.children();
 
         // If the action is invalid but the key is fine, we still want to return something.
@@ -827,6 +841,7 @@ where
             key,
             action: Action::Spawn(vec![]),
             repeat: true,
+            release: false,
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
@@ -863,6 +878,7 @@ where
                         key,
                         action,
                         repeat,
+                        release,
                         cooldown,
                         allow_when_locked,
                         allow_inhibiting,
@@ -888,6 +904,14 @@ impl FromStr for Key {
     type Err = miette::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Special case for only mod.
+        if s.trim().eq_ignore_ascii_case("mod") {
+            return Ok(Key {
+                trigger: Trigger::Compositor,
+                modifiers: Modifiers::COMPOSITOR,
+            });
+        }
+
         let mut modifiers = Modifiers::empty();
 
         let mut split = s.split('+');
