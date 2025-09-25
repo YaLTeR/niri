@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::CornerRadius;
+use niri_config::{CornerRadius, LayoutPart};
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
@@ -81,8 +81,12 @@ pub struct Monitor<W: LayoutElement> {
     overview_progress: Option<OverviewProgress>,
     /// Clock for driving animations.
     pub(super) clock: Clock,
+    /// Configurable properties of the layout as received from the parent layout.
+    pub(super) base_options: Rc<Options>,
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
+    /// Layout config overrides for this monitor.
+    layout_config: Option<niri_config::LayoutPart>,
 }
 
 #[derive(Debug)]
@@ -280,8 +284,12 @@ impl<W: LayoutElement> Monitor<W> {
         mut workspaces: Vec<Workspace<W>>,
         ws_id_to_activate: Option<WorkspaceId>,
         clock: Clock,
-        options: Rc<Options>,
+        base_options: Rc<Options>,
+        layout_config: Option<LayoutPart>,
     ) -> Self {
+        let options =
+            Rc::new(Options::clone(&base_options).with_merged_layout(layout_config.as_ref()));
+
         let scale = output.current_scale();
         let view_size = output_size(&output);
         let working_area = compute_working_area(&output);
@@ -293,6 +301,7 @@ impl<W: LayoutElement> Monitor<W> {
             assert!(ws.has_windows_or_name());
 
             ws.set_output(Some(output.clone()));
+            ws.update_config(options.clone());
 
             if ws_id_to_activate.is_some_and(|id| ws.id() == id) {
                 active_workspace_idx = idx;
@@ -324,7 +333,9 @@ impl<W: LayoutElement> Monitor<W> {
             overview_progress: None,
             workspace_switch: None,
             clock,
+            base_options,
             options,
+            layout_config,
         }
     }
 
@@ -666,6 +677,7 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn insert_workspace(&mut self, mut ws: Workspace<W>, mut idx: usize, activate: bool) {
         ws.set_output(Some(self.output.clone()));
+        ws.update_config(self.options.clone());
 
         // Don't insert past the last empty workspace.
         if idx == self.workspaces.len() {
@@ -699,6 +711,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         for ws in &mut workspaces {
             ws.set_output(Some(self.output.clone()));
+            ws.update_config(self.options.clone());
         }
 
         let empty_was_focused = self.active_workspace_idx == self.workspaces.len() - 1;
@@ -1151,7 +1164,10 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn update_config(&mut self, options: Rc<Options>) {
+    pub fn update_config(&mut self, base_options: Rc<Options>) {
+        let options =
+            Rc::new(Options::clone(&base_options).with_merged_layout(self.layout_config.as_ref()));
+
         if self.options.layout.empty_workspace_above_first
             != options.layout.empty_workspace_above_first
             && self.workspaces.len() > 1
@@ -1171,7 +1187,19 @@ impl<W: LayoutElement> Monitor<W> {
         self.insert_hint_element
             .update_config(options.layout.insert_hint);
 
+        self.base_options = base_options;
         self.options = options;
+    }
+
+    pub fn update_layout_config(&mut self, layout_config: Option<niri_config::LayoutPart>) -> bool {
+        if self.layout_config == layout_config {
+            return false;
+        }
+
+        self.layout_config = layout_config;
+        self.update_config(self.base_options.clone());
+
+        true
     }
 
     pub fn update_shaders(&mut self) {
@@ -2017,9 +2045,17 @@ impl<W: LayoutElement> Monitor<W> {
         self.working_area
     }
 
+    pub fn layout_config(&self) -> Option<&niri_config::LayoutPart> {
+        self.layout_config.as_ref()
+    }
+
     #[cfg(test)]
     pub(super) fn verify_invariants(&self) {
         use approx::assert_abs_diff_eq;
+
+        let options =
+            Options::clone(&self.base_options).with_merged_layout(self.layout_config.as_ref());
+        assert_eq!(&*self.options, &options);
 
         assert!(
             !self.workspaces.is_empty(),
@@ -2107,7 +2143,7 @@ impl<W: LayoutElement> Monitor<W> {
 
             assert_eq!(
                 workspace.base_options, self.options,
-                "workspace options must be synchronized with layout"
+                "workspace options must be synchronized with monitor"
             );
         }
 

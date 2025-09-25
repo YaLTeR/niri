@@ -1667,6 +1667,26 @@ impl State {
                     recolored_outputs.push(output.clone());
                 }
             }
+
+            for mon in self.niri.layout.monitors_mut() {
+                if mon.output() != output {
+                    continue;
+                }
+
+                let mut layout_config = config.and_then(|c| c.layout.clone());
+                // Support the deprecated non-layout background-color key.
+                if let Some(layout) = &mut layout_config {
+                    if layout.background_color.is_none() {
+                        layout.background_color = config.and_then(|c| c.background_color);
+                    }
+                }
+
+                if mon.update_layout_config(layout_config) {
+                    // Also redraw these; if anything, the background color could've changed.
+                    recolored_outputs.push(output.clone());
+                }
+                break;
+            }
         }
 
         for output in resized_outputs {
@@ -2903,6 +2923,14 @@ impl Niri {
         if name.connector == "winit" {
             transform = Transform::Flipped180;
         }
+
+        let mut layout_config = c.and_then(|c| c.layout.clone());
+        // Support the deprecated non-layout background-color key.
+        if let Some(layout) = &mut layout_config {
+            if layout.background_color.is_none() {
+                layout.background_color = c.and_then(|c| c.background_color);
+            }
+        }
         drop(config);
 
         // Set scale and transform before adding to the layout since that will read the output size.
@@ -2913,7 +2941,7 @@ impl Niri {
             None,
         );
 
-        self.layout.add_output(output.clone());
+        self.layout.add_output(output.clone(), layout_config);
 
         let lock_render_state = if self.is_locked() {
             // We haven't rendered anything yet so it's as good as locked.

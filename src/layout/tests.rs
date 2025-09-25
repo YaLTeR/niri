@@ -406,9 +406,17 @@ enum Op {
         id: usize,
         #[proptest(strategy = "arbitrary_scale()")]
         scale: f64,
+        #[proptest(strategy = "prop::option::of(arbitrary_layout_part().prop_map(Box::new))")]
+        layout_config: Option<Box<niri_config::LayoutPart>>,
     },
     RemoveOutput(#[proptest(strategy = "1..=5usize")] usize),
     FocusOutput(#[proptest(strategy = "1..=5usize")] usize),
+    UpdateOutputLayoutConfig {
+        #[proptest(strategy = "1..=5usize")]
+        id: usize,
+        #[proptest(strategy = "prop::option::of(arbitrary_layout_part().prop_map(Box::new))")]
+        layout_config: Option<Box<niri_config::LayoutPart>>,
+    },
     AddNamedWorkspace {
         #[proptest(strategy = "1..=5usize")]
         ws_name: usize,
@@ -771,9 +779,13 @@ impl Op {
                     model: None,
                     serial: None,
                 });
-                layout.add_output(output.clone());
+                layout.add_output(output.clone(), None);
             }
-            Op::AddScaledOutput { id, scale } => {
+            Op::AddScaledOutput {
+                id,
+                scale,
+                layout_config,
+            } => {
                 let name = format!("output{id}");
                 if layout.outputs().any(|o| o.name() == name) {
                     return;
@@ -804,7 +816,7 @@ impl Op {
                     model: None,
                     serial: None,
                 });
-                layout.add_output(output.clone());
+                layout.add_output(output.clone(), layout_config.map(|x| *x));
             }
             Op::RemoveOutput(id) => {
                 let name = format!("output{id}");
@@ -821,6 +833,14 @@ impl Op {
                 };
 
                 layout.focus_output(&output);
+            }
+            Op::UpdateOutputLayoutConfig { id, layout_config } => {
+                let name = format!("output{id}");
+                let Some(mon) = layout.monitors_mut().find(|m| m.output_name() == &name) else {
+                    return;
+                };
+
+                mon.update_layout_config(layout_config.map(|x| *x));
             }
             Op::AddNamedWorkspace {
                 ws_name,
