@@ -769,7 +769,7 @@ impl<W: LayoutElement> Layout<W> {
                     monitor.workspaces[monitor.active_workspace_idx].id(),
                 );
 
-                let mut workspaces = monitor.into_workspaces();
+                let workspaces = monitor.into_workspaces();
 
                 if monitors.is_empty() {
                     // Removed the last monitor.
@@ -788,43 +788,7 @@ impl<W: LayoutElement> Layout<W> {
                     }
 
                     let primary = &mut monitors[primary_idx];
-                    for ws in &mut workspaces {
-                        ws.set_output(Some(primary.output.clone()));
-                    }
-
-                    let mut stopped_primary_ws_switch = false;
-                    if !workspaces.is_empty() && primary.workspace_switch.is_some() {
-                        // FIXME: if we're adding workspaces to currently invisible positions
-                        // (outside the workspace switch), we don't need to cancel it.
-                        primary.workspace_switch = None;
-                        stopped_primary_ws_switch = true;
-                    }
-
-                    let empty_was_focused =
-                        primary.active_workspace_idx == primary.workspaces.len() - 1;
-
-                    // Push the workspaces from the removed monitor in the end, right before the
-                    // last, empty, workspace.
-                    let empty = primary.workspaces.remove(primary.workspaces.len() - 1);
-                    primary.workspaces.extend(workspaces);
-                    primary.workspaces.push(empty);
-
-                    // If empty_workspace_above_first is set and the first workspace is now no
-                    // longer empty, add a new empty workspace on top.
-                    if primary.options.layout.empty_workspace_above_first
-                        && primary.workspaces[0].has_windows_or_name()
-                    {
-                        primary.add_workspace_top();
-                    }
-
-                    // If the empty workspace was focused on the primary monitor, keep it focused.
-                    if empty_was_focused {
-                        primary.active_workspace_idx = primary.workspaces.len() - 1;
-                    }
-
-                    if stopped_primary_ws_switch {
-                        primary.clean_up_workspaces();
-                    }
+                    primary.append_workspaces(workspaces);
 
                     MonitorSet::Normal {
                         monitors,
