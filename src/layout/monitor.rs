@@ -690,6 +690,42 @@ impl<W: LayoutElement> Monitor<W> {
         self.clean_up_workspaces();
     }
 
+    pub fn append_workspaces(&mut self, mut workspaces: Vec<Workspace<W>>) {
+        if workspaces.is_empty() {
+            return;
+        }
+
+        for ws in &mut workspaces {
+            ws.set_output(Some(self.output.clone()));
+        }
+
+        let empty_was_focused = self.active_workspace_idx == self.workspaces.len() - 1;
+
+        // Push the workspaces from the removed monitor in the end, right before the
+        // last, empty, workspace.
+        let empty = self.workspaces.remove(self.workspaces.len() - 1);
+        self.workspaces.extend(workspaces);
+        self.workspaces.push(empty);
+
+        // If empty_workspace_above_first is set and the first workspace is now no longer empty,
+        // add a new empty workspace on top.
+        if self.options.layout.empty_workspace_above_first
+            && self.workspaces[0].has_windows_or_name()
+        {
+            self.add_workspace_top();
+        }
+
+        // If the empty workspace was focused on the primary monitor, keep it focused.
+        if empty_was_focused {
+            self.active_workspace_idx = self.workspaces.len() - 1;
+        }
+
+        // FIXME: if we're adding workspaces to currently invisible positions
+        // (outside the workspace switch), we don't need to cancel it.
+        self.workspace_switch = None;
+        self.clean_up_workspaces();
+    }
+
     pub fn move_down_or_to_workspace_down(&mut self) {
         if !self.active_workspace().move_down() {
             self.move_to_workspace_down(true);
