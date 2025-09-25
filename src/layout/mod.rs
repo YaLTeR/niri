@@ -2365,8 +2365,6 @@ impl<W: LayoutElement> Layout<W> {
 
         use approx::assert_abs_diff_eq;
 
-        use crate::layout::monitor::WorkspaceSwitch;
-
         let zoom = self.overview_zoom();
 
         let mut move_win_id = None;
@@ -2486,12 +2484,6 @@ impl<W: LayoutElement> Layout<W> {
         let mut saw_view_offset_gesture = false;
 
         for (idx, monitor) in monitors.iter().enumerate() {
-            assert!(
-                !monitor.workspaces.is_empty(),
-                "monitor must have at least one workspace"
-            );
-            assert!(monitor.active_workspace_idx < monitor.workspaces.len());
-
             assert_eq!(self.clock, monitor.clock);
             assert_eq!(
                 monitor.options, self.options,
@@ -2504,13 +2496,7 @@ impl<W: LayoutElement> Layout<W> {
                 monitor.overview_progress_value()
             );
 
-            if let Some(WorkspaceSwitch::Animation(anim)) = &monitor.workspace_switch {
-                let before_idx = anim.from() as usize;
-                let after_idx = anim.to() as usize;
-
-                assert!(before_idx < monitor.workspaces.len());
-                assert!(after_idx < monitor.workspaces.len());
-            }
+            monitor.verify_invariants();
 
             if idx == primary_idx {
                 for ws in &monitor.workspaces {
@@ -2537,84 +2523,10 @@ impl<W: LayoutElement> Layout<W> {
                 );
             }
 
-            assert!(
-                !monitor.workspaces.last().unwrap().has_windows(),
-                "monitor must have an empty workspace in the end"
-            );
-            if monitor.options.layout.empty_workspace_above_first {
-                assert!(
-                    !monitor.workspaces.first().unwrap().has_windows(),
-                    "first workspace must be empty when empty_workspace_above_first is set"
-                )
-            }
-
-            assert!(
-                monitor.workspaces.last().unwrap().name.is_none(),
-                "monitor must have an unnamed workspace in the end"
-            );
-            if monitor.options.layout.empty_workspace_above_first {
-                assert!(
-                    monitor.workspaces.first().unwrap().name.is_none(),
-                    "first workspace must be unnamed when empty_workspace_above_first is set"
-                )
-            }
-
-            if monitor.options.layout.empty_workspace_above_first {
-                assert!(
-                    monitor.workspaces.len() != 2,
-                    "if empty_workspace_above_first is set there must be just 1 or 3+ workspaces"
-                )
-            }
-
-            // If there's no workspace switch in progress, there can't be any non-last non-active
-            // empty workspaces. If empty_workspace_above_first is set then the first workspace
-            // will be empty too.
-            let pre_skip = if monitor.options.layout.empty_workspace_above_first {
-                1
-            } else {
-                0
-            };
-            if monitor.workspace_switch.is_none() {
-                for (idx, ws) in monitor
-                    .workspaces
-                    .iter()
-                    .enumerate()
-                    .skip(pre_skip)
-                    .rev()
-                    // skip last
-                    .skip(1)
-                {
-                    if idx != monitor.active_workspace_idx {
-                        assert!(
-                            ws.has_windows_or_name(),
-                            "non-active workspace can't be empty and unnamed except the last one"
-                        );
-                    }
-                }
-            }
-
             // FIXME: verify that primary doesn't have any workspaces for which their own monitor
             // exists.
 
             for workspace in &monitor.workspaces {
-                assert_eq!(self.clock, workspace.clock);
-
-                assert_eq!(
-                    monitor.scale().integer_scale(),
-                    workspace.scale().integer_scale()
-                );
-                assert_eq!(
-                    monitor.scale().fractional_scale(),
-                    workspace.scale().fractional_scale()
-                );
-                assert_eq!(monitor.view_size(), workspace.view_size());
-                assert_eq!(monitor.working_area(), workspace.working_area());
-
-                assert_eq!(
-                    workspace.base_options, self.options,
-                    "workspace options must be synchronized with layout"
-                );
-
                 assert!(
                     seen_workspace_id.insert(workspace.id()),
                     "workspace id must be unique"
@@ -2653,17 +2565,6 @@ impl<W: LayoutElement> Layout<W> {
                     );
                 }
                 saw_view_offset_gesture = has_view_offset_gesture;
-            }
-
-            let scale = monitor.scale().fractional_scale();
-            let iter = monitor.workspaces_with_render_geo();
-            for (_ws, ws_geo) in iter {
-                let pos = ws_geo.loc;
-                let rounded_pos = pos.to_physical_precise_round(scale).to_logical(scale);
-
-                // Workspace positions must be rounded to physical pixels.
-                assert_abs_diff_eq!(pos.x, rounded_pos.x, epsilon = 1e-5);
-                assert_abs_diff_eq!(pos.y, rounded_pos.y, epsilon = 1e-5);
             }
         }
     }
