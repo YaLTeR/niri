@@ -596,6 +596,11 @@ impl<W: LayoutElement> Monitor<W> {
         };
 
         ws.unname();
+
+        if self.workspace_switch.is_none() {
+            self.clean_up_workspaces();
+        }
+
         true
     }
 
