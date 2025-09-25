@@ -723,6 +723,10 @@ enum Op {
         window: usize,
     },
     ToggleOverview,
+    UpdateConfig {
+        #[proptest(strategy = "arbitrary_layout_part().prop_map(Box::new)")]
+        layout_config: Box<niri_config::LayoutPart>,
+    },
 }
 
 impl Op {
@@ -1545,6 +1549,14 @@ impl Op {
             }
             Op::ToggleOverview => {
                 layout.toggle_overview();
+            }
+            Op::UpdateConfig { layout_config } => {
+                let options = Options {
+                    layout: niri_config::Layout::from_part(&layout_config),
+                    ..Default::default()
+                };
+
+                layout.update_options(options);
             }
         }
     }
@@ -3558,7 +3570,6 @@ proptest! {
     fn random_operations_dont_panic(
         ops: Vec<Op>,
         layout_config in arbitrary_layout_part(),
-        post_layout_config in prop::option::of(arbitrary_layout_part()),
     ) {
         // eprintln!("{ops:?}");
         let options = Options {
@@ -3566,15 +3577,6 @@ proptest! {
             ..Default::default()
         };
 
-        let mut layout = check_ops_with_options(options, ops);
-
-        if let Some(layout_config) = post_layout_config {
-            let post_options = Options {
-                layout: niri_config::Layout::from_part(&layout_config),
-                ..Default::default()
-            };
-            layout.update_options(post_options);
-            layout.verify_invariants();
-        }
+        check_ops_with_options(options, ops);
     }
 }
