@@ -1330,9 +1330,6 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     if mon.unname_workspace(id) {
-                        if mon.workspace_switch.is_none() {
-                            mon.clean_up_workspaces();
-                        }
                         return;
                     }
                 }
