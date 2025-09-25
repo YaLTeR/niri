@@ -3414,19 +3414,7 @@ impl<W: LayoutElement> Layout<W> {
             return false;
         }
 
-        if current.active_workspace_idx == current.workspaces.len() - 1 {
-            // Insert a new empty workspace.
-            current.add_workspace_bottom();
-        }
-        if current.options.layout.empty_workspace_above_first && current.active_workspace_idx == 0 {
-            current.add_workspace_top();
-        }
-
-        let mut ws = current.workspaces.remove(current.active_workspace_idx);
-        current.active_workspace_idx = current.active_workspace_idx.saturating_sub(1);
-        current.workspace_switch = None;
-        current.clean_up_workspaces();
-
+        let mut ws = current.remove_workspace_by_idx(current.active_workspace_idx);
         ws.set_output(Some(output.clone()));
         ws.original_output = OutputId::new(output);
 
@@ -3500,23 +3488,7 @@ impl<W: LayoutElement> Layout<W> {
 
         let current_active_ws_idx = current.active_workspace_idx;
 
-        if old_idx == current.workspaces.len() - 1 {
-            // Insert a new empty workspace.
-            current.add_workspace_bottom();
-        }
-
-        let mut ws = current.workspaces.remove(old_idx);
-
-        if current.options.layout.empty_workspace_above_first && old_idx == 0 {
-            current.add_workspace_top();
-        }
-
-        if old_idx < current.active_workspace_idx {
-            current.active_workspace_idx -= 1;
-        }
-        current.workspace_switch = None;
-        current.clean_up_workspaces();
-
+        let mut ws = current.remove_workspace_by_idx(old_idx);
         ws.set_output(Some(new_output.clone()));
         ws.original_output = OutputId::new(&new_output);
 

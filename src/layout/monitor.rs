@@ -604,6 +604,31 @@ impl<W: LayoutElement> Monitor<W> {
         true
     }
 
+    pub fn remove_workspace_by_idx(&mut self, mut idx: usize) -> Workspace<W> {
+        if idx == self.workspaces.len() - 1 {
+            self.add_workspace_bottom();
+        }
+        if self.options.layout.empty_workspace_above_first && idx == 0 {
+            self.add_workspace_top();
+            idx += 1;
+        }
+
+        let mut ws = self.workspaces.remove(idx);
+        ws.set_output(None);
+
+        // For monitor current workspace removal, we focus previous rather than next (<= rather
+        // than <). This is different from columns and tiles, but it lets move-workspace-to-monitor
+        // back and forth to preserve position.
+        if idx <= self.active_workspace_idx && self.active_workspace_idx > 0 {
+            self.active_workspace_idx -= 1;
+        }
+
+        self.workspace_switch = None;
+        self.clean_up_workspaces();
+
+        ws
+    }
+
     pub fn move_down_or_to_workspace_down(&mut self) {
         if !self.active_workspace().move_down() {
             self.move_to_workspace_down(true);
