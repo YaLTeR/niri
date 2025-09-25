@@ -39,7 +39,7 @@ use std::time::Duration;
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
 use niri_config::utils::MergeWith as _;
 use niri_config::{
-    Config, CornerRadius, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
+    Config, CornerRadius, LayoutPart, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use scrolling::{Column, ColumnWidth};
@@ -380,6 +380,10 @@ struct InteractiveMoveData<W: LayoutElement> {
     ///
     /// This helps the pointer remain inside the window as it resizes.
     pub(self) pointer_ratio_within_window: (f64, f64),
+    /// Config overrides for the output where the window is currently located.
+    ///
+    /// Cached here to be accessible while an output is removed.
+    pub(self) output_config: Option<niri_config::LayoutPart>,
     /// Config overrides for the workspace where the window is currently located.
     ///
     /// To avoid sudden window changes when starting an interactive move, it will remember the
@@ -658,7 +662,7 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
-    pub fn add_output(&mut self, output: Output) {
+    pub fn add_output(&mut self, output: Output, layout_config: Option<LayoutPart>) {
         self.monitor_set = match mem::take(&mut self.monitor_set) {
             MonitorSet::Normal {
                 mut monitors,
@@ -700,7 +704,7 @@ impl<W: LayoutElement> Layout<W> {
                             // workspaces set up across multiple monitors. Without this check, the
                             // first monitor to connect can end up with the first empty workspace
                             // focused instead of the first named workspace.
-                            && !(self.options.layout.empty_workspace_above_first
+                            && !(primary.options.layout.empty_workspace_above_first
                                 && primary.active_workspace_idx == 1)
                         {
                             primary.active_workspace_idx =
@@ -731,6 +735,7 @@ impl<W: LayoutElement> Layout<W> {
                     ws_id_to_activate,
                     self.clock.clone(),
                     self.options.clone(),
+                    layout_config,
                 );
                 monitor.overview_open = self.overview_open;
                 monitor.set_overview_progress(self.overview_progress.as_ref());
@@ -751,6 +756,7 @@ impl<W: LayoutElement> Layout<W> {
                     ws_id_to_activate,
                     self.clock.clone(),
                     self.options.clone(),
+                    layout_config,
                 );
                 monitor.overview_open = self.overview_open;
                 monitor.set_overview_progress(self.overview_progress.as_ref());
@@ -782,10 +788,16 @@ impl<W: LayoutElement> Layout<W> {
                     monitor.workspaces[monitor.active_workspace_idx].id(),
                 );
 
-                let workspaces = monitor.into_workspaces();
+                let mut workspaces = monitor.into_workspaces();
 
                 if monitors.is_empty() {
                     // Removed the last monitor.
+
+                    for ws in &mut workspaces {
+                        // Reset base options to layout ones.
+                        ws.update_config(self.options.clone());
+                    }
+
                     MonitorSet::NoOutputs { workspaces }
                 } else {
                     if primary_idx >= idx {
@@ -2310,6 +2322,7 @@ impl<W: LayoutElement> Layout<W> {
 
                     let scale = move_.output.current_scale().fractional_scale();
                     let options = Options::clone(&self.options)
+                        .with_merged_layout(move_.output_config.as_ref())
                         .with_merged_layout(move_.workspace_config.as_ref().map(|(_, c)| c))
                         .adjusted_for_scale(scale);
                     assert_eq!(
@@ -2409,8 +2422,8 @@ impl<W: LayoutElement> Layout<W> {
         for (idx, monitor) in monitors.iter().enumerate() {
             assert_eq!(self.clock, monitor.clock);
             assert_eq!(
-                monitor.options, self.options,
-                "monitor options must be synchronized with layout"
+                monitor.base_options, self.options,
+                "monitor base options must be synchronized with layout"
             );
 
             assert_eq!(self.overview_open, monitor.overview_open);
@@ -2863,6 +2876,7 @@ impl<W: LayoutElement> Layout<W> {
             let view_size = output_size(&move_.output);
             let scale = move_.output.current_scale().fractional_scale();
             let options = Options::clone(&options)
+                .with_merged_layout(move_.output_config.as_ref())
                 .with_merged_layout(move_.workspace_config.as_ref().map(|(_, c)| c))
                 .adjusted_for_scale(scale);
             move_.tile.update_config(view_size, scale, Rc::new(options));
@@ -3786,6 +3800,11 @@ impl<W: LayoutElement> Layout<W> {
                     return true;
                 }
 
+                let output_config = self
+                    .monitors()
+                    .find(|mon| mon.output() == &output)
+                    .and_then(|mon| mon.layout_config().cloned());
+
                 // If the pointer is currently on the window's own output, then we can animate the
                 // window movement from its current (rubberbanded and possibly moved away) position
                 // to the pointer. Otherwise, we just teleport it as the layout code is not aware
@@ -3832,6 +3851,7 @@ impl<W: LayoutElement> Layout<W> {
                 let view_size = output_size(&output);
                 let scale = output.current_scale().fractional_scale();
                 let options = Options::clone(&self.options)
+                    .with_merged_layout(output_config.as_ref())
                     .with_merged_layout(workspace_config.as_ref().map(|(_, c)| c))
                     .adjusted_for_scale(scale);
                 tile.update_config(view_size, scale, Rc::new(options));
@@ -3887,6 +3907,7 @@ impl<W: LayoutElement> Layout<W> {
                     is_full_width,
                     is_floating,
                     pointer_ratio_within_window,
+                    output_config,
                     workspace_config,
                 };
 
@@ -3930,6 +3951,11 @@ impl<W: LayoutElement> Layout<W> {
                     );
                     move_.output = output.clone();
                     self.focus_output(&output);
+
+                    move_.output_config = self
+                        .monitor_for_output(&output)
+                        .and_then(|mon| mon.layout_config().cloned());
+
                     update_config = true;
                 }
 
@@ -3937,6 +3963,7 @@ impl<W: LayoutElement> Layout<W> {
                     let view_size = output_size(&output);
                     let scale = output.current_scale().fractional_scale();
                     let options = Options::clone(&self.options)
+                        .with_merged_layout(move_.output_config.as_ref())
                         .with_merged_layout(move_.workspace_config.as_ref().map(|(_, c)| c))
                         .adjusted_for_scale(scale);
                     move_.tile.update_config(view_size, scale, Rc::new(options));
@@ -4125,7 +4152,7 @@ impl<W: LayoutElement> Layout<W> {
                         .position(|ws| ws.id() == ws_id)
                         .unwrap(),
                     InsertWorkspace::NewAt(ws_idx) => {
-                        if self.options.layout.empty_workspace_above_first && ws_idx == 0 {
+                        if mon.options.layout.empty_workspace_above_first && ws_idx == 0 {
                             // Reuse the top empty workspace.
                             0
                         } else if mon.workspaces.len() - 1 <= ws_idx {
@@ -4454,7 +4481,7 @@ impl<W: LayoutElement> Layout<W> {
         } = &mut self.monitor_set
         {
             let monitor = &mut monitors[*active_monitor_idx];
-            if self.options.layout.empty_workspace_above_first
+            if monitor.options.layout.empty_workspace_above_first
                 && monitor
                     .workspaces
                     .first()

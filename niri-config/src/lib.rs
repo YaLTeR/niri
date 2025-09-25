@@ -791,6 +791,7 @@ mod tests {
                                 bottom_right: true,
                             },
                         ),
+                        layout: None,
                     },
                 ],
             ),

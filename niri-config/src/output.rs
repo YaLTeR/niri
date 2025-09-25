@@ -1,7 +1,7 @@
 use niri_ipc::{ConfiguredMode, Transform};
 
 use crate::gestures::HotCorners;
-use crate::{Color, FloatOrInt};
+use crate::{Color, FloatOrInt, LayoutPart};
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Outputs(pub Vec<Output>);
@@ -24,12 +24,15 @@ pub struct Output {
     pub variable_refresh_rate: Option<Vrr>,
     #[knuffel(child)]
     pub focus_at_startup: bool,
+    // Deprecated; use layout.background_color.
     #[knuffel(child)]
     pub background_color: Option<Color>,
     #[knuffel(child)]
     pub backdrop_color: Option<Color>,
     #[knuffel(child)]
     pub hot_corners: Option<HotCorners>,
+    #[knuffel(child)]
+    pub layout: Option<LayoutPart>,
 }
 
 impl Output {
@@ -60,6 +63,7 @@ impl Default for Output {
             background_color: None,
             backdrop_color: None,
             hot_corners: None,
+            layout: None,
         }
     }
 }
