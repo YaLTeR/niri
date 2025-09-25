@@ -4682,6 +4682,48 @@ impl<W: LayoutElement> Column<W> {
             }
         };
 
+        let min_size: Vec<_> = self
+            .tiles
+            .iter()
+            .map(Tile::min_size_nonfullscreen)
+            .map(|mut size| {
+                size.w = size.w.max(1.);
+                size.h = size.h.max(1.);
+                size
+            })
+            .collect();
+        let max_size: Vec<_> = self
+            .tiles
+            .iter()
+            .map(Tile::max_size_nonfullscreen)
+            .collect();
+
+        // Compute the column width.
+        let min_width = min_size
+            .iter()
+            .map(|size| NotNan::new(size.w).unwrap())
+            .max()
+            .map(NotNan::into_inner)
+            .unwrap();
+        let max_width = max_size
+            .iter()
+            .filter_map(|size| {
+                let w = size.w;
+                if w == 0. {
+                    None
+                } else {
+                    Some(NotNan::new(w).unwrap())
+                }
+            })
+            .min()
+            .map(NotNan::into_inner)
+            .unwrap_or(f64::from(i32::MAX));
+        let max_width = f64::max(max_width, min_width);
+
+        let width = self.resolve_column_width(width);
+        let width = width.clamp(min_width, max_width);
+        let width = ColumnWidth::Fixed(width);
+
         self.width = width;
         self.preset_width_idx = None;
         self.is_full_width = false;
