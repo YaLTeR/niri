@@ -1118,10 +1118,8 @@ impl<W: LayoutElement> Layout<W> {
                             unreachable!()
                         };
 
-                        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-                            for mon in monitors {
-                                mon.dnd_scroll_gesture_end();
-                            }
+                        for mon in self.monitors_mut() {
+                            mon.dnd_scroll_gesture_end();
                         }
 
                         // Unlock the view on the workspaces.
@@ -1459,11 +1457,7 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
-            return 0.;
-        };
-
-        for mon in monitors {
+        for mon in self.monitors() {
             for ws in &mon.workspaces {
                 if ws.has_window(window) {
                     return ws.scroll_amount_to_activate(window);
@@ -1744,28 +1738,36 @@ impl<W: LayoutElement> Layout<W> {
         Some(&monitors[*active_monitor_idx])
     }
 
-    pub fn monitor_for_output(&self, output: &Output) -> Option<&Monitor<W>> {
-        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
-            return None;
+    pub fn monitors(&self) -> impl Iterator<Item = &Monitor<W>> + '_ {
+        let monitors = if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
+            &monitors[..]
+        } else {
+            &[][..]
         };
 
-        monitors.iter().find(|mon| &mon.output == output)
+        monitors.iter()
+    }
+
+    pub fn monitors_mut(&mut self) -> impl Iterator<Item = &mut Monitor<W>> + '_ {
+        let monitors = if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
+            &mut monitors[..]
+        } else {
+            &mut [][..]
+        };
+
+        monitors.iter_mut()
+    }
+
+    pub fn monitor_for_output(&self, output: &Output) -> Option<&Monitor<W>> {
+        self.monitors().find(|mon| &mon.output == output)
     }
 
     pub fn monitor_for_output_mut(&mut self, output: &Output) -> Option<&mut Monitor<W>> {
-        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
-            return None;
-        };
-
-        monitors.iter_mut().find(|mon| &mon.output == output)
+        self.monitors_mut().find(|mon| &mon.output == output)
     }
 
     pub fn monitor_for_workspace(&self, workspace_name: &str) -> Option<&Monitor<W>> {
-        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
-            return None;
-        };
-
-        monitors.iter().find(|monitor| {
+        self.monitors().find(|monitor| {
             monitor.workspaces.iter().any(|ws| {
                 ws.name
                     .as_ref()
@@ -1775,13 +1777,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn outputs(&self) -> impl Iterator<Item = &Output> + '_ {
-        let monitors = if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
-            &monitors[..]
-        } else {
-            &[][..]
-        };
-
-        monitors.iter().map(|mon| &mon.output)
+        self.monitors().map(|mon| &mon.output)
     }
 
     pub fn move_left(&mut self) {
@@ -2324,11 +2320,7 @@ impl<W: LayoutElement> Layout<W> {
         output: &Output,
         pos_within_output: Point<f64, Logical>,
     ) -> Option<(&W, HitType)> {
-        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
-            return None;
-        };
-
-        let mon = monitors.iter().find(|mon| &mon.output == output)?;
+        let mon = self.monitor_for_output(output)?;
         mon.window_under(pos_within_output)
     }
 
@@ -2337,11 +2329,7 @@ impl<W: LayoutElement> Layout<W> {
         output: &Output,
         pos_within_output: Point<f64, Logical>,
     ) -> Option<ResizeEdge> {
-        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
-            return None;
-        };
-
-        let mon = monitors.iter().find(|mon| &mon.output == output)?;
+        let mon = self.monitor_for_output(output)?;
         mon.resize_edges_under(pos_within_output)
     }
 
@@ -2358,11 +2346,7 @@ impl<W: LayoutElement> Layout<W> {
             return None;
         }
 
-        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
-            return None;
-        };
-
-        let mon = monitors.iter().find(|mon| &mon.output == output)?;
+        let mon = self.monitor_for_output(output)?;
         if extended_bounds {
             mon.workspace_under(pos_within_output).map(|(ws, _)| ws)
         } else {
@@ -2855,11 +2839,7 @@ impl<W: LayoutElement> Layout<W> {
             return true;
         }
 
-        let MonitorSet::Normal { monitors, .. } = &self.monitor_set else {
-            return false;
-        };
-
-        for mon in monitors {
+        for mon in self.monitors() {
             if output.is_some_and(|output| mon.output != *output) {
                 continue;
             }
@@ -2932,10 +2912,8 @@ impl<W: LayoutElement> Layout<W> {
     fn update_insert_hint(&mut self, output: Option<&Output>) {
         let _span = tracy_client::span!("Layout::update_insert_hint");
 
-        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-            for mon in monitors {
-                mon.insert_hint = None;
-            }
+        for mon in self.monitors_mut() {
+            mon.insert_hint = None;
         }
 
         if !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_))) {
@@ -3953,11 +3931,7 @@ impl<W: LayoutElement> Layout<W> {
             return false;
         }
 
-        let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set else {
-            return false;
-        };
-
-        let Some((mon, (ws, ws_geo))) = monitors.iter().find_map(|mon| {
+        let Some((mon, (ws, ws_geo))) = self.monitors().find_map(|mon| {
             mon.workspaces_with_render_geo()
                 .find(|(ws, _)| ws.has_window(&window_id))
                 .map(|rv| (mon, rv))
@@ -3994,10 +3968,8 @@ impl<W: LayoutElement> Layout<W> {
             pointer_ratio_within_window,
         });
 
-        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-            for mon in monitors {
-                mon.dnd_scroll_gesture_begin();
-            }
+        for mon in self.monitors_mut() {
+            mon.dnd_scroll_gesture_begin();
         }
 
         // Lock the view for scrolling interactive move.
@@ -4083,21 +4055,19 @@ impl<W: LayoutElement> Layout<W> {
                 // FIXME: when and if the layout code knows about monitor positions, this will be
                 // potentially animatable.
                 let mut tile_pos = None;
-                if let MonitorSet::Normal { monitors, .. } = &self.monitor_set {
-                    if let Some((mon, (ws, ws_geo))) = monitors.iter().find_map(|mon| {
-                        mon.workspaces_with_render_geo()
-                            .find(|(ws, _)| ws.has_window(window))
-                            .map(|rv| (mon, rv))
-                    }) {
-                        if mon.output() == &output {
-                            let (_, tile_offset, _) = ws
-                                .tiles_with_render_positions()
-                                .find(|(tile, _, _)| tile.window().id() == window)
-                                .unwrap();
+                if let Some((mon, (ws, ws_geo))) = self.monitors().find_map(|mon| {
+                    mon.workspaces_with_render_geo()
+                        .find(|(ws, _)| ws.has_window(window))
+                        .map(|rv| (mon, rv))
+                }) {
+                    if mon.output() == &output {
+                        let (_, tile_offset, _) = ws
+                            .tiles_with_render_positions()
+                            .find(|(tile, _, _)| tile.window().id() == window)
+                            .unwrap();
 
-                            let zoom = mon.overview_zoom();
-                            tile_pos = Some((ws_geo.loc + tile_offset.upscale(zoom), zoom));
-                        }
+                        let zoom = mon.overview_zoom();
+                        tile_pos = Some((ws_geo.loc + tile_offset.upscale(zoom), zoom));
                     }
                 }
 
@@ -4239,10 +4209,8 @@ impl<W: LayoutElement> Layout<W> {
                     unreachable!()
                 };
 
-                if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-                    for mon in monitors {
-                        mon.dnd_scroll_gesture_end();
-                    }
+                for mon in self.monitors_mut() {
+                    mon.dnd_scroll_gesture_end();
                 }
 
                 let mut ws_id = None;
@@ -4308,10 +4276,8 @@ impl<W: LayoutElement> Layout<W> {
             unreachable!()
         };
 
-        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-            for mon in monitors {
-                mon.dnd_scroll_gesture_end();
-            }
+        for mon in self.monitors_mut() {
+            mon.dnd_scroll_gesture_end();
         }
 
         // Unlock the view on the workspaces.
@@ -4541,10 +4507,8 @@ impl<W: LayoutElement> Layout<W> {
         });
 
         if begin_gesture {
-            if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-                for mon in monitors {
-                    mon.dnd_scroll_gesture_begin();
-                }
+            for mon in self.monitors_mut() {
+                mon.dnd_scroll_gesture_begin();
             }
 
             for ws in self.workspaces_mut() {
@@ -4560,10 +4524,8 @@ impl<W: LayoutElement> Layout<W> {
 
         self.dnd = None;
 
-        if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-            for mon in monitors {
-                mon.dnd_scroll_gesture_end();
-            }
+        for mon in self.monitors_mut() {
+            mon.dnd_scroll_gesture_end();
         }
 
         for ws in self.workspaces_mut() {
