@@ -3118,6 +3118,49 @@ impl Niri {
         Some((output, pos_within_output))
     }
 
+    fn is_inside_hot_corner(&self, output: &Output, pos: Point<f64, Logical>) -> bool {
+        let config = self.config.borrow();
+        let hot_corners = output
+            .user_data()
+            .get::<OutputName>()
+            .and_then(|name| config.outputs.find(name))
+            .and_then(|c| c.hot_corners)
+            .unwrap_or(config.gestures.hot_corners);
+
+        if hot_corners.off {
+            return false;
+        }
+
+        // Use size from the ceiled output geometry, since that's what we currently use for pointer
+        // motion clamping.
+        let geom = self.global_space.output_geometry(output).unwrap();
+        let size = geom.size.to_f64();
+
+        let contains = move |corner: Point<f64, Logical>| {
+            Rectangle::new(corner, Size::new(1., 1.)).contains(pos)
+        };
+
+        if hot_corners.top_right && contains(Point::new(size.w - 1., 0.)) {
+            return true;
+        }
+        if hot_corners.bottom_left && contains(Point::new(0., size.h - 1.)) {
+            return true;
+        }
+        if hot_corners.bottom_right && contains(Point::new(size.w - 1., size.h - 1.)) {
+            return true;
+        }
+
+        // If the user didn't explicitly set any corners, we default to top-left.
+        if (hot_corners.top_left
+            || !(hot_corners.top_right || hot_corners.bottom_right || hot_corners.bottom_left))
+            && contains(Point::new(0., 0.))
+        {
+            return true;
+        }
+
+        false
+    }
+
     pub fn is_sticky_obscured_under(
         &self,
         output: &Output,
@@ -3161,12 +3204,8 @@ impl Niri {
             return false;
         }
 
-        let hot_corners = self.config.borrow().gestures.hot_corners;
-        if !hot_corners.off {
-            let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-            if hot_corner.contains(pos_within_output) {
-                return true;
-            }
+        if self.is_inside_hot_corner(output, pos_within_output) {
+            return true;
         }
 
         if layer_popup_under(Layer::Top) || layer_toplevel_under(Layer::Top) {
@@ -3438,13 +3477,9 @@ impl Niri {
                 .or_else(|| layer_toplevel_under(Layer::Bottom))
                 .or_else(|| layer_toplevel_under(Layer::Background));
         } else {
-            let hot_corners = self.config.borrow().gestures.hot_corners;
-            if !hot_corners.off {
-                let hot_corner = Rectangle::from_size(Size::from((1., 1.)));
-                if hot_corner.contains(pos_within_output) {
-                    rv.hot_corner = true;
-                    return rv;
-                }
+            if self.is_inside_hot_corner(output, pos_within_output) {
+                rv.hot_corner = true;
+                return rv;
             }
 
             under = under

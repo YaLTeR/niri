@@ -25,7 +25,8 @@ use smithay::utils::{Coordinate, Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{send_surface_state, with_states, SurfaceData};
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::shell::xdg::{
-    ToplevelSurface, XdgToplevelSurfaceData, XdgToplevelSurfaceRoleAttributes,
+    ToplevelCachedState, ToplevelState, ToplevelSurface, XdgToplevelSurfaceData,
+    XdgToplevelSurfaceRoleAttributes,
 };
 use wayland_backend::server::Credentials;
 
@@ -276,6 +277,25 @@ pub fn with_toplevel_role<T>(
             .unwrap();
 
         f(&mut role)
+    })
+}
+
+pub fn with_toplevel_role_and_current<T>(
+    toplevel: &ToplevelSurface,
+    f: impl FnOnce(&mut XdgToplevelSurfaceRoleAttributes, Option<&ToplevelState>) -> T,
+) -> T {
+    with_states(toplevel.wl_surface(), |states| {
+        let mut role = states
+            .data_map
+            .get::<XdgToplevelSurfaceData>()
+            .unwrap()
+            .lock()
+            .unwrap();
+
+        let mut guard = states.cached_state.get::<ToplevelCachedState>();
+        let current = guard.current().last_acked.as_ref().map(|c| &c.state);
+
+        f(&mut role, current)
     })
 }
 

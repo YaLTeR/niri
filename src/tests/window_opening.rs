@@ -65,6 +65,7 @@ fn simple() {
 }
 
 #[test]
+#[should_panic(expected = "Protocol error 3 on object xdg_surface")]
 fn dont_ack_initial_configure() {
     let mut f = Fixture::new();
     f.add_output(1, (1920, 1080));
@@ -80,19 +81,6 @@ fn dont_ack_initial_configure() {
     // Don't ack the configure.
     window.commit();
     f.double_roundtrip(id);
-
-    // FIXME: Technically this is a protocol violation but uh. Smithay currently doesn't check it,
-    // and I'm not sure if it can be done generically in Smithay (because a compositor may not use
-    // its rendering helpers). I might add a check in niri itself sometime; I'm just not sure if
-    // there might be clients that this could break.
-    let window = f.client(id).window(&surface);
-    assert_snapshot!(
-        window.format_recent_configures(),
-        @r"
-    size: 936 × 1048, bounds: 1888 × 1048, states: []
-    size: 936 × 1048, bounds: 1888 × 1048, states: [Activated]
-    "
-    );
 }
 
 #[derive(Clone, Copy)]
