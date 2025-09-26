@@ -2539,7 +2539,7 @@ impl State {
                 .and_then(|trigger| {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
-                    find_configured_bind(bindings, mod_key, trigger, mods)
+                    find_configured_bind(bindings, mod_key, trigger, mods, true)
                 }) {
                     self.niri.suppressed_buttons.insert(button_code);
                     self.handle_bind(bind.clone());
@@ -2854,49 +2854,54 @@ impl State {
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.horizontal_wheel_tracker.accumulate(horizontal);
                 if ticks != 0 {
-                    let (bind_left, bind_right) = if should_handle_in_overview
-                        && modifiers.is_empty()
-                    {
-                        let bind_left = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollLeft,
-                                modifiers: Modifiers::empty(),
-                            },
-                            action: Action::FocusColumnLeftUnderMouse,
-                            repeat: true,
-                            release: false,
-                            cooldown: None,
-                            allow_when_locked: false,
-                            allow_inhibiting: false,
-                            hotkey_overlay_title: None,
-                        });
-                        let bind_right = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollRight,
-                                modifiers: Modifiers::empty(),
-                            },
-                            action: Action::FocusColumnRightUnderMouse,
-                            repeat: true,
-                            release: false,
-                            cooldown: None,
-                            allow_when_locked: false,
-                            allow_inhibiting: false,
-                            hotkey_overlay_title: None,
-                        });
-                        (bind_left, bind_right)
-                    } else {
-                        let config = self.niri.config.borrow();
-                        let bindings = &config.binds;
-                        let bind_left =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, mods);
-                        let bind_right = find_configured_bind(
-                            bindings,
-                            mod_key,
-                            Trigger::WheelScrollRight,
-                            mods,
-                        );
-                        (bind_left, bind_right)
-                    };
+                    let (bind_left, bind_right) =
+                        if should_handle_in_overview && modifiers.is_empty() {
+                            let bind_left = Some(Bind {
+                                key: Key {
+                                    trigger: Trigger::WheelScrollLeft,
+                                    modifiers: Modifiers::empty(),
+                                },
+                                action: Action::FocusColumnLeftUnderMouse,
+                                repeat: true,
+                                release: false,
+                                cooldown: None,
+                                allow_when_locked: false,
+                                allow_inhibiting: false,
+                                hotkey_overlay_title: None,
+                            });
+                            let bind_right = Some(Bind {
+                                key: Key {
+                                    trigger: Trigger::WheelScrollRight,
+                                    modifiers: Modifiers::empty(),
+                                },
+                                action: Action::FocusColumnRightUnderMouse,
+                                repeat: true,
+                                release: false,
+                                cooldown: None,
+                                allow_when_locked: false,
+                                allow_inhibiting: false,
+                                hotkey_overlay_title: None,
+                            });
+                            (bind_left, bind_right)
+                        } else {
+                            let config = self.niri.config.borrow();
+                            let bindings = &config.binds;
+                            let bind_left = find_configured_bind(
+                                bindings,
+                                mod_key,
+                                Trigger::WheelScrollLeft,
+                                mods,
+                                true,
+                            );
+                            let bind_right = find_configured_bind(
+                                bindings,
+                                mod_key,
+                                Trigger::WheelScrollRight,
+                                mods,
+                                true,
+                            );
+                            (bind_left, bind_right)
+                        };
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
@@ -2973,10 +2978,20 @@ impl State {
                     } else {
                         let config = self.niri.config.borrow();
                         let bindings = &config.binds;
-                        let bind_up =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, mods);
-                        let bind_down =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods);
+                        let bind_up = find_configured_bind(
+                            bindings,
+                            mod_key,
+                            Trigger::WheelScrollUp,
+                            mods,
+                            true,
+                        );
+                        let bind_down = find_configured_bind(
+                            bindings,
+                            mod_key,
+                            Trigger::WheelScrollDown,
+                            mods,
+                            true,
+                        );
                         (bind_up, bind_down)
                     };
 
@@ -3113,10 +3128,20 @@ impl State {
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
-                    let bind_left =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollLeft, mods);
-                    let bind_right =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollRight, mods);
+                    let bind_left = find_configured_bind(
+                        bindings,
+                        mod_key,
+                        Trigger::TouchpadScrollLeft,
+                        mods,
+                        true,
+                    );
+                    let bind_right = find_configured_bind(
+                        bindings,
+                        mod_key,
+                        Trigger::TouchpadScrollRight,
+                        mods,
+                        true,
+                    );
                     drop(config);
 
                     if let Some(right) = bind_right {
@@ -3138,10 +3163,20 @@ impl State {
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
                     let bindings = &config.binds;
-                    let bind_up =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollUp, mods);
-                    let bind_down =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollDown, mods);
+                    let bind_up = find_configured_bind(
+                        bindings,
+                        mod_key,
+                        Trigger::TouchpadScrollUp,
+                        mods,
+                        true,
+                    );
+                    let bind_down = find_configured_bind(
+                        bindings,
+                        mod_key,
+                        Trigger::TouchpadScrollDown,
+                        mods,
+                        true,
+                    );
                     drop(config);
 
                     if let Some(down) = bind_down {
@@ -4017,6 +4052,7 @@ fn should_intercept_key(
         raw,
         mods,
         disable_power_key_handling,
+        pressed,
     );
 
     let valid_release_trigger = if pressed && !is_inhibiting_shortcuts {
@@ -4119,6 +4155,7 @@ fn find_bind(
     raw: Option<Keysym>,
     mods: ModifiersState,
     disable_power_key_handling: bool,
+    pressed: bool,
 ) -> Option<Bind> {
     use keysyms::*;
 
@@ -4156,7 +4193,15 @@ fn find_bind(
     }
 
     let trigger = Trigger::Keysym(raw?);
-    find_configured_bind(bindings, mod_key, trigger, mods)
+
+    // It would maybe be better to return all matching binds instead of using a parameter to
+    // prioritize them, but that would complicate things for the callers and right now there aren't
+    // any that need more than one.
+    if let Some(bind) = find_configured_bind(bindings, mod_key, trigger, mods, pressed) {
+        Some(bind)
+    } else {
+        find_configured_bind(bindings, mod_key, trigger, mods, !pressed)
+    }
 }
 
 fn find_configured_bind(
@@ -4164,6 +4209,7 @@ fn find_configured_bind(
     mod_key: ModKey,
     trigger: Trigger,
     mods: ModifiersState,
+    pressed: bool,
 ) -> Option<Bind> {
     // Handle configured binds.
     let mut modifiers = modifiers_from_state(mods);
@@ -4174,6 +4220,10 @@ fn find_configured_bind(
     }
 
     for bind in &bindings.0 {
+        if bind.release == pressed {
+            continue;
+        }
+
         if bind.key.trigger != trigger {
             continue;
         }
@@ -5273,6 +5323,19 @@ mod tests {
                 allow_inhibiting: true,
                 hotkey_overlay_title: None,
             },
+            Bind {
+                key: Key {
+                    trigger: Trigger::Keysym(Keysym::Super_L),
+                    modifiers: Modifiers::empty(),
+                },
+                action: Action::ToggleOverview,
+                repeat: false,
+                release: true,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                hotkey_overlay_title: None,
+            },
         ]);
 
         assert_eq!(
@@ -5283,7 +5346,8 @@ mod tests {
                 ModifiersState {
                     logo: true,
                     ..Default::default()
-                }
+                },
+                true,
             )
             .as_ref(),
             Some(&bindings.0[0])
@@ -5294,6 +5358,20 @@ mod tests {
                 ModKey::Super,
                 Trigger::Keysym(Keysym::q),
                 ModifiersState::default(),
+                true,
+            ),
+            None,
+        );
+        assert_eq!(
+            find_configured_bind(
+                &bindings,
+                ModKey::Super,
+                Trigger::Keysym(Keysym::q),
+                ModifiersState {
+                    logo: true,
+                    ..Default::default()
+                },
+                false,
             ),
             None,
         );
@@ -5306,7 +5384,8 @@ mod tests {
                 ModifiersState {
                     logo: true,
                     ..Default::default()
-                }
+                },
+                true,
             )
             .as_ref(),
             Some(&bindings.0[1])
@@ -5317,6 +5396,7 @@ mod tests {
                 ModKey::Super,
                 Trigger::Keysym(Keysym::h),
                 ModifiersState::default(),
+                true,
             ),
             None,
         );
@@ -5329,7 +5409,8 @@ mod tests {
                 ModifiersState {
                     logo: true,
                     ..Default::default()
-                }
+                },
+                true,
             ),
             None,
         );
@@ -5339,6 +5420,7 @@ mod tests {
                 ModKey::Super,
                 Trigger::Keysym(Keysym::j),
                 ModifiersState::default(),
+                true,
             )
             .as_ref(),
             Some(&bindings.0[2])
@@ -5352,7 +5434,8 @@ mod tests {
                 ModifiersState {
                     logo: true,
                     ..Default::default()
-                }
+                },
+                true,
             )
             .as_ref(),
             Some(&bindings.0[3])
@@ -5363,6 +5446,7 @@ mod tests {
                 ModKey::Super,
                 Trigger::Keysym(Keysym::k),
                 ModifiersState::default(),
+                true,
             ),
             None,
         );
@@ -5376,7 +5460,8 @@ mod tests {
                     logo: true,
                     alt: true,
                     ..Default::default()
-                }
+                },
+                true,
             )
             .as_ref(),
             Some(&bindings.0[4])
@@ -5390,6 +5475,29 @@ mod tests {
                     logo: true,
                     ..Default::default()
                 },
+                true,
+            ),
+            None,
+        );
+
+        assert_eq!(
+            find_configured_bind(
+                &bindings,
+                ModKey::Super,
+                Trigger::Keysym(Keysym::Super_L),
+                ModifiersState::default(),
+                false,
+            )
+            .as_ref(),
+            Some(&bindings.0[5])
+        );
+        assert_eq!(
+            find_configured_bind(
+                &bindings,
+                ModKey::Super,
+                Trigger::Keysym(Keysym::Super_L),
+                ModifiersState::default(),
+                true,
             ),
             None,
         );
