@@ -31,7 +31,6 @@
 //! workspace just like any other. Then they come back, reconnect the second monitor, and now we
 //! don't want an unassuming workspace to end up on it.
 
-use std::cmp::min;
 use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
@@ -2902,24 +2901,13 @@ impl<W: LayoutElement> Layout<W> {
                     .unwrap_or(*active_monitor_idx);
                 let mon = &mut monitors[mon_idx];
 
-                let mut insert_idx = 0;
-                if mon.options.layout.empty_workspace_above_first {
-                    // need to insert new empty workspace on top
-                    mon.add_workspace_top();
-                    insert_idx += 1;
-                }
-
                 let ws = Workspace::new_with_config(
                     mon.output.clone(),
                     Some(ws_config.clone()),
                     clock,
                     options,
                 );
-                mon.workspaces.insert(insert_idx, ws);
-                mon.active_workspace_idx += 1;
-
-                mon.workspace_switch = None;
-                mon.clean_up_workspaces();
+                mon.insert_workspace(ws, 0, false);
             }
             MonitorSet::NoOutputs { workspaces } => {
                 let ws =
@@ -3415,7 +3403,6 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         let mut ws = current.remove_workspace_by_idx(current.active_workspace_idx);
-        ws.set_output(Some(output.clone()));
         ws.original_output = OutputId::new(output);
 
         let target_idx = monitors
@@ -3424,19 +3411,7 @@ impl<W: LayoutElement> Layout<W> {
             .unwrap();
         let target = &mut monitors[target_idx];
 
-        target.previous_workspace_id = Some(target.workspaces[target.active_workspace_idx].id());
-
-        if target.options.layout.empty_workspace_above_first && target.workspaces.len() == 1 {
-            // Insert a new empty workspace on top to prepare for insertion of new workspace.
-            target.add_workspace_top();
-        }
-        // Insert the workspace after the currently active one. Unless the currently active one is
-        // the last empty workspace, then insert before.
-        let target_ws_idx = min(target.active_workspace_idx + 1, target.workspaces.len() - 1);
-        target.workspaces.insert(target_ws_idx, ws);
-        target.active_workspace_idx = target_ws_idx;
-        target.workspace_switch = None;
-        target.clean_up_workspaces();
+        target.insert_workspace(ws, target.active_workspace_idx + 1, true);
 
         *active_monitor_idx = target_idx;
 
@@ -3486,42 +3461,22 @@ impl<W: LayoutElement> Layout<W> {
             return false;
         }
 
-        let current_active_ws_idx = current.active_workspace_idx;
+        // Only switch active monitor if the workspace to be moved is the currently focused one on
+        // the current monitor.
+        let activate =
+            current_idx == *active_monitor_idx && old_idx == current.active_workspace_idx;
 
         let mut ws = current.remove_workspace_by_idx(old_idx);
-        ws.set_output(Some(new_output.clone()));
         ws.original_output = OutputId::new(&new_output);
 
         let target = &mut monitors[target_idx];
+        target.insert_workspace(ws, target.active_workspace_idx + 1, activate);
 
-        target.previous_workspace_id = Some(target.workspaces[target.active_workspace_idx].id());
-
-        if target.options.layout.empty_workspace_above_first && target.workspaces.len() == 1 {
-            // Insert a new empty workspace on top to prepare for insertion of new workspace.
-            target.add_workspace_top();
-        }
-        // Insert the workspace after the currently active one. Unless the currently active one is
-        // the last empty workspace, then insert before.
-        let target_ws_idx = min(target.active_workspace_idx + 1, target.workspaces.len() - 1);
-        target.workspaces.insert(target_ws_idx, ws);
-
-        // Only switch active monitor if the workspace moved was the currently focused one on the
-        // current monitor
-        let res = if current_idx == *active_monitor_idx && old_idx == current_active_ws_idx {
+        if activate {
             *active_monitor_idx = target_idx;
-            target.active_workspace_idx = target_ws_idx;
-            true
-        } else {
-            if target_ws_idx <= target.active_workspace_idx {
-                target.active_workspace_idx += 1;
-            }
-            false
-        };
+        }
 
-        target.workspace_switch = None;
-        target.clean_up_workspaces();
-
-        res
+        activate
     }
 
     pub fn set_fullscreen(&mut self, id: &W::Id, is_fullscreen: bool) {
