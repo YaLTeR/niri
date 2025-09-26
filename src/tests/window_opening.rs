@@ -201,12 +201,30 @@ fn check_target_output_and_workspace(
 
     let mut config = String::from(
         r##"
+output "headless-2" {
+    layout {
+        border {
+            on
+        }
+    }
+}
+
 workspace "ws-1" {
     open-on-output "headless-1"
 }
 
 workspace "ws-2" {
     open-on-output "headless-2"
+
+    layout {
+        border {
+            width 10
+        }
+
+        default-column-width {
+            fixed 500
+        }
+    }
 }
 
 window-rule {
