@@ -814,14 +814,7 @@ impl<W: LayoutElement> Layout<W> {
                     monitor.workspaces[monitor.active_workspace_idx].id(),
                 );
 
-                let mut workspaces = monitor.workspaces;
-
-                for ws in &mut workspaces {
-                    ws.set_output(None);
-                }
-
-                // Get rid of empty workspaces.
-                workspaces.retain(|ws| ws.has_windows_or_name());
+                let mut workspaces = monitor.into_workspaces();
 
                 if monitors.is_empty() {
                     // Removed the last monitor.
