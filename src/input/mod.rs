@@ -4557,7 +4557,13 @@ fn find_bind<'a>(
         });
     }
 
-    let trigger = Trigger::Keysym(raw?);
+    let raw = raw?;
+
+    let trigger = if mod_key.matches_keysym(raw) {
+        Trigger::KeyCompositor
+    } else {
+        Trigger::Keysym(raw)
+    };
 
     // It would maybe be better to return all matching binds instead of using a parameter to
     // prioritize them, but that would complicate things for the callers and right now there aren't
@@ -5476,7 +5482,7 @@ mod tests {
             // A compositor-only release binding which toggles the overview
             Bind {
                 key: Key {
-                    trigger: Trigger::Keysym(MOD_KEYSYM),
+                    trigger: Trigger::KeyCompositor,
                     modifiers: Modifiers::empty(),
                 },
                 action: Action::ToggleOverview,
