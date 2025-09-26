@@ -275,13 +275,36 @@ impl From<&super::OverviewProgress> for OverviewProgress {
 impl<W: LayoutElement> Monitor<W> {
     pub fn new(
         output: Output,
-        workspaces: Vec<Workspace<W>>,
+        mut workspaces: Vec<Workspace<W>>,
+        ws_id_to_activate: Option<WorkspaceId>,
         clock: Clock,
         options: Rc<Options>,
     ) -> Self {
         let scale = output.current_scale();
         let view_size = output_size(&output);
         let working_area = compute_working_area(&output);
+
+        // Prepare the workspaces: set output, empty first, empty last.
+        let mut active_workspace_idx = 0;
+
+        for (idx, ws) in workspaces.iter_mut().enumerate() {
+            assert!(ws.has_windows_or_name());
+
+            ws.set_output(Some(output.clone()));
+
+            if ws_id_to_activate.is_some_and(|id| ws.id() == id) {
+                active_workspace_idx = idx;
+            }
+        }
+
+        if options.layout.empty_workspace_above_first && !workspaces.is_empty() {
+            let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
+            workspaces.insert(0, ws);
+            active_workspace_idx += 1;
+        }
+
+        let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
+        workspaces.push(ws);
 
         Self {
             output_name: output.name(),
@@ -290,7 +313,7 @@ impl<W: LayoutElement> Monitor<W> {
             view_size,
             working_area,
             workspaces,
-            active_workspace_idx: 0,
+            active_workspace_idx,
             previous_workspace_id: None,
             insert_hint: None,
             insert_hint_element: InsertHintElement::new(options.layout.insert_hint),
