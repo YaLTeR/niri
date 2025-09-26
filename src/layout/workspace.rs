@@ -1502,7 +1502,7 @@ impl<W: LayoutElement> Workspace<W> {
             if tile.window().id() == window {
                 let view_pos = Point::from((-tile_pos.x, -tile_pos.y));
                 let view_rect = Rectangle::new(view_pos, view_size);
-                tile.update_render_elements(false, view_rect);
+                tile.update_render_elements(false, false, view_rect);
                 tile.store_unmap_snapshot_if_empty(renderer);
                 return;
             }
@@ -1768,6 +1768,19 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn working_area(&self) -> Rectangle<f64, Logical> {
         self.working_area
     }
+
+    pub fn toggle_view_lock(&mut self) {
+        self.scrolling.toggle_view_lock();
+    }
+
+    pub fn lock_view_lock(&mut self) -> bool {
+        self.scrolling.lock_view_lock()
+    }
+
+    pub fn unlock_view_lock(&mut self) -> bool {
+        self.scrolling.unlock_view_lock()
+    }
+
 
     #[cfg(test)]
     pub fn scrolling(&self) -> &ScrollingSpace<W> {

@@ -2970,7 +2970,7 @@ impl<W: LayoutElement> Layout<W> {
                 let pos_within_output = move_.tile_render_location(zoom);
                 let view_rect =
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output));
-                move_.tile.update_render_elements(true, view_rect);
+                move_.tile.update_render_elements(true, false, view_rect);
             }
         }
 
@@ -4904,6 +4904,27 @@ impl<W: LayoutElement> Layout<W> {
             mon.activate_workspace_with_anim_config(ws_idx, Some(config));
         }
         self.toggle_overview();
+    }
+
+    pub fn toggle_view_lock(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.toggle_view_lock();
+    }
+
+    pub fn lock_view_lock(&mut self) -> bool {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return false;
+        };
+        workspace.lock_view_lock()
+    }
+
+    pub fn unlock_view_lock(&mut self) -> bool {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return false;
+        };
+        workspace.unlock_view_lock()
     }
 
     pub fn start_open_animation_for_window(&mut self, window: &W::Id) {
