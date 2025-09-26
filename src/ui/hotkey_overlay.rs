@@ -498,28 +498,32 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
 
     let has_comp_mod = key.modifiers.contains(Modifiers::COMPOSITOR);
 
+    let mut mod_key_pretty = String::new();
+    match mod_key {
+        ModKey::Super => {
+            mod_key_pretty.push_str("Super");
+        }
+        ModKey::Alt => {
+            mod_key_pretty.push_str("Alt");
+        }
+        ModKey::Shift => {
+            mod_key_pretty.push_str("Shift");
+        }
+        ModKey::Ctrl => {
+            mod_key_pretty.push_str("Ctrl");
+        }
+        ModKey::IsoLevel3Shift => {
+            mod_key_pretty.push_str("Mod5");
+        }
+        ModKey::IsoLevel5Shift => {
+            mod_key_pretty.push_str("Mod3");
+        }
+    }
+
     // Compositor mod goes first.
     if has_comp_mod {
-        match mod_key {
-            ModKey::Super => {
-                name.push_str("Super + ");
-            }
-            ModKey::Alt => {
-                name.push_str("Alt + ");
-            }
-            ModKey::Shift => {
-                name.push_str("Shift + ");
-            }
-            ModKey::Ctrl => {
-                name.push_str("Ctrl + ");
-            }
-            ModKey::IsoLevel3Shift => {
-                name.push_str("Mod5 + ");
-            }
-            ModKey::IsoLevel5Shift => {
-                name.push_str("Mod3 + ");
-            }
-        }
+        name.push_str(&mod_key_pretty);
+        name.push_str(" + ");
     }
 
     if key.modifiers.contains(Modifiers::SUPER) && !(has_comp_mod && mod_key == ModKey::Super) {
@@ -547,6 +551,7 @@ fn key_name(screen_reader: bool, mod_key: ModKey, key: &Key) -> String {
 
     let pretty = match key.trigger {
         Trigger::Keysym(keysym) => prettify_keysym_name(screen_reader, &keysym_get_name(keysym)),
+        Trigger::KeyCompositor => mod_key_pretty,
         Trigger::MouseLeft => String::from("Mouse Left"),
         Trigger::MouseRight => String::from("Mouse Right"),
         Trigger::MouseMiddle => String::from("Mouse Middle"),
