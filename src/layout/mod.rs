@@ -654,9 +654,6 @@ impl<W: LayoutElement> Layout<W> {
             } => {
                 let primary = &mut monitors[primary_idx];
 
-                let ws_id_to_activate = self.last_active_workspace_id.remove(&output.name());
-                let mut active_workspace_idx = None;
-
                 let mut stopped_primary_ws_switch = false;
 
                 let mut workspaces = vec![];
@@ -676,10 +673,6 @@ impl<W: LayoutElement> Layout<W> {
                         // another monitor. However, we will add an empty workspace in the end
                         // instead.
                         if ws.has_windows_or_name() {
-                            if Some(ws.id()) == ws_id_to_activate {
-                                active_workspace_idx = Some(workspaces.len());
-                            }
-
                             workspaces.push(ws);
                         }
 
@@ -717,33 +710,15 @@ impl<W: LayoutElement> Layout<W> {
 
                 workspaces.reverse();
 
-                if let Some(idx) = &mut active_workspace_idx {
-                    *idx = workspaces.len() - *idx - 1;
-                }
-                let mut active_workspace_idx = active_workspace_idx.unwrap_or(0);
+                let ws_id_to_activate = self.last_active_workspace_id.remove(&output.name());
 
-                // Make sure there's always an empty workspace.
-                workspaces.push(Workspace::new(
-                    output.clone(),
+                let mut monitor = Monitor::new(
+                    output,
+                    workspaces,
+                    ws_id_to_activate,
                     self.clock.clone(),
                     self.options.clone(),
-                ));
-
-                if self.options.layout.empty_workspace_above_first && workspaces.len() > 1 {
-                    workspaces.insert(
-                        0,
-                        Workspace::new(output.clone(), self.clock.clone(), self.options.clone()),
-                    );
-                    active_workspace_idx += 1;
-                }
-
-                for ws in &mut workspaces {
-                    ws.set_output(Some(output.clone()));
-                }
-
-                let mut monitor =
-                    Monitor::new(output, workspaces, self.clock.clone(), self.options.clone());
-                monitor.active_workspace_idx = active_workspace_idx;
+                );
                 monitor.overview_open = self.overview_open;
                 monitor.set_overview_progress(self.overview_progress.as_ref());
                 monitors.push(monitor);
@@ -754,36 +729,16 @@ impl<W: LayoutElement> Layout<W> {
                     active_monitor_idx,
                 }
             }
-            MonitorSet::NoOutputs { mut workspaces } => {
-                // We know there are no empty workspaces there, so add one.
-                workspaces.push(Workspace::new(
-                    output.clone(),
-                    self.clock.clone(),
-                    self.options.clone(),
-                ));
-
-                let mut active_workspace_idx = 0;
-                if self.options.layout.empty_workspace_above_first && workspaces.len() > 1 {
-                    workspaces.insert(
-                        0,
-                        Workspace::new(output.clone(), self.clock.clone(), self.options.clone()),
-                    );
-                    active_workspace_idx += 1;
-                }
-
+            MonitorSet::NoOutputs { workspaces } => {
                 let ws_id_to_activate = self.last_active_workspace_id.remove(&output.name());
 
-                for (i, workspace) in workspaces.iter_mut().enumerate() {
-                    workspace.set_output(Some(output.clone()));
-
-                    if Some(workspace.id()) == ws_id_to_activate {
-                        active_workspace_idx = i;
-                    }
-                }
-
-                let mut monitor =
-                    Monitor::new(output, workspaces, self.clock.clone(), self.options.clone());
-                monitor.active_workspace_idx = active_workspace_idx;
+                let mut monitor = Monitor::new(
+                    output,
+                    workspaces,
+                    ws_id_to_activate,
+                    self.clock.clone(),
+                    self.options.clone(),
+                );
                 monitor.overview_open = self.overview_open;
                 monitor.set_overview_progress(self.overview_progress.as_ref());
 
