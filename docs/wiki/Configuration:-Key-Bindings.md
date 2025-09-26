@@ -81,6 +81,26 @@ binds {
 
 This is mostly useful for the scroll bindings.
 
+### Release bindings
+
+Binds can be set to trigger on release instead of on the initial key press. These will only trigger if no other keys were pressed between their press and release.
+
+This should be set if you want to bind `Mod` to an action.
+
+```kdl
+binds {
+    Mod release=true { toggle-overview; }
+}
+```
+
+Note that the modifier state is updated before binds are evaluated, so if you want to configure a modifier key as both a normal bind and a release bind the entries are slightly different.
+
+```kdl
+binds {
+    Alt+Ctrl+Control_L repeat=false { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "0"; }
+    Alt+Control_L release=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "1"; }
+}
+
 ### Scroll Bindings
 
 You can bind mouse wheel scroll ticks using the following syntax.
