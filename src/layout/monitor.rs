@@ -303,6 +303,16 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub fn into_workspaces(mut self) -> Vec<Workspace<W>> {
+        self.workspaces.retain(|ws| ws.has_windows_or_name());
+
+        for ws in &mut self.workspaces {
+            ws.set_output(None);
+        }
+
+        self.workspaces
+    }
+
     pub fn output(&self) -> &Output {
         &self.output
     }
