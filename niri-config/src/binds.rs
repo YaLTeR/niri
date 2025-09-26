@@ -39,6 +39,7 @@ pub struct Key {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Trigger {
     Keysym(Keysym),
+    KeyCompositor,
     MouseLeft,
     MouseRight,
     MouseMiddle,
@@ -1022,6 +1023,8 @@ impl FromStr for Key {
             Trigger::TouchpadScrollLeft
         } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
             Trigger::TouchpadScrollRight
+        } else if key.eq_ignore_ascii_case("Mod") {
+            Trigger::KeyCompositor
         } else {
             let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             // The keyboard event handling code can receive either
@@ -1119,6 +1122,33 @@ mod tests {
             Key {
                 trigger: Trigger::Keysym(Keysym::a),
                 modifiers: Modifiers::ISO_LEVEL5_SHIFT
+            },
+        );
+    }
+
+    #[test]
+    fn parse_mod() {
+        assert_eq!(
+            "Mod".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::KeyCompositor,
+                modifiers: Modifiers::empty(),
+            },
+        );
+
+        assert_eq!(
+            "Ctrl+Mod".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::KeyCompositor,
+                modifiers: Modifiers::CTRL,
+            },
+        );
+
+        assert_eq!(
+            "Mod+Control_L".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::Control_L),
+                modifiers: Modifiers::COMPOSITOR,
             },
         );
     }
