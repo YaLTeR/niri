@@ -158,7 +158,7 @@ pub(super) enum OverviewProgress {
 }
 
 /// Where to put a newly added window.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub enum MonitorAddWindowTarget<'a, W: LayoutElement> {
     /// No particular preference.
     #[default]
@@ -172,6 +172,14 @@ pub enum MonitorAddWindowTarget<'a, W: LayoutElement> {
     },
     /// Next to this existing window.
     NextTo(&'a W::Id),
+}
+
+impl<'a, W: LayoutElement> Copy for MonitorAddWindowTarget<'a, W> {}
+
+impl<'a, W: LayoutElement> Clone for MonitorAddWindowTarget<'a, W> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 niri_render_elements! {
