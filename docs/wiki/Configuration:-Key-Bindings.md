@@ -15,7 +15,7 @@ binds {
 }
 ```
 
-The hotkey consists of modifiers separated by `+` signs, followed by an XKB key name in the end.
+The parts of a hotkey definition are separated by '+' and consist of zero or more modifiers followed by a trigger key. This can be either an XKB key name or (<sup>Since: next release</sup>) `Mod`.
 
 Valid modifiers are:
 
@@ -91,7 +91,7 @@ This is particularly helpful when you want to bind a modifier key to an action, 
 
 ```kdl
 binds {
-    Alt_L release=true { toggle-overview; }
+    Mod release=true { toggle-overview; }
 }
 ```
 
