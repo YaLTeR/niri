@@ -629,6 +629,34 @@ impl<W: LayoutElement> Monitor<W> {
         ws
     }
 
+    pub fn insert_workspace(&mut self, mut ws: Workspace<W>, mut idx: usize, activate: bool) {
+        ws.set_output(Some(self.output.clone()));
+
+        // Don't insert past the last empty workspace.
+        if idx == self.workspaces.len() {
+            idx -= 1;
+        }
+        if idx == 0 && self.options.layout.empty_workspace_above_first {
+            // Insert a new empty workspace on top to prepare for insertion of new workspace.
+            self.add_workspace_top();
+            idx += 1;
+        }
+
+        self.workspaces.insert(idx, ws);
+
+        if idx <= self.active_workspace_idx {
+            self.active_workspace_idx += 1;
+        }
+
+        if activate {
+            self.workspace_switch = None;
+            self.activate_workspace(idx);
+        }
+
+        self.workspace_switch = None;
+        self.clean_up_workspaces();
+    }
+
     pub fn move_down_or_to_workspace_down(&mut self) {
         if !self.active_workspace().move_down() {
             self.move_to_workspace_down(true);
