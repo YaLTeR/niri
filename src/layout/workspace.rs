@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
 
+use niri_config::utils::MergeWith as _;
 use niri_config::{
     CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
 };
@@ -880,6 +881,29 @@ impl<W: LayoutElement> Workspace<W> {
                 state.bounds = Some(self.scrolling.new_window_toplevel_bounds(rules));
             }
         });
+    }
+
+    pub(super) fn resolve_scrolling_width(
+        &self,
+        window: &W,
+        width: Option<PresetSize>,
+    ) -> ColumnWidth {
+        let width = width.unwrap_or_else(|| PresetSize::Fixed(window.size().w));
+        match width {
+            PresetSize::Fixed(fixed) => {
+                let mut fixed = f64::from(fixed);
+
+                // Add border width since ColumnWidth includes borders.
+                let rules = window.rules();
+                let border = self.options.layout.border.merged_with(&rules.border);
+                if !border.off {
+                    fixed += border.width * 2.;
+                }
+
+                ColumnWidth::Fixed(fixed)
+            }
+            PresetSize::Proportion(prop) => ColumnWidth::Proportion(prop),
+        }
     }
 
     pub fn focus_left(&mut self) -> bool {

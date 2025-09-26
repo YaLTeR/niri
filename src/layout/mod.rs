@@ -865,7 +865,6 @@ impl<W: LayoutElement> Layout<W> {
         is_floating: bool,
         activate: ActivateWindow,
     ) -> Option<&Output> {
-        let scrolling_width = self.resolve_scrolling_width(&window, width);
         let scrolling_height = height.map(SizeChange::from);
         let id = window.id().clone();
 
@@ -932,6 +931,10 @@ impl<W: LayoutElement> Layout<W> {
                     }
                 };
                 let mon = &mut monitors[mon_idx];
+
+                let (ws_idx, _) = mon.resolve_add_window_target(target);
+                let ws = &mon.workspaces[ws_idx];
+                let scrolling_width = ws.resolve_scrolling_width(&window, width);
 
                 mon.add_window(
                     window,
@@ -1011,6 +1014,8 @@ impl<W: LayoutElement> Layout<W> {
                     }
                 };
                 let ws = &mut workspaces[ws_idx];
+
+                let scrolling_width = ws.resolve_scrolling_width(&window, width);
 
                 let tile = ws.make_tile(window);
                 ws.add_tile(
@@ -4900,25 +4905,6 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn is_overview_open(&self) -> bool {
         self.overview_open
-    }
-
-    fn resolve_scrolling_width(&self, window: &W, width: Option<PresetSize>) -> ColumnWidth {
-        let width = width.unwrap_or_else(|| PresetSize::Fixed(window.size().w));
-        match width {
-            PresetSize::Fixed(fixed) => {
-                let mut fixed = f64::from(fixed);
-
-                // Add border width since ColumnWidth includes borders.
-                let rules = window.rules();
-                let border = self.options.layout.border.merged_with(&rules.border);
-                if !border.off {
-                    fixed += border.width * 2.;
-                }
-
-                ColumnWidth::Fixed(fixed)
-            }
-            PresetSize::Proportion(prop) => ColumnWidth::Proportion(prop),
-        }
     }
 }
 

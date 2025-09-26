@@ -480,6 +480,34 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub(super) fn resolve_add_window_target<'a>(
+        &mut self,
+        target: MonitorAddWindowTarget<'a, W>,
+    ) -> (usize, WorkspaceAddWindowTarget<'a, W>) {
+        match target {
+            MonitorAddWindowTarget::Auto => {
+                (self.active_workspace_idx, WorkspaceAddWindowTarget::Auto)
+            }
+            MonitorAddWindowTarget::Workspace { id, column_idx } => {
+                let idx = self.workspaces.iter().position(|ws| ws.id() == id).unwrap();
+                let target = if let Some(column_idx) = column_idx {
+                    WorkspaceAddWindowTarget::NewColumnAt(column_idx)
+                } else {
+                    WorkspaceAddWindowTarget::Auto
+                };
+                (idx, target)
+            }
+            MonitorAddWindowTarget::NextTo(win_id) => {
+                let idx = self
+                    .workspaces
+                    .iter_mut()
+                    .position(|ws| ws.has_window(win_id))
+                    .unwrap();
+                (idx, WorkspaceAddWindowTarget::NextTo(win_id))
+            }
+        }
+    }
+
     pub fn add_window(
         &mut self,
         window: W,
@@ -539,28 +567,7 @@ impl<W: LayoutElement> Monitor<W> {
         is_full_width: bool,
         is_floating: bool,
     ) {
-        let (mut workspace_idx, target) = match target {
-            MonitorAddWindowTarget::Auto => {
-                (self.active_workspace_idx, WorkspaceAddWindowTarget::Auto)
-            }
-            MonitorAddWindowTarget::Workspace { id, column_idx } => {
-                let idx = self.workspaces.iter().position(|ws| ws.id() == id).unwrap();
-                let target = if let Some(column_idx) = column_idx {
-                    WorkspaceAddWindowTarget::NewColumnAt(column_idx)
-                } else {
-                    WorkspaceAddWindowTarget::Auto
-                };
-                (idx, target)
-            }
-            MonitorAddWindowTarget::NextTo(win_id) => {
-                let idx = self
-                    .workspaces
-                    .iter_mut()
-                    .position(|ws| ws.has_window(win_id))
-                    .unwrap();
-                (idx, WorkspaceAddWindowTarget::NextTo(win_id))
-            }
-        };
+        let (mut workspace_idx, target) = self.resolve_add_window_target(target);
 
         let workspace = &mut self.workspaces[workspace_idx];
 
