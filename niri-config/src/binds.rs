@@ -22,6 +22,7 @@ pub struct Bind {
     pub key: Key,
     pub action: Action,
     pub repeat: bool,
+    pub release: bool,
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
@@ -802,6 +803,7 @@ where
             .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
 
         let mut repeat = true;
+        let mut release = false;
         let mut cooldown = None;
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
@@ -811,6 +813,9 @@ where
             match &***name {
                 "repeat" => {
                     repeat = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
+                "release" => {
+                    release = knuffel::traits::DecodeScalar::decode(val, ctx)?;
                 }
                 "cooldown-ms" => {
                     cooldown = Some(Duration::from_millis(
@@ -846,6 +851,7 @@ where
             key,
             action: Action::Spawn(vec![]),
             repeat: true,
+            release: false,
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
@@ -882,6 +888,7 @@ where
                         key,
                         action,
                         repeat,
+                        release,
                         cooldown,
                         allow_when_locked,
                         allow_inhibiting,
