@@ -1245,7 +1245,7 @@ impl Op {
                     return;
                 };
 
-                layout.move_workspace_to_output_by_id(old_idx, Some(old_output), output);
+                layout.move_workspace_to_output_by_id(old_idx, Some(old_output), &output);
             }
             Op::SwitchPresetColumnWidth => layout.toggle_width(true),
             Op::SwitchPresetColumnWidthBack => layout.toggle_width(false),

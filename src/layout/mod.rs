@@ -3387,43 +3387,21 @@ impl<W: LayoutElement> Layout<W> {
             monitors,
             active_monitor_idx,
             ..
-        } = &mut self.monitor_set
+        } = &self.monitor_set
         else {
             return false;
         };
 
-        let current = &mut monitors[*active_monitor_idx];
-
-        // Do not do anything if the output is already correct
-        if &current.output == output {
-            // Just update the original output since this is an explicit movement action.
-            current.active_workspace().original_output = OutputId::new(output);
-
-            return false;
-        }
-
-        let mut ws = current.remove_workspace_by_idx(current.active_workspace_idx);
-        ws.original_output = OutputId::new(output);
-
-        let target_idx = monitors
-            .iter()
-            .position(|mon| &mon.output == output)
-            .unwrap();
-        let target = &mut monitors[target_idx];
-
-        target.insert_workspace(ws, target.active_workspace_idx + 1, true);
-
-        *active_monitor_idx = target_idx;
-
-        true
+        let idx = monitors[*active_monitor_idx].active_workspace_idx;
+        self.move_workspace_to_output_by_id(idx, None, output)
     }
 
-    // FIXME: accept workspace by id and deduplicate logic with move_workspace_to_output()
+    // FIXME: accept workspace by id
     pub fn move_workspace_to_output_by_id(
         &mut self,
         old_idx: usize,
         old_output: Option<Output>,
-        new_output: Output,
+        new_output: &Output,
     ) -> bool {
         let MonitorSet::Normal {
             monitors,
@@ -3444,7 +3422,7 @@ impl<W: LayoutElement> Layout<W> {
         };
         let target_idx = monitors
             .iter()
-            .position(|mon| mon.output == new_output)
+            .position(|mon| mon.output == *new_output)
             .unwrap();
 
         let current = &mut monitors[current_idx];
@@ -3467,7 +3445,7 @@ impl<W: LayoutElement> Layout<W> {
             current_idx == *active_monitor_idx && old_idx == current.active_workspace_idx;
 
         let mut ws = current.remove_workspace_by_idx(old_idx);
-        ws.original_output = OutputId::new(&new_output);
+        ws.original_output = OutputId::new(new_output);
 
         let target = &mut monitors[target_idx];
         target.insert_workspace(ws, target.active_workspace_idx + 1, activate);
