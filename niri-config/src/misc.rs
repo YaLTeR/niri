@@ -36,6 +36,17 @@ impl Default for Cursor {
     }
 }
 
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct ScreenshotPath(#[knuffel(argument)] pub Option<String>);
+
+impl Default for ScreenshotPath {
+    fn default() -> Self {
+        Self(Some(String::from(
+            "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png",
+        )))
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct HotkeyOverlay {
     #[knuffel(child)]

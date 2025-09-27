@@ -607,7 +607,7 @@ mod tests {
 
     #[track_caller]
     fn check(config: &str, action: Action) -> String {
-        let config = Config::parse("test.kdl", config).unwrap();
+        let config = Config::parse_mem(config).unwrap();
         if let Some((key, title)) = format_bind(&config.binds.0, &action) {
             let key = key.map(|key| key_name(false, ModKey::Super, &key));
             let key = key.as_deref().unwrap_or("(not bound)");

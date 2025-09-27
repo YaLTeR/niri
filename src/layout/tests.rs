@@ -2357,9 +2357,9 @@ fn removing_all_outputs_preserves_empty_named_workspaces() {
 #[test]
 fn config_change_updates_cached_sizes() {
     let mut config = Config::default();
-    let border = config.layout.border.get_or_insert_with(Default::default);
+    let border = &mut config.layout.border;
     border.off = false;
-    border.width = Some(FloatOrInt(2.));
+    border.width = 2.;
 
     let mut layout = Layout::new(Clock::default(), &config);
 
@@ -2371,7 +2371,7 @@ fn config_change_updates_cached_sizes() {
     }
     .apply(&mut layout);
 
-    config.layout.border.as_mut().unwrap().width = Some(FloatOrInt(4.));
+    config.layout.border.width = 4.;
     layout.update_config(&config);
 
     layout.verify_invariants();
@@ -2380,7 +2380,7 @@ fn config_change_updates_cached_sizes() {
 #[test]
 fn preset_height_change_removes_preset() {
     let mut config = Config::default();
-    config.layout.preset_window_heights = Some(vec![PresetSize::Fixed(1), PresetSize::Fixed(2)]);
+    config.layout.preset_window_heights = vec![PresetSize::Fixed(1), PresetSize::Fixed(2)];
 
     let mut layout = Layout::new(Clock::default(), &config);
 
@@ -2401,7 +2401,7 @@ fn preset_height_change_removes_preset() {
     }
 
     // Leave only one.
-    config.layout.preset_window_heights = Some(vec![PresetSize::Fixed(1)]);
+    config.layout.preset_window_heights = vec![PresetSize::Fixed(1)];
 
     layout.update_config(&config);
 

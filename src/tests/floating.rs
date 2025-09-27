@@ -795,7 +795,7 @@ window-rule {
     max-width 300
 }
 "##;
-    let config = Config::parse("test.kdl", config).unwrap();
+    let config = Config::parse_mem(config).unwrap();
     let mut f = Fixture::with_config(config);
     f.add_output(1, (1920, 1080));
     f.add_output(2, (1280, 720));
