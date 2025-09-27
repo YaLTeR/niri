@@ -1,12 +1,29 @@
+//! niri config parsing.
+//!
+//! The config can be constructed from multiple files (includes). To support this, many types are
+//! split into two. For example, `Layout` and `LayoutPart` where `Layout` is the final config and
+//! `LayoutPart` is one part parsed from one config file.
+//!
+//! The convention for `Default` impls is to set the initial values before the parsing occurs.
+//! Then, parsing will update the values with those parsed from the config.
+//!
+//! The `Default` values match those from `default-config.kdl` in almost all cases, with a notable
+//! exception of `binds {}` and some window rules.
+
 #[macro_use]
 extern crate tracing;
 
+use std::cell::RefCell;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
-use miette::{Context as _, IntoDiagnostic as _};
+use knuffel::errors::DecodeError;
+use knuffel::Decode as _;
+use miette::{miette, Context as _, IntoDiagnostic as _};
 
 #[macro_use]
 pub mod macros;
@@ -15,6 +32,7 @@ pub mod animations;
 pub mod appearance;
 pub mod binds;
 pub mod debug;
+pub mod error;
 pub mod gestures;
 pub mod input;
 pub mod layer_rule;
@@ -29,6 +47,7 @@ pub use crate::animations::{Animation, Animations};
 pub use crate::appearance::*;
 pub use crate::binds::*;
 pub use crate::debug::Debug;
+pub use crate::error::{ConfigIncludeError, ConfigParseResult};
 pub use crate::gestures::Gestures;
 pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
 pub use crate::layer_rule::LayerRule;
@@ -36,61 +55,35 @@ pub use crate::layout::*;
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
 pub use crate::utils::FloatOrInt;
-use crate::utils::MergeWith as _;
+use crate::utils::{Flag, MergeWith as _};
 pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
 pub use crate::workspace::{Workspace, WorkspaceLayoutPart};
 
-#[derive(knuffel::Decode, Debug, PartialEq)]
+const RECURSION_LIMIT: u8 = 10;
+
+#[derive(Debug, Default, PartialEq)]
 pub struct Config {
-    #[knuffel(child, default)]
     pub input: Input,
-    #[knuffel(children(name = "output"))]
     pub outputs: Outputs,
-    #[knuffel(children(name = "spawn-at-startup"))]
     pub spawn_at_startup: Vec<SpawnAtStartup>,
-    #[knuffel(children(name = "spawn-sh-at-startup"))]
     pub spawn_sh_at_startup: Vec<SpawnShAtStartup>,
-    #[knuffel(child, default)]
-    pub layout: LayoutPart,
-    #[knuffel(child, default)]
+    pub layout: Layout,
     pub prefer_no_csd: bool,
-    #[knuffel(child, default)]
     pub cursor: Cursor,
-    #[knuffel(
-        child,
-        unwrap(argument),
-        default = Some(String::from(
-            "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
-        )))
-    ]
-    pub screenshot_path: Option<String>,
-    #[knuffel(child, default)]
+    pub screenshot_path: ScreenshotPath,
     pub clipboard: Clipboard,
-    #[knuffel(child, default)]
     pub hotkey_overlay: HotkeyOverlay,
-    #[knuffel(child, default)]
     pub config_notification: ConfigNotification,
-    #[knuffel(child, default)]
     pub animations: Animations,
-    #[knuffel(child, default)]
     pub gestures: Gestures,
-    #[knuffel(child, default)]
     pub overview: Overview,
-    #[knuffel(child, default)]
     pub environment: Environment,
-    #[knuffel(child, default)]
     pub xwayland_satellite: XwaylandSatellite,
-    #[knuffel(children(name = "window-rule"))]
     pub window_rules: Vec<WindowRule>,
-    #[knuffel(children(name = "layer-rule"))]
     pub layer_rules: Vec<LayerRule>,
-    #[knuffel(child, default)]
     pub binds: Binds,
-    #[knuffel(child, default)]
     pub switch_events: SwitchBinds,
-    #[knuffel(child, default)]
     pub debug: Debug,
-    #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
 }
 
@@ -113,79 +106,347 @@ pub enum ConfigPath {
     },
 }
 
-impl Config {
-    pub fn load(path: &Path) -> miette::Result<Self> {
-        let contents = fs::read_to_string(path)
-            .into_diagnostic()
-            .with_context(|| format!("error reading {path:?}"))?;
+// Newtypes for putting information into the knuffel context.
+struct BasePath(PathBuf);
+struct RootBase(PathBuf);
+struct Recursion(u8);
+#[derive(Default)]
+struct Includes(Vec<PathBuf>);
+#[derive(Default)]
+struct IncludeErrors(Vec<knuffel::Error>);
 
-        let config = Self::parse(
-            path.file_name()
-                .and_then(OsStr::to_str)
-                .unwrap_or("config.kdl"),
-            &contents,
-        )
-        .context("error parsing")?;
-        debug!("loaded config from {path:?}");
-        Ok(config)
-    }
+// Rather than listing all fields and deriving knuffel::Decode, we implement
+// knuffel::DecodeChildren by hand, since we need custom logic for every field anyway: we want to
+// merge the values into the config from the context as we go to support the positionality of
+// includes. The reason we need this type at all is because knuffel's only entry point that allows
+// setting default values on a context is `parse_with_context()` that needs a type to parse.
+pub struct ConfigPart;
 
-    pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
-        let _span = tracy_client::span!("Config::parse");
-        knuffel::parse(filename, text)
-    }
+impl<S> knuffel::DecodeChildren<S> for ConfigPart
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_children(
+        nodes: &[knuffel::ast::SpannedNode<S>],
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let _span = tracy_client::span!("parse config file");
 
-    pub fn resolve_layout(&self) -> Layout {
-        let mut rv = Layout::from_part(&self.layout);
+        let config = ctx.get::<Rc<RefCell<Config>>>().unwrap().clone();
+        let includes = ctx.get::<Rc<RefCell<Includes>>>().unwrap().clone();
+        let include_errors = ctx.get::<Rc<RefCell<IncludeErrors>>>().unwrap().clone();
+        let recursion = ctx.get::<Recursion>().unwrap().0;
 
-        // Preserve the behavior we'd always had for the border section:
-        // - `layout {}` gives border = off
-        // - `layout { border {} }` gives border = on
-        // - `layout { border { off } }` gives border = off
-        //
-        // This behavior is inconsistent with the rest of the config where adding an empty section
-        // generally doesn't change the outcome. Particularly, shadows are also disabled by default
-        // (like borders), and they always had an `on` instead of an `off` for this reason, so that
-        // writing `layout { shadow {} }` still results in shadow = off, as it should.
-        //
-        // Unfortunately, the default config has always had wording that heavily implies that
-        // `layout { border {} }` enables the borders. This wording is sure to be present in a lot
-        // of users' configs by now, which we can't change.
-        //
-        // Another way to make things consistent would be to default borders to on. However, that
-        // is annoying because it would mean changing many tests that rely on borders being off by
-        // default. This would also contradict the intended default borders value (off).
-        //
-        // So, let's just work around the problem here, preserving the original behavior.
-        if self.layout.border.is_some_and(|x| !x.on && !x.off) {
-            rv.border.off = false;
+        let mut seen = HashSet::new();
+
+        for node in nodes {
+            let name = &**node.node_name;
+
+            // Within one config file, splitting sections into multiple parts is not allowed to
+            // reduce confusion. The exceptions here aren't multipart; they all add new values.
+            if !matches!(
+                name,
+                "output"
+                    | "spawn-at-startup"
+                    | "spawn-sh-at-startup"
+                    | "window-rule"
+                    | "layer-rule"
+                    | "workspace"
+                    | "include"
+            ) && !seen.insert(name)
+            {
+                ctx.emit_error(DecodeError::unexpected(
+                    &node.node_name,
+                    "node",
+                    format!("duplicate node `{name}`, single node expected"),
+                ));
+                continue;
+            }
+
+            macro_rules! m_replace {
+                ($field:ident) => {{
+                    let part = knuffel::Decode::decode_node(node, ctx)?;
+                    config.borrow_mut().$field = part;
+                }};
+            }
+
+            macro_rules! m_merge {
+                ($field:ident) => {{
+                    let part = knuffel::Decode::decode_node(node, ctx)?;
+                    config.borrow_mut().$field.merge_with(&part);
+                }};
+            }
+
+            macro_rules! m_push {
+                ($field:ident) => {{
+                    let part = knuffel::Decode::decode_node(node, ctx)?;
+                    config.borrow_mut().$field.push(part);
+                }};
+            }
+
+            match name {
+                // TODO: most (all?) of these need to be merged instead
+                "input" => m_replace!(input),
+                "cursor" => m_replace!(cursor),
+                "clipboard" => m_replace!(clipboard),
+                "hotkey-overlay" => m_replace!(hotkey_overlay),
+                "config-notification" => m_replace!(config_notification),
+                "animations" => m_replace!(animations),
+                "gestures" => m_replace!(gestures),
+                "overview" => m_replace!(overview),
+                "xwayland-satellite" => m_replace!(xwayland_satellite),
+                "switch-events" => m_replace!(switch_events),
+                "debug" => m_replace!(debug),
+
+                // Multipart sections.
+                "output" => {
+                    let part = Output::decode_node(node, ctx)?;
+                    config.borrow_mut().outputs.0.push(part);
+                }
+                "spawn-at-startup" => m_push!(spawn_at_startup),
+                "spawn-sh-at-startup" => m_push!(spawn_sh_at_startup),
+                "window-rule" => m_push!(window_rules),
+                "layer-rule" => m_push!(layer_rules),
+                "workspace" => m_push!(workspaces),
+
+                // Single-part sections.
+                "binds" => {
+                    let part = Binds::decode_node(node, ctx)?;
+
+                    // We replace conflicting binds, rather than error, to support the use-case
+                    // where you import some preconfigured-dots.kdl, then override some binds with
+                    // your own.
+                    let mut config = config.borrow_mut();
+                    let binds = &mut config.binds.0;
+                    // Remove existing binds matching any new bind.
+                    binds.retain(|bind| !part.0.iter().any(|new| new.key == bind.key));
+                    // Add all new binds.
+                    binds.extend(part.0);
+                }
+                "environment" => {
+                    let part = Environment::decode_node(node, ctx)?;
+                    config.borrow_mut().environment.0.extend(part.0);
+                }
+
+                "prefer-no-csd" => {
+                    config.borrow_mut().prefer_no_csd = Flag::decode_node(node, ctx)?.0
+                }
+
+                "screenshot-path" => {
+                    let part = knuffel::Decode::decode_node(node, ctx)?;
+                    config.borrow_mut().screenshot_path = part;
+                }
+
+                "layout" => {
+                    let mut part = LayoutPart::decode_node(node, ctx)?;
+
+                    // Preserve the behavior we'd always had for the border section:
+                    // - `layout {}` gives border = off
+                    // - `layout { border {} }` gives border = on
+                    // - `layout { border { off } }` gives border = off
+                    //
+                    // This behavior is inconsistent with the rest of the config where adding an
+                    // empty section generally doesn't change the outcome. Particularly, shadows
+                    // are also disabled by default (like borders), and they always had an `on`
+                    // instead of an `off` for this reason, so that writing `layout { shadow {} }`
+                    // still results in shadow = off, as it should.
+                    //
+                    // Unfortunately, the default config has always had wording that heavily
+                    // implies that `layout { border {} }` enables the borders. This wording is
+                    // sure to be present in a lot of users' configs by now, which we can't change.
+                    //
+                    // Another way to make things consistent would be to default borders to on.
+                    // However, that is annoying because it would mean changing many tests that
+                    // rely on borders being off by default. This would also contradict the
+                    // intended default borders value (off).
+                    //
+                    // So, let's just work around the problem here, preserving the original
+                    // behavior.
+                    if recursion == 0 {
+                        if let Some(border) = part.border.as_mut() {
+                            if !border.on && !border.off {
+                                border.on = true;
+                            }
+                        }
+                    }
+
+                    config.borrow_mut().layout.merge_with(&part);
+                }
+
+                "include" => {
+                    let path: PathBuf = utils::parse_arg_node("include", node, ctx)?;
+                    let base = ctx.get::<BasePath>().unwrap();
+                    let path = base.0.join(path);
+
+                    // We use DecodeError::Missing throughout this block because it results in the
+                    // least confusing error messages while still allowing to provide a span.
+
+                    let recursion = ctx.get::<Recursion>().unwrap().0 + 1;
+                    if recursion == RECURSION_LIMIT {
+                        ctx.emit_error(DecodeError::missing(
+                            node,
+                            format!(
+                                "reached the recursion limit; \
+                                 includes cannot be {RECURSION_LIMIT} levels deep"
+                            ),
+                        ));
+                        continue;
+                    }
+
+                    let Some(filename) = path.file_name().and_then(OsStr::to_str) else {
+                        ctx.emit_error(DecodeError::missing(
+                            node,
+                            "include path doesn't have a valid file name",
+                        ));
+                        continue;
+                    };
+                    let base = path.parent().map(Path::to_path_buf).unwrap_or_default();
+
+                    // Store even if the include fails to read or parse, so it gets watched.
+                    includes.borrow_mut().0.push(path.to_path_buf());
+
+                    match fs::read_to_string(&path) {
+                        Ok(text) => {
+                            // Try to get filename relative to the root base config folder for
+                            // clearer error messages.
+                            let root_base = &ctx.get::<RootBase>().unwrap().0;
+                            // Failing to strip prefix usually means absolute path; show it in full.
+                            let relative_path = path.strip_prefix(root_base).ok().unwrap_or(&path);
+                            let filename = relative_path.to_str().unwrap_or(filename);
+
+                            let part = knuffel::parse_with_context::<
+                                ConfigPart,
+                                knuffel::span::Span,
+                                _,
+                            >(filename, &text, |ctx| {
+                                ctx.set(BasePath(base));
+                                ctx.set(RootBase(root_base.clone()));
+                                ctx.set(Recursion(recursion));
+                                ctx.set(includes.clone());
+                                ctx.set(include_errors.clone());
+                                ctx.set(config.clone());
+                            });
+
+                            match part {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    include_errors.borrow_mut().0.push(err);
+
+                                    ctx.emit_error(DecodeError::missing(
+                                        node,
+                                        "failed to parse included config",
+                                    ));
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            ctx.emit_error(DecodeError::missing(
+                                node,
+                                format!("failed to read included config from {path:?}: {err}"),
+                            ));
+                        }
+                    }
+                }
+
+                name => {
+                    ctx.emit_error(DecodeError::unexpected(
+                        node,
+                        "node",
+                        format!("unexpected node `{}`", name.escape_default()),
+                    ));
+                }
+            }
         }
 
-        rv
+        Ok(Self)
     }
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Config::parse(
-            "default-config.kdl",
+impl Config {
+    pub fn load_default() -> Self {
+        let res = Config::parse(
+            Path::new("default-config.kdl"),
             include_str!("../../resources/default-config.kdl"),
-        )
-        .unwrap()
+        );
+
+        // Includes in the default config can break its parsing at runtime.
+        assert!(
+            res.includes.is_empty(),
+            "default config must not have includes",
+        );
+
+        res.config.unwrap()
+    }
+
+    pub fn load(path: &Path) -> ConfigParseResult<Self, miette::Report> {
+        let contents = match fs::read_to_string(path) {
+            Ok(x) => x,
+            Err(err) => {
+                return ConfigParseResult::from_err(
+                    miette!(err).context(format!("error reading {path:?}")),
+                );
+            }
+        };
+
+        Self::parse(path, &contents).map_config_res(|res| {
+            let config = res.context("error parsing")?;
+            debug!("loaded config from {path:?}");
+            Ok(config)
+        })
+    }
+
+    pub fn parse(path: &Path, text: &str) -> ConfigParseResult<Self, ConfigIncludeError> {
+        let base = path.parent().map(Path::to_path_buf).unwrap_or_default();
+        let filename = path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .unwrap_or("config.kdl");
+
+        let config = Rc::new(RefCell::new(Config::default()));
+        let includes = Rc::new(RefCell::new(Includes(Vec::new())));
+        let include_errors = Rc::new(RefCell::new(IncludeErrors(Vec::new())));
+
+        let part = knuffel::parse_with_context::<ConfigPart, knuffel::span::Span, _>(
+            filename,
+            text,
+            |ctx| {
+                ctx.set(BasePath(base.clone()));
+                ctx.set(RootBase(base));
+                ctx.set(Recursion(0));
+                ctx.set(includes.clone());
+                ctx.set(include_errors.clone());
+                ctx.set(config.clone());
+            },
+        );
+
+        let includes = includes.take().0;
+        let include_errors = include_errors.take().0;
+        let config = part
+            .map(|_| config.take())
+            .map_err(move |err| ConfigIncludeError {
+                main: err,
+                includes: include_errors,
+            });
+
+        ConfigParseResult { config, includes }
+    }
+
+    pub fn parse_mem(text: &str) -> Result<Self, ConfigIncludeError> {
+        Self::parse(Path::new("config.kdl"), text).config
     }
 }
 
 impl ConfigPath {
     /// Loads the config, returns an error if it doesn't exist.
-    pub fn load(&self) -> miette::Result<Config> {
+    pub fn load(&self) -> ConfigParseResult<Config, miette::Report> {
         let _span = tracy_client::span!("ConfigPath::load");
 
         self.load_inner(|user_path, system_path| {
-            Err(miette::miette!(
+            Err(miette!(
                 "no config file found; create one at {user_path:?} or {system_path:?}",
             ))
         })
-        .context("error loading config")
+        .map_config_res(|res| res.context("error loading config"))
     }
 
     /// Loads the config, or creates it if it doesn't exist.
@@ -194,7 +455,7 @@ impl ConfigPath {
     ///
     /// If the config was created, but for some reason could not be read afterwards,
     /// this may return `(Some(_), Err(_))`.
-    pub fn load_or_create(&self) -> (Option<&Path>, miette::Result<Config>) {
+    pub fn load_or_create(&self) -> (Option<&Path>, ConfigParseResult<Config, miette::Report>) {
         let _span = tracy_client::span!("ConfigPath::load_or_create");
 
         let mut created_at = None;
@@ -205,7 +466,7 @@ impl ConfigPath {
                     .map(|()| user_path)
                     .with_context(|| format!("error creating config at {user_path:?}"))
             })
-            .context("error loading config");
+            .map_config_res(|res| res.context("error loading config"));
 
         (created_at, result)
     }
@@ -213,7 +474,7 @@ impl ConfigPath {
     fn load_inner<'a>(
         &'a self,
         maybe_create: impl FnOnce(&'a Path, &'a Path) -> miette::Result<&'a Path>,
-    ) -> miette::Result<Config> {
+    ) -> ConfigParseResult<Config, miette::Report> {
         let path = match self {
             ConfigPath::Explicit(path) => path.as_path(),
             ConfigPath::Regular {
@@ -225,7 +486,10 @@ impl ConfigPath {
                 } else if system_path.exists() {
                     system_path.as_path()
                 } else {
-                    maybe_create(user_path.as_path(), system_path.as_path())?
+                    match maybe_create(user_path.as_path(), system_path.as_path()) {
+                        Ok(x) => x,
+                        Err(err) => return ConfigParseResult::from_err(miette!(err)),
+                    }
                 }
             }
         };
@@ -274,19 +538,19 @@ mod tests {
 
     #[test]
     fn can_create_default_config() {
-        let _ = Config::default();
+        let _ = Config::load_default();
     }
 
     #[test]
     fn default_repeat_params() {
-        let config = Config::parse("config.kdl", "").unwrap();
+        let config = Config::parse_mem("").unwrap();
         assert_eq!(config.input.keyboard.repeat_delay, 600);
         assert_eq!(config.input.keyboard.repeat_rate, 25);
     }
 
     #[track_caller]
     fn do_parse(text: &str) -> Config {
-        Config::parse("test.kdl", text)
+        Config::parse_mem(text)
             .map_err(miette::Report::new)
             .unwrap()
     }
@@ -809,237 +1073,209 @@ mod tests {
                     command: "qs -c ~/source/qs/MyAwesomeShell",
                 },
             ],
-            layout: LayoutPart {
-                focus_ring: Some(
-                    BorderRule {
-                        off: false,
-                        on: false,
-                        width: Some(
-                            FloatOrInt(
-                                5.0,
-                            ),
-                        ),
-                        active_color: Some(
-                            Color {
+            layout: Layout {
+                focus_ring: FocusRing {
+                    off: false,
+                    width: 5.0,
+                    active_color: Color {
+                        r: 0.0,
+                        g: 0.39215687,
+                        b: 0.78431374,
+                        a: 1.0,
+                    },
+                    inactive_color: Color {
+                        r: 1.0,
+                        g: 0.78431374,
+                        b: 0.39215687,
+                        a: 0.0,
+                    },
+                    urgent_color: Color {
+                        r: 0.60784316,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    active_gradient: Some(
+                        Gradient {
+                            from: Color {
+                                r: 0.039215688,
+                                g: 0.078431375,
+                                b: 0.11764706,
+                                a: 1.0,
+                            },
+                            to: Color {
                                 r: 0.0,
-                                g: 0.39215687,
-                                b: 0.78431374,
+                                g: 0.5019608,
+                                b: 1.0,
                                 a: 1.0,
                             },
-                        ),
-                        inactive_color: Some(
-                            Color {
-                                r: 1.0,
-                                g: 0.78431374,
-                                b: 0.39215687,
-                                a: 0.0,
+                            angle: 180,
+                            relative_to: WorkspaceView,
+                            in_: GradientInterpolation {
+                                color_space: Srgb,
+                                hue_interpolation: Shorter,
                             },
-                        ),
-                        urgent_color: None,
-                        active_gradient: Some(
-                            Gradient {
-                                from: Color {
-                                    r: 0.039215688,
-                                    g: 0.078431375,
-                                    b: 0.11764706,
-                                    a: 1.0,
-                                },
-                                to: Color {
-                                    r: 0.0,
-                                    g: 0.5019608,
-                                    b: 1.0,
-                                    a: 1.0,
-                                },
-                                angle: 180,
-                                relative_to: WorkspaceView,
-                                in_: GradientInterpolation {
-                                    color_space: Srgb,
-                                    hue_interpolation: Shorter,
-                                },
-                            },
-                        ),
-                        inactive_gradient: None,
-                        urgent_gradient: None,
+                        },
+                    ),
+                    inactive_gradient: None,
+                    urgent_gradient: None,
+                },
+                border: Border {
+                    off: false,
+                    width: 3.0,
+                    active_color: Color {
+                        r: 1.0,
+                        g: 0.78431374,
+                        b: 0.49803922,
+                        a: 1.0,
                     },
-                ),
-                border: Some(
-                    BorderRule {
-                        off: false,
-                        on: false,
-                        width: Some(
-                            FloatOrInt(
-                                3.0,
-                            ),
-                        ),
-                        active_color: None,
-                        inactive_color: Some(
-                            Color {
-                                r: 1.0,
-                                g: 0.78431374,
-                                b: 0.39215687,
-                                a: 0.0,
-                            },
-                        ),
-                        urgent_color: None,
-                        active_gradient: None,
-                        inactive_gradient: None,
-                        urgent_gradient: None,
+                    inactive_color: Color {
+                        r: 1.0,
+                        g: 0.78431374,
+                        b: 0.39215687,
+                        a: 0.0,
                     },
-                ),
-                shadow: Some(
-                    ShadowRule {
-                        off: false,
-                        on: false,
-                        offset: Some(
-                            ShadowOffset {
-                                x: FloatOrInt(
-                                    10.0,
-                                ),
-                                y: FloatOrInt(
-                                    -20.0,
-                                ),
-                            },
-                        ),
-                        softness: None,
-                        spread: None,
-                        draw_behind_window: None,
-                        color: None,
-                        inactive_color: None,
+                    urgent_color: Color {
+                        r: 0.60784316,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
                     },
-                ),
-                tab_indicator: Some(
-                    TabIndicatorPart {
-                        off: false,
-                        on: false,
-                        hide_when_single_tab: None,
-                        place_within_column: None,
-                        gap: None,
-                        width: Some(
-                            FloatOrInt(
-                                10.0,
-                            ),
+                    active_gradient: None,
+                    inactive_gradient: None,
+                    urgent_gradient: None,
+                },
+                shadow: Shadow {
+                    on: false,
+                    offset: ShadowOffset {
+                        x: FloatOrInt(
+                            10.0,
                         ),
-                        length: None,
-                        position: Some(
-                            Top,
-                        ),
-                        gaps_between_tabs: None,
-                        corner_radius: None,
-                        active_color: None,
-                        inactive_color: None,
-                        urgent_color: None,
-                        active_gradient: None,
-                        inactive_gradient: None,
-                        urgent_gradient: None,
-                    },
-                ),
-                insert_hint: Some(
-                    InsertHintPart {
-                        off: false,
-                        on: false,
-                        color: Some(
-                            Color {
-                                r: 1.0,
-                                g: 0.78431374,
-                                b: 0.49803922,
-                                a: 1.0,
-                            },
-                        ),
-                        gradient: Some(
-                            Gradient {
-                                from: Color {
-                                    r: 0.039215688,
-                                    g: 0.078431375,
-                                    b: 0.11764706,
-                                    a: 1.0,
-                                },
-                                to: Color {
-                                    r: 0.0,
-                                    g: 0.5019608,
-                                    b: 1.0,
-                                    a: 1.0,
-                                },
-                                angle: 180,
-                                relative_to: WorkspaceView,
-                                in_: GradientInterpolation {
-                                    color_space: Srgb,
-                                    hue_interpolation: Shorter,
-                                },
-                            },
+                        y: FloatOrInt(
+                            -20.0,
                         ),
                     },
-                ),
-                preset_column_widths: Some(
-                    [
-                        Proportion(
-                            0.25,
-                        ),
-                        Proportion(
+                    softness: 30.0,
+                    spread: 5.0,
+                    draw_behind_window: false,
+                    color: Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 0.46666667,
+                    },
+                    inactive_color: None,
+                },
+                tab_indicator: TabIndicator {
+                    off: false,
+                    hide_when_single_tab: false,
+                    place_within_column: false,
+                    gap: 5.0,
+                    width: 10.0,
+                    length: TabIndicatorLength {
+                        total_proportion: Some(
                             0.5,
                         ),
-                        Fixed(
-                            960,
-                        ),
-                        Fixed(
-                            1280,
-                        ),
-                    ],
-                ),
+                    },
+                    position: Top,
+                    gaps_between_tabs: 0.0,
+                    corner_radius: 0.0,
+                    active_color: None,
+                    inactive_color: None,
+                    urgent_color: None,
+                    active_gradient: None,
+                    inactive_gradient: None,
+                    urgent_gradient: None,
+                },
+                insert_hint: InsertHint {
+                    off: false,
+                    color: Color {
+                        r: 1.0,
+                        g: 0.78431374,
+                        b: 0.49803922,
+                        a: 1.0,
+                    },
+                    gradient: Some(
+                        Gradient {
+                            from: Color {
+                                r: 0.039215688,
+                                g: 0.078431375,
+                                b: 0.11764706,
+                                a: 1.0,
+                            },
+                            to: Color {
+                                r: 0.0,
+                                g: 0.5019608,
+                                b: 1.0,
+                                a: 1.0,
+                            },
+                            angle: 180,
+                            relative_to: WorkspaceView,
+                            in_: GradientInterpolation {
+                                color_space: Srgb,
+                                hue_interpolation: Shorter,
+                            },
+                        },
+                    ),
+                },
+                preset_column_widths: [
+                    Proportion(
+                        0.25,
+                    ),
+                    Proportion(
+                        0.5,
+                    ),
+                    Fixed(
+                        960,
+                    ),
+                    Fixed(
+                        1280,
+                    ),
+                ],
                 default_column_width: Some(
-                    DefaultPresetSize(
-                        Some(
-                            Proportion(
-                                0.25,
-                            ),
-                        ),
+                    Proportion(
+                        0.25,
                     ),
                 ),
-                preset_window_heights: Some(
-                    [
-                        Proportion(
-                            0.25,
-                        ),
-                        Proportion(
-                            0.5,
-                        ),
-                        Fixed(
-                            960,
-                        ),
-                        Fixed(
-                            1280,
-                        ),
-                    ],
-                ),
-                center_focused_column: Some(
-                    OnOverflow,
-                ),
-                always_center_single_column: None,
-                empty_workspace_above_first: None,
-                default_column_display: Some(
-                    Tabbed,
-                ),
-                gaps: Some(
-                    FloatOrInt(
-                        8.0,
+                preset_window_heights: [
+                    Proportion(
+                        0.25,
                     ),
-                ),
-                struts: Some(
-                    Struts {
-                        left: FloatOrInt(
-                            1.0,
-                        ),
-                        right: FloatOrInt(
-                            2.0,
-                        ),
-                        top: FloatOrInt(
-                            3.0,
-                        ),
-                        bottom: FloatOrInt(
-                            0.0,
-                        ),
-                    },
-                ),
-                background_color: None,
+                    Proportion(
+                        0.5,
+                    ),
+                    Fixed(
+                        960,
+                    ),
+                    Fixed(
+                        1280,
+                    ),
+                ],
+                center_focused_column: OnOverflow,
+                always_center_single_column: false,
+                empty_workspace_above_first: false,
+                default_column_display: Tabbed,
+                gaps: 8.0,
+                struts: Struts {
+                    left: FloatOrInt(
+                        1.0,
+                    ),
+                    right: FloatOrInt(
+                        2.0,
+                    ),
+                    top: FloatOrInt(
+                        3.0,
+                    ),
+                    bottom: FloatOrInt(
+                        0.0,
+                    ),
+                },
+                background_color: Color {
+                    r: 0.25,
+                    g: 0.25,
+                    b: 0.25,
+                    a: 1.0,
+                },
             },
             prefer_no_csd: true,
             cursor: Cursor {
@@ -1050,8 +1286,10 @@ mod tests {
                     3000,
                 ),
             },
-            screenshot_path: Some(
-                "~/Screenshots/screenshot.png",
+            screenshot_path: ScreenshotPath(
+                Some(
+                    "~/Screenshots/screenshot.png",
+                ),
             ),
             clipboard: Clipboard {
                 disable_primary: true,
@@ -1855,30 +2093,13 @@ mod tests {
         // We try to write the config defaults in such a way that empty sections (and an empty
         // config) give the same outcome as the default config bundled with niri. This test
         // verifies the actual differences between the two.
-        let mut default_config = Config::default();
-        let empty_config = Config::parse("empty.kdl", "").unwrap();
+        let mut default_config = Config::load_default();
+        let empty_config = Config::parse_mem("").unwrap();
 
         // Some notable omissions: the default config has some window rules, and an empty config
         // will not have any binds. Clear them out so they don't spam the diff.
         default_config.window_rules.clear();
         default_config.binds.0.clear();
-
-        let default_layout = default_config.resolve_layout();
-        let empty_layout = empty_config.resolve_layout();
-        default_config.layout = Default::default();
-        assert_snapshot!(
-            diff_lines(
-                &format!("{empty_layout:#?}"),
-                &format!("{default_layout:#?}")
-            ),
-            @r"
-        -            0.3333333333333333,
-        +            0.33333,
-
-        -            0.6666666666666666,
-        +            0.66667,
-        ",
-        );
 
         assert_snapshot!(
             diff_lines(
@@ -1903,6 +2124,12 @@ mod tests {
         +            ],
         +        },
         +    ],
+
+        -                0.3333333333333333,
+        +                0.33333,
+
+        -                0.6666666666666666,
+        +                0.66667,
         "#,
         );
     }

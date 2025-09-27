@@ -1103,8 +1103,7 @@ mod tests {
 
     #[test]
     fn rule_color_can_override_base_gradient() {
-        let config = Config::parse(
-            "test.kdl",
+        let config = Config::parse_mem(
             r##"
             // Start with gradient set.
             layout {
@@ -1127,7 +1126,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut border = config.resolve_layout().border;
+        let mut border = config.layout.border;
         for rule in &config.window_rules {
             border.merge_with(&rule.border);
         }
@@ -1151,8 +1150,7 @@ mod tests {
 
     #[test]
     fn rule_color_can_override_rule_gradient() {
-        let config = Config::parse(
-            "test.kdl",
+        let config = Config::parse_mem(
             r##"
             // Start with gradient set.
             layout {
@@ -1196,7 +1194,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut border = config.resolve_layout().border;
+        let mut border = config.layout.border;
         let mut tab_indicator_rule = TabIndicatorRule::default();
         for rule in &config.window_rules {
             border.merge_with(&rule.border);

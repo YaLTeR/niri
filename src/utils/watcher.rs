@@ -128,7 +128,7 @@ pub fn setup(state: &mut State, config_path: &ConfigPath) {
     // Parsing the config actually takes > 20 ms on my beefy machine, so let's do it on the
     // watcher thread.
     let process = |path: &ConfigPath| {
-        path.load().map_err(|err| {
+        path.load().config.map_err(|err| {
             warn!("{err:?}");
         })
     };

@@ -576,7 +576,7 @@ impl HitType {
 impl Options {
     fn from_config(config: &Config) -> Self {
         Self {
-            layout: config.resolve_layout(),
+            layout: config.layout.clone(),
             animations: config.animations.clone(),
             gestures: config.gestures,
             overview: config.overview,

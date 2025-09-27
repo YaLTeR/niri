@@ -59,7 +59,7 @@ impl MappedLayer {
         clock: Clock,
         config: &Config,
     ) -> Self {
-        let mut shadow_config = config.resolve_layout().shadow;
+        let mut shadow_config = config.layout.shadow;
         // Shadows for layer surfaces need to be explicitly enabled.
         shadow_config.on = false;
         shadow_config.merge_with(&rules.shadow);
@@ -76,7 +76,7 @@ impl MappedLayer {
     }
 
     pub fn update_config(&mut self, config: &Config) {
-        let mut shadow_config = config.resolve_layout().shadow;
+        let mut shadow_config = config.layout.shadow;
         // Shadows for layer surfaces need to be explicitly enabled.
         shadow_config.on = false;
         shadow_config.merge_with(&self.rules.shadow);
