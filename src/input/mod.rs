@@ -1950,7 +1950,7 @@ impl State {
                         if self.niri.layout.move_workspace_to_output_by_id(
                             old_idx,
                             output,
-                            new_output.clone(),
+                            &new_output,
                         ) {
                             // Cursor warp already calls `queue_redraw_all`
                             if !self.maybe_warp_cursor_to_focus_centered() {

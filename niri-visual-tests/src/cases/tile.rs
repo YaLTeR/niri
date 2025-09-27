@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use niri::layout::Options;
 use niri::render_helpers::RenderTarget;
-use niri_config::{Color, FloatOrInt};
+use niri_config::Color;
 use smithay::backend::renderer::element::RenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::utils::{Physical, Point, Rectangle, Size};
@@ -58,14 +58,17 @@ impl Tile {
         let Args { size, clock } = args;
 
         let options = Options {
-            focus_ring: niri_config::FocusRing {
-                off: true,
-                ..Default::default()
-            },
-            border: niri_config::Border {
-                off: false,
-                width: FloatOrInt(32.),
-                active_color: Color::from_rgba8_unpremul(255, 163, 72, 255),
+            layout: niri_config::Layout {
+                focus_ring: niri_config::FocusRing {
+                    off: true,
+                    ..Default::default()
+                },
+                border: niri_config::Border {
+                    off: false,
+                    width: 32.,
+                    active_color: Color::from_rgba8_unpremul(255, 163, 72, 255),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             ..Default::default()

@@ -1,3 +1,4 @@
+use niri_config::utils::MergeWith as _;
 use niri_config::{Config, LayerRule};
 use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
@@ -58,10 +59,10 @@ impl MappedLayer {
         clock: Clock,
         config: &Config,
     ) -> Self {
-        let mut shadow_config = config.layout.shadow;
+        let mut shadow_config = config.resolve_layout().shadow;
         // Shadows for layer surfaces need to be explicitly enabled.
         shadow_config.on = false;
-        let shadow_config = rules.shadow.resolve_against(shadow_config);
+        shadow_config.merge_with(&rules.shadow);
 
         Self {
             surface,
@@ -75,10 +76,10 @@ impl MappedLayer {
     }
 
     pub fn update_config(&mut self, config: &Config) {
-        let mut shadow_config = config.layout.shadow;
+        let mut shadow_config = config.resolve_layout().shadow;
         // Shadows for layer surfaces need to be explicitly enabled.
         shadow_config.on = false;
-        let shadow_config = self.rules.shadow.resolve_against(shadow_config);
+        shadow_config.merge_with(&self.rules.shadow);
         self.shadow.update_config(shadow_config);
     }
 

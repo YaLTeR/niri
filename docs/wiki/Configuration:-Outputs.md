@@ -14,7 +14,6 @@ output "eDP-1" {
     position x=1280 y=0
     variable-refresh-rate // on-demand=true
     focus-at-startup
-    background-color "#003300"
     backdrop-color "#001100"
 
     hot-corners {
@@ -23,6 +22,10 @@ output "eDP-1" {
         // top-right
         // bottom-left
         // bottom-right
+    }
+
+    layout {
+        // ...layout settings for eDP-1...
     }
 }
 
@@ -205,6 +208,8 @@ This is visible when you're not using any background tools like swaybg.
 
 <sup>Until: 25.05</sup> The alpha channel for this color will be ignored.
 
+<sup>Since: next release</sup> This setting is deprecated, set `background-color` in the [output `layout {}` block](#layout-config-overrides) instead.
+
 ```kdl
 output "HDMI-A-1" {
     background-color "#003300"
@@ -250,6 +255,58 @@ output "HDMI-A-1" {
 output "DP-2" {
     hot-corners {
         off
+    }
+}
+```
+
+### Layout config overrides
+
+<sup>Since: next release</sup>
+
+You can customize layout settings for an output with a `layout {}` block:
+
+```kdl
+output "SomeCompany VerticalMonitor 1234" {
+    transform "90"
+
+    // Layout config overrides just for this output.
+    layout {
+        default-column-width { proportion 1.0; }
+
+        // ...any other setting.
+    }
+}
+
+output "SomeCompany UltrawideMonitor 1234" {
+    // Narrower proportions and more presets for an ultrawide.
+    layout {
+        default-column-width { proportion 0.25; }
+
+        preset-column-widths {
+            proportion 0.2
+            proportion 0.25
+            proportion 0.5
+            proportion 0.75
+            proportion 0.8
+        }
+    }
+}
+```
+
+It accepts all the same options as [the top-level `layout {}` block](./Configuration:-Layout.md).
+
+In order to unset a flag, write it with `false`, e.g.:
+
+```kdl
+layout {
+    // Enabled globally.
+    always-center-single-column
+}
+
+output "eDP-1" {
+    layout {
+        // Unset on this output.
+        always-center-single-column false
     }
 }
 ```
