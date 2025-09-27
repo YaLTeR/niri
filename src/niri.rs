@@ -59,6 +59,7 @@ use smithay::reexports::calloop::{
     Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
 };
 use smithay::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1;
+use smithay::reexports::wayland_protocols::wp::pointer_constraints;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
 use smithay::reexports::wayland_protocols_misc::server_decoration as _server_decoration;
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
@@ -5103,6 +5104,35 @@ impl Niri {
         }
     }
 
+    fn get_window_pointer_location(
+        &self,
+        mapped: &Mapped,
+        scale: Scale<f64>,
+    ) -> Option<Point<f64, Logical>> {
+        if self.layout.is_overview_open() {
+            return None;
+        }
+        let Some(pointer_window) = self.pointer_contents.window.as_ref() else {
+            return None;
+        };
+        if pointer_window.0 != mapped.window {
+            return None;
+        }
+
+        let (_, _, ws) = self
+            .layout
+            .workspaces()
+            .find(|(_, _, ws)| ws.has_window(&mapped.window))
+            .unwrap();
+        let (tile, tile_offset, _) = ws
+            .tiles_with_render_positions()
+            .find(|(tile, _, _)| tile.window().id() == mapped.id())
+            .unwrap();
+        let pointer_location = self.seat.get_pointer().unwrap().current_location();
+        let window_offset = tile_offset + tile.window_loc() + mapped.buf_loc().to_f64();
+        Some((pointer_location - window_offset).upscale(scale))
+    }
+
     #[cfg(feature = "xdp-gnome-screencast")]
     fn render_windows_for_screen_cast(
         &mut self,
@@ -5151,20 +5181,7 @@ impl Niri {
 
             let elements: Vec<_> = mapped.render_for_screen_cast(renderer, scale).collect();
             let window_pointer_location = match cast.cursor_mode {
-                CursorMode::Metadata => {
-                    let (_, _, ws) = self
-                        .layout
-                        .workspaces()
-                        .find(|(_, _, ws)| ws.has_window(&mapped.window))
-                        .unwrap();
-                    let (tile, tile_offset, _) = ws
-                        .tiles_with_render_positions()
-                        .find(|(tile, _, _)| tile.window().id().get() == id)
-                        .unwrap();
-                    let pointer_location = self.seat.get_pointer().unwrap().current_location();
-                    let window_offset = tile_offset + tile.window_loc() + mapped.buf_loc().to_f64();
-                    Some((pointer_location - window_offset).upscale(scale))
-                }
+                CursorMode::Metadata => self.get_window_pointer_location(mapped, scale),
                 _ => None,
             };
 

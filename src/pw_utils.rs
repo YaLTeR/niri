@@ -1025,8 +1025,7 @@ impl Cast {
 
     fn add_cursor_metadata(
         spa_buffer: *mut spa_buffer,
-        pointer_location: &Point<f64, Logical>,
-        buffer_size: Size<i32, Physical>,
+        pointer_location: &Option<Point<f64, Logical>>,
     ) {
         let cursor_meta_ptr: *mut spa_meta_cursor = unsafe {
             spa_buffer_find_meta_data(
@@ -1044,14 +1043,11 @@ impl Cast {
         trace!("writing cursor metadata");
         let cursor_meta: &mut spa_meta_cursor = unsafe { &mut *cursor_meta_ptr };
 
-        if pointer_location.x < 0.0
-            || pointer_location.y < 0.0
-            || pointer_location.x > buffer_size.w as f64
-            || pointer_location.y > buffer_size.h as f64
-        {
-            // debug!("pointer location {pointer_location:?} is outside of the cast area, not adding cursor metadata");
+        let Some(pointer_location) = pointer_location else {
             cursor_meta.id = 0;
-        }
+            return;
+        };
+
         cursor_meta.id = 1;
         cursor_meta.position.x = pointer_location.x.round() as i32;
         cursor_meta.position.y = pointer_location.y.round() as i32;
@@ -1133,8 +1129,8 @@ impl Cast {
 
         unsafe {
             let spa_buffer = (*buffer).buffer;
-            if let Some(pointer) = pointer_location {
-                Self::add_cursor_metadata(spa_buffer, &pointer, size);
+            if matches!(self.cursor_mode, CursorMode::Metadata) {
+                Self::add_cursor_metadata(spa_buffer, &pointer_location);
             }
 
             let fd = (*(*spa_buffer).datas).fd;
