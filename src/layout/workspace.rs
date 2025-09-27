@@ -444,8 +444,8 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn is_active_fullscreen(&self) -> bool {
-        self.scrolling.is_active_fullscreen()
+    pub fn is_active_pending_fullscreen(&self) -> bool {
+        self.scrolling.is_active_pending_fullscreen()
     }
 
     pub fn set_output(&mut self, output: Option<Output>) {
@@ -571,7 +571,7 @@ impl<W: LayoutElement> Workspace<W> {
         match target {
             WorkspaceAddWindowTarget::Auto => {
                 // Don't steal focus from an active fullscreen window.
-                let activate = activate.map_smart(|| !self.is_active_fullscreen());
+                let activate = activate.map_smart(|| !self.is_active_pending_fullscreen());
 
                 // If the tile is pending fullscreen, open it in the scrolling layout where it can
                 // go fullscreen.
@@ -1107,11 +1107,11 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.center_visible_columns();
     }
 
-    pub fn toggle_width(&mut self) {
+    pub fn toggle_width(&mut self, forwards: bool) {
         if self.floating_is_active.get() {
-            self.floating.toggle_window_width(None);
+            self.floating.toggle_window_width(None, forwards);
         } else {
-            self.scrolling.toggle_width();
+            self.scrolling.toggle_width(forwards);
         }
     }
 
@@ -1161,23 +1161,23 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.reset_window_height(window);
     }
 
-    pub fn toggle_window_width(&mut self, window: Option<&W::Id>) {
+    pub fn toggle_window_width(&mut self, window: Option<&W::Id>, forwards: bool) {
         if window.map_or(self.floating_is_active.get(), |id| {
             self.floating.has_window(id)
         }) {
-            self.floating.toggle_window_width(window);
+            self.floating.toggle_window_width(window, forwards);
         } else {
-            self.scrolling.toggle_window_width(window);
+            self.scrolling.toggle_window_width(window, forwards);
         }
     }
 
-    pub fn toggle_window_height(&mut self, window: Option<&W::Id>) {
+    pub fn toggle_window_height(&mut self, window: Option<&W::Id>, forwards: bool) {
         if window.map_or(self.floating_is_active.get(), |id| {
             self.floating.has_window(id)
         }) {
-            self.floating.toggle_window_height(window);
+            self.floating.toggle_window_height(window, forwards);
         } else {
-            self.scrolling.toggle_window_height(window);
+            self.scrolling.toggle_window_height(window, forwards);
         }
     }
 
@@ -1784,10 +1784,17 @@ impl<W: LayoutElement> Workspace<W> {
         use approx::assert_abs_diff_eq;
 
         let scale = self.scale.fractional_scale();
-        assert!(self.view_size.w > 0.);
-        assert!(self.view_size.h > 0.);
         assert!(scale > 0.);
         assert!(scale.is_finite());
+
+        let options = Options::clone(&self.base_options).adjusted_for_scale(scale);
+        assert_eq!(
+            &*self.options, &options,
+            "options must be base options adjusted for scale"
+        );
+
+        assert!(self.view_size.w > 0.);
+        assert!(self.view_size.h > 0.);
 
         assert_eq!(self.view_size, self.scrolling.view_size());
         assert_eq!(self.working_area, self.scrolling.parent_area());

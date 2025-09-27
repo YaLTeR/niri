@@ -1,48 +1,35 @@
-X11 is very cursed, so built-in Xwayland support [is not planned at the moment](./FAQ.md#why-doesnt-niri-integrate-xwayland-like-other-compositors).
-However, there are multiple solutions to running X11 apps in niri.
-
 ## Using xwayland-satellite
 
-[xwayland-satellite] implements rootless Xwayland in a separate application, without the host compositor's involvement.
-It makes X11 windows appear as normal windows, just like a native Xwayland integration.
-xwayland-satellite works well with most applications: Steam, games, Discord, even more exotic things like Ardour with wine Windows VST plugins.
-However, X11 apps that want to position windows or bars at specific screen coordinates won't behave correctly.
+<sup>Since: 25.08</sup> Niri integrates with [xwayland-satellite](https://github.com/Supreeeme/xwayland-satellite) out of the box.
+Ensure xwayland-satellite >= 0.7 is installed and available in `$PATH`.
+With no further configuration, niri will create X11 sockets on disk, export `$DISPLAY`, and spawn xwayland-satellite on-demand when an X11 client connects.
+If xwayland-satellite dies, niri will automatically restart it.
 
-> [!NOTE]
-> In the next release, niri will have [built-in xwayland-satellite integration](./Configuration:-Miscellaneous.md#xwayland-satellite).
-> You can try it by installing git versions of both niri and xwayland-satellite.
-> With no further configuration, niri will create X11 sockets, then when an X11 client connects, automatically start xwayland-satellite.
->
-> This matches how other compositors run Xwayland (but in niri's case, it's xwayland-satellite rather than Xwayland itself).
-> It also makes X11 apps work fine in `spawn-at-startup` and in XDG autostart.
+If you had a custom config which manually started `xwayland-satellite` and set `$DISPLAY`, you should remove those customizations for the automatic integration to work.
 
-Install it from your package manager, or build it according to instructions from its README, then run the `xwayland-satellite` binary.
-Look for a log message like: `Connected to Xwayland on :0`.
-Now you can start X11 applications on this X11 DISPLAY:
+To check that the integration works, verify that the niri output says something like `listening on X11 socket: :0`:
 
-```
-env DISPLAY=:0 flatpak run com.valvesoftware.Steam
+```sh
+$ journalctl --user-unit=niri -b
+systemd[2338]: Starting niri.service - A scrollable-tiling Wayland compositor...
+niri[2474]: 2025-08-29T04:07:40.043402Z  INFO niri: starting version 25.05.1 (0.0.git.2345.d9833fc1)
+(...)
+niri[2474]: 2025-08-29T04:07:40.690512Z  INFO niri: listening on Wayland socket: wayland-1
+niri[2474]: 2025-08-29T04:07:40.690520Z  INFO niri: IPC listening on: /run/user/1000/niri.wayland-1.2474.sock
+niri[2474]: 2025-08-29T04:07:40.700137Z  INFO niri: listening on X11 socket: :0
+systemd[2338]: Started niri.service - A scrollable-tiling Wayland compositor.
+$ echo $DISPLAY
+:0
 ```
 
 ![xwayland-satellite running Steam and Half-Life.](https://github.com/user-attachments/assets/57db8f96-40d4-4621-a389-373c169349a4)
 
-You can also automatically run it at startup, and set `DISPLAY` by default for all apps by adding it to the [`environment`](./Configuration:-Miscellaneous.md#environment) section of the niri config:
+We're using xwayland-satellite rather than Xwayland directly because [X11 is very cursed](./FAQ.md#why-doesnt-niri-integrate-xwayland-like-other-compositors).
+xwayland-satellite takes on the bulk of the work dealing with the X11 peculiarities from us, giving niri normal Wayland windows to manage.
 
-```kdl
-spawn-at-startup "xwayland-satellite"
-// Or, if you built it by hand:
-// spawn-at-startup "~/path/to/code/target/release/xwayland-satellite"
-
-environment {
-    DISPLAY ":0"
-}
-```
-
-> [!NOTE]
-> If the `:0` DISPLAY is already taken (for example, by some other Xwayland server like `xwayland-run`), `xwayland-satellite` will try the next DISPLAY numbers in order: `:1`, `:2`, etc. and tell you which one it used in its output.
-> Then, you will need to use that DISPLAY number for the `env` command or for the niri [`environment`](./Configuration:-Miscellaneous.md#environment) section.
->
-> You can also force a specific DISPLAY number like so: `xwayland-satellite :12` will start on `DISPLAY=:12`.
+xwayland-satellite works well with most applications: Steam, games, Discord, even more exotic things like Ardour with wine Windows VST plugins.
+However, X11 apps that want to position windows or bars at specific screen coordinates won't behave correctly and will need a nested compositor to run.
+See sections below for how to do that.
 
 ## Using the labwc Wayland compositor
 
@@ -132,6 +119,14 @@ Comment=Access all of your favorite music
 Icon=com.spotify.Client
 Exec=cage -- flatpak run com.spotify.Client
 Terminal=false
+```
+
+## Proton-GE native Wayland
+
+It's possible to run some games as native Wayland clients, sidestepping the issues related to X11. You can do it with a custom version of Proton like [Proton-GE](https://github.com/GloriousEggroll/proton-ge-custom) by setting the `PROTON_ENABLE_WAYLAND=1` environmental variable in the game's launch parameters. Do note that for now this is an experimental feature, might not work with every game and might have its own issues.
+
+```
+PROTON_ENABLE_WAYLAND=1 %command%
 ```
 
 ## Using gamescope

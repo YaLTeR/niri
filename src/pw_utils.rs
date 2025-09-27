@@ -231,13 +231,13 @@ impl PipeWire {
         let to_niri_ = self.to_niri.clone();
         let stop_cast = move || {
             if let Err(err) = to_niri_.send(PwToNiri::StopCast { session_id }) {
-                warn!("error sending StopCast to niri: {err:?}");
+                warn!(session_id, "error sending StopCast to niri: {err:?}");
             }
         };
         let to_niri_ = self.to_niri.clone();
         let redraw = move || {
             if let Err(err) = to_niri_.send(PwToNiri::Redraw { stream_id }) {
-                warn!("error sending Redraw to niri: {err:?}");
+                warn!(stream_id, "error sending Redraw to niri: {err:?}");
             }
         };
         let redraw_ = redraw.clone();
@@ -264,7 +264,7 @@ impl PipeWire {
                 let inner = inner.clone();
                 let stop_cast = stop_cast.clone();
                 move |stream, (), old, new| {
-                    debug!("pw stream: state changed: {old:?} -> {new:?}");
+                    debug!(stream_id, "pw stream: state changed: {old:?} -> {new:?}");
                     let mut inner = inner.borrow_mut();
 
                     match new {
@@ -272,7 +272,7 @@ impl PipeWire {
                             if inner.node_id.is_none() {
                                 let id = stream.node_id();
                                 inner.node_id = Some(id);
-                                debug!("pw stream: sending signal with {id}");
+                                debug!(stream_id, "pw stream: sending signal with {id}");
 
                                 let _span = tracy_client::span!("sending PipeWireStreamAdded");
                                 async_io::block_on(async {
@@ -283,7 +283,10 @@ impl PipeWire {
                                     .await;
 
                                     if let Err(err) = res {
-                                        warn!("error sending PipeWireStreamAdded: {err:?}");
+                                        warn!(
+                                            stream_id,
+                                            "error sending PipeWireStreamAdded: {err:?}"
+                                        );
                                         stop_cast();
                                     }
                                 });
@@ -313,7 +316,7 @@ impl PipeWire {
                 let formats = formats.clone();
                 move |stream, (), id, pod| {
                     let id = ParamType::from_raw(id);
-                    trace!(?id, "pw stream: param_changed");
+                    trace!(stream_id, ?id, "pw stream: param_changed");
                     let mut inner = inner.borrow_mut();
                     let inner = &mut *inner;
 
@@ -326,7 +329,7 @@ impl PipeWire {
                     let (m_type, m_subtype) = match parse_format(pod) {
                         Ok(x) => x,
                         Err(err) => {
-                            warn!("pw stream: error parsing format: {err:?}");
+                            warn!(stream_id, "pw stream: error parsing format: {err:?}");
                             return;
                         }
                     };
@@ -337,19 +340,19 @@ impl PipeWire {
 
                     let mut format = VideoInfoRaw::new();
                     format.parse(pod).unwrap();
-                    debug!("pw stream: got format = {format:?}");
+                    debug!(stream_id, "pw stream: got format = {format:?}");
 
                     let format_size = Size::from((format.size().width, format.size().height));
 
                     let state = &mut inner.state;
                     if format_size != state.expected_format_size() {
                         if !matches!(&*state, CastState::ResizePending { .. }) {
-                            warn!("pw stream: wrong size, but we're not resizing");
+                            warn!(stream_id, "pw stream: wrong size, but we're not resizing");
                             stop_cast();
                             return;
                         }
 
-                        debug!("pw stream: wrong size, waiting");
+                        debug!(stream_id, "pw stream: wrong size, waiting");
                         return;
                     }
 
@@ -370,25 +373,25 @@ impl PipeWire {
                     let Some(prop_modifier) =
                         object.find_prop(spa::utils::Id(FormatProperties::VideoModifier.0))
                     else {
-                        warn!("pw stream: modifier prop missing");
+                        warn!(stream_id, "pw stream: modifier prop missing");
                         stop_cast();
                         return;
                     };
 
                     if prop_modifier.flags().contains(PodPropFlags::DONT_FIXATE) {
-                        debug!("pw stream: fixating the modifier");
+                        debug!(stream_id, "pw stream: fixating the modifier");
 
                         let pod_modifier = prop_modifier.value();
                         let Ok((_, modifiers)) = PodDeserializer::deserialize_from::<Choice<i64>>(
                             pod_modifier.as_bytes(),
                         ) else {
-                            warn!("pw stream: wrong modifier property type");
+                            warn!(stream_id, "pw stream: wrong modifier property type");
                             stop_cast();
                             return;
                         };
 
                         let ChoiceEnum::Enum { alternatives, .. } = modifiers.1 else {
-                            warn!("pw stream: wrong modifier choice type");
+                            warn!(stream_id, "pw stream: wrong modifier choice type");
                             stop_cast();
                             return;
                         };
@@ -401,13 +404,17 @@ impl PipeWire {
                         ) {
                             Ok(x) => x,
                             Err(err) => {
-                                warn!("pw stream: couldn't find preferred modifier: {err:?}");
+                                warn!(
+                                    stream_id,
+                                    "pw stream: couldn't find preferred modifier: {err:?}"
+                                );
                                 stop_cast();
                                 return;
                             }
                         };
 
                         debug!(
+                            stream_id,
                             "pw stream: allocation successful \
                              (modifier={modifier:?}, plane_count={plane_count}), \
                              moving to confirmation pending"
@@ -445,7 +452,7 @@ impl PipeWire {
                         let mut params = [pod1, make_pod(&mut b2, o2)];
 
                         if let Err(err) = stream.update_params(&mut params) {
-                            warn!("error updating stream params: {err:?}");
+                            warn!(stream_id, "error updating stream params: {err:?}");
                             stop_cast();
                         }
 
@@ -481,7 +488,7 @@ impl PipeWire {
                                     None
                                 };
 
-                            debug!("pw stream: moving to ready state");
+                            debug!(stream_id, "pw stream: moving to ready state");
 
                             *state = CastState::Ready {
                                 size,
@@ -505,13 +512,14 @@ impl PipeWire {
                             ) {
                                 Ok(x) => x,
                                 Err(err) => {
-                                    warn!("pw stream: test allocation failed: {err:?}");
+                                    warn!(stream_id, "pw stream: test allocation failed: {err:?}");
                                     stop_cast();
                                     return;
                                 }
                             };
 
                             debug!(
+                                stream_id,
                                 "pw stream: allocation successful \
                                  (modifier={modifier:?}, plane_count={plane_count}), \
                                  moving to ready"
@@ -603,7 +611,7 @@ impl PipeWire {
                     }
 
                     if let Err(err) = stream.update_params(&mut params) {
-                        warn!("error updating stream params: {err:?}");
+                        warn!(stream_id, "error updating stream params: {err:?}");
                         stop_cast();
                     }
                 }
@@ -623,11 +631,12 @@ impl PipeWire {
                     {
                         (*size, *alpha, *modifier)
                     } else {
-                        trace!("pw stream: add buffer, but not ready yet");
+                        trace!(stream_id, "pw stream: add buffer, but not ready yet");
                         return;
                     };
 
                     trace!(
+                        stream_id,
                         "pw stream: add_buffer, size={size:?}, alpha={alpha}, \
                          modifier={modifier:?}"
                     );
@@ -644,7 +653,7 @@ impl PipeWire {
                         let dmabuf = match allocate_dmabuf(&gbm, size, fourcc, modifier) {
                             Ok(dmabuf) => dmabuf,
                             Err(err) => {
-                                warn!("error allocating dmabuf: {err:?}");
+                                warn!(stream_id, "error allocating dmabuf: {err:?}");
                                 stop_cast();
                                 return;
                             }
@@ -675,6 +684,7 @@ impl PipeWire {
                             (*chunk).offset = offset;
 
                             trace!(
+                                stream_id,
                                 "pw buffer plane: fd={}, stride={stride}, offset={offset}",
                                 (*spa_data).fd
                             );
@@ -694,7 +704,7 @@ impl PipeWire {
             .remove_buffer({
                 let inner = inner.clone();
                 move |_stream, (), buffer| {
-                    trace!("pw stream: remove_buffer");
+                    trace!(stream_id, "pw stream: remove_buffer");
                     let mut inner = inner.borrow_mut();
 
                     inner
@@ -714,7 +724,10 @@ impl PipeWire {
             .register()
             .unwrap();
 
-        trace!("starting pw stream with size={pending_size:?}, refresh={refresh:?}");
+        trace!(
+            stream_id,
+            "starting pw stream with size={pending_size:?}, refresh={refresh:?}"
+        );
 
         let params;
         make_params!(params, &formats, pending_size, refresh, alpha);

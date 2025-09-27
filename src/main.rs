@@ -20,8 +20,8 @@ use niri::dbus;
 use niri::ipc::client::handle_msg;
 use niri::niri::State;
 use niri::utils::spawning::{
-    spawn, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV, REMOVE_ENV_RUST_BACKTRACE,
-    REMOVE_ENV_RUST_LIB_BACKTRACE,
+    spawn, spawn_sh, store_and_increase_nofile_rlimit, CHILD_DISPLAY, CHILD_ENV,
+    REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
 use niri::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
 use niri_config::ConfigPath;
@@ -70,20 +70,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     if cli.session {
-        // If we're starting as a session, assume that the intention is to start on a TTY. Remove
-        // DISPLAY, WAYLAND_DISPLAY or WAYLAND_SOCKET from our environment if they are set, since
-        // they will cause the winit backend to be selected instead.
-        if env::var_os("DISPLAY").is_some() {
-            warn!("running as a session but DISPLAY is set, removing it");
-            env::remove_var("DISPLAY");
-        }
-        if env::var_os("WAYLAND_DISPLAY").is_some() {
-            warn!("running as a session but WAYLAND_DISPLAY is set, removing it");
-            env::remove_var("WAYLAND_DISPLAY");
-        }
-        if env::var_os("WAYLAND_SOCKET").is_some() {
-            warn!("running as a session but WAYLAND_SOCKET is set, removing it");
-            env::remove_var("WAYLAND_SOCKET");
+        // If we're starting as a session, assume that the intention is to start on a TTY unless
+        // this is a WSL environment. Remove DISPLAY, WAYLAND_DISPLAY or WAYLAND_SOCKET from our
+        // environment if they are set, since they will cause the winit backend to be selected
+        // instead.
+        if env::var_os("WSL_DISTRO_NAME").is_none() {
+            if env::var_os("DISPLAY").is_some() {
+                warn!("running as a session but DISPLAY is set, removing it");
+                env::remove_var("DISPLAY");
+            }
+            if env::var_os("WAYLAND_DISPLAY").is_some() {
+                warn!("running as a session but WAYLAND_DISPLAY is set, removing it");
+                env::remove_var("WAYLAND_DISPLAY");
+            }
+            if env::var_os("WAYLAND_SOCKET").is_some() {
+                warn!("running as a session but WAYLAND_SOCKET is set, removing it");
+                env::remove_var("WAYLAND_SOCKET");
+            }
         }
 
         // Set the current desktop for xdg-desktop-portal.
@@ -151,6 +154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_default();
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
+    let spawn_sh_at_startup = mem::take(&mut config.spawn_sh_at_startup);
     *CHILD_ENV.write().unwrap() = mem::take(&mut config.environment);
 
     store_and_increase_nofile_rlimit();
@@ -217,6 +221,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "dbus")]
     dbus::DBusServers::start(&mut state, cli.session);
 
+    #[cfg(feature = "dbus")]
+    if cli.session {
+        state.niri.a11y.start();
+    }
+
     if env::var_os("NIRI_DISABLE_SYSTEM_MANAGER_NOTIFY").map_or(true, |x| x != "1") {
         // Notify systemd we're ready.
         if let Err(err) = sd_notify::notify(true, &[NotifyState::Ready]) {
@@ -236,6 +245,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for elem in spawn_at_startup {
         spawn(elem.command, None);
+    }
+    for elem in spawn_sh_at_startup {
+        spawn_sh(elem.command, None);
     }
 
     // Show the config error notification right away if needed.

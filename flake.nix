@@ -118,7 +118,7 @@
           checkFlags = [
             # These tests require the ability to access a "valid EGL Display", but that won't work
             # inside the Nix sandbox
-            "--skip=tests::animations"
+            "--skip=::egl"
           ];
 
           postInstall =
@@ -126,6 +126,7 @@
               installShellCompletion --cmd niri \
                 --bash <($out/bin/niri completions bash) \
                 --fish <($out/bin/niri completions fish) \
+                --nushell <($out/bin/niri completions nushell) \
                 --zsh <($out/bin/niri completions zsh)
 
               install -Dm644 resources/niri.desktop -t $out/share/wayland-sessions
@@ -204,6 +205,7 @@
                   ];
                 }
               ))
+              pkgs.cargo-insta
             ];
 
             nativeBuildInputs = [

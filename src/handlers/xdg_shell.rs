@@ -303,7 +303,11 @@ impl XdgShellHandler for State {
         // We need to hand out the grab in a way consistent with what update_keyboard_focus()
         // thinks the current focus is, otherwise it will desync and cause weird issues with
         // keyboard focus being at the wrong place.
-        if self.niri.is_locked() {
+        if self.niri.exit_confirm_dialog.is_open() {
+            trace!("ignoring popup grab because the exit confirm dialog is open");
+            let _ = PopupManager::dismiss_popup(&root, &popup);
+            return;
+        } else if self.niri.is_locked() {
             if Some(&root) != self.niri.lock_surface_focus().as_ref() {
                 trace!("ignoring popup grab because the session is locked");
                 let _ = PopupManager::dismiss_popup(&root, &popup);
@@ -977,6 +981,7 @@ impl State {
             workspace_name: ws.and_then(|w| w.name().cloned()),
         };
 
+        trace!(surface = %toplevel.wl_surface().id(), "sending initial configure");
         toplevel.send_configure();
     }
 
@@ -1254,8 +1259,9 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
                 .unwrap()
                 .lock()
                 .unwrap();
+            let serial = role.last_acked.as_ref().map(|c| c.serial);
 
-            (got_unmapped, dmabuf, role.configure_serial)
+            (got_unmapped, dmabuf, serial)
         });
 
         let mut transaction_for_dmabuf = None;
@@ -1300,7 +1306,7 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
             }
 
             animate = mapped.should_animate_commit(serial);
-        } else {
+        } else if !got_unmapped {
             error!("commit on a mapped surface without a configured serial");
         };
 

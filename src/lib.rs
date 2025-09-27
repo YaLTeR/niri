@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate tracing;
 
+#[cfg(feature = "dbus")]
+pub mod a11y;
 pub mod animation;
 pub mod backend;
 pub mod cli;
