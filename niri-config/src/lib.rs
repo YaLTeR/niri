@@ -1,10 +1,12 @@
 #[macro_use]
 extern crate tracing;
 
+use std::cell::RefCell;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use miette::{Context as _, IntoDiagnostic as _};
 
@@ -51,7 +53,7 @@ pub struct Config {
     #[knuffel(children(name = "spawn-sh-at-startup"))]
     pub spawn_sh_at_startup: Vec<SpawnShAtStartup>,
     #[knuffel(child, default)]
-    pub layout: LayoutPart,
+    pub layout: LayoutParse,
     #[knuffel(child, default)]
     pub prefer_no_csd: bool,
     #[knuffel(child, default)]
@@ -92,6 +94,88 @@ pub struct Config {
     pub debug: Debug,
     #[knuffel(children(name = "workspace"))]
     pub workspaces: Vec<Workspace>,
+    #[knuffel(children(name = "include"))]
+    pub includes: Vec<Include>,
+    resolved_layout: Option<Layout>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Include {
+    path: PathBuf,
+}
+
+impl<S> knuffel::Decode<S> for Include
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, knuffel::errors::DecodeError<S>> {
+        let path: PathBuf = utils::parse_arg_node("include", node, ctx)?;
+        let base = ctx.get::<PathBuf>().unwrap();
+        let path = base.join(path);
+
+        let layout = ctx.get::<Rc<RefCell<Layout>>>().unwrap().clone();
+
+        let include_base = path.parent().unwrap().to_owned();
+        let filename = path.file_name().unwrap().to_str().unwrap();
+        match fs::read_to_string(&path) {
+            Ok(text) => {
+                let config = knuffel::parse_with_context::<Config, knuffel::span::Span, _>(
+                    filename,
+                    &text,
+                    |ctx| {
+                        ctx.set(include_base);
+                        // Same layout Rc, stuff will get merged right in.
+                        ctx.set(layout);
+                    },
+                );
+
+                match config {
+                    Ok(config) => {
+                        // Can extract window rules and stuff here, though not sure if easier than
+                        // going through the context.
+                    }
+                    Err(err) => {
+                        ctx.emit_error(knuffel::errors::DecodeError::conversion(
+                            &node.node_name,
+                            format!("failed to parse included config: {err:?}"),
+                        ));
+                    }
+                }
+            }
+            Err(err) => {
+                ctx.emit_error(knuffel::errors::DecodeError::conversion(
+                    &node.node_name,
+                    format!("failed to read included config {path:?}: {err}"),
+                ));
+            }
+        }
+
+        Ok(Self { path })
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct LayoutParse(LayoutPart);
+
+impl<S> knuffel::Decode<S> for LayoutParse
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, knuffel::errors::DecodeError<S>> {
+        let part = LayoutPart::decode_node(node, ctx);
+        if let Ok(part) = &part {
+            let layout = ctx.get::<Rc<RefCell<Layout>>>().unwrap();
+            let mut layout = layout.borrow_mut();
+            layout.merge_with(part);
+        }
+        part.map(Self)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -119,24 +203,52 @@ impl Config {
             .into_diagnostic()
             .with_context(|| format!("error reading {path:?}"))?;
 
-        let config = Self::parse(
-            path.file_name()
-                .and_then(OsStr::to_str)
-                .unwrap_or("config.kdl"),
-            &contents,
-        )
-        .context("error parsing")?;
+        let config = Self::parse_path(path, &contents).context("error parsing")?;
         debug!("loaded config from {path:?}");
         Ok(config)
     }
 
+    pub fn parse_path(path: &Path, text: &str) -> Result<Self, knuffel::Error> {
+        let base = path.parent().unwrap().to_owned();
+        let filename = path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .unwrap_or("config.kdl");
+        let layout = Rc::new(RefCell::new(Layout::default()));
+        let mut rv =
+            knuffel::parse_with_context::<Self, knuffel::span::Span, _>(filename, text, |ctx| {
+                ctx.set(base);
+                ctx.set(layout.clone());
+            });
+        if let Ok(config) = &mut rv {
+            config.resolved_layout = Some(layout.take());
+        }
+        rv
+    }
+
     pub fn parse(filename: &str, text: &str) -> Result<Self, knuffel::Error> {
         let _span = tracy_client::span!("Config::parse");
-        knuffel::parse(filename, text)
+        // TODO
+        let base = PathBuf::new();
+        let layout = Rc::new(RefCell::new(Layout::default()));
+        let mut rv =
+            knuffel::parse_with_context::<Self, knuffel::span::Span, _>(filename, text, |ctx| {
+                ctx.set(base);
+                ctx.set(layout.clone());
+            });
+        if let Ok(config) = &mut rv {
+            config.resolved_layout = Some(layout.take());
+        }
+        rv
+    }
+
+    // temporary workaround
+    pub fn layout(&mut self) -> &mut Layout {
+        self.resolved_layout.as_mut().unwrap()
     }
 
     pub fn resolve_layout(&self) -> Layout {
-        let mut rv = Layout::from_part(&self.layout);
+        let mut rv = self.resolved_layout.clone().unwrap();
 
         // Preserve the behavior we'd always had for the border section:
         // - `layout {}` gives border = off
@@ -157,7 +269,7 @@ impl Config {
         // default. This would also contradict the intended default borders value (off).
         //
         // So, let's just work around the problem here, preserving the original behavior.
-        if self.layout.border.is_some_and(|x| !x.on && !x.off) {
+        if self.layout.0.border.is_some_and(|x| !x.on && !x.off) {
             rv.border.off = false;
         }
 

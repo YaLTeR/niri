@@ -1508,7 +1508,7 @@ impl State {
         if config.overview.backdrop_color != old_config.overview.backdrop_color {
             output_config_changed = true;
         }
-        if config.layout.background_color != old_config.layout.background_color {
+        if config.layout().background_color != old_config.layout().background_color {
             output_config_changed = true;
         }
 
