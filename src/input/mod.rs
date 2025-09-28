@@ -45,7 +45,7 @@ use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _, Options};
 use crate::niri::{CastTarget, PointContents, PointerVisibility, State};
 use crate::ui::screenshot_ui::ScreenshotUi;
-use crate::ui::window_mru_ui::{MruCloseRequest, WindowMru};
+use crate::ui::window_mru_ui::{MruCloseRequest, MruCycle, WindowMru};
 use crate::utils::spawning::{spawn, spawn_sh};
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
 
@@ -2281,8 +2281,13 @@ impl State {
                         // overview zoom combined with the MRU UI.
                         self.niri.layout.close_overview();
                         let config = self.niri.config.borrow();
-                        let wmru =
-                            WindowMru::new(&self.niri, scope, filter, self.niri.clock.clone());
+                        let previous_scope = self.niri.window_mru_ui.scope();
+                        let wmru = WindowMru::new(
+                            &self.niri,
+                            scope.or(Some(previous_scope)),
+                            filter,
+                            self.niri.clock.clone(),
+                        );
                         if let Some(output) = self.niri.layout.active_output() {
                             self.niri.window_mru_ui.open(
                                 Rc::new(Options::from_config(&config)),
@@ -2335,6 +2340,23 @@ impl State {
                 if !self.niri.config.borrow().recent_windows.off
                     && self.niri.window_mru_ui.is_open()
                 {
+                    if let Some(wmru) =
+                        self.niri
+                            .window_mru_ui
+                            .derive_new_mru_list(&self.niri, Some(scope), None)
+                    {
+                        self.niri.window_mru_ui.update_mru_list(None, wmru);
+                        // FIXME: granular
+                        self.niri.queue_redraw_all();
+                    }
+                }
+            }
+            Action::MruCycleScope(direction) => {
+                if !self.niri.config.borrow().recent_windows.off
+                    && self.niri.window_mru_ui.is_open()
+                {
+                    let scope = self.niri.window_mru_ui.scope().cycle(direction);
+
                     if let Some(wmru) =
                         self.niri
                             .window_mru_ui

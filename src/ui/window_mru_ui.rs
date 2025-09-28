@@ -7,7 +7,8 @@ Todo:
   x thumbnails appearing/disappearing
   x reorganization on scope/filter change
   x animate transition from selecting a thumbnail to the focused window
-  - Transition when wrapping around during Mru navigation(?)
+  ~ Transition when wrapping around during Mru navigation(?) => regular
+    transition works fine.
   x UI open/close animation
 - shortcut to "summon" a window to the current workspace
 x support clicking on the target thumbnail
@@ -81,6 +82,12 @@ const SPACING: f64 = 50.;
 
 // Corner radius on focus ring
 const RADIUS: f32 = 6.;
+
+// Padding in scope indication panel
+const PADDING: i32 = 8;
+
+// Border size of the scope indication panel
+const BORDER: i32 = 4;
 
 // Alpha value for the focus ring
 const FOCUS_RING_ALPHA: f32 = 0.9;
@@ -322,6 +329,9 @@ pub enum WindowMruUiState {
 
         /// Output on which to display the closing thumbnails
         output: Option<Output>,
+
+        /// Scope used when the UI was last opened
+        previous_scope: MruScope,
     },
     Open(Box<Inner>),
 }
@@ -365,6 +375,11 @@ pub struct Inner {
 
     /// Animate thumbnail selection to warp to the corresponding tile
     enable_selection_animation: bool,
+
+    /// Scope panel textures for each variant of Scope
+    // The array size could be set using std::mem::variant_count, but it
+    // is still unstable. For now it is just hard coded.
+    scope_panel: RefCell<Option<Vec<MruTexture>>>,
 }
 
 // Taken from Tile.rs,
@@ -437,6 +452,29 @@ impl ToWindowIterator for MruScope {
     }
 }
 
+/// Types for which there is a finite set of values that can be cycled through.
+pub trait MruCycle {
+    fn cycle(&self, direction: MruDirection) -> Self;
+}
+
+/// Reference for how MruScopes an be cycled through, the list must contain MruScope::All
+static SCOPE_CYCLE: &[MruScope] = &[MruScope::All, MruScope::Workspace, MruScope::Output];
+
+impl MruCycle for MruScope {
+    fn cycle(&self, direction: MruDirection) -> Self {
+        *match direction {
+            MruDirection::Forward => SCOPE_CYCLE.iter().cycle().skip_while(|s| *s != self).nth(1),
+            MruDirection::Backward => SCOPE_CYCLE
+                .iter()
+                .rev()
+                .cycle()
+                .skip_while(|s| *s != self)
+                .nth(1),
+        }
+        .unwrap()
+    }
+}
+
 pub enum MruCloseRequest {
     Cancelled,
     Current,
@@ -466,6 +504,7 @@ impl WindowMruUi {
                 close_animation: None,
                 closing_thumbnails: vec![],
                 output: None,
+                previous_scope: MruScope::default(),
             },
         }
     }
@@ -506,6 +545,7 @@ impl WindowMruUi {
             0.,
             options.animations.window_mru_ui_open_close.0,
         );
+
         let inner = Inner {
             wmru,
             textures: RefCell::new(TextureCache::with_capacity(nids)),
@@ -519,6 +559,7 @@ impl WindowMruUi {
             open_timestamp: Instant::now(),
             output,
             enable_selection_animation,
+            scope_panel: RefCell::new(None),
         };
 
         self.state = WindowMruUiState::Open(Box::new(inner));
@@ -535,6 +576,7 @@ impl WindowMruUi {
                 output: None,
                 close_animation: None,
                 closing_thumbnails: vec![],
+                previous_scope: MruScope::default(),
             },
         );
         let WindowMruUiState::Open(inner) = state else {
@@ -581,11 +623,13 @@ impl WindowMruUi {
             output: out,
             close_animation: anim,
             closing_thumbnails: thumbs,
+            previous_scope: scope,
         } = &mut self.state
         {
             anim.replace(close_anim);
             mem::swap(thumbs, &mut closing_thumbnails);
             out.replace(output);
+            *scope = wmru.scope;
         } else {
             unreachable!();
         };
@@ -840,6 +884,13 @@ impl WindowMruUi {
         inner.wmru.last();
     }
 
+    pub fn scope(&self) -> MruScope {
+        match &self.state {
+            WindowMruUiState::Closed { previous_scope, .. } => *previous_scope,
+            WindowMruUiState::Open(inner) => inner.wmru.scope,
+        }
+    }
+
     pub fn current_window_id(&self) -> Option<MappedId> {
         let WindowMruUiState::Open(ref inner) = self.state else {
             return None;
@@ -975,6 +1026,7 @@ impl WindowMruUi {
                 close_animation: Some(ref close_animation),
                 closing_thumbnails,
                 output: closing_output,
+                ..
             } => {
                 if let Some(closing_output) = closing_output {
                     if closing_output == output {
@@ -990,7 +1042,7 @@ impl WindowMruUi {
             }
             WindowMruUiState::Open(ref inner) => {
                 if *output == inner.output {
-                    rv.extend(inner.render(niri, renderer, output_size));
+                    rv.extend(inner.render(niri, renderer, output));
                 }
                 inner.open_animation.clamped_value()
             }
@@ -1243,9 +1295,42 @@ impl Inner {
         &self,
         niri: &Niri,
         renderer: &mut GlesRenderer,
-        output_size: Size<f64, Logical>,
+        // output_size: Size<f64, Logical>,
+        output: &Output,
     ) -> impl Iterator<Item = WindowMruUiRenderElement> {
         let mut rv = Vec::new();
+
+        let output_size = output_size(output);
+
+        // render the scope indicator
+        if self.scope_panel.borrow().is_none() {
+            if let Ok(panels) =
+                make_scope_panels(renderer, output.current_scale().fractional_scale())
+            {
+                let _ = self.scope_panel.borrow_mut().insert(panels);
+            }
+        }
+        if let Some(texture) = self
+            .scope_panel
+            .borrow()
+            .as_ref()
+            .and_then(|p| p.get(self.wmru.scope as usize))
+        {
+            let texture_sz = texture.logical_size();
+            let location = Point::<f64, Logical>::from((
+                (output_size.w - texture_sz.w) / 2.,
+                SPACING + texture_sz.h / 2.,
+            ));
+            let elem = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                texture.clone(),
+                location,
+                1.,
+                None,
+                None,
+                Kind::Unspecified,
+            ));
+            rv.push(elem.into());
+        }
 
         let Some(view_offset) = self.view_offset else {
             return rv.into_iter();
@@ -1483,6 +1568,106 @@ fn generate_title_texture(
         Transform::Normal,
         Vec::new(),
     )?;
+    Ok(buffer)
+}
+
+fn make_scope_panels(renderer: &mut GlesRenderer, scale: f64) -> anyhow::Result<Vec<MruTexture>> {
+    fn make_panel_text(idx: usize) -> String {
+        let span_unselected = "<span fgcolor='#555555'>";
+        let span_end = "</span>";
+        // Using a hair-space or thin-space doesn't seem to make a difference
+        // so for now don't add a space around shortcut keys.
+        // let span_shortcut = "<span face='mono' bgcolor='#2C2C2C'>\u{200a}";
+        // let span_shortcut_end = format!("\u{200a}{span_end}");
+        let span_shortcut = "<span face='mono' bgcolor='#2C2C2C' letter_spacing='5000'>";
+        let span_shortcut_end = span_end;
+        iter::once(format!(
+            " {span_unselected}{span_shortcut}S{span_shortcut_end}cope:{span_end}"
+        ))
+        .chain(SCOPE_CYCLE.iter().map(|s| {
+            let mut t = match s {
+                MruScope::All => format!("{span_shortcut}A{span_shortcut_end}ll"),
+                MruScope::Output => format!("{span_shortcut}O{span_shortcut_end}utput"),
+                MruScope::Workspace => format!("{span_shortcut}W{span_shortcut_end}orkspace"),
+            };
+            if *s as usize != idx {
+                t = format!("{span_unselected}{t}{span_end}")
+            }
+            t
+        }))
+        .collect::<Vec<_>>()
+        .join("  ")
+    }
+
+    (0..SCOPE_CYCLE.len())
+        .map(make_panel_text)
+        .map(|text| make_panel(renderer, scale, &text))
+        .collect()
+}
+
+// This is a copy of screenshot_ui's render_panel
+fn make_panel(renderer: &mut GlesRenderer, scale: f64, text: &str) -> anyhow::Result<MruTexture> {
+    let font = FontDescription::from_string(FONT);
+    let padding: i32 = to_physical_precise_round(scale, PADDING);
+    let border_width = (f64::from(BORDER) / 2. * scale).round() * 2.;
+    let half_border_width = (border_width / 2.) as i32;
+    let spacing = to_physical_precise_round::<i32>(scale, 2) * 1024;
+
+    // Render `scope_text` to a dummy surface to determine its size
+    let surface = ImageSurface::create(cairo::Format::ARgb32, 0, 0)?;
+    let cr = cairo::Context::new(&surface)?;
+    let layout = pangocairo::functions::create_layout(&cr);
+    layout.set_font_description(Some(&font));
+    layout.set_markup(text);
+    layout.set_spacing(spacing);
+    let (mut width, mut height) = layout.pixel_size();
+
+    // Setup the final surface
+    width += 2 * padding + half_border_width;
+    height += padding * 2;
+
+    let surface = ImageSurface::create(cairo::Format::ARgb32, width, height)?;
+    let cr = cairo::Context::new(&surface)?;
+    cr.set_source_rgb(0.1, 0.1, 0.1);
+    cr.paint()?;
+
+    let padding = f64::from(padding);
+    let half_border_width = f64::from(half_border_width);
+
+    cr.move_to(padding + half_border_width, padding);
+
+    let layout = pangocairo::functions::create_layout(&cr);
+    layout.context().set_round_glyph_positions(false);
+    layout.set_font_description(Some(&font));
+    layout.set_alignment(Alignment::Left);
+    layout.set_markup(text);
+    layout.set_spacing(spacing);
+
+    cr.set_source_rgb(1., 1., 1.);
+    pangocairo::functions::show_layout(&cr, &layout);
+
+    cr.move_to(0., 0.);
+    cr.line_to(width.into(), 0.);
+    cr.line_to(width.into(), height.into());
+    cr.line_to(0., height.into());
+    cr.line_to(0., 0.);
+    cr.set_source_rgb(0.3, 0.3, 0.3);
+    cr.set_line_width(border_width);
+    cr.stroke()?;
+    drop(cr);
+
+    let data = surface.take_data().unwrap();
+    let buffer = TextureBuffer::from_memory(
+        renderer,
+        &data,
+        Fourcc::Argb8888,
+        (width, height),
+        false,
+        scale,
+        Transform::Normal,
+        Vec::new(),
+    )?;
+
     Ok(buffer)
 }
 
@@ -1888,6 +2073,30 @@ static MRU_UI_OPENED_BINDINGS: &[Bind] = &[
             modifiers: Modifiers::empty(),
         },
         action: Action::MruChangeScope(MruScope::Output),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::s),
+            modifiers: Modifiers::empty(),
+        },
+        action: Action::MruCycleScope(MruDirection::Forward),
+        repeat: true,
+        cooldown: None,
+        allow_when_locked: false,
+        allow_inhibiting: true,
+        hotkey_overlay_title: None,
+    },
+    Bind {
+        key: Key {
+            trigger: Trigger::Keysym(Keysym::s),
+            modifiers: Modifiers::SHIFT,
+        },
+        action: Action::MruCycleScope(MruDirection::Backward),
         repeat: true,
         cooldown: None,
         allow_when_locked: false,
