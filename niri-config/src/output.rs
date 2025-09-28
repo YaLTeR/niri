@@ -6,6 +6,15 @@ use crate::{Color, FloatOrInt, LayoutPart};
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Outputs(pub Vec<Output>);
 
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Mode {
+    #[knuffel(property, default)]
+    pub custom: bool,
+
+    #[knuffel(argument, str)]
+    pub mode: ConfiguredMode,
+}
+
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Output {
     #[knuffel(child)]
@@ -18,8 +27,8 @@ pub struct Output {
     pub transform: Transform,
     #[knuffel(child)]
     pub position: Option<Position>,
-    #[knuffel(child, unwrap(argument, str))]
-    pub mode: Option<ConfiguredMode>,
+    #[knuffel(child)]
+    pub mode: Option<Mode>,
     #[knuffel(child)]
     pub variable_refresh_rate: Option<Vrr>,
     #[knuffel(child)]

@@ -663,6 +663,15 @@ mod tests {
                 }
             }
 
+            output "eDP-2" {
+                scale 2
+                transform "flipped-90"
+                position x=10 y=20
+                mode custom=true "1920x1080@144"
+                variable-refresh-rate on-demand=true
+                background-color "rgba(25, 25, 102, 1.0)"
+            }
+
             layout {
                 focus-ring {
                     width 5
@@ -1035,12 +1044,15 @@ mod tests {
                             },
                         ),
                         mode: Some(
-                            ConfiguredMode {
-                                width: 1920,
-                                height: 1080,
-                                refresh: Some(
-                                    144.0,
-                                ),
+                            Mode {
+                                custom: false,
+                                mode: ConfiguredMode {
+                                    width: 1920,
+                                    height: 1080,
+                                    refresh: Some(
+                                        144.0,
+                                    ),
+                                },
                             },
                         ),
                         variable_refresh_rate: Some(
@@ -1049,14 +1061,12 @@ mod tests {
                             },
                         ),
                         focus_at_startup: true,
-                        background_color: Some(
-                            Color {
-                                r: 0.09803922,
-                                g: 0.09803922,
-                                b: 0.4,
-                                a: 1.0,
-                            },
-                        ),
+                        background_color: Color {
+                            r: 0.09803922,
+                            g: 0.09803922,
+                            b: 0.4,
+                            a: 1.0,
+                        },
                         backdrop_color: None,
                         hot_corners: Some(
                             HotCorners {

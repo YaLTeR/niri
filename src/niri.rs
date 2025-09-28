@@ -1763,7 +1763,10 @@ impl State {
             niri_ipc::OutputAction::Mode { mode } => {
                 config.mode = match mode {
                     niri_ipc::ModeToSet::Automatic => None,
-                    niri_ipc::ModeToSet::Specific(mode) => Some(mode),
+                    niri_ipc::ModeToSet::Specific(mode) => Some(niri_config::output::Mode {
+                        custom: false,
+                        mode,
+                    }),
                 }
             }
             niri_ipc::OutputAction::Scale { scale } => {
