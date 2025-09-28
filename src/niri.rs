@@ -5128,8 +5128,12 @@ impl Niri {
             .tiles_with_render_positions()
             .find(|(tile, _, _)| tile.window().id() == mapped.id())
             .unwrap();
+
+        let window_bbox = mapped.window.bbox_with_popups().loc.to_f64();
+        let window_offset =
+            tile_offset + tile.window_loc() + window_bbox + mapped.buf_loc().to_f64();
+
         let pointer_location = self.seat.get_pointer().unwrap().current_location();
-        let window_offset = tile_offset + tile.window_loc() + mapped.buf_loc().to_f64();
         Some((pointer_location - window_offset).upscale(scale))
     }
 
