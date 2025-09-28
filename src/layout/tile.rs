@@ -112,6 +112,12 @@ pub struct Tile<W: LayoutElement> {
 
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
+
+    /// Hint that the expected tile size should be used to calculate the
+    /// positions of other tiles and columns instead of the actual size. This is
+    /// useful when the sibling tiles shouldn't move during a resize animation,
+    /// for instance when tiles are swapped between columns.
+    pub(super) prefer_expected_size: bool,
 }
 
 niri_render_elements! {
@@ -203,6 +209,7 @@ impl<W: LayoutElement> Tile<W> {
             scale,
             clock,
             options,
+            prefer_expected_size: false,
         }
     }
 
@@ -329,6 +336,7 @@ impl<W: LayoutElement> Tile<W> {
                 });
             } else {
                 self.resize_animation = None;
+                self.prefer_expected_size = false;
             }
         }
 
@@ -362,6 +370,7 @@ impl<W: LayoutElement> Tile<W> {
         if let Some(resize) = &mut self.resize_animation {
             if resize.anim.is_done() {
                 self.resize_animation = None;
+                self.prefer_expected_size = false;
             }
         }
 
@@ -829,6 +838,8 @@ impl<W: LayoutElement> Tile<W> {
         // exactly.
         self.window
             .request_size(size.to_i32_floor(), false, animate, transaction);
+
+        self.prefer_expected_size = false;
     }
 
     pub fn tile_width_for_window_width(&self, size: f64) -> f64 {
