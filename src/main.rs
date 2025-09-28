@@ -153,6 +153,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         warn!("{err:?}");
         Config::load_default()
     });
+    let config_includes = config_load_result.includes;
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
     let spawn_sh_at_startup = mem::take(&mut config.spawn_sh_at_startup);
@@ -239,7 +240,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    watcher::setup(&mut state, &config_path);
+    watcher::setup(&mut state, &config_path, config_includes);
 
     // Spawn commands from cli and auto-start.
     spawn(cli.command, None);
