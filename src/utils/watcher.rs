@@ -21,13 +21,23 @@ struct WatcherInner {
     path: ConfigPath,
 
     /// Last observed props of the watched file.
-    ///
-    /// Equality on this means the file did not change.
+    last_props: Option<Props>,
+}
+
+/// Properties of the watched file.
+///
+/// Equality on this means the file did not change.
+#[derive(Debug, PartialEq, Eq)]
+struct Props {
+    /// Modification time of the watched file.
+    mtime: SystemTime,
+
+    /// Canonical form of the watched path.
     ///
     /// We store the absolute path in addition to mtime to account for symlinked configs where the
     /// symlink target may change without mtime. This is common on nix where everything is a
     /// symlink to /nix/store, which keeps no mtime (= 1970-01-01).
-    last_props: Option<(SystemTime, PathBuf)>,
+    canonical: PathBuf,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -88,30 +98,32 @@ impl Watcher {
     }
 }
 
-fn see_path(path: &Path) -> io::Result<(SystemTime, PathBuf)> {
-    let canon = path.canonicalize()?;
-    let mtime = canon.metadata()?.modified()?;
-    Ok((mtime, canon))
-}
+impl Props {
+    fn from_path(path: &Path) -> io::Result<Self> {
+        let canonical = path.canonicalize()?;
+        let mtime = canonical.metadata()?.modified()?;
+        Ok(Self { mtime, canonical })
+    }
 
-fn see(config_path: &ConfigPath) -> io::Result<(SystemTime, PathBuf)> {
-    match config_path {
-        ConfigPath::Explicit(path) => see_path(path),
-        ConfigPath::Regular {
-            user_path,
-            system_path,
-        } => see_path(user_path).or_else(|_| see_path(system_path)),
+    fn from_config_path(config_path: &ConfigPath) -> io::Result<Self> {
+        match config_path {
+            ConfigPath::Explicit(path) => Self::from_path(path),
+            ConfigPath::Regular {
+                user_path,
+                system_path,
+            } => Self::from_path(user_path).or_else(|_| Self::from_path(system_path)),
+        }
     }
 }
 
 impl WatcherInner {
     pub fn new(path: ConfigPath) -> Self {
-        let last_props = see(&path).ok();
+        let last_props = Props::from_config_path(&path).ok();
         Self { path, last_props }
     }
 
     pub fn check(&mut self) -> CheckResult {
-        if let Ok(new_props) = see(&self.path) {
+        if let Ok(new_props) = Props::from_config_path(&self.path) {
             if self.last_props.as_ref() != Some(&new_props) {
                 self.last_props = Some(new_props);
                 CheckResult::Changed
