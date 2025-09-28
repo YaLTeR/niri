@@ -1,11 +1,12 @@
 //! File modification watcher.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime};
 use std::{io, thread};
 
-use niri_config::{Config, ConfigPath};
+use niri_config::{Config, ConfigParseResult, ConfigPath};
 use smithay::reexports::calloop::channel::SyncSender;
 
 use crate::niri::State;
@@ -22,6 +23,9 @@ struct WatcherInner {
 
     /// Last observed props of the watched file.
     last_props: Option<Props>,
+
+    /// Last observed props for included files.
+    includes: HashMap<PathBuf, Option<Props>>,
 }
 
 /// Properties of the watched file.
@@ -48,17 +52,18 @@ enum CheckResult {
 }
 
 impl Watcher {
-    pub fn new<T: Send + 'static>(
+    pub fn new(
         path: ConfigPath,
-        mut process: impl FnMut(&ConfigPath) -> T + Send + 'static,
-        changed: SyncSender<T>,
+        includes: Vec<PathBuf>,
+        mut process: impl FnMut(&ConfigPath) -> ConfigParseResult<Config, ()> + Send + 'static,
+        changed: SyncSender<Result<Config, ()>>,
     ) -> Self {
         let (load_config, load_config_rx) = mpsc::channel();
 
         thread::Builder::new()
             .name(format!("Filesystem Watcher for {path:?}"))
             .spawn(move || {
-                let mut inner = WatcherInner::new(path);
+                let mut inner = WatcherInner::new(path, includes);
 
                 loop {
                     let mut should_load = match load_config_rx.recv_timeout(POLLING_INTERVAL) {
@@ -77,12 +82,19 @@ impl Watcher {
                     }
 
                     if should_load {
-                        let rv = process(&inner.path);
+                        let res = process(&inner.path);
 
-                        if let Err(err) = changed.send(rv) {
+                        if let Err(err) = changed.send(res.config) {
                             warn!("error sending change notification: {err:?}");
                             break;
                         }
+
+                        // There's a bit of time here between reading the config and reading
+                        // properties of included files where an included file could change and
+                        // remain unnoticed by the watcher. Not sure there's any good way around it
+                        // though since we don't know the final set of includes until the config is
+                        // parsed.
+                        inner.set_includes(res.includes);
                     }
                 }
 
@@ -117,9 +129,16 @@ impl Props {
 }
 
 impl WatcherInner {
-    pub fn new(path: ConfigPath) -> Self {
+    pub fn new(path: ConfigPath, includes: Vec<PathBuf>) -> Self {
         let last_props = Props::from_config_path(&path).ok();
-        Self { path, last_props }
+
+        let mut rv = Self {
+            path,
+            last_props,
+            includes: HashMap::new(),
+        };
+        rv.set_includes(includes);
+        rv
     }
 
     pub fn check(&mut self) -> CheckResult {
@@ -128,20 +147,42 @@ impl WatcherInner {
                 self.last_props = Some(new_props);
                 CheckResult::Changed
             } else {
+                for (path, last_props) in &mut self.includes {
+                    let new_props = Props::from_path(path).ok();
+
+                    // If an include goes missing while the main config file is unchanged, we
+                    // consider that a change and reload.
+                    if *last_props != new_props {
+                        return CheckResult::Changed;
+                    }
+                }
+
                 CheckResult::Unchanged
             }
         } else {
             CheckResult::Missing
         }
     }
+
+    fn set_includes(&mut self, includes: Vec<PathBuf>) {
+        self.includes = includes
+            .into_iter()
+            .map(|path| {
+                let props = Props::from_path(&path).ok();
+                (path, props)
+            })
+            .collect();
+    }
 }
 
-pub fn setup(state: &mut State, config_path: &ConfigPath) {
+pub fn setup(state: &mut State, config_path: &ConfigPath, includes: Vec<PathBuf>) {
     // Parsing the config actually takes > 20 ms on my beefy machine, so let's do it on the
     // watcher thread.
     let process = |path: &ConfigPath| {
-        path.load().config.map_err(|err| {
-            warn!("{err:?}");
+        path.load().map_config_res(|res| {
+            res.map_err(|err| {
+                warn!("{err:?}");
+            })
         })
     };
 
@@ -162,7 +203,8 @@ pub fn setup(state: &mut State, config_path: &ConfigPath) {
         )
         .unwrap();
 
-    state.niri.config_file_watcher = Some(Watcher::new(config_path.clone(), process, tx));
+    let watcher = Watcher::new(config_path.clone(), includes, process, tx);
+    state.niri.config_file_watcher = Some(watcher);
 }
 
 #[cfg(test)]
@@ -266,8 +308,9 @@ mod tests {
                 sh, config_path, ..
             } = self;
 
+            let includes = config_path.load().includes;
             let mut test = TestUtil {
-                watcher: WatcherInner::new(config_path),
+                watcher: WatcherInner::new(config_path, includes),
             };
 
             // don't trigger before we start
@@ -318,6 +361,8 @@ mod tests {
             let new_path = canon(&self.watcher.path);
             let actual = fs::read_to_string(new_path).unwrap();
             assert_eq!(actual, expected, "wrong file contents");
+
+            self.watcher.set_includes(Config::load(new_path).includes);
 
             self.pass_time();
         }
@@ -504,6 +549,71 @@ mod tests {
                 sh.remove_path("niri")?;
                 cmd!(sh, "ln -s niri3 niri").run()?;
                 test.assert_changed_to("b");
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn change_included_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                sh.write_file("niri/config.kdl", "include \"colors.kdl\"")?;
+                sh.write_file("niri/colors.kdl", "// Colors")
+            })
+            .assert_initial("include \"colors.kdl\"")
+            .run(|sh, test| {
+                sh.write_file("niri/colors.kdl", "// Updated colors")?;
+                test.assert_changed_to("include \"colors.kdl\"");
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn remove_included_file() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                sh.write_file("niri/config.kdl", "include \"colors.kdl\"")?;
+                sh.write_file("niri/colors.kdl", "// Colors")
+            })
+            .assert_initial("include \"colors.kdl\"")
+            .run(|sh, test| {
+                sh.remove_path("niri/colors.kdl")?;
+                test.assert_changed_to("include \"colors.kdl\"");
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn nested_includes() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                sh.write_file("niri/config.kdl", "include \"a.kdl\"")?;
+                sh.write_file("niri/a.kdl", "include \"b.kdl\"")?;
+                sh.write_file("niri/b.kdl", "// b content")
+            })
+            .assert_initial("include \"a.kdl\"")
+            .run(|sh, test| {
+                sh.write_file("niri/b.kdl", "// updated b")?;
+                test.assert_changed_to("include \"a.kdl\"");
+
+                Ok(())
+            })
+    }
+
+    #[test]
+    fn broken_include_still_gets_watched() -> Result {
+        TestPath::Explicit("niri/config.kdl")
+            .setup(|sh| {
+                sh.write_file("niri/config.kdl", "include \"colors.kdl\"")?;
+                sh.write_file("niri/colors.kdl", "broken")
+            })
+            .assert_initial("include \"colors.kdl\"")
+            .run(|sh, test| {
+                sh.write_file("niri/colors.kdl", "// Fixed")?;
+                test.assert_changed_to("include \"colors.kdl\"");
 
                 Ok(())
             })
