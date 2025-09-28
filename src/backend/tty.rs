@@ -12,8 +12,11 @@ use std::{io, mem};
 
 use anyhow::{anyhow, bail, ensure, Context};
 use bytemuck::cast_slice_mut;
+use drm_ffi::drm_mode_modeinfo;
 use libc::dev_t;
+use niri_config::output::Modeline;
 use niri_config::{Config, OutputName};
+use niri_ipc::{HSyncPolarity, VSyncPolarity};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
@@ -890,21 +893,27 @@ impl Tty {
             trace!("{m:?}");
         }
 
-        let (mode, fallback) =
-            pick_mode(&connector, config.mode).ok_or_else(|| anyhow!("no mode"))?;
-        if fallback {
-            let target = config.mode.unwrap();
-            warn!(
-                "configured mode {}x{}{} could not be found, falling back to preferred",
-                target.width,
-                target.height,
-                if let Some(refresh) = target.refresh {
-                    format!("@{refresh}")
-                } else {
-                    String::new()
-                },
-            );
-        }
+        let mode = if let Some(modeline) = &config.modeline {
+            calculate_drm_mode_from_modeline(&modeline)
+        } else {
+            let (mode, fallback) =
+                pick_mode(&connector, config.mode).ok_or_else(|| anyhow!("no mode"))?;
+            if fallback {
+                let target = config.mode.unwrap();
+                warn!(
+                    "configured mode {}x{}{} could not be found, falling back to preferred",
+                    target.mode.width,
+                    target.mode.height,
+                    if let Some(refresh) = target.mode.refresh {
+                        format!("@{refresh}")
+                    } else {
+                        String::new()
+                    },
+                );
+            }
+            mode
+        };
+
         debug!("picking mode: {mode:?}");
 
         if let Ok(props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
@@ -1694,8 +1703,9 @@ impl Tty {
                 let surface = device.surfaces.get(&crtc);
                 let current_crtc_mode = surface.map(|surface| surface.compositor.pending_mode());
                 let mut current_mode = None;
+                let mut is_custom_mode = false;
 
-                let modes = connector
+                let mut modes: Vec<niri_ipc::Mode> = connector
                     .modes()
                     .iter()
                     .filter(|m| !m.flags().contains(ModeFlags::INTERLACE))
@@ -1715,6 +1725,21 @@ impl Tty {
                     .collect();
 
                 if let Some(crtc_mode) = current_crtc_mode {
+                    // Custom mode
+                    if crtc_mode.mode_type().contains(ModeTypeFlags::USERDEF) {
+                        modes.insert(
+                            0,
+                            niri_ipc::Mode {
+                                width: crtc_mode.size().0,
+                                height: crtc_mode.size().1,
+                                refresh_rate: Mode::from(crtc_mode).refresh as u32,
+                                is_preferred: false,
+                            },
+                        );
+                        current_mode = Some(0);
+                        is_custom_mode = true;
+                    }
+
                     if current_mode.is_none() {
                         if crtc_mode.flags().contains(ModeFlags::INTERLACE) {
                             warn!("connector mode list missing current mode (interlaced)");
@@ -1759,6 +1784,7 @@ impl Tty {
                     physical_size,
                     modes,
                     current_mode,
+                    is_custom_mode,
                     vrr_supported,
                     vrr_enabled,
                     logical,
@@ -1945,9 +1971,15 @@ impl Tty {
                     continue;
                 };
 
-                let Some((mode, fallback)) = pick_mode(connector, config.mode) else {
-                    warn!("couldn't pick mode for enabled connector");
-                    continue;
+                let (mode, fallback) = if let Some(modeline) = &config.modeline {
+                    let drm_mode = calculate_drm_mode_from_modeline(&modeline);
+                    (drm_mode, false)
+                } else {
+                    let Some((mode, fallback)) = pick_mode(connector, config.mode) else {
+                        warn!("couldn't pick mode for enabled connector");
+                        continue;
+                    };
+                    (mode, fallback)
                 };
 
                 let change_mode = surface.compositor.pending_mode() != mode;
@@ -2000,9 +2032,9 @@ impl Tty {
                             "output {:?}: configured mode {}x{}{} could not be found, \
                              falling back to preferred",
                             surface.name.connector,
-                            target.width,
-                            target.height,
-                            if let Some(refresh) = target.refresh {
+                            target.mode.width,
+                            target.mode.height,
+                            if let Some(refresh) = target.mode.refresh {
                                 format!("@{refresh}")
                             } else {
                                 String::new()
@@ -2500,18 +2532,163 @@ fn queue_estimated_vblank_timer(
     output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
 }
 
+pub fn calculate_drm_mode_from_modeline(modeline: &Modeline) -> DrmMode {
+    let pixel_clock_kilo_hertz = modeline.clock * 1000.0;
+    assert!(
+        modeline.hdisplay < modeline.hsync_start
+            && (modeline.hsync_start < modeline.hsync_end)
+            && (modeline.hsync_end < modeline.htotal)
+    );
+    assert!(
+        modeline.vdisplay < modeline.vsync_start
+            && (modeline.vsync_start < modeline.vsync_end)
+            && (modeline.vsync_end < modeline.vtotal)
+    );
+    // Calculated as documented in the CVT 1.2 standard:
+    // https://app.box.com/s/vcocw3z73ta09txiskj7cnk6289j356b/file/93518784646
+    let vrefresh_hertz = (pixel_clock_kilo_hertz * 1000.0)
+        / (modeline.htotal as u64 * modeline.vtotal as u64) as f64;
+    if !vrefresh_hertz.is_finite() {
+        error!("Modeline calculation went out of bounds.")
+    }
+    let vrefresh_rounded = vrefresh_hertz.round() as u32;
+
+    let flags = match modeline.hsync_polarity {
+        HSyncPolarity::PHSync => ModeFlags::PHSYNC,
+        HSyncPolarity::NHSync => ModeFlags::NHSYNC,
+    } | match modeline.vsync_polarity {
+        VSyncPolarity::PVSync => ModeFlags::PVSYNC,
+        VSyncPolarity::NVSync => ModeFlags::NVSYNC,
+    };
+
+    let mode_name = format!(
+        "{}x{}@{:.2}",
+        modeline.hdisplay, modeline.vdisplay, vrefresh_hertz
+    );
+    let name = modeinfo_name_slice_from_string(&mode_name);
+
+    // https://www.kernel.org/doc/html/v6.17/gpu/drm-uapi.html#c.drm_mode_modeinfo
+    DrmMode::from(drm_mode_modeinfo {
+        clock: pixel_clock_kilo_hertz.round() as u32,
+        hdisplay: modeline.hdisplay,
+        hsync_start: modeline.hsync_start,
+        hsync_end: modeline.hsync_end,
+        htotal: modeline.htotal,
+        vdisplay: modeline.vdisplay,
+        vsync_start: modeline.vsync_start,
+        vsync_end: modeline.vsync_end,
+        vtotal: modeline.vtotal,
+        vrefresh: vrefresh_rounded,
+        flags: flags.bits(),
+        name,
+        // Defaults
+        type_: drm_ffi::DRM_MODE_TYPE_USERDEF,
+        hskew: 0,
+        vscan: 0,
+    })
+}
+
+pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mode {
+    // Cross-checked with sway's implementation:
+    // https://gitlab.freedesktop.org/wlroots/wlroots/-/blob/22528542970687720556035790212df8d9bb30bb/backend/drm/util.c#L251
+
+    let options = libdisplay_info::cvt::Options {
+        red_blank_ver: libdisplay_info::cvt::ReducedBlankingVersion::None,
+        h_pixels: width as i32,
+        v_lines: height as i32,
+        ip_freq_rqd: refresh,
+
+        // Defaults
+        video_opt: false,
+        vblank: 0f64,
+        additional_hblank: 0,
+        early_vsync_rqd: false,
+        int_rqd: false,
+        margins_rqd: false,
+    };
+    let cvt_timing = libdisplay_info::cvt::Timing::compute(options);
+
+    let hsync_start = width + cvt_timing.h_front_porch as u16;
+    let vsync_start = (cvt_timing.v_lines_rnd + cvt_timing.v_front_porch) as u16;
+    let hsync_end = hsync_start + cvt_timing.h_sync as u16;
+    let vsync_end = vsync_start + cvt_timing.v_sync as u16;
+
+    let htotal = hsync_end + cvt_timing.h_back_porch as u16;
+    let vtotal = vsync_end + cvt_timing.v_back_porch as u16;
+
+    let clock = f64::round(cvt_timing.act_pixel_freq * 1000f64) as u32;
+    let vrefresh = f64::round(cvt_timing.act_frame_rate) as u32;
+
+    let flags = drm_ffi::DRM_MODE_FLAG_NHSYNC | drm_ffi::DRM_MODE_FLAG_PVSYNC;
+
+    let mode_name = format!("{width}x{height}@{:.2}", cvt_timing.act_frame_rate);
+    let name = modeinfo_name_slice_from_string(&mode_name);
+
+    let drm_ffi_mode = drm_ffi::drm_sys::drm_mode_modeinfo {
+        clock,
+
+        hdisplay: width,
+        hsync_start,
+        hsync_end,
+        htotal,
+
+        vdisplay: height,
+        vsync_start,
+        vsync_end,
+        vtotal,
+
+        vrefresh,
+
+        flags,
+        type_: drm_ffi::DRM_MODE_TYPE_USERDEF,
+        name,
+
+        // Defaults
+        hskew: 0,
+        vscan: 0,
+    };
+
+    control::Mode::from(drm_ffi_mode)
+}
+
+// Returns a c-string of maximally 31 Rust string chars + null terminator. Excess characters are
+// dropped.
+fn modeinfo_name_slice_from_string(mode_name: &String) -> [core::ffi::c_char; 32] {
+    let mut name: [core::ffi::c_char; 32] = [0; 32];
+    let min_length = 31.min(mode_name.len());
+
+    let slice = mode_name.as_bytes()[..min_length]
+        .iter()
+        .map(|char_byte| *char_byte as i8)
+        .collect::<Vec<i8>>();
+
+    name[0..slice.len()].copy_from_slice(slice.as_slice());
+    name
+}
+
 fn pick_mode(
     connector: &connector::Info,
-    target: Option<niri_ipc::ConfiguredMode>,
+    target: Option<niri_config::output::Mode>,
 ) -> Option<(control::Mode, bool)> {
     let mut mode = None;
     let mut fallback = false;
 
     if let Some(target) = target {
-        let refresh = target.refresh.map(|r| (r * 1000.).round() as i32);
+        let target_mode = target.mode;
 
+        if target.custom {
+            if let Some(refresh) = target_mode.refresh {
+                let custom_mode =
+                    calculate_mode_cvt(target_mode.width, target_mode.height, refresh);
+                return Some((custom_mode, false));
+            } else {
+                warn!("ignoring custom mode without refresh rate");
+            }
+        }
+
+        let refresh = target_mode.refresh.map(|r| (r * 1000.).round() as i32);
         for m in connector.modes() {
-            if m.size() != (target.width, target.height) {
+            if m.size() != (target.mode.width, target.mode.height) {
                 continue;
             }
 
@@ -2741,5 +2918,145 @@ fn make_output_name(
         make: info.as_ref().and_then(|info| info.make()),
         model: info.as_ref().and_then(|info| info.model()),
         serial: info.as_ref().and_then(|info| info.serial()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_debug_snapshot;
+    use niri_config::output::Modeline;
+    use niri_ipc::{HSyncPolarity, VSyncPolarity};
+
+    use crate::backend::tty::{calculate_drm_mode_from_modeline, calculate_mode_cvt};
+
+    #[test]
+    fn test_calculate_drmmode_from_modeline() {
+        let modeline1 = Modeline {
+            clock: 173.0,
+            hdisplay: 1920,
+            vdisplay: 1080,
+            hsync_start: 2048,
+            hsync_end: 2248,
+            htotal: 2576,
+            vsync_start: 1083,
+            vsync_end: 1088,
+            vtotal: 1120,
+            hsync_polarity: HSyncPolarity::NHSync,
+            vsync_polarity: VSyncPolarity::PVSync,
+        };
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline1), @"Mode {
+    name: \"1920x1080@59.96\",
+    clock: 173000,
+    size: (
+        1920,
+        1080,
+    ),
+    hsync: (
+        2048,
+        2248,
+        2576,
+    ),
+    vsync: (
+        1083,
+        1088,
+        1120,
+    ),
+    hskew: 0,
+    vscan: 0,
+    vrefresh: 60,
+    mode_type: ModeTypeFlags(
+        USERDEF,
+    ),
+}");
+        let modeline2 = Modeline {
+            clock: 452.5,
+            hdisplay: 1920,
+            vdisplay: 1080,
+            hsync_start: 2088,
+            hsync_end: 2296,
+            htotal: 2672,
+            vsync_start: 1083,
+            vsync_end: 1088,
+            vtotal: 1177,
+            hsync_polarity: HSyncPolarity::NHSync,
+            vsync_polarity: VSyncPolarity::PVSync,
+        };
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline2), @"Mode {
+    name: \"1920x1080@143.88\",
+    clock: 452500,
+    size: (
+        1920,
+        1080,
+    ),
+    hsync: (
+        2088,
+        2296,
+        2672,
+    ),
+    vsync: (
+        1083,
+        1088,
+        1177,
+    ),
+    hskew: 0,
+    vscan: 0,
+    vrefresh: 144,
+    mode_type: ModeTypeFlags(
+        USERDEF,
+    ),
+}");
+    }
+
+    #[test]
+    fn test_calc_cvt() {
+        // Crosschecked with other calculators like the cvt commandline utility.
+        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 60.0), @"Mode {
+    name: \"1920x1080@59.96\",
+    clock: 173000,
+    size: (
+        1920,
+        1080,
+    ),
+    hsync: (
+        2048,
+        2248,
+        2576,
+    ),
+    vsync: (
+        1083,
+        1088,
+        1120,
+    ),
+    hskew: 0,
+    vscan: 0,
+    vrefresh: 60,
+    mode_type: ModeTypeFlags(
+        USERDEF,
+    ),
+}");
+        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 144.0), @"Mode {
+    name: \"1920x1080@143.88\",
+    clock: 452500,
+    size: (
+        1920,
+        1080,
+    ),
+    hsync: (
+        2088,
+        2296,
+        2672,
+    ),
+    vsync: (
+        1083,
+        1088,
+        1177,
+    ),
+    hskew: 0,
+    vscan: 0,
+    vrefresh: 144,
+    mode_type: ModeTypeFlags(
+        USERDEF,
+    ),
+}");
     }
 }

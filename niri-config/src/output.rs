@@ -6,6 +6,54 @@ use crate::{Color, FloatOrInt, LayoutPart};
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Outputs(pub Vec<Output>);
 
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Mode {
+    #[knuffel(property, default = false)]
+    pub custom: bool,
+
+    #[knuffel(argument, str)]
+    pub mode: ConfiguredMode,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct Modeline {
+    /// The rate at which pixels are drawn in MHz.
+    #[knuffel(argument)]
+    pub clock: f64,
+    /// Horizontal active pixels.
+    #[knuffel(argument)]
+    pub hdisplay: u16,
+    /// Horizontal sync pulse start position in pixels.
+    #[knuffel(argument)]
+    pub hsync_start: u16,
+    /// Horizontal sync pulse end position in pixels.
+    #[knuffel(argument)]
+    pub hsync_end: u16,
+    /// Total horizontal number of pixels before resetting the horizontal drawing position to
+    /// zero.
+    #[knuffel(argument)]
+    pub htotal: u16,
+
+    /// Vertical active pixels.
+    #[knuffel(argument)]
+    pub vdisplay: u16,
+    /// Vertical sync pulse start position in pixels.
+    #[knuffel(argument)]
+    pub vsync_start: u16,
+    /// Vertical sync pulse end position in pixels.
+    #[knuffel(argument)]
+    pub vsync_end: u16,
+    /// Total vertical number of pixels before resetting the vertical drawing position to zero.
+    #[knuffel(argument)]
+    pub vtotal: u16,
+    /// Horizontal sync polarity: "+hsync" or "-hsync".
+    #[knuffel(argument, str)]
+    pub hsync_polarity: niri_ipc::HSyncPolarity,
+    /// Vertical sync polarity: "+vsync" or "-vsync".
+    #[knuffel(argument, str)]
+    pub vsync_polarity: niri_ipc::VSyncPolarity,
+}
+
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Output {
     #[knuffel(child)]
@@ -18,8 +66,10 @@ pub struct Output {
     pub transform: Transform,
     #[knuffel(child)]
     pub position: Option<Position>,
-    #[knuffel(child, unwrap(argument, str))]
-    pub mode: Option<ConfiguredMode>,
+    #[knuffel(child)]
+    pub mode: Option<Mode>,
+    #[knuffel(child)]
+    pub modeline: Option<Modeline>,
     #[knuffel(child)]
     pub variable_refresh_rate: Option<Vrr>,
     #[knuffel(child)]
@@ -59,6 +109,7 @@ impl Default for Output {
             transform: Transform::Normal,
             position: None,
             mode: None,
+            modeline: None,
             variable_refresh_rate: None,
             background_color: None,
             backdrop_color: None,
