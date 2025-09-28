@@ -444,8 +444,8 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn is_active_fullscreen(&self) -> bool {
-        self.scrolling.is_active_fullscreen()
+    pub fn is_active_pending_fullscreen(&self) -> bool {
+        self.scrolling.is_active_pending_fullscreen()
     }
 
     pub fn set_output(&mut self, output: Option<Output>) {
@@ -571,7 +571,7 @@ impl<W: LayoutElement> Workspace<W> {
         match target {
             WorkspaceAddWindowTarget::Auto => {
                 // Don't steal focus from an active fullscreen window.
-                let activate = activate.map_smart(|| !self.is_active_fullscreen());
+                let activate = activate.map_smart(|| !self.is_active_pending_fullscreen());
 
                 // If the tile is pending fullscreen, open it in the scrolling layout where it can
                 // go fullscreen.
@@ -1784,10 +1784,17 @@ impl<W: LayoutElement> Workspace<W> {
         use approx::assert_abs_diff_eq;
 
         let scale = self.scale.fractional_scale();
-        assert!(self.view_size.w > 0.);
-        assert!(self.view_size.h > 0.);
         assert!(scale > 0.);
         assert!(scale.is_finite());
+
+        let options = Options::clone(&self.base_options).adjusted_for_scale(scale);
+        assert_eq!(
+            &*self.options, &options,
+            "options must be base options adjusted for scale"
+        );
+
+        assert!(self.view_size.w > 0.);
+        assert!(self.view_size.h > 0.);
 
         assert_eq!(self.view_size, self.scrolling.view_size());
         assert_eq!(self.working_area, self.scrolling.parent_area());

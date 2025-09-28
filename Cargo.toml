@@ -72,7 +72,7 @@ glam = "0.30.5"
 input = { version = "0.9.1", features = ["libinput_1_21"] }
 keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.175"
-libdisplay-info = "0.2.2"
+libdisplay-info = "0.3.0"
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_debug"] }
 niri-config = { version = "25.8.0", path = "niri-config" }
 niri-ipc = { version = "25.8.0", path = "niri-ipc", features = ["clap"] }
@@ -158,7 +158,7 @@ insta.opt-level = 3
 similar.opt-level = 3
 
 [package.metadata.generate-rpm]
-version = "25.05.1"
+version = "25.08"
 assets = [
     { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
     { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },

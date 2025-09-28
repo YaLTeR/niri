@@ -16,6 +16,14 @@ output "eDP-1" {
     focus-at-startup
     background-color "#003300"
     backdrop-color "#001100"
+
+    hot-corners {
+        // off
+        top-left
+        // top-right
+        // bottom-left
+        // bottom-right
+    }
 }
 
 output "HDMI-A-1" {
@@ -215,5 +223,33 @@ The alpha channel for this color will be ignored.
 ```kdl
 output "HDMI-A-1" {
     backdrop-color "#001100"
+}
+```
+
+### `hot-corners`
+
+<sup>Since: next release</sup>
+
+Customize the hot corners for this output.
+By default, hot corners [in the gestures settings](./Configuration:-Gestures.md#hot-corners) are used for all outputs.
+
+Hot corners toggle the overview when you put your mouse at the very corner of a monitor.
+
+`off` will disable the hot corners on this output, and writing specific corners will enable only those hot corners on this output.
+
+```kdl
+// Enable the bottom-left and bottom-right hot corners on HDMI-A-1.
+output "HDMI-A-1" {
+    hot-corners {
+        bottom-left
+        bottom-right
+    }
+}
+
+// Disable the hot corners on DP-2.
+output "DP-2" {
+    hot-corners {
+        off
+    }
 }
 ```
