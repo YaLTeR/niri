@@ -664,12 +664,11 @@ mod tests {
             }
 
             output "eDP-2" {
-                scale 2
-                transform "flipped-90"
-                position x=10 y=20
                 mode custom=true "1920x1080@144"
-                variable-refresh-rate on-demand=true
-                background-color "rgba(25, 25, 102, 1.0)"
+            }
+
+            output "eDP-3" {
+                modeline "1920x1080@59.96" 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "vertical" false
             }
 
             layout {
@@ -1055,18 +1054,21 @@ mod tests {
                                 },
                             },
                         ),
+                        modeline: None,
                         variable_refresh_rate: Some(
                             Vrr {
                                 on_demand: true,
                             },
                         ),
                         focus_at_startup: true,
-                        background_color: Color {
-                            r: 0.09803922,
-                            g: 0.09803922,
-                            b: 0.4,
-                            a: 1.0,
-                        },
+                        background_color: Some(
+                            Color {
+                                r: 0.09803922,
+                                g: 0.09803922,
+                                b: 0.4,
+                                a: 1.0,
+                            },
+                        ),
                         backdrop_color: None,
                         hot_corners: Some(
                             HotCorners {
@@ -1078,6 +1080,60 @@ mod tests {
                             },
                         ),
                         layout: None,
+                    },
+                    Output {
+                        off: false,
+                        name: "eDP-2",
+                        scale: None,
+                        transform: Normal,
+                        position: None,
+                        mode: Some(
+                            Mode {
+                                custom: true,
+                                mode: ConfiguredMode {
+                                    width: 1920,
+                                    height: 1080,
+                                    refresh: Some(
+                                        144.0,
+                                    ),
+                                },
+                            },
+                        ),
+                        modeline: None,
+                        variable_refresh_rate: None,
+                        focus_at_startup: false,
+                        background_color: None,
+                        backdrop_color: None,
+                        hot_corners: None,
+                    },
+                    Output {
+                        off: false,
+                        name: "eDP-3",
+                        scale: None,
+                        transform: Normal,
+                        position: None,
+                        mode: None,
+                        modeline: Some(
+                            Modeline {
+                                name: "1920x1080@59.96",
+                                clock: 173.0,
+                                hdisp: 1920,
+                                hsync_start: 2048,
+                                hsync_end: 2248,
+                                htotal: 2576,
+                                vdisp: 1080,
+                                vsync_start: 1083,
+                                vsync_end: 1088,
+                                vtotal: 1120,
+                                sync_polarity: Vertical,
+                                interlacing: false,
+                            },
+                        ),
+                        variable_refresh_rate: None,
+                        focus_at_startup: false,
+                        background_color: None,
+                        backdrop_color: None,
+                        hot_corners: None,
                     },
                 ],
             ),

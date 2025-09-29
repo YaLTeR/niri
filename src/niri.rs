@@ -18,7 +18,7 @@ use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
-use niri_ipc::{OutputAction, SyncPolarity};
+use niri_ipc::SyncPolarity;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
