@@ -86,6 +86,19 @@ output "eDP-1" {
 }
 ```
 
+<sup>Since: next release</sup> You can configure a custom mode (not offered by the monitor) by setting `custom=true`.
+In this case, the refresh rate is mandatory.
+> [!CAUTION]
+> Custom modes may damage your monitor, especially if it's a CRT.
+> Follow the maximum supported limits in your monitor's instructions.
+```kdl
+// Use a custom mode for this display.
+output "HDMI-A-1" {
+    mode custom=true "2560x1440@143.912"
+}
+```
+[//]: # (TODO: Add modeline to wiki)
+
 ### `scale`
 
 Set the scale of the monitor.

@@ -15,6 +15,55 @@ pub struct Mode {
     pub mode: ConfiguredMode,
 }
 
+#[derive(knuffel::DecodeScalar, Debug, Clone, PartialEq)]
+pub enum SyncPolarity {
+    /// Positive vertical polarity, negative horizontal polarity (Standard CRT)
+    Vertical,
+    /// Positive horizontal polarity, negative vertical polarity (Reduced Blanking)
+    Horizontal,
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct Modeline {
+    /// Name of the modeline, max 31 characters, typically %width%x%height%@%refresh_rate%
+    #[knuffel(argument, str)]
+    pub name: String,
+    /// The rate at which pixels are drawn (MHz)
+    #[knuffel(argument)]
+    pub clock: f64,
+    /// Horizontal active pixels (pixels).
+    #[knuffel(argument)]
+    pub hdisp: u16,
+    /// Horizontal Sync Pulse start position (pixels).
+    #[knuffel(argument)]
+    pub hsync_start: u16,
+    /// Horizontal Sync Pulse end position (pixels).
+    #[knuffel(argument)]
+    pub hsync_end: u16,
+    /// Total horizontal number of pixels before resetting to (pixels).
+    #[knuffel(argument)]
+    pub htotal: u16,
+
+    /// Vertical active pixels (pixels).
+    #[knuffel(argument)]
+    pub vdisp: u16,
+    /// Vertical Sync Pulse start position (pixels).
+    #[knuffel(argument)]
+    pub vsync_start: u16,
+    /// Vertical Sync Pulse end position (pixels).
+    #[knuffel(argument)]
+    pub vsync_end: u16,
+    /// Total vertical number of pixels before resetting to 0 (pixels).
+    #[knuffel(argument)]
+    pub vtotal: u16,
+    /// Sync polarity
+    #[knuffel(argument)]
+    pub sync_polarity: SyncPolarity,
+    /// Interlacing, true -> sets interlacing flag, false does not.
+    #[knuffel(argument, default = false)]
+    pub interlacing: bool,
+}
+
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Output {
     #[knuffel(child)]
@@ -29,6 +78,8 @@ pub struct Output {
     pub position: Option<Position>,
     #[knuffel(child)]
     pub mode: Option<Mode>,
+    #[knuffel(child)]
+    pub modeline: Option<Modeline>,
     #[knuffel(child)]
     pub variable_refresh_rate: Option<Vrr>,
     #[knuffel(child)]
@@ -68,6 +119,7 @@ impl Default for Output {
             transform: Transform::Normal,
             position: None,
             mode: None,
+            modeline: None,
             variable_refresh_rate: None,
             background_color: None,
             backdrop_color: None,

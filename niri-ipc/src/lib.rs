@@ -964,6 +964,53 @@ pub enum OutputAction {
         #[cfg_attr(feature = "clap", arg())]
         mode: ModeToSet,
     },
+    /// Set a custom output mode (One not advertised by your monitor, use at your own risk)
+    CustomMode {
+        /// Custom mode to set
+        #[cfg_attr(feature = "clap", arg())]
+        mode: ConfiguredMode,
+    },
+    /// Set a custom VESA CVT modeline.
+    #[cfg_attr(feature = "clap", command(name = "modeline"))]
+    Modeline {
+        /// Name of the modeline
+        #[cfg_attr(feature = "clap", arg())]
+        name: String,
+        /// The rate at which pixels are drawn (MHz)
+        #[cfg_attr(feature = "clap", arg())]
+        clock: f64,
+        /// Horizontal active pixels (pixels).
+        #[cfg_attr(feature = "clap", arg())]
+        hdisp: u16,
+        /// Horizontal Sync Pulse start position (pixels).
+        #[cfg_attr(feature = "clap", arg())]
+        hsync_start: u16,
+        /// Horizontal Sync Pulse end position (pixels).
+        #[cfg_attr(feature = "clap", arg())]
+        hsync_end: u16,
+        /// Total horizontal number of pixels before resetting to (pixels).
+        #[cfg_attr(feature = "clap", arg())]
+        htotal: u16,
+
+        /// Vertical active pixels (pixels).
+        #[cfg_attr(feature = "clap", arg())]
+        vdisp: u16,
+        /// Vertical Sync Pulse start position (pixels).
+        #[cfg_attr(feature = "clap", arg())]
+        vsync_start: u16,
+        /// Vertical Sync Pulse end position (pixels).
+        #[cfg_attr(feature = "clap", arg())]
+        vsync_end: u16,
+        /// Total vertical number of pixels before resetting to 0 (pixels).
+        #[cfg_attr(feature = "clap", arg())]
+        vtotal: u16,
+        /// Sync polarity
+        #[cfg_attr(feature = "clap", arg())]
+        sync_polarity: SyncPolarity,
+        /// Interlacing, true -> sets interlacing flag, false does not.
+        #[cfg_attr(feature = "clap", arg())]
+        interlacing: bool,
+    },
     /// Set the output scale.
     Scale {
         /// Scale factor to set, or "auto" for automatic selection.
@@ -1010,6 +1057,17 @@ pub struct ConfiguredMode {
     pub height: u16,
     /// Refresh rate.
     pub refresh: Option<f64>,
+}
+
+/// Modeline syncing polarity.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum SyncPolarity {
+    /// Positive vertical polarity, negative horizontal polarity (Standard CRT)
+    Vertical,
+    /// Positive horizontal polarity, negative vertical polarity (Reduced Blanking)
+    Horizontal,
 }
 
 /// Output scale to set.
@@ -1089,6 +1147,8 @@ pub struct Output {
     ///
     /// `None` if the output is disabled.
     pub current_mode: Option<usize>,
+    /// Whether the current_mode is a custom mode.
+    pub is_custom_mode: bool,
     /// Whether the output supports variable refresh rate.
     pub vrr_supported: bool,
     /// Whether variable refresh rate is enabled on the output.

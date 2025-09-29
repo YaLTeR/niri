@@ -12,7 +12,9 @@ use std::{io, mem};
 
 use anyhow::{anyhow, bail, ensure, Context};
 use bytemuck::cast_slice_mut;
+use drm_ffi::drm_mode_modeinfo;
 use libc::dev_t;
+use niri_config::output::{Modeline, SyncPolarity};
 use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
@@ -876,21 +878,27 @@ impl Tty {
             trace!("{m:?}");
         }
 
-        let (mode, fallback) =
-            pick_mode(&connector, config.mode).ok_or_else(|| anyhow!("no mode"))?;
-        if fallback {
-            let target = config.mode.unwrap();
-            warn!(
-                "configured mode {}x{}{} could not be found, falling back to preferred",
-                target.mode.width,
-                target.mode.height,
-                if let Some(refresh) = target.mode.refresh {
-                    format!("@{refresh}")
-                } else {
-                    String::new()
-                },
-            );
-        }
+        let mode = if let Some(modeline) = &config.modeline {
+            calculate_drmmode_from_modeline(&modeline)
+        } else {
+            let opt_mode = pick_mode(&connector, config.mode);
+            let (mode, fallback) = opt_mode.ok_or_else(|| anyhow!("no mode"))?;
+            if fallback {
+                let target = config.mode.unwrap();
+                warn!(
+                    "configured mode {}x{}{} could not be found, falling back to preferred",
+                    target.mode.width,
+                    target.mode.height,
+                    if let Some(refresh) = target.mode.refresh {
+                        format!("@{refresh}")
+                    } else {
+                        String::new()
+                    },
+                );
+            }
+            mode
+        };
+
         debug!("picking mode: {mode:?}");
 
         if let Ok(props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
@@ -1680,8 +1688,9 @@ impl Tty {
                 let surface = device.surfaces.get(&crtc);
                 let current_crtc_mode = surface.map(|surface| surface.compositor.pending_mode());
                 let mut current_mode = None;
+                let mut is_custom_mode = false;
 
-                let modes = connector
+                let mut modes: Vec<niri_ipc::Mode> = connector
                     .modes()
                     .iter()
                     .filter(|m| !m.flags().contains(ModeFlags::INTERLACE))
@@ -1701,6 +1710,21 @@ impl Tty {
                     .collect();
 
                 if let Some(crtc_mode) = current_crtc_mode {
+                    // Custom mode
+                    if crtc_mode.mode_type().contains(ModeTypeFlags::USERDEF) {
+                        modes.insert(
+                            0,
+                            niri_ipc::Mode {
+                                width: crtc_mode.size().0,
+                                height: crtc_mode.size().1,
+                                refresh_rate: Mode::from(crtc_mode).refresh as u32,
+                                is_preferred: false,
+                            },
+                        );
+                        current_mode = Some(0);
+                        is_custom_mode = true;
+                    }
+
                     if current_mode.is_none() {
                         if crtc_mode.flags().contains(ModeFlags::INTERLACE) {
                             warn!("connector mode list missing current mode (interlaced)");
@@ -1745,6 +1769,7 @@ impl Tty {
                     physical_size,
                     modes,
                     current_mode,
+                    is_custom_mode,
                     vrr_supported,
                     vrr_enabled,
                     logical,
@@ -1931,9 +1956,15 @@ impl Tty {
                     continue;
                 };
 
-                let Some((mode, fallback)) = pick_mode(connector, config.mode) else {
-                    warn!("couldn't pick mode for enabled connector");
-                    continue;
+                let (mode, fallback) = if let Some(modeline) = &config.modeline {
+                    let drm_mode = calculate_drmmode_from_modeline(&modeline);
+                    (drm_mode, false)
+                } else {
+                    let Some((mode, fallback)) = pick_mode(connector, config.mode) else {
+                        warn!("couldn't pick mode for enabled connector");
+                        continue;
+                    };
+                    (mode, fallback)
                 };
 
                 let change_mode = surface.compositor.pending_mode() != mode;
@@ -2486,6 +2517,43 @@ fn queue_estimated_vblank_timer(
     output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
 }
 
+pub fn calculate_drmmode_from_modeline(modeline: &Modeline) -> DrmMode {
+    let pixel_clock_kilo_hertz = modeline.clock * 1000.0;
+    // Calculated as documented in the CVT 1.2 standard
+    let vrefresh_hertz = ((pixel_clock_kilo_hertz * 1000.0)
+        / (modeline.htotal as u64 * modeline.vtotal as u64) as f64) as u32;
+
+    let mut flags = match modeline.sync_polarity {
+        SyncPolarity::Vertical => drm_ffi::DRM_MODE_FLAG_NHSYNC | drm_ffi::DRM_MODE_FLAG_PVSYNC,
+        SyncPolarity::Horizontal => drm_ffi::DRM_MODE_FLAG_PHSYNC | drm_ffi::DRM_MODE_FLAG_NVSYNC,
+    };
+    if modeline.interlacing {
+        flags |= drm_ffi::DRM_MODE_FLAG_INTERLACE
+    }
+
+    let mode_name = &modeline.name;
+    let name = modeinfo_name_slice_from_string(mode_name);
+
+    DrmMode::from(drm_mode_modeinfo {
+        clock: pixel_clock_kilo_hertz as u32,
+        hdisplay: modeline.hdisp,
+        hsync_start: modeline.hsync_start,
+        hsync_end: modeline.hsync_end,
+        htotal: modeline.htotal,
+        vdisplay: modeline.vdisp,
+        vsync_start: modeline.vsync_start,
+        vsync_end: modeline.vsync_end,
+        vtotal: modeline.vtotal,
+        vrefresh: vrefresh_hertz,
+        flags,
+        name,
+        // Defaults
+        type_: drm_ffi::DRM_MODE_TYPE_USERDEF,
+        hskew: 0,
+        vscan: 0,
+    })
+}
+
 pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mode {
     let options = libdisplay_info::cvt::Options {
         red_blank_ver: libdisplay_info::cvt::ReducedBlankingVersion::None,
@@ -2517,15 +2585,7 @@ pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mod
     let flags = drm_ffi::DRM_MODE_FLAG_NHSYNC | drm_ffi::DRM_MODE_FLAG_PVSYNC;
 
     let mode_name = format!("{width}x{height}_{:.2}", cvt_timing.act_frame_rate);
-    let mode_name_bytes = unsafe {
-        std::slice::from_raw_parts(
-            mode_name.as_bytes() as *const _ as *const core::ffi::c_char,
-            mode_name.len(),
-        )
-    };
-    let mut name: [core::ffi::c_char; 32] = [0; 32];
-    let min_length = name.len().min(mode_name_bytes.len());
-    name[0..min_length].copy_from_slice(&mode_name_bytes[0..min_length]);
+    let name = modeinfo_name_slice_from_string(&mode_name);
 
     let drm_ffi_mode = drm_ffi::drm_sys::drm_mode_modeinfo {
         clock,
@@ -2554,10 +2614,26 @@ pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mod
     control::Mode::from(drm_ffi_mode)
 }
 
+/// Returns a c-string of maximally 31 rust string chars + zero terminator. Excess characters are
+/// dropped.
+fn modeinfo_name_slice_from_string(mode_name: &String) -> [core::ffi::c_char; 32] {
+    let mode_name_bytes = unsafe {
+        std::slice::from_raw_parts(
+            mode_name.as_bytes() as *const _ as *const core::ffi::c_char,
+            mode_name.len(),
+        )
+    };
+    let mut name: [core::ffi::c_char; 32] = [0; 32];
+    let min_length = 31.min(mode_name_bytes.len());
+    name[0..min_length].copy_from_slice(&mode_name_bytes[0..min_length]);
+    name
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::backend::tty::calculate_mode_cvt;
     use smithay::reexports::drm::control;
+
+    use crate::backend::tty::calculate_mode_cvt;
 
     #[test]
     fn test_calc_cvt() {

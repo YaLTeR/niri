@@ -18,6 +18,7 @@ use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
+use niri_ipc::{OutputAction, SyncPolarity};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -1768,6 +1769,41 @@ impl State {
                         mode,
                     }),
                 }
+            }
+            niri_ipc::OutputAction::CustomMode { mode } => {
+                config.mode = Some(niri_config::output::Mode { custom: true, mode })
+            }
+            niri_ipc::OutputAction::Modeline {
+                name,
+                clock,
+                hdisp,
+                hsync_start,
+                hsync_end,
+                htotal,
+                vdisp,
+                vsync_start,
+                vsync_end,
+                vtotal,
+                sync_polarity,
+                interlacing,
+            } => {
+                config.modeline = Some(niri_config::output::Modeline {
+                    name,
+                    clock,
+                    hdisp,
+                    hsync_start,
+                    hsync_end,
+                    htotal,
+                    vdisp,
+                    vsync_start,
+                    vsync_end,
+                    vtotal,
+                    sync_polarity: match sync_polarity {
+                        SyncPolarity::Vertical => niri_config::output::SyncPolarity::Vertical,
+                        SyncPolarity::Horizontal => niri_config::output::SyncPolarity::Horizontal,
+                    },
+                    interlacing,
+                })
             }
             niri_ipc::OutputAction::Scale { scale } => {
                 config.scale = match scale {
