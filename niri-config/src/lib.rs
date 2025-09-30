@@ -191,7 +191,7 @@ where
                 "clipboard" => m_merge!(clipboard),
                 "hotkey-overlay" => m_merge!(hotkey_overlay),
                 "config-notification" => m_merge!(config_notification),
-                "animations" => m_replace!(animations),
+                "animations" => m_merge!(animations),
                 "gestures" => m_merge!(gestures),
                 "overview" => m_merge!(overview),
                 "xwayland-satellite" => m_merge!(xwayland_satellite),
@@ -1303,9 +1303,7 @@ mod tests {
             },
             animations: Animations {
                 off: false,
-                slowdown: FloatOrInt(
-                    2.0,
-                ),
+                slowdown: 2.0,
                 workspace_switch: WorkspaceSwitchAnim(
                     Animation {
                         off: false,
