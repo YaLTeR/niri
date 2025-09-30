@@ -4564,6 +4564,20 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         } else {
             input::SendEventsMode::ENABLED
         });
+
+        #[rustfmt::skip]
+        const IDENTITY_MATRIX: [f32; 6] = [
+            1., 0., 0.,
+            0., 1., 0.,
+        ];
+
+        let _ = device.config_calibration_set_matrix(
+            c.calibration_matrix
+                .as_deref()
+                .and_then(|m| m.try_into().ok())
+                .or(device.config_calibration_default_matrix())
+                .unwrap_or(IDENTITY_MATRIX),
+        );
     }
 }
 
