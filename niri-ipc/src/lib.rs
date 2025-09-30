@@ -973,9 +973,6 @@ pub enum OutputAction {
     /// Set a custom VESA CVT modeline.
     #[cfg_attr(feature = "clap", command(name = "modeline"))]
     Modeline {
-        /// Name of the modeline
-        #[cfg_attr(feature = "clap", arg())]
-        name: String,
         /// The rate at which pixels are drawn (MHz)
         #[cfg_attr(feature = "clap", arg())]
         clock: f64,

@@ -79,9 +79,6 @@ impl FromStr for VSyncPolarity {
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Modeline {
-    /// Name of the modeline, max 31 characters, typically %width%x%height%@%refresh_rate%
-    #[knuffel(argument, str)]
-    pub name: String,
     /// The rate at which pixels are drawn (MHz)
     #[knuffel(argument)]
     pub clock: f64,

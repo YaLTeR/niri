@@ -2520,15 +2520,18 @@ fn queue_estimated_vblank_timer(
 pub fn calculate_drmmode_from_modeline(modeline: &Modeline) -> DrmMode {
     let pixel_clock_kilo_hertz = modeline.clock * 1000.0;
     // Calculated as documented in the CVT 1.2 standard
-    let vrefresh_hertz = ((pixel_clock_kilo_hertz * 1000.0)
-        / (modeline.htotal as u64 * modeline.vtotal as u64) as f64)
-        .round() as u32;
+    let vrefresh_hertz = (pixel_clock_kilo_hertz * 1000.0)
+        / (modeline.htotal as u64 * modeline.vtotal as u64) as f64;
+    let vrefresh_rounded = vrefresh_hertz.round() as u32;
 
     let flags =
         ModeFlags::from(&modeline.hsync_polarity) | ModeFlags::from(&modeline.vsync_polarity);
 
-    let mode_name = &modeline.name;
-    let name = modeinfo_name_slice_from_string(mode_name);
+    let mode_name = format!(
+        "{}x{}@{:.2}",
+        modeline.hdisp, modeline.vdisp, vrefresh_hertz
+    );
+    let name = modeinfo_name_slice_from_string(&mode_name);
 
     DrmMode::from(drm_mode_modeinfo {
         clock: pixel_clock_kilo_hertz as u32,
@@ -2540,7 +2543,7 @@ pub fn calculate_drmmode_from_modeline(modeline: &Modeline) -> DrmMode {
         vsync_start: modeline.vsync_start,
         vsync_end: modeline.vsync_end,
         vtotal: modeline.vtotal,
-        vrefresh: vrefresh_hertz,
+        vrefresh: vrefresh_rounded,
         flags: flags.bits(),
         name,
         // Defaults
@@ -2890,7 +2893,6 @@ mod tests {
     #[test]
     fn test_calculate_drmmode_from_modeline() {
         let modeline1 = Modeline {
-            name: "1920x1080_59.96".to_string(),
             clock: 173.0,
             hdisp: 1920,
             vdisp: 1080,
@@ -2904,7 +2906,7 @@ mod tests {
             vsync_polarity: VSyncPolarity::PVSync,
         };
         assert_debug_snapshot!(calculate_drmmode_from_modeline(&modeline1), @"Mode {
-    name: \"1920x1080_59.96\",
+    name: \"1920x1080@59.96\",
     clock: 173000,
     size: (
         1920,
@@ -2928,7 +2930,6 @@ mod tests {
     ),
 }");
         let modeline2 = Modeline {
-            name: "1920x1080_143.88".to_string(),
             clock: 452.5,
             hdisp: 1920,
             vdisp: 1080,
@@ -2942,7 +2943,7 @@ mod tests {
             vsync_polarity: VSyncPolarity::PVSync,
         };
         assert_debug_snapshot!(calculate_drmmode_from_modeline(&modeline2), @"Mode {
-    name: \"1920x1080_143.88\",
+    name: \"1920x1080@143.88\",
     clock: 452500,
     size: (
         1920,

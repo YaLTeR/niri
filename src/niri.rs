@@ -1773,7 +1773,6 @@ impl State {
                 config.mode = Some(niri_config::output::Mode { custom: true, mode })
             }
             niri_ipc::OutputAction::Modeline {
-                name,
                 clock,
                 hdisp,
                 hsync_start,
@@ -1787,7 +1786,6 @@ impl State {
                 vsync_polarity,
             } => {
                 config.modeline = Some(niri_config::output::Modeline {
-                    name,
                     clock,
                     hdisp,
                     hsync_start,

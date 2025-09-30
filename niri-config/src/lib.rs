@@ -668,7 +668,7 @@ mod tests {
             }
 
             output "eDP-3" {
-                modeline "1920x1080@59.96" 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "-hsync" "+vsync"
+                modeline 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "-hsync" "+vsync"
             }
 
             layout {
@@ -1115,7 +1115,6 @@ mod tests {
                         mode: None,
                         modeline: Some(
                             Modeline {
-                                name: "1920x1080@59.96",
                                 clock: 173.0,
                                 hdisp: 1920,
                                 hsync_start: 2048,
