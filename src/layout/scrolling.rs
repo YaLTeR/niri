@@ -3045,7 +3045,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let time_delta = now.saturating_sub(last_time).as_secs_f64();
 
-        let delta = delta * time_delta * config.max_speed.0;
+        let delta = delta * time_delta * config.max_speed;
 
         gesture.tracker.push(delta, now);
 

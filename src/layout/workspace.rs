@@ -1766,7 +1766,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn dnd_scroll_gesture_scroll(&mut self, pos: Point<f64, Logical>, speed: f64) -> bool {
         let config = &self.options.gestures.dnd_edge_view_scroll;
-        let trigger_width = config.trigger_width.0;
+        let trigger_width = config.trigger_width;
 
         // This working area intentionally does not include extra struts from Options.
         let x = pos.x - self.working_area.loc.x;
