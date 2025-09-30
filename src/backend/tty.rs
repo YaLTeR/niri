@@ -2521,7 +2521,8 @@ pub fn calculate_drmmode_from_modeline(modeline: &Modeline) -> DrmMode {
     let pixel_clock_kilo_hertz = modeline.clock * 1000.0;
     // Calculated as documented in the CVT 1.2 standard
     let vrefresh_hertz = ((pixel_clock_kilo_hertz * 1000.0)
-        / (modeline.htotal as u64 * modeline.vtotal as u64) as f64) as u32;
+        / (modeline.htotal as u64 * modeline.vtotal as u64) as f64)
+        .round() as u32;
 
     let mut flags = match modeline.sync_polarity {
         SyncPolarity::Vertical => drm_ffi::DRM_MODE_FLAG_NHSYNC | drm_ffi::DRM_MODE_FLAG_PVSYNC,
@@ -2627,53 +2628,6 @@ fn modeinfo_name_slice_from_string(mode_name: &String) -> [core::ffi::c_char; 32
     let min_length = 31.min(mode_name_bytes.len());
     name[0..min_length].copy_from_slice(&mode_name_bytes[0..min_length]);
     name
-}
-
-#[cfg(test)]
-mod tests {
-    use smithay::reexports::drm::control;
-
-    use crate::backend::tty::calculate_mode_cvt;
-
-    #[test]
-    fn test_calc_cvt() {
-        let mode_name = "1920x1080_59.96".to_string();
-        let mode_name_bytes = unsafe {
-            std::slice::from_raw_parts(
-                mode_name.as_bytes() as *const _ as *const core::ffi::c_char,
-                mode_name.len(),
-            )
-        };
-        let mut name: [core::ffi::c_char; 32] = [0; 32];
-        let min_length = name.len().min(mode_name_bytes.len());
-        name[0..min_length].copy_from_slice(&mode_name_bytes[0..min_length]);
-        let teneightyp_modeline = drm_ffi::drm_sys::drm_mode_modeinfo {
-            clock: 173000,
-
-            hdisplay: 1920,
-            hsync_start: 2048,
-            hsync_end: 2248,
-            htotal: 2576,
-
-            vdisplay: 1080,
-            vsync_start: 1083,
-            vsync_end: 1088,
-            vtotal: 1120,
-
-            vrefresh: 60,
-
-            flags: drm_ffi::DRM_MODE_FLAG_NHSYNC | drm_ffi::DRM_MODE_FLAG_PVSYNC,
-            type_: drm_ffi::DRM_MODE_TYPE_USERDEF,
-            name,
-
-            // Defaults
-            hskew: 0,
-            vscan: 0,
-        };
-
-        let res = calculate_mode_cvt(1920, 1080, 60.0);
-        assert_eq!(res, control::Mode::from(teneightyp_modeline))
-    }
 }
 
 fn pick_mode(
@@ -2928,5 +2882,145 @@ fn make_output_name(
         make: info.as_ref().and_then(|info| info.make()),
         model: info.as_ref().and_then(|info| info.model()),
         serial: info.as_ref().and_then(|info| info.serial()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_debug_snapshot;
+    use niri_config::output::{Modeline, SyncPolarity};
+
+    use crate::backend::tty::{calculate_drmmode_from_modeline, calculate_mode_cvt};
+
+    #[test]
+    fn test_calculate_drmmode_from_modeline() {
+        let modeline1 = Modeline {
+            name: "1920x1080_59.96".to_string(),
+            clock: 173.0,
+            hdisp: 1920,
+            vdisp: 1080,
+            hsync_start: 2048,
+            hsync_end: 2248,
+            htotal: 2576,
+            vsync_start: 1083,
+            vsync_end: 1088,
+            vtotal: 1120,
+            sync_polarity: SyncPolarity::Vertical,
+            interlacing: false,
+        };
+        assert_debug_snapshot!(calculate_drmmode_from_modeline(&modeline1), @"Mode {
+    name: \"1920x1080_59.96\",
+    clock: 173000,
+    size: (
+        1920,
+        1080,
+    ),
+    hsync: (
+        2048,
+        2248,
+        2576,
+    ),
+    vsync: (
+        1083,
+        1088,
+        1120,
+    ),
+    hskew: 0,
+    vscan: 0,
+    vrefresh: 60,
+    mode_type: ModeTypeFlags(
+        USERDEF,
+    ),
+}");
+        let modeline2 = Modeline {
+            name: "1920x1080_143.88".to_string(),
+            clock: 452.5,
+            hdisp: 1920,
+            vdisp: 1080,
+            hsync_start: 2088,
+            hsync_end: 2296,
+            htotal: 2672,
+            vsync_start: 1083,
+            vsync_end: 1088,
+            vtotal: 1177,
+            sync_polarity: SyncPolarity::Vertical,
+            interlacing: false,
+        };
+        assert_debug_snapshot!(calculate_drmmode_from_modeline(&modeline2), @"Mode {
+    name: \"1920x1080_143.88\",
+    clock: 452500,
+    size: (
+        1920,
+        1080,
+    ),
+    hsync: (
+        2088,
+        2296,
+        2672,
+    ),
+    vsync: (
+        1083,
+        1088,
+        1177,
+    ),
+    hskew: 0,
+    vscan: 0,
+    vrefresh: 144,
+    mode_type: ModeTypeFlags(
+        USERDEF,
+    ),
+}");
+    }
+    #[test]
+    fn test_calc_cvt() {
+        // Crosschecked with other calculators like the cvt commandline utility.
+        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 60.0), @"Mode {
+    name: \"1920x1080_59.96\",
+    clock: 173000,
+    size: (
+        1920,
+        1080,
+    ),
+    hsync: (
+        2048,
+        2248,
+        2576,
+    ),
+    vsync: (
+        1083,
+        1088,
+        1120,
+    ),
+    hskew: 0,
+    vscan: 0,
+    vrefresh: 60,
+    mode_type: ModeTypeFlags(
+        USERDEF,
+    ),
+}");
+        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 144.0), @"Mode {
+    name: \"1920x1080_143.88\",
+    clock: 452500,
+    size: (
+        1920,
+        1080,
+    ),
+    hsync: (
+        2088,
+        2296,
+        2672,
+    ),
+    vsync: (
+        1083,
+        1088,
+        1177,
+    ),
+    hskew: 0,
+    vscan: 0,
+    vrefresh: 144,
+    mode_type: ModeTypeFlags(
+        USERDEF,
+    ),
+}");
     }
 }
