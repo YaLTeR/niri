@@ -4916,7 +4916,7 @@ impl<W: LayoutElement> Default for MonitorSet<W> {
 
 fn compute_overview_zoom(options: &Options, overview_progress: Option<f64>) -> f64 {
     // Clamp to some sane values.
-    let zoom = options.overview.zoom.0.clamp(0.0001, 0.75);
+    let zoom = options.overview.zoom.clamp(0.0001, 0.75);
 
     if let Some(p) = overview_progress {
         (1. - p * (1. - zoom)).max(0.0001)

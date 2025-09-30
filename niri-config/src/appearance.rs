@@ -383,17 +383,12 @@ pub struct ShadowOffset {
     pub y: FloatOrInt<-65535, 65535>,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WorkspaceShadow {
-    #[knuffel(child)]
     pub off: bool,
-    #[knuffel(child, default = Self::default().offset)]
     pub offset: ShadowOffset,
-    #[knuffel(child, unwrap(argument), default = Self::default().softness)]
-    pub softness: FloatOrInt<0, 1024>,
-    #[knuffel(child, unwrap(argument), default = Self::default().spread)]
-    pub spread: FloatOrInt<-1024, 1024>,
-    #[knuffel(child, default = Self::default().color)]
+    pub softness: f64,
+    pub spread: f64,
     pub color: Color,
 }
 
@@ -405,8 +400,8 @@ impl Default for WorkspaceShadow {
                 x: FloatOrInt(0.),
                 y: FloatOrInt(10.),
             },
-            softness: FloatOrInt(40.),
-            spread: FloatOrInt(10.),
+            softness: 40.,
+            spread: 10.,
             color: Color::from_rgba8_unpremul(0, 0, 0, 0x50),
         }
     }
@@ -417,12 +412,40 @@ impl From<WorkspaceShadow> for Shadow {
         Self {
             on: !value.off,
             offset: value.offset,
-            softness: value.softness.0,
-            spread: value.spread.0,
+            softness: value.softness,
+            spread: value.spread,
             draw_behind_window: false,
             color: value.color,
             inactive_color: None,
         }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct WorkspaceShadowPart {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child)]
+    pub offset: Option<ShadowOffset>,
+    #[knuffel(child, unwrap(argument))]
+    pub softness: Option<FloatOrInt<0, 1024>>,
+    #[knuffel(child, unwrap(argument))]
+    pub spread: Option<FloatOrInt<-1024, 1024>>,
+    #[knuffel(child)]
+    pub color: Option<Color>,
+}
+
+impl MergeWith<WorkspaceShadowPart> for WorkspaceShadow {
+    fn merge_with(&mut self, part: &WorkspaceShadowPart) {
+        self.off |= part.off;
+        if part.on {
+            self.off = false;
+        }
+
+        merge_clone!((self, part), offset, color);
+        merge!((self, part), softness, spread);
     }
 }
 
