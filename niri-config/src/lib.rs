@@ -187,14 +187,14 @@ where
             match name {
                 // TODO: most (all?) of these need to be merged instead
                 "input" => m_replace!(input),
-                "cursor" => m_replace!(cursor),
-                "clipboard" => m_replace!(clipboard),
-                "hotkey-overlay" => m_replace!(hotkey_overlay),
-                "config-notification" => m_replace!(config_notification),
+                "cursor" => m_merge!(cursor),
+                "clipboard" => m_merge!(clipboard),
+                "hotkey-overlay" => m_merge!(hotkey_overlay),
+                "config-notification" => m_merge!(config_notification),
                 "animations" => m_replace!(animations),
                 "gestures" => m_replace!(gestures),
-                "overview" => m_replace!(overview),
-                "xwayland-satellite" => m_replace!(xwayland_satellite),
+                "overview" => m_merge!(overview),
+                "xwayland-satellite" => m_merge!(xwayland_satellite),
                 "switch-events" => m_merge!(switch_events),
                 "debug" => m_merge!(debug),
 
@@ -1459,9 +1459,7 @@ mod tests {
                 },
             },
             overview: Overview {
-                zoom: FloatOrInt(
-                    0.5,
-                ),
+                zoom: 0.5,
                 backdrop_color: Color {
                     r: 0.15,
                     g: 0.15,
@@ -1478,12 +1476,8 @@ mod tests {
                             10.0,
                         ),
                     },
-                    softness: FloatOrInt(
-                        40.0,
-                    ),
-                    spread: FloatOrInt(
-                        10.0,
-                    ),
+                    softness: 40.0,
+                    spread: 10.0,
                     color: Color {
                         r: 0.0,
                         g: 0.0,
