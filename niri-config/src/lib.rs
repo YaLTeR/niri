@@ -195,7 +195,7 @@ where
                 "gestures" => m_replace!(gestures),
                 "overview" => m_replace!(overview),
                 "xwayland-satellite" => m_replace!(xwayland_satellite),
-                "switch-events" => m_replace!(switch_events),
+                "switch-events" => m_merge!(switch_events),
                 "debug" => m_replace!(debug),
 
                 // Multipart sections.
