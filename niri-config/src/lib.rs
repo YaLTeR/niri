@@ -185,8 +185,7 @@ where
             }
 
             match name {
-                // TODO: most (all?) of these need to be merged instead
-                "input" => m_replace!(input),
+                "input" => m_merge!(input),
                 "cursor" => m_merge!(cursor),
                 "clipboard" => m_merge!(clipboard),
                 "hotkey-overlay" => m_merge!(hotkey_overlay),
