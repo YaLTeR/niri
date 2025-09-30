@@ -668,7 +668,7 @@ mod tests {
             }
 
             output "eDP-3" {
-                modeline "1920x1080@59.96" 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "vertical" false
+                modeline "1920x1080@59.96" 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "-hsync" "+vsync"
             }
 
             layout {
@@ -1125,8 +1125,8 @@ mod tests {
                                 vsync_start: 1083,
                                 vsync_end: 1088,
                                 vtotal: 1120,
-                                sync_polarity: Vertical,
-                                interlacing: false,
+                                hsync_polarity: NHSync,
+                                vsync_polarity: PVSync,
                             },
                         ),
                         variable_refresh_rate: None,

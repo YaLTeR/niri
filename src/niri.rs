@@ -18,7 +18,6 @@ use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
-use niri_ipc::SyncPolarity;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -1784,8 +1783,8 @@ impl State {
                 vsync_start,
                 vsync_end,
                 vtotal,
-                sync_polarity,
-                interlacing,
+                hsync_polarity,
+                vsync_polarity,
             } => {
                 config.modeline = Some(niri_config::output::Modeline {
                     name,
@@ -1798,11 +1797,22 @@ impl State {
                     vsync_start,
                     vsync_end,
                     vtotal,
-                    sync_polarity: match sync_polarity {
-                        SyncPolarity::Vertical => niri_config::output::SyncPolarity::Vertical,
-                        SyncPolarity::Horizontal => niri_config::output::SyncPolarity::Horizontal,
+                    hsync_polarity: match hsync_polarity {
+                        niri_ipc::HSyncPolarity::PHSync => {
+                            niri_config::output::HSyncPolarity::PHSync
+                        }
+                        niri_ipc::HSyncPolarity::NHSync => {
+                            niri_config::output::HSyncPolarity::NHSync
+                        }
                     },
-                    interlacing,
+                    vsync_polarity: match vsync_polarity {
+                        niri_ipc::VSyncPolarity::PVSync => {
+                            niri_config::output::VSyncPolarity::PVSync
+                        }
+                        niri_ipc::VSyncPolarity::NVSync => {
+                            niri_config::output::VSyncPolarity::NVSync
+                        }
+                    },
                 })
             }
             niri_ipc::OutputAction::Scale { scale } => {

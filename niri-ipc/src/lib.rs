@@ -1004,12 +1004,12 @@ pub enum OutputAction {
         /// Total vertical number of pixels before resetting to 0 (pixels).
         #[cfg_attr(feature = "clap", arg())]
         vtotal: u16,
-        /// Sync polarity
+        /// Horizontal sync polarity: "+hsync" or "-hsync".
         #[cfg_attr(feature = "clap", arg())]
-        sync_polarity: SyncPolarity,
-        /// Interlacing, true -> sets interlacing flag, false does not.
+        hsync_polarity: HSyncPolarity,
+        /// Vertical sync polarity: "+vsync" or "-vsync".
         #[cfg_attr(feature = "clap", arg())]
-        interlacing: bool,
+        vsync_polarity: VSyncPolarity,
     },
     /// Set the output scale.
     Scale {
@@ -1059,15 +1059,24 @@ pub struct ConfiguredMode {
     pub refresh: Option<f64>,
 }
 
-/// Modeline syncing polarity.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+/// Modeline horizontal syncing polarity.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub enum SyncPolarity {
-    /// Positive vertical polarity, negative horizontal polarity (Standard CRT)
-    Vertical,
-    /// Positive horizontal polarity, negative vertical polarity (Reduced Blanking)
-    Horizontal,
+pub enum HSyncPolarity {
+    /// Positive polarity
+    PHSync,
+    /// Negative polarity
+    NHSync,
+}
+
+/// Modeline vertical syncing polarity.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum VSyncPolarity {
+    /// Positive polarity
+    PVSync,
+    /// Negative polarity
+    NVSync,
 }
 
 /// Output scale to set.
@@ -1672,6 +1681,30 @@ impl FromStr for ConfiguredMode {
             height,
             refresh,
         })
+    }
+}
+
+impl FromStr for HSyncPolarity {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "+hsync" => Ok(Self::PHSync),
+            "-hsync" => Ok(Self::NHSync),
+            _ => Err(r#"invalid horizontal sync polarity, can be "+hsync" or "-hsync"#),
+        }
+    }
+}
+
+impl FromStr for VSyncPolarity {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "+vsync" => Ok(Self::PVSync),
+            "-vsync" => Ok(Self::NVSync),
+            _ => Err(r#"invalid vertical sync polarity, can be "+vsync" or "-vsync"#),
+        }
     }
 }
 

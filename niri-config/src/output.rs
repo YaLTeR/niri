@@ -1,4 +1,8 @@
+use std::str::FromStr;
+
+use miette::miette;
 use niri_ipc::{ConfiguredMode, Transform};
+use smithay::reexports::drm::control::ModeFlags;
 
 use crate::gestures::HotCorners;
 use crate::{Color, FloatOrInt, LayoutPart};
@@ -15,12 +19,62 @@ pub struct Mode {
     pub mode: ConfiguredMode,
 }
 
-#[derive(knuffel::DecodeScalar, Debug, Clone, PartialEq)]
-pub enum SyncPolarity {
-    /// Positive vertical polarity, negative horizontal polarity (Standard CRT)
-    Vertical,
-    /// Positive horizontal polarity, negative vertical polarity (Reduced Blanking)
-    Horizontal,
+#[derive(Debug, Clone, PartialEq)]
+pub enum HSyncPolarity {
+    PHSync,
+    NHSync,
+}
+
+impl From<&HSyncPolarity> for ModeFlags {
+    fn from(value: &HSyncPolarity) -> Self {
+        match value {
+            HSyncPolarity::PHSync => ModeFlags::PHSYNC,
+            HSyncPolarity::NHSync => ModeFlags::NHSYNC,
+        }
+    }
+}
+
+impl FromStr for HSyncPolarity {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "+hsync" => Ok(Self::PHSync),
+            "-hsync" => Ok(Self::NHSync),
+            _ => Err(miette!(
+                r#"invalid horizontal sync polarity, can be "+hsync" or "-hsync"#
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum VSyncPolarity {
+    PVSync,
+    NVSync,
+}
+
+impl From<&VSyncPolarity> for ModeFlags {
+    fn from(value: &VSyncPolarity) -> Self {
+        match value {
+            VSyncPolarity::PVSync => ModeFlags::PVSYNC,
+            VSyncPolarity::NVSync => ModeFlags::NVSYNC,
+        }
+    }
+}
+
+impl FromStr for VSyncPolarity {
+    type Err = miette::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "+vsync" => Ok(Self::PVSync),
+            "-vsync" => Ok(Self::NVSync),
+            _ => Err(miette!(
+                r#"invalid vertical sync polarity, can be "+vsync" or "-vsync"#
+            )),
+        }
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
@@ -56,12 +110,12 @@ pub struct Modeline {
     /// Total vertical number of pixels before resetting to 0 (pixels).
     #[knuffel(argument)]
     pub vtotal: u16,
-    /// Sync polarity
-    #[knuffel(argument)]
-    pub sync_polarity: SyncPolarity,
-    /// Interlacing, true -> sets interlacing flag, false does not.
-    #[knuffel(argument, default = false)]
-    pub interlacing: bool,
+    /// Horizontal sync polarity: "+hsync" or "-hsync".
+    #[knuffel(argument, str)]
+    pub hsync_polarity: HSyncPolarity,
+    /// Vertical sync polarity: "+vsync" or "-vsync".
+    #[knuffel(argument, str)]
+    pub vsync_polarity: VSyncPolarity,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]

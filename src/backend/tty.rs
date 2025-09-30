@@ -14,7 +14,7 @@ use anyhow::{anyhow, bail, ensure, Context};
 use bytemuck::cast_slice_mut;
 use drm_ffi::drm_mode_modeinfo;
 use libc::dev_t;
-use niri_config::output::{Modeline, SyncPolarity};
+use niri_config::output::Modeline;
 use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
@@ -2524,13 +2524,8 @@ pub fn calculate_drmmode_from_modeline(modeline: &Modeline) -> DrmMode {
         / (modeline.htotal as u64 * modeline.vtotal as u64) as f64)
         .round() as u32;
 
-    let mut flags = match modeline.sync_polarity {
-        SyncPolarity::Vertical => drm_ffi::DRM_MODE_FLAG_NHSYNC | drm_ffi::DRM_MODE_FLAG_PVSYNC,
-        SyncPolarity::Horizontal => drm_ffi::DRM_MODE_FLAG_PHSYNC | drm_ffi::DRM_MODE_FLAG_NVSYNC,
-    };
-    if modeline.interlacing {
-        flags |= drm_ffi::DRM_MODE_FLAG_INTERLACE
-    }
+    let flags =
+        ModeFlags::from(&modeline.hsync_polarity) | ModeFlags::from(&modeline.vsync_polarity);
 
     let mode_name = &modeline.name;
     let name = modeinfo_name_slice_from_string(mode_name);
@@ -2546,7 +2541,7 @@ pub fn calculate_drmmode_from_modeline(modeline: &Modeline) -> DrmMode {
         vsync_end: modeline.vsync_end,
         vtotal: modeline.vtotal,
         vrefresh: vrefresh_hertz,
-        flags,
+        flags: flags.bits(),
         name,
         // Defaults
         type_: drm_ffi::DRM_MODE_TYPE_USERDEF,
@@ -2888,7 +2883,7 @@ fn make_output_name(
 #[cfg(test)]
 mod tests {
     use insta::assert_debug_snapshot;
-    use niri_config::output::{Modeline, SyncPolarity};
+    use niri_config::output::{HSyncPolarity, Modeline, VSyncPolarity};
 
     use crate::backend::tty::{calculate_drmmode_from_modeline, calculate_mode_cvt};
 
@@ -2905,8 +2900,8 @@ mod tests {
             vsync_start: 1083,
             vsync_end: 1088,
             vtotal: 1120,
-            sync_polarity: SyncPolarity::Vertical,
-            interlacing: false,
+            hsync_polarity: HSyncPolarity::NHSync,
+            vsync_polarity: VSyncPolarity::PVSync,
         };
         assert_debug_snapshot!(calculate_drmmode_from_modeline(&modeline1), @"Mode {
     name: \"1920x1080_59.96\",
@@ -2943,8 +2938,8 @@ mod tests {
             vsync_start: 1083,
             vsync_end: 1088,
             vtotal: 1177,
-            sync_polarity: SyncPolarity::Vertical,
-            interlacing: false,
+            hsync_polarity: HSyncPolarity::NHSync,
+            vsync_polarity: VSyncPolarity::PVSync,
         };
         assert_debug_snapshot!(calculate_drmmode_from_modeline(&modeline2), @"Mode {
     name: \"1920x1080_143.88\",
