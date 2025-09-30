@@ -192,7 +192,7 @@ where
                 "hotkey-overlay" => m_merge!(hotkey_overlay),
                 "config-notification" => m_merge!(config_notification),
                 "animations" => m_replace!(animations),
-                "gestures" => m_replace!(gestures),
+                "gestures" => m_merge!(gestures),
                 "overview" => m_merge!(overview),
                 "xwayland-satellite" => m_merge!(xwayland_satellite),
                 "switch-events" => m_merge!(switch_events),
@@ -1433,22 +1433,14 @@ mod tests {
             },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
-                    trigger_width: FloatOrInt(
-                        10.0,
-                    ),
+                    trigger_width: 10.0,
                     delay_ms: 100,
-                    max_speed: FloatOrInt(
-                        50.0,
-                    ),
+                    max_speed: 50.0,
                 },
                 dnd_edge_workspace_switch: DndEdgeWorkspaceSwitch {
-                    trigger_height: FloatOrInt(
-                        50.0,
-                    ),
+                    trigger_height: 50.0,
                     delay_ms: 100,
-                    max_speed: FloatOrInt(
-                        1500.0,
-                    ),
+                    max_speed: 1500.0,
                 },
                 hot_corners: HotCorners {
                     off: false,
