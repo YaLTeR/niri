@@ -163,13 +163,6 @@ where
                 continue;
             }
 
-            macro_rules! m_replace {
-                ($field:ident) => {{
-                    let part = knuffel::Decode::decode_node(node, ctx)?;
-                    config.borrow_mut().$field = part;
-                }};
-            }
-
             macro_rules! m_merge {
                 ($field:ident) => {{
                     let part = knuffel::Decode::decode_node(node, ctx)?;
