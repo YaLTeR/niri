@@ -519,10 +519,11 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         };
         if is_current {
             qualifier.push("current");
+            if is_custom_mode {
+                qualifier.push("custom");
+            };
         };
-        if is_custom_mode {
-            qualifier.push("custom");
-        };
+
         if qualifier.is_empty() {
             String::new()
         } else {
