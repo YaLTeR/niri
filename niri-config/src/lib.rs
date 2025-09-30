@@ -196,7 +196,7 @@ where
                 "overview" => m_replace!(overview),
                 "xwayland-satellite" => m_replace!(xwayland_satellite),
                 "switch-events" => m_merge!(switch_events),
-                "debug" => m_replace!(debug),
+                "debug" => m_merge!(debug),
 
                 // Multipart sections.
                 "output" => {
