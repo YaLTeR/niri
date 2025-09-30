@@ -12,7 +12,7 @@ use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::Keysym;
 
-use crate::utils::expect_only_children;
+use crate::utils::{expect_only_children, MergeWith};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds(pub Vec<Bind>);
@@ -75,6 +75,18 @@ pub struct SwitchBinds {
     pub tablet_mode_on: Option<SwitchAction>,
     #[knuffel(child)]
     pub tablet_mode_off: Option<SwitchAction>,
+}
+
+impl MergeWith<SwitchBinds> for SwitchBinds {
+    fn merge_with(&mut self, part: &SwitchBinds) {
+        merge_clone_opt!(
+            (self, part),
+            lid_open,
+            lid_close,
+            tablet_mode_on,
+            tablet_mode_off,
+        );
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
