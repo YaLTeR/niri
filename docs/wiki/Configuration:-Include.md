@@ -241,3 +241,30 @@ include "struts.kdl"
 // Struts are not merged.
 // End result is only left and right struts.
 ```
+
+### Border special case
+
+There's one special case that differs between the main config and included configs.
+
+Writing `layout { border {} }` in an included config does nothing (since no properties are changed).
+However, writing the same in the main config will *enable* the border, i.e. it's equivalent to `layout { border { on; } }`.
+
+So, if you want to move your layout configuration from the main config to a separate file, remember to add `on` to the border section, for example:
+
+```kdl
+// separate.kdl
+layout {
+    border {
+        // Add this line:
+        on
+
+        width 4
+        active-color "#ffc87f"
+        inactive-color "#505050"
+    }
+}
+```
+
+The reason for this special case is that this is how it historically worked: back when I added borders, we didn't have any `on` flags, so I made writing the `border {}` section enable the border, with an explicit `off` to disable it.
+It wouldn't be too problematic to change it, however the default config always had a pre-filled `layout { border { off; } }` section with a note saying that commenting out the `off` is enough to enable the border.
+Many people likely have this part of the default config embedded in their configs now, so changing how it works would just cause a lot of confusion.
