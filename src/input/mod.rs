@@ -106,6 +106,9 @@ impl State {
                 // Notify the idle-notifier of activity only if we're also powering on the
                 // monitors.
                 self.niri.notify_activity();
+
+                // Prevent waking input from passing through
+                return;
             }
         }
 
