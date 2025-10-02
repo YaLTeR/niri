@@ -3,7 +3,7 @@ use std::cmp::{max, min};
 use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, WindowRule};
 use niri_config::{
-    BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize, ShadowRule,
+    BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, InhibitIdle, PresetSize, ShadowRule,
     TabIndicatorRule,
 };
 use niri_ipc::ColumnDisplay;
@@ -116,6 +116,9 @@ pub struct ResolvedWindowRules {
 
     /// Override whether to set the Tiled xdg-toplevel state on the window.
     pub tiled_state: Option<bool>,
+
+    /// Whether to inhibit idle for this window.
+    pub inhibit_idle: Option<InhibitIdle>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -236,6 +239,7 @@ impl ResolvedWindowRules {
             variable_refresh_rate: None,
             scroll_factor: None,
             tiled_state: None,
+            inhibit_idle: None,
         }
     }
 
@@ -356,6 +360,9 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.tiled_state {
                     resolved.tiled_state = Some(x);
+                }
+                if let Some(x) = rule.inhibit_idle {
+                    resolved.inhibit_idle = x;
                 }
             }
 
