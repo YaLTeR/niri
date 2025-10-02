@@ -134,7 +134,7 @@ where
         nodes: &[knuffel::ast::SpannedNode<S>],
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
-        let _span = tracy_client::span!("parse config file");
+        let _span = tracy_client::span!("decode config file");
 
         let config = ctx.get::<Rc<RefCell<Config>>>().unwrap().clone();
         let includes = ctx.get::<Rc<RefCell<Includes>>>().unwrap().clone();
