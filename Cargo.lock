@@ -808,9 +808,6 @@ name = "cookie-factory"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9885fa71e26b8ab7855e2ec7cae6e9b380edff76cd052e07c683a0319d51b3a2"
-dependencies = [
- "futures",
-]
 
 [[package]]
 name = "core-foundation"
@@ -1207,28 +1204,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "futures"
-version = "0.3.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65bc07b1a8bc7c85c5f2e110c476c7389b4554ba72af57d8445ea63a576b0876"
-dependencies = [
- "futures-channel",
- "futures-core",
- "futures-executor",
- "futures-io",
- "futures-sink",
- "futures-task",
- "futures-util",
-]
-
-[[package]]
 name = "futures-channel"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dff15bf788c671c1934e366d07e30c1814a8ef514e1af724a602e8a2fbe1b10"
 dependencies = [
  "futures-core",
- "futures-sink",
 ]
 
 [[package]]
@@ -1279,12 +1260,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "futures-sink"
-version = "0.3.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e575fab7d1e0dcb8d0c7bcf9a63ee213816ab51902e6d244a95819acacf1d4f7"
-
-[[package]]
 name = "futures-task"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1296,11 +1271,9 @@ version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fa08315bb612088cc391249efdc3bc77536f16c91f6cf495e6fbe85b20a4a81"
 dependencies = [
- "futures-channel",
  "futures-core",
  "futures-io",
  "futures-macro",
- "futures-sink",
  "futures-task",
  "memchr",
  "pin-project-lite",
@@ -2170,8 +2143,8 @@ dependencies = [
 
 [[package]]
 name = "libspa"
-version = "0.8.0"
-source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#93138d01b23628521b29b5604bbebe991cba4c65"
+version = "0.9.2"
+source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#d887ca4fc18ed3550daa88cbcefc11e3beaaf014"
 dependencies = [
  "bitflags 2.9.4",
  "cc",
@@ -2186,8 +2159,8 @@ dependencies = [
 
 [[package]]
 name = "libspa-sys"
-version = "0.8.0"
-source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#93138d01b23628521b29b5604bbebe991cba4c65"
+version = "0.9.2"
+source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#d887ca4fc18ed3550daa88cbcefc11e3beaaf014"
 dependencies = [
  "bindgen",
  "cc",
@@ -2941,8 +2914,8 @@ dependencies = [
 
 [[package]]
 name = "pipewire"
-version = "0.8.0"
-source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#93138d01b23628521b29b5604bbebe991cba4c65"
+version = "0.9.2"
+source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#d887ca4fc18ed3550daa88cbcefc11e3beaaf014"
 dependencies = [
  "anyhow",
  "bitflags 2.9.4",
@@ -2957,8 +2930,8 @@ dependencies = [
 
 [[package]]
 name = "pipewire-sys"
-version = "0.8.0"
-source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#93138d01b23628521b29b5604bbebe991cba4c65"
+version = "0.9.2"
+source = "git+https://gitlab.freedesktop.org/pipewire/pipewire-rs.git#d887ca4fc18ed3550daa88cbcefc11e3beaaf014"
 dependencies = [
  "bindgen",
  "libspa-sys",
