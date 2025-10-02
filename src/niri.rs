@@ -59,6 +59,7 @@ use smithay::reexports::calloop::{
     Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
 };
 use smithay::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1;
+use smithay::reexports::wayland_protocols::wp::pointer_constraints;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
 use smithay::reexports::wayland_protocols_misc::server_decoration as _server_decoration;
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
@@ -124,7 +125,7 @@ use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospe
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
-use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
+use crate::dbus::mutter_screen_cast::{self, CursorMode, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
 use crate::input::pick_color_grab::PickColorGrab;
@@ -1984,7 +1985,7 @@ impl State {
                         .rev()
                         .collect::<Vec<_>>();
 
-                    if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
+                    if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale, None) {
                         cast.last_frame_time = get_monotonic_time();
                     }
                 });
@@ -5102,7 +5103,7 @@ impl Niri {
                 self.render(renderer, output, true, RenderTarget::Screencast)
             });
 
-            if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
+            if cast.dequeue_buffer_and_render(renderer, elements, size, scale, None) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
@@ -5111,6 +5112,39 @@ impl Niri {
         for id in casts_to_stop {
             self.stop_cast(id);
         }
+    }
+
+    fn get_window_pointer_location(
+        &self,
+        mapped: &Mapped,
+        scale: Scale<f64>,
+    ) -> Option<Point<f64, Logical>> {
+        if self.layout.is_overview_open() {
+            return None;
+        }
+        let Some(pointer_window) = self.pointer_contents.window.as_ref() else {
+            return None;
+        };
+        if pointer_window.0 != mapped.window {
+            return None;
+        }
+
+        let (_, _, ws) = self
+            .layout
+            .workspaces()
+            .find(|(_, _, ws)| ws.has_window(&mapped.window))
+            .unwrap();
+        let (tile, tile_offset, _) = ws
+            .tiles_with_render_positions()
+            .find(|(tile, _, _)| tile.window().id() == mapped.id())
+            .unwrap();
+
+        let window_bbox = mapped.window.bbox_with_popups().loc.to_f64();
+        let window_offset =
+            tile_offset + tile.window_loc() + window_bbox + mapped.buf_loc().to_f64();
+
+        let pointer_location = self.seat.get_pointer().unwrap().current_location();
+        Some((pointer_location - window_offset).upscale(scale))
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -5159,10 +5193,19 @@ impl Niri {
                 continue;
             }
 
-            // FIXME: pointer.
             let elements: Vec<_> = mapped.render_for_screen_cast(renderer, scale).collect();
+            let window_pointer_location = match cast.cursor_mode {
+                CursorMode::Metadata => self.get_window_pointer_location(mapped, scale),
+                _ => None,
+            };
 
-            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
+            if cast.dequeue_buffer_and_render(
+                renderer,
+                &elements,
+                bbox.size,
+                scale,
+                window_pointer_location,
+            ) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
