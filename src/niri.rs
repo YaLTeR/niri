@@ -1821,7 +1821,7 @@ impl State {
         self.niri.output_management_state.notify_changes(new_config);
     }
 
-    pub fn open_screenshot_ui(&mut self, show_pointer: bool) {
+    pub fn open_screenshot_ui(&mut self, show_pointer: bool, auto_confirm: bool) {
         if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
             return;
         }
@@ -1856,7 +1856,7 @@ impl State {
         self.backend.with_primary_renderer(|renderer| {
             self.niri
                 .screenshot_ui
-                .open(renderer, screenshots, default_output, show_pointer)
+                .open(renderer, screenshots, default_output, show_pointer, auto_confirm)
         });
 
         self.niri

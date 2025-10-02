@@ -60,6 +60,7 @@ pub enum ScreenshotUi {
         output_data: HashMap<Output, OutputData>,
         button: Button,
         show_pointer: bool,
+        auto_confirm: bool,
         open_anim: Animation,
         clock: Clock,
         config: Rc<RefCell<Config>>,
@@ -141,6 +142,7 @@ impl ScreenshotUi {
         screenshots: HashMap<Output, [OutputScreenshot; 3]>,
         default_output: Output,
         show_pointer: bool,
+        auto_confirm: bool,
     ) -> bool {
         if screenshots.is_empty() {
             return false;
@@ -232,6 +234,7 @@ impl ScreenshotUi {
             output_data,
             button: Button::Up,
             show_pointer,
+            auto_confirm,
             open_anim,
             clock: clock.clone(),
             config: config.clone(),
@@ -923,11 +926,14 @@ impl ScreenshotUi {
             output_data,
             button,
             show_pointer,
+            auto_confirm,
             ..
         } = self
         else {
             return None;
         };
+
+        let auto_confirm = *auto_confirm;
 
         let Button::Down {
             touch_slot,
@@ -993,7 +999,7 @@ impl ScreenshotUi {
 
         self.update_buffers();
 
-        Some(false)
+        Some(auto_confirm)
     }
 }
 
