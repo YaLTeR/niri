@@ -269,7 +269,8 @@ where
                     config.borrow_mut().layout.merge_with(&part);
                 }
 
-                "include" => {
+                "include" | "include-if-exists" => {
+                    let is_optional = name == "include-if-exists";
                     let path: PathBuf = utils::parse_arg_node("include", node, ctx)?;
                     let base = ctx.get::<BasePath>().unwrap();
                     let path = base.0.join(path);
@@ -347,10 +348,12 @@ where
                             }
                         }
                         Err(err) => {
-                            ctx.emit_error(DecodeError::missing(
-                                node,
-                                format!("failed to read included config from {path:?}: {err}"),
-                            ));
+                            if !(is_optional && err.kind() == std::io::ErrorKind::NotFound) {
+                                ctx.emit_error(DecodeError::missing(
+                                    node,
+                                    format!("failed to read included config from {path:?}: {err}"),
+                                ));
+                            }
                         }
                     }
                 }
@@ -2132,5 +2135,41 @@ mod tests {
         +                0.66667,
         "#,
         );
+    }
+
+    #[test]
+    fn test_include_if_exists() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let mut settings_kdl = std::fs::File::create(dir.path().join("settings.kdl")).unwrap();
+        writeln!(settings_kdl, "layout {{ gaps 99 }}").unwrap();
+
+        // Test 1: include-if-exists for a non-existent file should succeed.
+        let mut config1_kdl = std::fs::File::create(dir.path().join("config1.kdl")).unwrap();
+        writeln!(config1_kdl, "include-if-exists \"non-existent.kdl\"").unwrap();
+        let res1 = Config::parse(
+            &dir.path().join("config1.kdl"),
+            &std::fs::read_to_string(dir.path().join("config1.kdl")).unwrap(),
+        );
+        assert!(res1.config.is_ok());
+
+        // Test 2: include-if-exists for an existing file should succeed and apply settings.
+        let mut config2_kdl = std::fs::File::create(dir.path().join("config2.kdl")).unwrap();
+        writeln!(config2_kdl, "include-if-exists \"settings.kdl\"").unwrap();
+        let res2 = Config::parse(
+            &dir.path().join("config2.kdl"),
+            &std::fs::read_to_string(dir.path().join("config2.kdl")).unwrap(),
+        );
+        let config2 = res2.config.unwrap();
+        assert_eq!(config2.layout.gaps, 99.0);
+
+        // Test 3: regular include for a non-existent file must still fail.
+        let mut config3_kdl = std::fs::File::create(dir.path().join("config3.kdl")).unwrap();
+        writeln!(config3_kdl, "include \"non-existent.kdl\"").unwrap();
+        let res3 = Config::parse(
+            &dir.path().join("config3.kdl"),
+            &std::fs::read_to_string(dir.path().join("config3.kdl")).unwrap(),
+        );
+        assert!(res3.config.is_err());
     }
 }
