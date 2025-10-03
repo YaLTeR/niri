@@ -1767,10 +1767,12 @@ impl State {
                         custom: false,
                         mode,
                     }),
-                }
+                };
+                config.modeline = None;
             }
             niri_ipc::OutputAction::CustomMode { mode } => {
-                config.mode = Some(niri_config::output::Mode { custom: true, mode })
+                config.mode = Some(niri_config::output::Mode { custom: true, mode });
+                config.modeline = None;
             }
             niri_ipc::OutputAction::Modeline {
                 clock,
@@ -1785,6 +1787,7 @@ impl State {
                 hsync_polarity,
                 vsync_polarity,
             } => {
+                config.mode = None;
                 config.modeline = Some(niri_config::output::Modeline {
                     clock,
                     hdisp,

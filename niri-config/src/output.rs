@@ -17,32 +17,33 @@ pub struct Mode {
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct Modeline {
-    /// The rate at which pixels are drawn (MHz)
+    /// The rate at which pixels are drawn in MHz.
     #[knuffel(argument)]
     pub clock: f64,
-    /// Horizontal active pixels (pixels).
+    /// Horizontal active pixels.
     #[knuffel(argument)]
     pub hdisp: u16,
-    /// Horizontal Sync Pulse start position (pixels).
+    /// Horizontal sync pulse start position in pixels.
     #[knuffel(argument)]
     pub hsync_start: u16,
-    /// Horizontal Sync Pulse end position (pixels).
+    /// Horizontal sync pulse end position in pixels.
     #[knuffel(argument)]
     pub hsync_end: u16,
-    /// Total horizontal number of pixels before resetting to (pixels).
+    /// Total horizontal number of pixels before resetting the horizontal drawing position to
+    /// zero.
     #[knuffel(argument)]
     pub htotal: u16,
 
-    /// Vertical active pixels (pixels).
+    /// Vertical active pixels.
     #[knuffel(argument)]
     pub vdisp: u16,
-    /// Vertical Sync Pulse start position (pixels).
+    /// Vertical sync pulse start position in pixels.
     #[knuffel(argument)]
     pub vsync_start: u16,
-    /// Vertical Sync Pulse end position (pixels).
+    /// Vertical sync pulse end position in pixels.
     #[knuffel(argument)]
     pub vsync_end: u16,
-    /// Total vertical number of pixels before resetting to 0 (pixels).
+    /// Total vertical number of pixels before resetting the vertical drawing position to zero.
     #[knuffel(argument)]
     pub vtotal: u16,
     /// Horizontal sync polarity: "+hsync" or "-hsync".

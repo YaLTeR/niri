@@ -2524,6 +2524,9 @@ pub fn calculate_drm_mode_from_modeline(modeline: &Modeline) -> DrmMode {
     // https://app.box.com/s/vcocw3z73ta09txiskj7cnk6289j356b/file/93518784646
     let vrefresh_hertz = (pixel_clock_kilo_hertz * 1000.0)
         / (modeline.htotal as u64 * modeline.vtotal as u64) as f64;
+    if !vrefresh_hertz.is_finite() {
+        error!("Modeline calculation went out of bounds.")
+    }
     let vrefresh_rounded = vrefresh_hertz.round() as u32;
 
     let flags = match modeline.hsync_polarity {
@@ -2626,15 +2629,15 @@ pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mod
 // Returns a c-string of maximally 31 Rust string chars + null terminator. Excess characters are
 // dropped.
 fn modeinfo_name_slice_from_string(mode_name: &String) -> [core::ffi::c_char; 32] {
-    let mode_name_bytes = unsafe {
-        std::slice::from_raw_parts(
-            mode_name.as_bytes() as *const _ as *const core::ffi::c_char,
-            mode_name.len(),
-        )
-    };
     let mut name: [core::ffi::c_char; 32] = [0; 32];
-    let min_length = 31.min(mode_name_bytes.len());
-    name[0..min_length].copy_from_slice(&mode_name_bytes[0..min_length]);
+    let min_length = 31.min(mode_name.len());
+
+    let slice = mode_name.as_bytes()[..min_length]
+        .iter()
+        .map(|char_byte| *char_byte as i8)
+        .collect::<Vec<i8>>();
+
+    name[0..slice.len()].copy_from_slice(slice.as_slice());
     name
 }
 
@@ -2983,7 +2986,7 @@ mod tests {
     fn test_calc_cvt() {
         // Crosschecked with other calculators like the cvt commandline utility.
         assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 60.0), @"Mode {
-    name: \"1920x1080_59.96\",
+    name: \"1920x1080@59.96\",
     clock: 173000,
     size: (
         1920,
@@ -3007,7 +3010,7 @@ mod tests {
     ),
 }");
         assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 144.0), @"Mode {
-    name: \"1920x1080_143.88\",
+    name: \"1920x1080@143.88\",
     clock: 452500,
     size: (
         1920,

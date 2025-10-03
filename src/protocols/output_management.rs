@@ -627,6 +627,7 @@ where
                         refresh: Some(mode.refresh_rate as f64 / 1000.),
                     },
                 });
+                new_config.modeline = None;
             }
             zwlr_output_configuration_head_v1::Request::SetCustomMode {
                 width,
@@ -650,6 +651,7 @@ where
                         refresh: Some(refresh as f64 / 1000.),
                     },
                 });
+                new_config.modeline = None;
             }
             zwlr_output_configuration_head_v1::Request::SetPosition { x, y } => {
                 new_config.position = Some(niri_config::Position { x, y });
