@@ -16,6 +16,7 @@ use drm_ffi::drm_mode_modeinfo;
 use libc::dev_t;
 use niri_config::output::Modeline;
 use niri_config::{Config, OutputName};
+use niri_ipc::{HSyncPolarity, VSyncPolarity};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
@@ -879,10 +880,10 @@ impl Tty {
         }
 
         let mode = if let Some(modeline) = &config.modeline {
-            calculate_drmmode_from_modeline(&modeline)
+            calculate_drm_mode_from_modeline(&modeline)
         } else {
-            let opt_mode = pick_mode(&connector, config.mode);
-            let (mode, fallback) = opt_mode.ok_or_else(|| anyhow!("no mode"))?;
+            let (mode, fallback) =
+                pick_mode(&connector, config.mode).ok_or_else(|| anyhow!("no mode"))?;
             if fallback {
                 let target = config.mode.unwrap();
                 warn!(
@@ -1957,7 +1958,7 @@ impl Tty {
                 };
 
                 let (mode, fallback) = if let Some(modeline) = &config.modeline {
-                    let drm_mode = calculate_drmmode_from_modeline(&modeline);
+                    let drm_mode = calculate_drm_mode_from_modeline(&modeline);
                     (drm_mode, false)
                 } else {
                     let Some((mode, fallback)) = pick_mode(connector, config.mode) else {
@@ -2517,15 +2518,21 @@ fn queue_estimated_vblank_timer(
     output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
 }
 
-pub fn calculate_drmmode_from_modeline(modeline: &Modeline) -> DrmMode {
+pub fn calculate_drm_mode_from_modeline(modeline: &Modeline) -> DrmMode {
     let pixel_clock_kilo_hertz = modeline.clock * 1000.0;
-    // Calculated as documented in the CVT 1.2 standard
+    // Calculated as documented in the CVT 1.2 standard:
+    // https://app.box.com/s/vcocw3z73ta09txiskj7cnk6289j356b/file/93518784646
     let vrefresh_hertz = (pixel_clock_kilo_hertz * 1000.0)
         / (modeline.htotal as u64 * modeline.vtotal as u64) as f64;
     let vrefresh_rounded = vrefresh_hertz.round() as u32;
 
-    let flags =
-        ModeFlags::from(&modeline.hsync_polarity) | ModeFlags::from(&modeline.vsync_polarity);
+    let flags = match modeline.hsync_polarity {
+        HSyncPolarity::PHSync => ModeFlags::PHSYNC,
+        HSyncPolarity::NHSync => ModeFlags::NHSYNC,
+    } | match modeline.vsync_polarity {
+        VSyncPolarity::PVSync => ModeFlags::PVSYNC,
+        VSyncPolarity::NVSync => ModeFlags::NVSYNC,
+    };
 
     let mode_name = format!(
         "{}x{}@{:.2}",
@@ -2534,7 +2541,7 @@ pub fn calculate_drmmode_from_modeline(modeline: &Modeline) -> DrmMode {
     let name = modeinfo_name_slice_from_string(&mode_name);
 
     DrmMode::from(drm_mode_modeinfo {
-        clock: pixel_clock_kilo_hertz as u32,
+        clock: pixel_clock_kilo_hertz.round() as u32,
         hdisplay: modeline.hdisp,
         hsync_start: modeline.hsync_start,
         hsync_end: modeline.hsync_end,
@@ -2554,6 +2561,9 @@ pub fn calculate_drmmode_from_modeline(modeline: &Modeline) -> DrmMode {
 }
 
 pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mode {
+    // Cross-checked with sway's implementation:
+    // https://gitlab.freedesktop.org/wlroots/wlroots/-/blob/22528542970687720556035790212df8d9bb30bb/backend/drm/util.c#L251
+
     let options = libdisplay_info::cvt::Options {
         red_blank_ver: libdisplay_info::cvt::ReducedBlankingVersion::None,
         h_pixels: width as i32,
@@ -2583,7 +2593,7 @@ pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mod
 
     let flags = drm_ffi::DRM_MODE_FLAG_NHSYNC | drm_ffi::DRM_MODE_FLAG_PVSYNC;
 
-    let mode_name = format!("{width}x{height}_{:.2}", cvt_timing.act_frame_rate);
+    let mode_name = format!("{width}x{height}@{:.2}", cvt_timing.act_frame_rate);
     let name = modeinfo_name_slice_from_string(&mode_name);
 
     let drm_ffi_mode = drm_ffi::drm_sys::drm_mode_modeinfo {
@@ -2613,8 +2623,8 @@ pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mod
     control::Mode::from(drm_ffi_mode)
 }
 
-/// Returns a c-string of maximally 31 rust string chars + zero terminator. Excess characters are
-/// dropped.
+// Returns a c-string of maximally 31 Rust string chars + null terminator. Excess characters are
+// dropped.
 fn modeinfo_name_slice_from_string(mode_name: &String) -> [core::ffi::c_char; 32] {
     let mode_name_bytes = unsafe {
         std::slice::from_raw_parts(
@@ -2886,9 +2896,10 @@ fn make_output_name(
 #[cfg(test)]
 mod tests {
     use insta::assert_debug_snapshot;
-    use niri_config::output::{HSyncPolarity, Modeline, VSyncPolarity};
+    use niri_config::output::Modeline;
+    use niri_ipc::{HSyncPolarity, VSyncPolarity};
 
-    use crate::backend::tty::{calculate_drmmode_from_modeline, calculate_mode_cvt};
+    use crate::backend::tty::{calculate_drm_mode_from_modeline, calculate_mode_cvt};
 
     #[test]
     fn test_calculate_drmmode_from_modeline() {
@@ -2905,7 +2916,7 @@ mod tests {
             hsync_polarity: HSyncPolarity::NHSync,
             vsync_polarity: VSyncPolarity::PVSync,
         };
-        assert_debug_snapshot!(calculate_drmmode_from_modeline(&modeline1), @"Mode {
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline1), @"Mode {
     name: \"1920x1080@59.96\",
     clock: 173000,
     size: (
@@ -2942,7 +2953,7 @@ mod tests {
             hsync_polarity: HSyncPolarity::NHSync,
             vsync_polarity: VSyncPolarity::PVSync,
         };
-        assert_debug_snapshot!(calculate_drmmode_from_modeline(&modeline2), @"Mode {
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline2), @"Mode {
     name: \"1920x1080@143.88\",
     clock: 452500,
     size: (
@@ -2967,6 +2978,7 @@ mod tests {
     ),
 }");
     }
+
     #[test]
     fn test_calc_cvt() {
         // Crosschecked with other calculators like the cvt commandline utility.

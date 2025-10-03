@@ -104,8 +104,8 @@ output "HDMI-A-1" {
 
 <sup>Since: next release</sup>
 
-Directly configures the monitor's mode via a modeline.
-These can be calculated via utilities such as [cvt](https://man.archlinux.org/man/cvt.1.en) or [gtf](https://man.archlinux.org/man/gtf.1.en).
+Directly configures the monitor's mode via a modeline, overriding any configured `mode`.
+The modeline can be calculated via utilities such as [cvt](https://man.archlinux.org/man/cvt.1.en) or [gtf](https://man.archlinux.org/man/gtf.1.en).
 
 > [!CAUTION]
 > Out of spec modelines may damage your monitor, especially if it's a CRT.

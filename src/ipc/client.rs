@@ -514,14 +514,15 @@ fn print_output(output: Output) -> anyhow::Result<()> {
 
     let print_qualifier = |is_preferred: bool, is_current: bool, is_custom_mode: bool| {
         let mut qualifier = Vec::new();
-        if is_preferred {
-            qualifier.push("preferred");
-        };
         if is_current {
             qualifier.push("current");
             if is_custom_mode {
                 qualifier.push("custom");
             };
+        };
+
+        if is_preferred {
+            qualifier.push("preferred");
         };
 
         if qualifier.is_empty() {

@@ -964,41 +964,42 @@ pub enum OutputAction {
         #[cfg_attr(feature = "clap", arg())]
         mode: ModeToSet,
     },
-    /// Set a custom output mode (One not advertised by your monitor, use at your own risk)
+    /// Set a custom output mode.
     CustomMode {
         /// Custom mode to set
         #[cfg_attr(feature = "clap", arg())]
         mode: ConfiguredMode,
     },
     /// Set a custom VESA CVT modeline.
-    #[cfg_attr(feature = "clap", command(name = "modeline"))]
+    #[cfg_attr(feature = "clap", arg())]
     Modeline {
-        /// The rate at which pixels are drawn (MHz)
+        /// The rate at which pixels are drawn in MHz.
         #[cfg_attr(feature = "clap", arg())]
         clock: f64,
-        /// Horizontal active pixels (pixels).
+        /// Horizontal active pixels.
         #[cfg_attr(feature = "clap", arg())]
         hdisp: u16,
-        /// Horizontal Sync Pulse start position (pixels).
+        /// Horizontal sync pulse start position in pixels.
         #[cfg_attr(feature = "clap", arg())]
         hsync_start: u16,
-        /// Horizontal Sync Pulse end position (pixels).
+        /// Horizontal sync pulse end position in pixels.
         #[cfg_attr(feature = "clap", arg())]
         hsync_end: u16,
-        /// Total horizontal number of pixels before resetting to (pixels).
+        /// Total horizontal number of pixels before resetting the horizontal drawing position to
+        /// zero.
         #[cfg_attr(feature = "clap", arg())]
         htotal: u16,
 
-        /// Vertical active pixels (pixels).
+        /// Vertical active pixels.
         #[cfg_attr(feature = "clap", arg())]
         vdisp: u16,
-        /// Vertical Sync Pulse start position (pixels).
+        /// Vertical sync pulse start position in pixels.
         #[cfg_attr(feature = "clap", arg())]
         vsync_start: u16,
-        /// Vertical Sync Pulse end position (pixels).
+        /// Vertical sync pulse end position in pixels.
         #[cfg_attr(feature = "clap", arg())]
         vsync_end: u16,
-        /// Total vertical number of pixels before resetting to 0 (pixels).
+        /// Total vertical number of pixels before resetting the vertical drawing position to zero.
         #[cfg_attr(feature = "clap", arg())]
         vtotal: u16,
         /// Horizontal sync polarity: "+hsync" or "-hsync".
@@ -1060,9 +1061,9 @@ pub struct ConfiguredMode {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum HSyncPolarity {
-    /// Positive polarity
+    /// Positive polarity.
     PHSync,
-    /// Negative polarity
+    /// Negative polarity.
     NHSync,
 }
 
@@ -1070,9 +1071,9 @@ pub enum HSyncPolarity {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum VSyncPolarity {
-    /// Positive polarity
+    /// Positive polarity.
     PVSync,
-    /// Negative polarity
+    /// Negative polarity.
     NVSync,
 }
 

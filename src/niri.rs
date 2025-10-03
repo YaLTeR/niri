@@ -1795,22 +1795,8 @@ impl State {
                     vsync_start,
                     vsync_end,
                     vtotal,
-                    hsync_polarity: match hsync_polarity {
-                        niri_ipc::HSyncPolarity::PHSync => {
-                            niri_config::output::HSyncPolarity::PHSync
-                        }
-                        niri_ipc::HSyncPolarity::NHSync => {
-                            niri_config::output::HSyncPolarity::NHSync
-                        }
-                    },
-                    vsync_polarity: match vsync_polarity {
-                        niri_ipc::VSyncPolarity::PVSync => {
-                            niri_config::output::VSyncPolarity::PVSync
-                        }
-                        niri_ipc::VSyncPolarity::NVSync => {
-                            niri_config::output::VSyncPolarity::NVSync
-                        }
-                    },
+                    hsync_polarity,
+                    vsync_polarity,
                 })
             }
             niri_ipc::OutputAction::Scale { scale } => {
