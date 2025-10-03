@@ -12,7 +12,7 @@ pub struct Outputs(pub Vec<Output>);
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct Mode {
-    #[knuffel(property, default)]
+    #[knuffel(property, default = false)]
     pub custom: bool,
 
     #[knuffel(argument, str)]

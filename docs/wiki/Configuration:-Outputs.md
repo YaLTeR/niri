@@ -88,9 +88,11 @@ output "eDP-1" {
 
 <sup>Since: next release</sup> You can configure a custom mode (not offered by the monitor) by setting `custom=true`.
 In this case, the refresh rate is mandatory.
+
 > [!CAUTION]
 > Custom modes may damage your monitor, especially if it's a CRT.
 > Follow the maximum supported limits in your monitor's instructions.
+
 ```kdl
 // Use a custom mode for this display.
 output "HDMI-A-1" {
@@ -100,7 +102,11 @@ output "HDMI-A-1" {
 
 ### `modeline`
 
-Directly configures the monitor's mode via a modeline. These can be calculated via utilities such as [cvt](https://man.archlinux.org/man/cvt.1.en) or [gtf](https://man.archlinux.org/man/gtf.1.en). 
+<sup>Since: next release</sup>
+
+Directly configures the monitor's mode via a modeline.
+These can be calculated via utilities such as [cvt](https://man.archlinux.org/man/cvt.1.en) or [gtf](https://man.archlinux.org/man/gtf.1.en).
+
 > [!CAUTION]
 > Out of spec modelines may damage your monitor, especially if it's a CRT.
 > Follow the maximum supported limits in your monitor's instructions.
