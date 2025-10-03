@@ -2520,6 +2520,16 @@ fn queue_estimated_vblank_timer(
 
 pub fn calculate_drm_mode_from_modeline(modeline: &Modeline) -> DrmMode {
     let pixel_clock_kilo_hertz = modeline.clock * 1000.0;
+    assert!(
+        modeline.hdisplay < modeline.hsync_start
+            && (modeline.hsync_start < modeline.hsync_end)
+            && (modeline.hsync_end < modeline.htotal)
+    );
+    assert!(
+        modeline.vdisplay < modeline.vsync_start
+            && (modeline.vsync_start < modeline.vsync_end)
+            && (modeline.vsync_end < modeline.vtotal)
+    );
     // Calculated as documented in the CVT 1.2 standard:
     // https://app.box.com/s/vcocw3z73ta09txiskj7cnk6289j356b/file/93518784646
     let vrefresh_hertz = (pixel_clock_kilo_hertz * 1000.0)
@@ -2539,17 +2549,18 @@ pub fn calculate_drm_mode_from_modeline(modeline: &Modeline) -> DrmMode {
 
     let mode_name = format!(
         "{}x{}@{:.2}",
-        modeline.hdisp, modeline.vdisp, vrefresh_hertz
+        modeline.hdisplay, modeline.vdisplay, vrefresh_hertz
     );
     let name = modeinfo_name_slice_from_string(&mode_name);
 
+    // https://www.kernel.org/doc/html/v6.17/gpu/drm-uapi.html#c.drm_mode_modeinfo
     DrmMode::from(drm_mode_modeinfo {
         clock: pixel_clock_kilo_hertz.round() as u32,
-        hdisplay: modeline.hdisp,
+        hdisplay: modeline.hdisplay,
         hsync_start: modeline.hsync_start,
         hsync_end: modeline.hsync_end,
         htotal: modeline.htotal,
-        vdisplay: modeline.vdisp,
+        vdisplay: modeline.vdisplay,
         vsync_start: modeline.vsync_start,
         vsync_end: modeline.vsync_end,
         vtotal: modeline.vtotal,
@@ -2908,8 +2919,8 @@ mod tests {
     fn test_calculate_drmmode_from_modeline() {
         let modeline1 = Modeline {
             clock: 173.0,
-            hdisp: 1920,
-            vdisp: 1080,
+            hdisplay: 1920,
+            vdisplay: 1080,
             hsync_start: 2048,
             hsync_end: 2248,
             htotal: 2576,
@@ -2945,8 +2956,8 @@ mod tests {
 }");
         let modeline2 = Modeline {
             clock: 452.5,
-            hdisp: 1920,
-            vdisp: 1080,
+            hdisplay: 1920,
+            vdisplay: 1080,
             hsync_start: 2088,
             hsync_end: 2296,
             htotal: 2672,

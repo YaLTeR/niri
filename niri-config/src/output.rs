@@ -22,7 +22,7 @@ pub struct Modeline {
     pub clock: f64,
     /// Horizontal active pixels.
     #[knuffel(argument)]
-    pub hdisp: u16,
+    pub hdisplay: u16,
     /// Horizontal sync pulse start position in pixels.
     #[knuffel(argument)]
     pub hsync_start: u16,
@@ -36,7 +36,7 @@ pub struct Modeline {
 
     /// Vertical active pixels.
     #[knuffel(argument)]
-    pub vdisp: u16,
+    pub vdisplay: u16,
     /// Vertical sync pulse start position in pixels.
     #[knuffel(argument)]
     pub vsync_start: u16,

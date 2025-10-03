@@ -978,7 +978,7 @@ pub enum OutputAction {
         clock: f64,
         /// Horizontal active pixels.
         #[cfg_attr(feature = "clap", arg())]
-        hdisp: u16,
+        hdisplay: u16,
         /// Horizontal sync pulse start position in pixels.
         #[cfg_attr(feature = "clap", arg())]
         hsync_start: u16,
@@ -992,7 +992,7 @@ pub enum OutputAction {
 
         /// Vertical active pixels.
         #[cfg_attr(feature = "clap", arg())]
-        vdisp: u16,
+        vdisplay: u16,
         /// Vertical sync pulse start position in pixels.
         #[cfg_attr(feature = "clap", arg())]
         vsync_start: u16,

@@ -1776,11 +1776,11 @@ impl State {
             }
             niri_ipc::OutputAction::Modeline {
                 clock,
-                hdisp,
+                hdisplay: hdisp,
                 hsync_start,
                 hsync_end,
                 htotal,
-                vdisp,
+                vdisplay: vdisp,
                 vsync_start,
                 vsync_end,
                 vtotal,
@@ -1790,11 +1790,11 @@ impl State {
                 config.mode = None;
                 config.modeline = Some(niri_config::output::Modeline {
                     clock,
-                    hdisp,
+                    hdisplay: hdisp,
                     hsync_start,
                     hsync_end,
                     htotal,
-                    vdisp,
+                    vdisplay: vdisp,
                     vsync_start,
                     vsync_end,
                     vtotal,

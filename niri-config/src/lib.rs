@@ -1116,11 +1116,11 @@ mod tests {
                         modeline: Some(
                             Modeline {
                                 clock: 173.0,
-                                hdisp: 1920,
+                                hdisplay: 1920,
                                 hsync_start: 2048,
                                 hsync_end: 2248,
                                 htotal: 2576,
-                                vdisp: 1080,
+                                vdisplay: 1080,
                                 vsync_start: 1083,
                                 vsync_end: 1088,
                                 vtotal: 1120,
