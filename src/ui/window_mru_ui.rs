@@ -2,7 +2,7 @@
 Todo:
 
 - Add test cases
-- Animations
+x Animations
   x navigation scrolling
   x thumbnails appearing/disappearing
   x reorganization on scope/filter change
@@ -108,6 +108,7 @@ struct Thumbnail {
     timestamp: Option<Instant>,
     offset: f64,
     size: Size<f64, Logical>,
+    scale: f64,
     clock: Clock,
     open_animation: Option<Animation>,
     move_animation: Option<MoveAnimation>,
@@ -227,9 +228,11 @@ impl WindowMru {
         scope: Option<MruScope>,
         filter: Option<MruFilter>,
         clock: Clock,
-    ) -> Self {
+    ) -> Option<Self> {
         let scope = scope.unwrap_or_default();
         let filter = filter.unwrap_or_default();
+        let output = niri.layout.active_output()?;
+        let output_sz = output_size(output);
 
         // todo: maybe using a `Match` is overkill here and a plain app_id
         // compare would suffice
@@ -238,19 +241,24 @@ impl WindowMru {
         // Build a list of MappedId from the requested scope sorted by timestamp
         let mut thumbnails: Vec<Thumbnail> = scope
             .windows(niri)
-            .filter(|w| {
+            .filter(|(_, w)| {
                 window_match.as_ref().is_none_or(|m| {
                     with_toplevel_role(w.toplevel(), |r| window_matches(WindowRef::Mapped(w), r, m))
                 })
             })
-            .map(|w| Thumbnail {
-                id: w.id(),
-                timestamp: w.get_focus_timestamp(),
-                offset: 0.,
-                size: w.window.geometry().to_f64().downscale(THUMBNAIL_SCALE).size,
-                clock: clock.clone(),
-                open_animation: None,
-                move_animation: None,
+            .map(|(o, w)| {
+                let o_sz = output_size(o);
+                let scale = o_sz.h / output_sz.h * THUMBNAIL_SCALE;
+                Thumbnail {
+                    id: w.id(),
+                    timestamp: w.get_focus_timestamp(),
+                    offset: 0.,
+                    size: w.window.geometry().to_f64().downscale(scale).size,
+                    scale,
+                    clock: clock.clone(),
+                    open_animation: None,
+                    move_animation: None,
+                }
             })
             .collect();
         thumbnails
@@ -262,12 +270,12 @@ impl WindowMru {
             offset += t.size.w + SPACING
         });
 
-        Self {
+        Some(Self {
             thumbnails,
             current: 0,
             scope,
             filter,
-        }
+        })
     }
 
     fn forward(&mut self) {
@@ -421,32 +429,40 @@ impl ToMatch for MruFilter {
 }
 
 pub trait ToWindowIterator {
-    fn windows<'a>(&self, niri: &'a Niri) -> impl Iterator<Item = &'a Mapped>;
+    fn windows<'a>(&self, niri: &'a Niri) -> impl Iterator<Item = (&'a Output, &'a Mapped)>;
 }
 
 impl ToWindowIterator for MruScope {
-    fn windows<'a>(&self, niri: &'a Niri) -> impl Iterator<Item = &'a Mapped> {
+    fn windows<'a>(&self, niri: &'a Niri) -> impl Iterator<Item = (&'a Output, &'a Mapped)> {
         // gather windows based on the requested scope
         match self {
-            MruScope::All => Box::new(niri.layout.windows().map(|(_, w)| w)),
+            MruScope::All => Box::new(
+                niri.layout
+                    .windows()
+                    .filter_map(|(m, w)| m.map(|m| (m.output(), w))),
+            ),
             MruScope::Output => {
                 if let Some(active_output) = niri.layout.active_output() {
                     Box::new(niri.layout.windows().filter_map(move |(m, w)| {
                         if let Some(monitor) = m {
                             if monitor.output() == active_output {
-                                return Some(w);
+                                return Some((active_output, w));
                             }
                         }
                         None
                     }))
                 } else {
-                    Box::new(iter::empty()) as Box<dyn Iterator<Item = &Mapped>>
+                    Box::new(iter::empty()) as Box<dyn Iterator<Item = (&Output, &Mapped)>>
                 }
             }
             MruScope::Workspace => niri
                 .layout
                 .active_workspace()
-                .map(|wkspc| Box::new(wkspc.windows()) as Box<dyn Iterator<Item = &Mapped>>)
+                .and_then(|wkspc| {
+                    let o = wkspc.current_output()?;
+                    Some(Box::new(wkspc.windows().map(move |w| (o, w)))
+                        as Box<dyn Iterator<Item = (&Output, &Mapped)>>)
+                })
                 .unwrap_or(Box::new(iter::empty())),
         }
     }
@@ -666,12 +682,12 @@ impl WindowMruUi {
         if scope.is_some_and(|s| s != inner.wmru.scope)
             || filter.is_some_and(|f| f != inner.wmru.filter)
         {
-            Some(WindowMru::new(
+            WindowMru::new(
                 niri,
                 scope.or(Some(inner.wmru.scope)),
                 filter.or(Some(inner.wmru.filter)),
                 inner.clock.clone(),
-            ))
+            )
         } else {
             None
         }
@@ -1191,7 +1207,7 @@ impl Inner {
         Some(ThumbnailData {
             id: thumbnail.id,
             offset: -view_offset + thumbnail.offset + thumbnail.render_offset(),
-            scale: THUMBNAIL_SCALE,
+            scale: thumbnail.scale,
             size,
         })
     }
@@ -1295,7 +1311,6 @@ impl Inner {
         &self,
         niri: &Niri,
         renderer: &mut GlesRenderer,
-        // output_size: Size<f64, Logical>,
         output: &Output,
     ) -> impl Iterator<Item = WindowMruUiRenderElement> {
         let mut rv = Vec::new();
@@ -1361,7 +1376,7 @@ impl Inner {
                     let mut tcache = self.textures.borrow_mut();
                     let textures = tcache.get_mut(i).unwrap();
                     if let Some(id) = wmru.get_id(i) {
-                        if let Some(thumb_texture) = textures.thumbnail(niri, renderer, id) {
+                        if let Some(thumb_texture) = textures.thumbnail(niri, renderer, t) {
                             let title_texture = (i == wmru.current)
                                 .then(|| {
                                     textures.title(
@@ -1409,14 +1424,14 @@ impl MruUiTileTextures {
         &mut self,
         niri: &Niri,
         renderer: &mut GlesRenderer,
-        mid: MappedId,
+        Thumbnail { id, scale, .. }: &Thumbnail,
     ) -> Option<MruTexture> {
         if self.thumbnail.is_none() {
             self.thumbnail = niri.layout.windows().find_map(|(_, mapped)| {
-                if mapped.id() != mid {
+                if mapped.id() != *id {
                     return None;
                 }
-                render_mapped_to_texture(renderer, mapped, THUMBNAIL_SCALE)
+                render_mapped_to_texture(renderer, mapped, *scale)
             });
         }
         // TextureBuffer is an Arc, so cloning is cheap
@@ -2174,6 +2189,7 @@ mod tests {
                 id: MappedId::next(),
                 timestamp: None,
                 size: Size::from((0., 0.)),
+                scale: 0.,
                 offset: 0.,
                 clock: clock.clone(),
                 open_animation: None,

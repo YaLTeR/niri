@@ -2288,15 +2288,17 @@ impl State {
                             filter,
                             self.niri.clock.clone(),
                         );
-                        if let Some(output) = self.niri.layout.active_output() {
-                            self.niri.window_mru_ui.open(
-                                Rc::new(Options::from_config(&config)),
-                                self.niri.clock.clone(),
-                                wmru,
-                                dir,
-                                output.clone(),
-                                config.recent_windows.enable_selection_animation,
-                            );
+                        if let Some(wmru) = wmru {
+                            if let Some(output) = self.niri.layout.active_output() {
+                                self.niri.window_mru_ui.open(
+                                    Rc::new(Options::from_config(&config)),
+                                    self.niri.clock.clone(),
+                                    wmru,
+                                    dir,
+                                    output.clone(),
+                                    config.recent_windows.enable_selection_animation,
+                                );
+                            }
                         }
                     }
                     // FIXME: granular
