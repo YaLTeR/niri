@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use niri::animation::Clock;
-use niri::layout::{ActivateWindow, AddWindowTarget, LayoutElement as _, Options};
+use niri::layout::{ActivateWindow, AddWindowTarget, LayoutElement as _, Options, SizingMode};
 use niri::render_helpers::RenderTarget;
 use niri_config::{Color, OutputName, PresetSize};
 use smithay::backend::renderer::element::RenderElement;
@@ -168,7 +168,7 @@ impl Layout {
         let max_size = window.max_size();
         window.request_size(
             ws.new_window_size(width, None, false, window.rules(), (min_size, max_size)),
-            false,
+            SizingMode::Normal,
             false,
             None,
         );
@@ -197,7 +197,7 @@ impl Layout {
         let max_size = window.max_size();
         window.request_size(
             ws.new_window_size(width, None, false, window.rules(), (min_size, max_size)),
-            false,
+            SizingMode::Normal,
             false,
             None,
         );
