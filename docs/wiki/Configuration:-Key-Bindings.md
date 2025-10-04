@@ -85,7 +85,7 @@ This is mostly useful for the scroll bindings.
 
 <sup>Since: next release</sup>
 
-Binds can be set to trigger on release instead of on the initial key press. These will only trigger if no other keys were pressed or released after the bound key.
+Binds can be set to trigger on release instead of on the initial key press. These will normally only trigger if no other keys were pressed or released after the bound key; if you want one to always trigger you should also set `allow-invalidation=false`.
 
 This is particularly helpful when you want to bind a modifier key to an action, as it avoids unwanted triggering when you're trying to use other binds involving that modifier.
 
@@ -100,7 +100,7 @@ Note that the modifier state is updated before binds are evaluated, so if you wa
 ```kdl
 binds {
     Alt+Ctrl+Control_L repeat=false { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "0"; }
-    Alt+Control_L release=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "1"; }
+    Alt+Control_L release=true allow-invalidation=false { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "1"; }
 }
 ```
 
