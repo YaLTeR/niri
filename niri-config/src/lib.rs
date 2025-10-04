@@ -1105,6 +1105,7 @@ mod tests {
                         background_color: None,
                         backdrop_color: None,
                         hot_corners: None,
+                        layout: None,
                     },
                     Output {
                         off: false,
@@ -1133,6 +1134,7 @@ mod tests {
                         background_color: None,
                         backdrop_color: None,
                         hot_corners: None,
+                        layout: None,
                     },
                 ],
             ),
