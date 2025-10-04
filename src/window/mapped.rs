@@ -38,8 +38,9 @@ use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
 use crate::utils::{
-    get_credentials_for_surface, send_scale_transform, update_tiled_state, with_toplevel_role,
-    with_toplevel_role_and_current, ResizeEdge,
+    get_credentials_for_surface, send_scale_transform, update_tiled_state,
+    with_toplevel_last_uncommitted_configure, with_toplevel_role, with_toplevel_role_and_current,
+    ResizeEdge,
 };
 
 #[derive(Debug)]
@@ -722,23 +723,13 @@ impl LayoutElement for Mapped {
         // in that case the window itself will restore its previous size upon receiving a (0, 0)
         // configure, whereas what we potentially want is to unfullscreen the window into its
         // fullscreen size.
-        let already_sent = with_toplevel_role(self.toplevel(), |role| {
-            let last_sent = if let Some(configure) = role.pending_configures().last() {
-                // FIXME: it would be more optimal to find the *oldest* pending configure that
-                // has the same size and fullscreen state to the last pending configure.
-                configure
-            } else {
-                role.last_acked.as_ref().unwrap()
-            };
-            let ToplevelConfigure {
-                serial: last_serial,
-                state: last_sent,
-            } = last_sent;
+        let already_sent = with_toplevel_last_uncommitted_configure(self.toplevel(), |configure| {
+            let ToplevelConfigure { state, serial } = configure?;
 
-            let same_size = last_sent.size.unwrap_or_default() == size;
-            let has_fullscreen = last_sent.states.contains(xdg_toplevel::State::Fullscreen);
+            let same_size = state.size.unwrap_or_default() == size;
+            let has_fullscreen = state.states.contains(xdg_toplevel::State::Fullscreen);
             let same_fullscreen = has_fullscreen == self.is_pending_windowed_fullscreen;
-            (same_size && same_fullscreen).then_some(*last_serial)
+            (same_size && same_fullscreen).then_some(*serial)
         });
 
         if let Some(serial) = already_sent {
@@ -1100,39 +1091,30 @@ impl LayoutElement for Mapped {
                 .unwrap();
 
             // If we have a server-pending size change that we haven't sent yet, use that size.
-            if let Some(server_pending) = &role.server_pending {
-                let current_server = role.current_server_state();
-                if server_pending.size != current_server.size {
-                    return Some((
-                        server_pending.size.unwrap_or_default(),
-                        server_pending
-                            .states
-                            .contains(xdg_toplevel::State::Fullscreen),
-                    ));
-                }
-            }
+            let server_pending = role.server_pending.as_ref()?;
 
-            // If we have a sent-but-not-committed-to size, use that.
-            let last_sent = role
-                .pending_configures()
-                .last()
-                .unwrap_or_else(|| role.last_acked.as_ref().unwrap());
-            let ToplevelConfigure {
-                state: last_sent,
-                serial: last_serial,
-            } = last_sent;
-
-            let mut guard = states.cached_state.get::<ToplevelCachedState>();
-            if let Some(current) = guard.current().last_acked.as_ref() {
-                if !current.serial.is_no_older_than(last_serial) {
-                    return Some((
-                        last_sent.size.unwrap_or_default(),
-                        last_sent.states.contains(xdg_toplevel::State::Fullscreen),
-                    ));
-                }
+            let current_server = role.current_server_state();
+            if server_pending.size != current_server.size {
+                return Some((
+                    server_pending.size.unwrap_or_default(),
+                    server_pending
+                        .states
+                        .contains(xdg_toplevel::State::Fullscreen),
+                ));
             }
 
             None
+        })
+        .or_else(|| {
+            with_toplevel_last_uncommitted_configure(self.toplevel(), |configure| {
+                // If we have a sent-but-not-committed-to size, use that.
+                let ToplevelConfigure { state, .. } = configure?;
+
+                Some((
+                    state.size.unwrap_or_default(),
+                    state.states.contains(xdg_toplevel::State::Fullscreen),
+                ))
+            })
         });
 
         if let Some((mut size, fullscreen)) = pending {
