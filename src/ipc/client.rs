@@ -503,6 +503,7 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         physical_size,
         modes,
         current_mode,
+        is_custom_mode,
         vrr_supported,
         vrr_enabled,
         logical,
@@ -510,6 +511,26 @@ fn print_output(output: Output) -> anyhow::Result<()> {
 
     let serial = serial.as_deref().unwrap_or("Unknown");
     println!(r#"Output "{make} {model} {serial}" ({name})"#);
+
+    let print_qualifier = |is_preferred: bool, is_current: bool, is_custom_mode: bool| {
+        let mut qualifier = Vec::new();
+        if is_current {
+            qualifier.push("current");
+            if is_custom_mode {
+                qualifier.push("custom");
+            };
+        };
+
+        if is_preferred {
+            qualifier.push("preferred");
+        };
+
+        if qualifier.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", qualifier.join(", "))
+        }
+    };
 
     if let Some(current) = current_mode {
         let mode = *modes
@@ -522,8 +543,10 @@ fn print_output(output: Output) -> anyhow::Result<()> {
             is_preferred,
         } = mode;
         let refresh = refresh_rate as f64 / 1000.;
-        let preferred = if is_preferred { " (preferred)" } else { "" };
-        println!("  Current mode: {width}x{height} @ {refresh:.3} Hz{preferred}");
+
+        // This is technically the current mode, but the println below already specifies that.
+        let qualifier = print_qualifier(is_preferred, false, is_custom_mode);
+        println!("  Current mode: {width}x{height} @ {refresh:.3} Hz{qualifier}");
     } else {
         println!("  Disabled");
     }
@@ -578,12 +601,7 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         let refresh = refresh_rate as f64 / 1000.;
 
         let is_current = Some(idx) == current_mode;
-        let qualifier = match (is_current, is_preferred) {
-            (true, true) => " (current, preferred)",
-            (true, false) => " (current)",
-            (false, true) => " (preferred)",
-            (false, false) => "",
-        };
+        let qualifier = print_qualifier(is_preferred, is_current, is_custom_mode);
 
         println!("    {width}x{height}@{refresh:.3}{qualifier}");
     }
