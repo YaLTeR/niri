@@ -26,6 +26,7 @@ pub struct Bind {
     pub cooldown: Option<Duration>,
     pub allow_when_locked: bool,
     pub allow_inhibiting: bool,
+    pub allow_invalidation: bool,
     pub hotkey_overlay_title: Option<Option<String>>,
 }
 
@@ -813,6 +814,7 @@ where
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
         let mut allow_inhibiting = true;
+        let mut allow_invalidation = true;
         let mut hotkey_overlay_title = None;
         for (name, val) in &node.properties {
             match &***name {
@@ -833,6 +835,9 @@ where
                 }
                 "allow-inhibiting" => {
                     allow_inhibiting = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                }
+                "allow-invalidation" => {
+                    allow_invalidation = knuffel::traits::DecodeScalar::decode(val, ctx)?;
                 }
                 "hotkey-overlay-title" => {
                     hotkey_overlay_title = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
@@ -860,6 +865,7 @@ where
             cooldown: None,
             allow_when_locked: false,
             allow_inhibiting: true,
+            allow_invalidation: true,
             hotkey_overlay_title: None,
         };
 
@@ -897,6 +903,7 @@ where
                         cooldown,
                         allow_when_locked,
                         allow_inhibiting,
+                        allow_invalidation,
                         hotkey_overlay_title,
                     })
                 }
