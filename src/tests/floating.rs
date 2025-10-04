@@ -9,7 +9,11 @@ use super::*;
 
 // Sets up a fixture with two outputs and 100×100 window.
 fn set_up() -> (Fixture, ClientId, WlSurface) {
-    let mut f = Fixture::new();
+    set_up_with_config(Config::default())
+}
+
+fn set_up_with_config(config: Config) -> (Fixture, ClientId, WlSurface) {
+    let mut f = Fixture::with_config(config);
     f.add_output(1, (1920, 1080));
     f.add_output(2, (1280, 720));
 
@@ -796,22 +800,7 @@ window-rule {
 }
 "##;
     let config = Config::parse_mem(config).unwrap();
-    let mut f = Fixture::with_config(config);
-    f.add_output(1, (1920, 1080));
-    f.add_output(2, (1280, 720));
-
-    let id = f.add_client();
-    let window = f.client(id).create_window();
-    let surface = window.surface.clone();
-    window.commit();
-    f.roundtrip(id);
-
-    // Open with smaller width than min.
-    let window = f.client(id).window(&surface);
-    window.attach_new_buffer();
-    window.set_size(100, 100);
-    window.ack_last_and_commit();
-    f.double_roundtrip(id);
+    let (mut f, id, surface) = set_up_with_config(config);
 
     // Commit to the Activated state configure.
     f.client(id).window(&surface).ack_last_and_commit();
