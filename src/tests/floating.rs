@@ -887,3 +887,201 @@ fn unfullscreen_to_floating_doesnt_send_extra_configure() {
         @"size: 936 × 1048, bounds: 1920 × 1080, states: [Activated]"
     );
 }
+
+#[test]
+fn unfullscreen_to_same_size_floating() {
+    let (mut f, id, surface) = set_up();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // Change size to the same as fullscreen, make niri remember it.
+    let window = f.client(id).window(&surface);
+    window.set_size(1920, 1080);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Fullscreen.
+    let window = f.client(id).window(&surface);
+    window.set_fullscreen(None);
+    f.double_roundtrip(id);
+
+    // The fullscreen configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1888 × 1048, states: [Activated, Fullscreen]"
+    );
+
+    // Unfullscreen into floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // We should see a configure with the same size and no Fullscreen state.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn unfullscreen_to_same_size_windowed_fullscreen_floating() {
+    let (mut f, id, surface) = set_up();
+
+    let mapped = f.niri().layout.windows().next().unwrap().1;
+    let window_id = mapped.window.clone();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // Change size to the same as fullscreen, make niri remember it.
+    let window = f.client(id).window(&surface);
+    window.set_size(1920, 1080);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Fullscreen.
+    let window = f.client(id).window(&surface);
+    window.set_fullscreen(None);
+    f.double_roundtrip(id);
+
+    // The fullscreen configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1888 × 1048, states: [Activated, Fullscreen]"
+    );
+
+    // Unfullscreen into windowed-fullscreen floating.
+    f.niri().layout.toggle_windowed_fullscreen(&window_id);
+    f.double_roundtrip(id);
+
+    // Should send configure because the bounds have changed.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated, Fullscreen]"
+    );
+}
+
+#[test]
+fn unfullscreen_to_same_size_same_bounds_floating() {
+    let config = r##"
+layout {
+    gaps 0
+}
+"##;
+    let config = Config::parse_mem(config).unwrap();
+    let (mut f, id, surface) = set_up_with_config(config);
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // Change size to the same as fullscreen, make niri remember it.
+    let window = f.client(id).window(&surface);
+    window.set_size(1920, 1080);
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Fullscreen.
+    let window = f.client(id).window(&surface);
+    window.set_fullscreen(None);
+    f.double_roundtrip(id);
+
+    // The fullscreen configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated, Fullscreen]"
+    );
+
+    // Unfullscreen into floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // We should see a configure with the same size and no Fullscreen state.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 1920 × 1080, bounds: 1920 × 1080, states: [Activated]"
+    );
+}
+
+#[test]
+fn repeated_size_request() {
+    let (mut f, id, surface) = set_up();
+    let _ = f.client(id).window(&surface).recent_configures();
+
+    // Make it floating.
+    f.niri().layout.toggle_window_floating(None);
+    f.double_roundtrip(id);
+
+    // The floating configure.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 936 × 1048, bounds: 1920 × 1080, states: [Activated]"
+    );
+
+    // Request a different width (200x100).
+    f.niri()
+        .layout
+        .set_window_width(None, SizeChange::SetFixed(200));
+    f.niri()
+        .layout
+        .set_window_height(None, SizeChange::SetFixed(100));
+    f.double_roundtrip(id);
+
+    // The 200x100 request.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @"size: 200 × 100, bounds: 1920 × 1080, states: [Activated]"
+    );
+
+    // Request a size change to the same size as we have just requested.
+    f.niri().layout.set_column_width(SizeChange::SetFixed(200));
+    f.double_roundtrip(id);
+
+    // Should request nothing as this is a repeated same-size request in floating and the surface
+    // hasn't committed to it yet.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @""
+    );
+
+    // Ack but don't commit yet.
+    let window = f.client(id).window(&surface);
+    window.ack_last();
+    f.double_roundtrip(id);
+
+    // Request a size change to the same size as we have just requested.
+    f.niri().layout.set_column_width(SizeChange::SetFixed(200));
+    f.double_roundtrip(id);
+
+    // Should request nothing as this is a repeated same-size request in floating and the surface
+    // hasn't committed to it yet.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @""
+    );
+
+    // Commit.
+    let window = f.client(id).window(&surface);
+    window.commit();
+    f.double_roundtrip(id);
+
+    // Request the size change again.
+    f.niri().layout.set_column_width(SizeChange::SetFixed(200));
+    f.double_roundtrip(id);
+
+    // This should send a new configure since the window had committed.
+    //
+    // FIXME: doesn't request that currently.
+    assert_snapshot!(
+        f.client(id).window(&surface).format_recent_configures(),
+        @""
+    );
+}
