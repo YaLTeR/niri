@@ -3838,11 +3838,19 @@ impl<W: LayoutElement> Layout<W> {
                 // in the middle of interactive_move_update() and the confusion that causes.
                 self.interactive_move = None;
 
+                // Unset fullscreen before removing the tile. This will restore its size properly,
+                // and move it to floating if needed, so we don't have to deal with that here.
+                let ws = self
+                    .workspaces_mut()
+                    .find(|ws| ws.has_window(&window_id))
+                    .unwrap();
+                ws.set_fullscreen(window, false);
+
                 let RemovedTile {
                     mut tile,
                     width,
                     is_full_width,
-                    mut is_floating,
+                    is_floating,
                 } = self.remove_window(window, Transaction::new()).unwrap();
 
                 tile.stop_move_animations();
@@ -3860,33 +3868,6 @@ impl<W: LayoutElement> Layout<W> {
                     .with_merged_layout(workspace_config.as_ref().map(|(_, c)| c))
                     .adjusted_for_scale(scale);
                 tile.update_config(view_size, scale, Rc::new(options));
-
-                // Unfullscreen.
-                let floating_size = tile.floating_window_size;
-                let unfullscreen_to_floating = tile.unfullscreen_to_floating;
-                let win = tile.window_mut();
-                if win.is_pending_fullscreen() {
-                    // If we're unfullscreening to floating, use the stored floating size,
-                    // otherwise use (0, 0).
-                    let mut size = if unfullscreen_to_floating {
-                        floating_size.unwrap_or_default()
-                    } else {
-                        Size::from((0, 0))
-                    };
-
-                    // Apply min/max size window rules. If requesting a concrete size, apply
-                    // completely; if requesting (0, 0), apply only when min/max results in a fixed
-                    // size.
-                    let min_size = win.min_size();
-                    let max_size = win.max_size();
-                    size.w = ensure_min_max_size_maybe_zero(size.w, min_size.w, max_size.w);
-                    size.h = ensure_min_max_size_maybe_zero(size.h, min_size.h, max_size.h);
-
-                    win.request_size_once(size, true);
-
-                    // If we're unfullscreening to floating, default to the floating layout.
-                    is_floating = unfullscreen_to_floating;
-                }
 
                 if is_floating {
                     // Unlock the view in case we locked it moving a fullscreen window that is
