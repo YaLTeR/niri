@@ -18,6 +18,8 @@ pub struct Animations {
     pub exit_confirmation_open_close: ExitConfirmationOpenCloseAnim,
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
     pub overview_open_close: OverviewOpenCloseAnim,
+    pub window_mru_ui_open_close: WindowMruUiOpenCloseAnim,
+    pub thumbnail_select: ThumbnailSelectAnim,
 }
 
 impl Default for Animations {
@@ -35,6 +37,8 @@ impl Default for Animations {
             exit_confirmation_open_close: Default::default(),
             screenshot_ui_open: Default::default(),
             overview_open_close: Default::default(),
+            window_mru_ui_open_close: Default::default(),
+            thumbnail_select: ThumbnailSelectAnim::default(),
         }
     }
 }
@@ -67,6 +71,10 @@ pub struct AnimationsPart {
     pub screenshot_ui_open: Option<ScreenshotUiOpenAnim>,
     #[knuffel(child)]
     pub overview_open_close: Option<OverviewOpenCloseAnim>,
+    #[knuffel(child)]
+    pub window_mru_ui_open_close: Option<WindowMruUiOpenCloseAnim>,
+    #[knuffel(child)]
+    pub thumbnail_select: Option<ThumbnailSelectAnim>,
 }
 
 impl MergeWith<AnimationsPart> for Animations {
@@ -305,6 +313,38 @@ impl Default for OverviewOpenCloseAnim {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowMruUiOpenCloseAnim(pub Animation);
+
+impl Default for WindowMruUiOpenCloseAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThumbnailSelectAnim(pub Animation);
+
+impl Default for ThumbnailSelectAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Spring(SpringParams {
+                damping_ratio: 1.,
+                stiffness: 800,
+                epsilon: 0.0001,
+            }),
+        })
+    }
+}
+
 impl<S> knuffel::Decode<S> for WorkspaceSwitchAnim
 where
     S: knuffel::traits::ErrorSpan,
@@ -474,6 +514,36 @@ where
 }
 
 impl<S> knuffel::Decode<S> for OverviewOpenCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for WindowMruUiOpenCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for ThumbnailSelectAnim
 where
     S: knuffel::traits::ErrorSpan,
 {

@@ -619,4 +619,21 @@ binds {
     // Powers off the monitors. To turn them back on, do any input like
     // moving the mouse or pressing any other key.
     Mod+Shift+P { power-off-monitors; }
+
+    // Cycle through windows from the currently focused application using
+    // most-recently-used-order.
+    // Mod+grave { mru-advance "forward" scope="all" filter="app-id"; }
+    // Mod+Shift+grave { mru-advance "backward" scope="all" filter="app-id"; }
+
+}
+
+// Recent Windows settings.
+// The wiki explains how to configure individual animations:
+// https://github.com/YaLTeR/niri/wiki/Configuration:-Recent-Windows.md
+recent-windows {
+    // Uncomment to disable the recent windows interface
+    // off
+
+    // Choose the modifier key for the recent windows interface
+    mod-key "Alt"
 }

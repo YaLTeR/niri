@@ -682,6 +682,7 @@ impl ScreenshotUi {
             RenderTarget::Output => 0,
             RenderTarget::Screencast => 1,
             RenderTarget::ScreenCapture => 2,
+            RenderTarget::Offscreen => unimplemented!(),
         };
         let screenshot = &output_data.screenshot[index];
 
