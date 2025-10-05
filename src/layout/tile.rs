@@ -449,8 +449,13 @@ impl<W: LayoutElement> Tile<W> {
                 .unwrap_or_default()
                 .scaled_by(1. - fullscreen_progress as f32)
         };
-        self.shadow
-            .update_render_elements(animated_tile_size, is_active, radius, self.scale, 1.);
+        self.shadow.update_render_elements(
+            animated_tile_size,
+            is_active,
+            radius,
+            self.scale,
+            1. - fullscreen_progress as f32,
+        );
 
         let draw_focus_ring_with_background = if self.border.is_off() && fullscreen_progress < 1. {
             draw_border_with_background
@@ -1193,7 +1198,9 @@ impl<W: LayoutElement> Tile<W> {
             .then(|| self.focus_ring.render(renderer, location).map(Into::into));
         let rv = rv.chain(elem.into_iter().flatten());
 
-        rv.chain(self.shadow.render(renderer, location).map(Into::into))
+        let elem = (fullscreen_progress < 1.)
+            .then(|| self.shadow.render(renderer, location).map(Into::into));
+        rv.chain(elem.into_iter().flatten())
     }
 
     pub fn render<'a, R: NiriRenderer + 'a>(
