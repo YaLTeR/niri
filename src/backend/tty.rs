@@ -84,7 +84,7 @@ pub struct Tty {
     // DRM render node corresponding to the primary GPU.
     primary_render_node: DrmNode,
     // Ignored DRM nodes.
-    ignored_nodes: HashSet<DrmNode>,
+    ignored_nodes: HashSet<PciID>,
     // Devices indexed by DRM node (not necessarily the render node).
     devices: HashMap<DrmNode, OutputDevice>,
     // The dma-buf global corresponds to the output device (the primary GPU). It is only `Some()`
@@ -257,6 +257,33 @@ struct ConnectorProperties<'a> {
     connector: connector::Handle,
     properties: Vec<(property::Info, property::RawValue)>,
 }
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct PciID {
+    device_id: String,
+}
+
+impl PciID {
+    fn from_drm_node(node: &DrmNode) -> Option<PciID> {
+        use std::fs;
+
+        let device_id = fs::read_to_string(format!(
+            "/sys/dev/char/{}:{}/device/device",
+            DrmNode::major(node),
+            DrmNode::minor(node)
+        ));
+
+        match device_id {
+            Ok(device_id) => Some(PciID { device_id }),
+            Err(err) => {
+                error!(
+                    "error reading pci device id for drm node:{} error: {}",
+                    node, err
+                );
+                None
+            }
+        }
+    }
+}
 
 impl Tty {
     pub fn new(
@@ -331,8 +358,10 @@ impl Tty {
         info!("using as the render node: {node_path}");
 
         let mut ignored_nodes = ignored_nodes_from_config(&config.borrow());
-        if ignored_nodes.remove(&primary_node) || ignored_nodes.remove(&primary_render_node) {
-            warn!("ignoring the primary node or render node is not allowed");
+        if let Some(device_id) = PciID::from_drm_node(&primary_node) {
+            if ignored_nodes.remove(&device_id) {
+                warn!("ignoring the primary node or render node is not allowed");
+            }
         }
 
         Ok(Self {
@@ -512,9 +541,18 @@ impl Tty {
 
         let node = DrmNode::from_dev_id(device_id)?;
 
-        if self.ignored_nodes.contains(&node) {
-            debug!("node is ignored, skipping");
-            return Ok(());
+        match node.ty() {
+            NodeType::Render => {
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        if let Some(device_id) = PciID::from_drm_node(&node) {
+            if self.ignored_nodes.contains(&device_id) {
+                debug!("node is ignored, skipping");
+                return Ok(());
+            }
         }
 
         let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
@@ -1837,10 +1875,10 @@ impl Tty {
 
         // Update ignored nodes.
         let mut ignored_nodes = ignored_nodes_from_config(&self.config.borrow());
-        if ignored_nodes.remove(&self.primary_node)
-            || ignored_nodes.remove(&self.primary_render_node)
-        {
-            warn!("ignoring the primary node or render node is not allowed");
+        if let Some(device_id) = PciID::from_drm_node(&self.primary_node) {
+            if ignored_nodes.remove(&device_id) {
+                warn!("ignoring the primary node or render node is not allowed");
+            }
         }
         if ignored_nodes != self.ignored_nodes {
             self.ignored_nodes = ignored_nodes;
@@ -1856,7 +1894,14 @@ impl Tty {
                 .devices
                 .keys()
                 .filter(|node| {
-                    self.ignored_nodes.contains(node) || !device_list.contains_key(&node.dev_id())
+                    if let Some(device_id) = PciID::from_drm_node(&node) {
+                        if self.ignored_nodes.contains(&device_id) {
+                            return true;
+                        } else {
+                            return !device_list.contains_key(&node.dev_id());
+                        }
+                    }
+                    return !device_list.contains_key(&node.dev_id());
                 })
                 .copied()
                 .collect::<Vec<_>>();
@@ -2278,13 +2323,14 @@ fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
     primary_node_from_render_node(path)
 }
 
-fn ignored_nodes_from_config(config: &Config) -> HashSet<DrmNode> {
+fn ignored_nodes_from_config(config: &Config) -> HashSet<PciID> {
     let mut disabled_nodes = HashSet::new();
 
     for path in &config.debug.ignored_drm_devices {
-        if let Some((primary_node, render_node)) = primary_node_from_render_node(path) {
-            disabled_nodes.insert(primary_node);
-            disabled_nodes.insert(render_node);
+        if let Some((primary_node, _render_node)) = primary_node_from_render_node(path) {
+            if let Some(device_id) = PciID::from_drm_node(&primary_node) {
+                disabled_nodes.insert(device_id);
+            }
         }
     }
 
