@@ -466,7 +466,7 @@ impl<W: LayoutElement> Tile<W> {
             view_rect,
             radius,
             self.scale,
-            1.,
+            1. - fullscreen_progress as f32,
         );
 
         self.fullscreen_backdrop.resize(animated_tile_size);
@@ -1187,7 +1187,10 @@ impl<W: LayoutElement> Tile<W> {
         });
         let rv = rv.chain(elem.into_iter().flatten());
 
-        let elem = focus_ring.then(|| self.focus_ring.render(renderer, location).map(Into::into));
+        // Hide the focus ring when fullscreened. It's not normally visible anyway due to being
+        // outside the monitor, but it is visible in the overview (which is a bit weird).
+        let elem = (focus_ring && fullscreen_progress < 1.)
+            .then(|| self.focus_ring.render(renderer, location).map(Into::into));
         let rv = rv.chain(elem.into_iter().flatten());
 
         rv.chain(self.shadow.render(renderer, location).map(Into::into))
