@@ -4129,7 +4129,7 @@ impl<W: LayoutElement> Layout<W> {
                     };
 
                 let win_id = move_.tile.window().id().clone();
-                let window_render_loc = move_.tile_render_location(zoom) + move_.tile.window_loc();
+                let tile_render_loc = move_.tile_render_location(zoom);
 
                 let ws_idx = match insert_ws {
                     InsertWorkspace::Existing(ws_id) => mon
@@ -4226,18 +4226,17 @@ impl<W: LayoutElement> Layout<W> {
                 }
 
                 // needed because empty_workspace_above_first could have modified the idx
-                let (tile, tile_render_loc, ws_geo) = mon
+                let (tile, tile_offset, ws_geo) = mon
                     .workspaces_with_render_geo_mut(false)
                     .find_map(|(ws, geo)| {
                         ws.tiles_with_render_positions_mut(false)
                             .find(|(tile, _)| tile.window().id() == &win_id)
-                            .map(|(tile, tile_render_loc)| (tile, tile_render_loc, geo))
+                            .map(|(tile, tile_offset)| (tile, tile_offset, geo))
                     })
                     .unwrap();
-                let new_window_render_loc =
-                    ws_geo.loc + (tile_render_loc + tile.window_loc()).upscale(zoom);
+                let new_tile_render_loc = ws_geo.loc + tile_offset.upscale(zoom);
 
-                tile.animate_move_from((window_render_loc - new_window_render_loc).downscale(zoom));
+                tile.animate_move_from((tile_render_loc - new_tile_render_loc).downscale(zoom));
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 if workspaces.is_empty() {
