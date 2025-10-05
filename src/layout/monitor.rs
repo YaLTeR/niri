@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::CornerRadius;
+use niri_config::{CornerRadius, LayoutPart};
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
@@ -23,6 +23,7 @@ use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
+use crate::render_helpers::solid_color::SolidColorRenderElement;
 use crate::render_helpers::RenderTarget;
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::Transaction;
@@ -80,8 +81,12 @@ pub struct Monitor<W: LayoutElement> {
     overview_progress: Option<OverviewProgress>,
     /// Clock for driving animations.
     pub(super) clock: Clock,
+    /// Configurable properties of the layout as received from the parent layout.
+    pub(super) base_options: Rc<Options>,
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
+    /// Layout config overrides for this monitor.
+    layout_config: Option<niri_config::LayoutPart>,
 }
 
 #[derive(Debug)]
@@ -153,7 +158,7 @@ pub(super) enum OverviewProgress {
 }
 
 /// Where to put a newly added window.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub enum MonitorAddWindowTarget<'a, W: LayoutElement> {
     /// No particular preference.
     #[default]
@@ -169,12 +174,21 @@ pub enum MonitorAddWindowTarget<'a, W: LayoutElement> {
     NextTo(&'a W::Id),
 }
 
+impl<'a, W: LayoutElement> Copy for MonitorAddWindowTarget<'a, W> {}
+
+impl<'a, W: LayoutElement> Clone for MonitorAddWindowTarget<'a, W> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
 niri_render_elements! {
     MonitorInnerRenderElement<R> => {
         Workspace = CropRenderElement<WorkspaceRenderElement<R>>,
         InsertHint = CropRenderElement<InsertHintRenderElement>,
         UncroppedInsertHint = InsertHintRenderElement,
         Shadow = ShadowRenderElement,
+        SolidColor = SolidColorRenderElement,
     }
 }
 
@@ -275,13 +289,41 @@ impl From<&super::OverviewProgress> for OverviewProgress {
 impl<W: LayoutElement> Monitor<W> {
     pub fn new(
         output: Output,
-        workspaces: Vec<Workspace<W>>,
+        mut workspaces: Vec<Workspace<W>>,
+        ws_id_to_activate: Option<WorkspaceId>,
         clock: Clock,
-        options: Rc<Options>,
+        base_options: Rc<Options>,
+        layout_config: Option<LayoutPart>,
     ) -> Self {
+        let options =
+            Rc::new(Options::clone(&base_options).with_merged_layout(layout_config.as_ref()));
+
         let scale = output.current_scale();
         let view_size = output_size(&output);
         let working_area = compute_working_area(&output);
+
+        // Prepare the workspaces: set output, empty first, empty last.
+        let mut active_workspace_idx = 0;
+
+        for (idx, ws) in workspaces.iter_mut().enumerate() {
+            assert!(ws.has_windows_or_name());
+
+            ws.set_output(Some(output.clone()));
+            ws.update_config(options.clone());
+
+            if ws_id_to_activate.is_some_and(|id| ws.id() == id) {
+                active_workspace_idx = idx;
+            }
+        }
+
+        if options.layout.empty_workspace_above_first && !workspaces.is_empty() {
+            let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
+            workspaces.insert(0, ws);
+            active_workspace_idx += 1;
+        }
+
+        let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
+        workspaces.push(ws);
 
         Self {
             output_name: output.name(),
@@ -290,17 +332,29 @@ impl<W: LayoutElement> Monitor<W> {
             view_size,
             working_area,
             workspaces,
-            active_workspace_idx: 0,
+            active_workspace_idx,
             previous_workspace_id: None,
             insert_hint: None,
-            insert_hint_element: InsertHintElement::new(options.insert_hint),
+            insert_hint_element: InsertHintElement::new(options.layout.insert_hint),
             insert_hint_render_loc: None,
             overview_open: false,
             overview_progress: None,
             workspace_switch: None,
             clock,
+            base_options,
             options,
+            layout_config,
         }
+    }
+
+    pub fn into_workspaces(mut self) -> Vec<Workspace<W>> {
+        self.workspaces.retain(|ws| ws.has_windows_or_name());
+
+        for ws in &mut self.workspaces {
+            ws.set_output(None);
+        }
+
+        self.workspaces
     }
 
     pub fn output(&self) -> &Output {
@@ -426,6 +480,34 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    pub(super) fn resolve_add_window_target<'a>(
+        &mut self,
+        target: MonitorAddWindowTarget<'a, W>,
+    ) -> (usize, WorkspaceAddWindowTarget<'a, W>) {
+        match target {
+            MonitorAddWindowTarget::Auto => {
+                (self.active_workspace_idx, WorkspaceAddWindowTarget::Auto)
+            }
+            MonitorAddWindowTarget::Workspace { id, column_idx } => {
+                let idx = self.workspaces.iter().position(|ws| ws.id() == id).unwrap();
+                let target = if let Some(column_idx) = column_idx {
+                    WorkspaceAddWindowTarget::NewColumnAt(column_idx)
+                } else {
+                    WorkspaceAddWindowTarget::Auto
+                };
+                (idx, target)
+            }
+            MonitorAddWindowTarget::NextTo(win_id) => {
+                let idx = self
+                    .workspaces
+                    .iter_mut()
+                    .position(|ws| ws.has_window(win_id))
+                    .unwrap();
+                (idx, WorkspaceAddWindowTarget::NextTo(win_id))
+            }
+        }
+    }
+
     pub fn add_window(
         &mut self,
         window: W,
@@ -463,7 +545,7 @@ impl<W: LayoutElement> Monitor<W> {
         if workspace_idx == self.workspaces.len() - 1 {
             self.add_workspace_bottom();
         }
-        if self.options.empty_workspace_above_first && workspace_idx == 0 {
+        if self.options.layout.empty_workspace_above_first && workspace_idx == 0 {
             self.add_workspace_top();
             workspace_idx += 1;
         }
@@ -485,28 +567,7 @@ impl<W: LayoutElement> Monitor<W> {
         is_full_width: bool,
         is_floating: bool,
     ) {
-        let (mut workspace_idx, target) = match target {
-            MonitorAddWindowTarget::Auto => {
-                (self.active_workspace_idx, WorkspaceAddWindowTarget::Auto)
-            }
-            MonitorAddWindowTarget::Workspace { id, column_idx } => {
-                let idx = self.workspaces.iter().position(|ws| ws.id() == id).unwrap();
-                let target = if let Some(column_idx) = column_idx {
-                    WorkspaceAddWindowTarget::NewColumnAt(column_idx)
-                } else {
-                    WorkspaceAddWindowTarget::Auto
-                };
-                (idx, target)
-            }
-            MonitorAddWindowTarget::NextTo(win_id) => {
-                let idx = self
-                    .workspaces
-                    .iter_mut()
-                    .position(|ws| ws.has_window(win_id))
-                    .unwrap();
-                (idx, WorkspaceAddWindowTarget::NextTo(win_id))
-            }
-        };
+        let (mut workspace_idx, target) = self.resolve_add_window_target(target);
 
         let workspace = &mut self.workspaces[workspace_idx];
 
@@ -522,7 +583,7 @@ impl<W: LayoutElement> Monitor<W> {
             self.add_workspace_bottom();
         }
 
-        if self.options.empty_workspace_above_first && workspace_idx == 0 {
+        if self.options.layout.empty_workspace_above_first && workspace_idx == 0 {
             self.add_workspace_top();
             workspace_idx += 1;
         }
@@ -562,7 +623,7 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn clean_up_workspaces(&mut self) {
         assert!(self.workspace_switch.is_none());
 
-        let range_start = if self.options.empty_workspace_above_first {
+        let range_start = if self.options.layout.empty_workspace_above_first {
             1
         } else {
             0
@@ -582,7 +643,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         // Special case handling when empty_workspace_above_first is set and all workspaces
         // are empty.
-        if self.options.empty_workspace_above_first && self.workspaces.len() == 2 {
+        if self.options.layout.empty_workspace_above_first && self.workspaces.len() == 2 {
             assert!(!self.workspaces[0].has_windows_or_name());
             assert!(!self.workspaces[1].has_windows_or_name());
             self.workspaces.remove(1);
@@ -596,7 +657,103 @@ impl<W: LayoutElement> Monitor<W> {
         };
 
         ws.unname();
+
+        if self.workspace_switch.is_none() {
+            self.clean_up_workspaces();
+        }
+
         true
+    }
+
+    pub fn remove_workspace_by_idx(&mut self, mut idx: usize) -> Workspace<W> {
+        if idx == self.workspaces.len() - 1 {
+            self.add_workspace_bottom();
+        }
+        if self.options.layout.empty_workspace_above_first && idx == 0 {
+            self.add_workspace_top();
+            idx += 1;
+        }
+
+        let mut ws = self.workspaces.remove(idx);
+        ws.set_output(None);
+
+        // For monitor current workspace removal, we focus previous rather than next (<= rather
+        // than <). This is different from columns and tiles, but it lets move-workspace-to-monitor
+        // back and forth to preserve position.
+        if idx <= self.active_workspace_idx && self.active_workspace_idx > 0 {
+            self.active_workspace_idx -= 1;
+        }
+
+        self.workspace_switch = None;
+        self.clean_up_workspaces();
+
+        ws
+    }
+
+    pub fn insert_workspace(&mut self, mut ws: Workspace<W>, mut idx: usize, activate: bool) {
+        ws.set_output(Some(self.output.clone()));
+        ws.update_config(self.options.clone());
+
+        // Don't insert past the last empty workspace.
+        if idx == self.workspaces.len() {
+            idx -= 1;
+        }
+        if idx == 0 && self.options.layout.empty_workspace_above_first {
+            // Insert a new empty workspace on top to prepare for insertion of new workspace.
+            self.add_workspace_top();
+            idx += 1;
+        }
+
+        self.workspaces.insert(idx, ws);
+
+        if idx <= self.active_workspace_idx {
+            self.active_workspace_idx += 1;
+        }
+
+        if activate {
+            self.workspace_switch = None;
+            self.activate_workspace(idx);
+        }
+
+        self.workspace_switch = None;
+        self.clean_up_workspaces();
+    }
+
+    pub fn append_workspaces(&mut self, mut workspaces: Vec<Workspace<W>>) {
+        if workspaces.is_empty() {
+            return;
+        }
+
+        for ws in &mut workspaces {
+            ws.set_output(Some(self.output.clone()));
+            ws.update_config(self.options.clone());
+        }
+
+        let empty_was_focused = self.active_workspace_idx == self.workspaces.len() - 1;
+
+        // Push the workspaces from the removed monitor in the end, right before the
+        // last, empty, workspace.
+        let empty = self.workspaces.remove(self.workspaces.len() - 1);
+        self.workspaces.extend(workspaces);
+        self.workspaces.push(empty);
+
+        // If empty_workspace_above_first is set and the first workspace is now no longer empty,
+        // add a new empty workspace on top.
+        if self.options.layout.empty_workspace_above_first
+            && self.workspaces[0].has_windows_or_name()
+        {
+            self.add_workspace_top();
+        }
+
+        // If the empty workspace was focused on the primary monitor, keep it focused.
+        if empty_was_focused {
+            self.active_workspace_idx = self.workspaces.len() - 1;
+        }
+
+        // FIXME: if we're adding workspaces to currently invisible positions
+        // (outside the workspace switch), we don't need to cancel it.
+        self.workspace_switch = None;
+        self.clean_up_workspaces();
     }
 
     pub fn move_down_or_to_workspace_down(&mut self) {
@@ -1022,11 +1179,15 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
-    pub fn update_config(&mut self, options: Rc<Options>) {
-        if self.options.empty_workspace_above_first != options.empty_workspace_above_first
+    pub fn update_config(&mut self, base_options: Rc<Options>) {
+        let options =
+            Rc::new(Options::clone(&base_options).with_merged_layout(self.layout_config.as_ref()));
+
+        if self.options.layout.empty_workspace_above_first
+            != options.layout.empty_workspace_above_first
             && self.workspaces.len() > 1
         {
-            if options.empty_workspace_above_first {
+            if options.layout.empty_workspace_above_first {
                 self.add_workspace_top();
             } else if self.workspace_switch.is_none() && self.active_workspace_idx != 0 {
                 self.workspaces.remove(0);
@@ -1038,9 +1199,22 @@ impl<W: LayoutElement> Monitor<W> {
             ws.update_config(options.clone());
         }
 
-        self.insert_hint_element.update_config(options.insert_hint);
+        self.insert_hint_element
+            .update_config(options.layout.insert_hint);
 
+        self.base_options = base_options;
         self.options = options;
+    }
+
+    pub fn update_layout_config(&mut self, layout_config: Option<niri_config::LayoutPart>) -> bool {
+        if self.layout_config == layout_config {
+            return false;
+        }
+
+        self.layout_config = layout_config;
+        self.update_config(self.base_options.clone());
+
+        true
     }
 
     pub fn update_shaders(&mut self) {
@@ -1074,7 +1248,7 @@ impl<W: LayoutElement> Monitor<W> {
             self.add_workspace_bottom();
         }
 
-        if self.options.empty_workspace_above_first && self.active_workspace_idx == 0 {
+        if self.options.layout.empty_workspace_above_first && self.active_workspace_idx == 0 {
             self.add_workspace_top();
             new_idx += 1;
         }
@@ -1100,7 +1274,7 @@ impl<W: LayoutElement> Monitor<W> {
             self.add_workspace_bottom();
         }
 
-        if self.options.empty_workspace_above_first && new_idx == 0 {
+        if self.options.layout.empty_workspace_above_first && new_idx == 0 {
             self.add_workspace_top();
             new_idx += 1;
         }
@@ -1132,7 +1306,7 @@ impl<W: LayoutElement> Monitor<W> {
                 self.add_workspace_bottom();
             }
 
-            if self.options.empty_workspace_above_first && old_idx == 0 {
+            if self.options.layout.empty_workspace_above_first && old_idx == 0 {
                 self.add_workspace_top();
                 new_idx += 1;
             }
@@ -1142,7 +1316,7 @@ impl<W: LayoutElement> Monitor<W> {
                 self.add_workspace_bottom();
             }
 
-            if self.options.empty_workspace_above_first && new_idx == 0 {
+            if self.options.layout.empty_workspace_above_first && new_idx == 0 {
                 self.add_workspace_top();
                 new_idx += 1;
             }
@@ -1464,7 +1638,7 @@ impl<W: LayoutElement> Monitor<W> {
     ) -> impl Iterator<Item = MonitorRenderElement<R>> {
         let mut rv = None;
 
-        if !self.options.insert_hint.off {
+        if !self.options.layout.insert_hint.off {
             if let Some(render_loc) = self.insert_hint_render_loc {
                 if let InsertWorkspace::NewAt(_) = render_loc.workspace {
                     let iter = self
@@ -1490,6 +1664,7 @@ impl<W: LayoutElement> Monitor<W> {
     ) -> impl Iterator<
         Item = (
             Rectangle<f64, Logical>,
+            MonitorRenderElement<R>,
             impl Iterator<Item = MonitorRenderElement<R>> + 'a,
         ),
     > {
@@ -1525,7 +1700,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         // Draw the insert hint.
         let mut insert_hint = None;
-        if !self.options.insert_hint.off {
+        if !self.options.layout.insert_hint.off {
             if let Some(render_loc) = self.insert_hint_render_loc {
                 if let InsertWorkspace::Existing(workspace_id) = render_loc.workspace {
                     insert_hint = Some((
@@ -1563,7 +1738,7 @@ impl<W: LayoutElement> Monitor<W> {
 
             let iter = floating.chain(hint).chain(scrolling);
 
-            let iter = iter.map(move |elem| {
+            let scale_relocate = move |elem| {
                 let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
                 RelocateRenderElement::from_element(
                     elem,
@@ -1573,9 +1748,14 @@ impl<W: LayoutElement> Monitor<W> {
                     geo.loc.to_physical_precise_round(scale),
                     Relocate::Relative,
                 )
-            });
+            };
 
-            (geo, iter)
+            let iter = iter.map(scale_relocate);
+
+            let background = ws.render_background();
+            let background = scale_relocate(MonitorInnerRenderElement::SolidColor(background));
+
+            (geo, background, iter)
         })
     }
 
@@ -1724,7 +1904,7 @@ impl<W: LayoutElement> Monitor<W> {
         };
 
         let config = &self.options.gestures.dnd_edge_workspace_switch;
-        let trigger_height = config.trigger_height.0;
+        let trigger_height = config.trigger_height;
 
         // Restrict the scrolling horizontally to the strip of workspaces to avoid unwanted trigger
         // after using the hot corner or during horizontal scroll.
@@ -1778,7 +1958,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let time_delta = now.saturating_sub(last_time).as_secs_f64();
 
-        let delta = delta * time_delta * config.max_speed.0;
+        let delta = delta * time_delta * config.max_speed;
 
         gesture.tracker.push(delta, now);
 
@@ -1878,5 +2058,119 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn working_area(&self) -> Rectangle<f64, Logical> {
         self.working_area
+    }
+
+    pub fn layout_config(&self) -> Option<&niri_config::LayoutPart> {
+        self.layout_config.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(super) fn verify_invariants(&self) {
+        use approx::assert_abs_diff_eq;
+
+        let options =
+            Options::clone(&self.base_options).with_merged_layout(self.layout_config.as_ref());
+        assert_eq!(&*self.options, &options);
+
+        assert!(
+            !self.workspaces.is_empty(),
+            "monitor must have at least one workspace"
+        );
+        assert!(self.active_workspace_idx < self.workspaces.len());
+
+        if let Some(WorkspaceSwitch::Animation(anim)) = &self.workspace_switch {
+            let before_idx = anim.from() as usize;
+            let after_idx = anim.to() as usize;
+
+            assert!(before_idx < self.workspaces.len());
+            assert!(after_idx < self.workspaces.len());
+        }
+
+        assert!(
+            !self.workspaces.last().unwrap().has_windows(),
+            "monitor must have an empty workspace in the end"
+        );
+        if self.options.layout.empty_workspace_above_first {
+            assert!(
+                !self.workspaces.first().unwrap().has_windows(),
+                "first workspace must be empty when empty_workspace_above_first is set"
+            )
+        }
+
+        assert!(
+            self.workspaces.last().unwrap().name.is_none(),
+            "monitor must have an unnamed workspace in the end"
+        );
+        if self.options.layout.empty_workspace_above_first {
+            assert!(
+                self.workspaces.first().unwrap().name.is_none(),
+                "first workspace must be unnamed when empty_workspace_above_first is set"
+            )
+        }
+
+        if self.options.layout.empty_workspace_above_first {
+            assert!(
+                self.workspaces.len() != 2,
+                "if empty_workspace_above_first is set there must be just 1 or 3+ workspaces"
+            )
+        }
+
+        // If there's no workspace switch in progress, there can't be any non-last non-active
+        // empty workspaces. If empty_workspace_above_first is set then the first workspace
+        // will be empty too.
+        let pre_skip = if self.options.layout.empty_workspace_above_first {
+            1
+        } else {
+            0
+        };
+        if self.workspace_switch.is_none() {
+            for (idx, ws) in self
+                .workspaces
+                .iter()
+                .enumerate()
+                .skip(pre_skip)
+                .rev()
+                // skip last
+                .skip(1)
+            {
+                if idx != self.active_workspace_idx {
+                    assert!(
+                        ws.has_windows_or_name(),
+                        "non-active workspace can't be empty and unnamed except the last one"
+                    );
+                }
+            }
+        }
+
+        for workspace in &self.workspaces {
+            assert_eq!(self.clock, workspace.clock);
+
+            assert_eq!(
+                self.scale().integer_scale(),
+                workspace.scale().integer_scale()
+            );
+            assert_eq!(
+                self.scale().fractional_scale(),
+                workspace.scale().fractional_scale()
+            );
+            assert_eq!(self.view_size, workspace.view_size());
+            assert_eq!(self.working_area, workspace.working_area());
+
+            assert_eq!(
+                workspace.base_options, self.options,
+                "workspace options must be synchronized with monitor"
+            );
+        }
+
+        let scale = self.scale().fractional_scale();
+        let iter = self.workspaces_with_render_geo();
+        for (_ws, ws_geo) in iter {
+            let pos = ws_geo.loc;
+            let rounded_pos = pos.to_physical_precise_round(scale).to_logical(scale);
+
+            // Workspace positions must be rounded to physical pixels.
+            assert_abs_diff_eq!(pos.x, rounded_pos.x, epsilon = 1e-5);
+            assert_abs_diff_eq!(pos.y, rounded_pos.y, epsilon = 1e-5);
+        }
     }
 }

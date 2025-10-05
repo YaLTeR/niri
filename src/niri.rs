@@ -474,9 +474,8 @@ pub struct OutputState {
     ///    would occur, based on the last presentation time and output refresh interval. Sequence
     ///    is incremented in that timer, before attempting a redraw or sending frame callbacks.
     pub frame_callback_sequence: u32,
-    /// Solid color buffer for the background that we use instead of clearing to avoid damage
+    /// Solid color buffer for the backdrop that we use instead of clearing to avoid damage
     /// tracking issues and make screenshots easier.
-    pub background_buffer: SolidColorBuffer,
     pub backdrop_buffer: SolidColorBuffer,
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
@@ -1382,7 +1381,7 @@ impl State {
             self.niri.layout.ensure_named_workspace(ws_config);
         }
 
-        let rate = 1.0 / config.animations.slowdown.0.max(0.001);
+        let rate = 1.0 / config.animations.slowdown.max(0.001);
         self.niri.clock.set_rate(rate);
         self.niri
             .clock
@@ -1502,6 +1501,10 @@ impl State {
         if config.debug.keep_laptop_panel_on_when_lid_is_closed
             != old_config.debug.keep_laptop_panel_on_when_lid_is_closed
         {
+            output_config_changed = true;
+        }
+
+        if config.debug.ignored_drm_devices != old_config.debug.ignored_drm_devices {
             output_config_changed = true;
         }
 
@@ -1655,12 +1658,6 @@ impl State {
                 resized_outputs.push(output.clone());
             }
 
-            let background_color = config
-                .and_then(|c| c.background_color)
-                .unwrap_or(full_config.layout.background_color)
-                .to_array_unpremul();
-            let background_color = Color32F::from(background_color);
-
             let mut backdrop_color = config
                 .and_then(|c| c.backdrop_color)
                 .unwrap_or(full_config.overview.backdrop_color)
@@ -1669,14 +1666,30 @@ impl State {
             let backdrop_color = Color32F::from(backdrop_color);
 
             if let Some(state) = self.niri.output_state.get_mut(output) {
-                if state.background_buffer.color() != background_color {
-                    state.background_buffer.set_color(background_color);
-                    recolored_outputs.push(output.clone());
-                }
                 if state.backdrop_buffer.color() != backdrop_color {
                     state.backdrop_buffer.set_color(backdrop_color);
                     recolored_outputs.push(output.clone());
                 }
+            }
+
+            for mon in self.niri.layout.monitors_mut() {
+                if mon.output() != output {
+                    continue;
+                }
+
+                let mut layout_config = config.and_then(|c| c.layout.clone());
+                // Support the deprecated non-layout background-color key.
+                if let Some(layout) = &mut layout_config {
+                    if layout.background_color.is_none() {
+                        layout.background_color = config.and_then(|c| c.background_color);
+                    }
+                }
+
+                if mon.update_layout_config(layout_config) {
+                    // Also redraw these; if anything, the background color could've changed.
+                    recolored_outputs.push(output.clone());
+                }
+                break;
             }
         }
 
@@ -2311,7 +2324,7 @@ impl Niri {
 
         let mut animation_clock = Clock::default();
 
-        let rate = 1.0 / config_.animations.slowdown.0.max(0.001);
+        let rate = 1.0 / config_.animations.slowdown.max(0.001);
         animation_clock.set_rate(rate);
         animation_clock.set_complete_instantly(config_.animations.off);
 
@@ -2904,11 +2917,6 @@ impl Niri {
             .map(|c| ipc_transform_to_smithay(c.transform))
             .unwrap_or(Transform::Normal);
 
-        let background_color = c
-            .and_then(|c| c.background_color)
-            .unwrap_or(config.layout.background_color)
-            .to_array_unpremul();
-
         let mut backdrop_color = c
             .and_then(|c| c.backdrop_color)
             .unwrap_or(config.overview.backdrop_color)
@@ -2918,6 +2926,14 @@ impl Niri {
         // FIXME: fix winit damage on other transforms.
         if name.connector == "winit" {
             transform = Transform::Flipped180;
+        }
+
+        let mut layout_config = c.and_then(|c| c.layout.clone());
+        // Support the deprecated non-layout background-color key.
+        if let Some(layout) = &mut layout_config {
+            if layout.background_color.is_none() {
+                layout.background_color = c.and_then(|c| c.background_color);
+            }
         }
         drop(config);
 
@@ -2929,7 +2945,7 @@ impl Niri {
             None,
         );
 
-        self.layout.add_output(output.clone());
+        self.layout.add_output(output.clone(), layout_config);
 
         let lock_render_state = if self.is_locked() {
             // We haven't rendered anything yet so it's as good as locked.
@@ -2947,7 +2963,6 @@ impl Niri {
             frame_clock: FrameClock::new(refresh_interval, vrr),
             last_drm_sequence: None,
             frame_callback_sequence: 0,
-            background_buffer: SolidColorBuffer::new(size, background_color),
             backdrop_buffer: SolidColorBuffer::new(size, backdrop_color),
             lock_render_state,
             lock_surface: None,
@@ -3056,7 +3071,6 @@ impl Niri {
         self.layout.update_output_size(output);
 
         if let Some(state) = self.output_state.get_mut(output) {
-            state.background_buffer.resize(output_size);
             state.backdrop_buffer.resize(output_size);
 
             state.lock_color_buffer.resize(output_size);
@@ -4239,13 +4253,6 @@ impl Niri {
 
         // Prepare the background elements.
         let state = self.output_state.get(output).unwrap();
-        let background_buffer = state.background_buffer.clone();
-        let background = SolidColorRenderElement::from_buffer(
-            &background_buffer,
-            (0., 0.),
-            1.,
-            Kind::Unspecified,
-        );
         let backdrop = SolidColorRenderElement::from_buffer(
             &state.backdrop_buffer,
             (0., 0.),
@@ -4286,7 +4293,7 @@ impl Niri {
         let zoom = mon.overview_zoom();
         let monitor_elements = Vec::from_iter(
             mon.render_elements(renderer, target, focus_ring)
-                .map(|(geo, iter)| (geo, Vec::from_iter(iter))),
+                .map(|(geo, bg, iter)| (geo, bg, Vec::from_iter(iter))),
         );
         let workspace_shadow_elements = Vec::from_iter(mon.render_workspace_shadows(renderer));
         let insert_hint_elements = mon.render_insert_hint_between_workspaces(renderer);
@@ -4330,17 +4337,24 @@ impl Niri {
                     .into_iter()
                     .map(OutputRenderElements::from),
             );
+
+            let mut ws_background = None;
             elements.extend(
                 monitor_elements
                     .into_iter()
-                    .flat_map(|(_ws_geo, iter)| iter)
+                    .flat_map(|(_ws_geo, ws_bg, iter)| {
+                        ws_background = Some(ws_bg);
+                        iter
+                    })
                     .map(OutputRenderElements::from),
             );
 
             elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
             elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
 
-            elements.push(OutputRenderElements::from(background));
+            if let Some(ws_background) = ws_background {
+                elements.push(OutputRenderElements::from(ws_background));
+            }
 
             elements.extend(
                 workspace_shadow_elements
@@ -4362,7 +4376,7 @@ impl Niri {
                     .map(OutputRenderElements::from),
             );
 
-            for (ws_geo, ws_elements) in monitor_elements {
+            for (ws_geo, ws_background, ws_elements) in monitor_elements {
                 // Collect all other layer-shell elements.
                 let mut layer_elems = SplitElements::default();
                 extend_from_layer(&mut layer_elems, Layer::Bottom, false);
@@ -4386,11 +4400,7 @@ impl Niri {
                         .map(OutputRenderElements::from),
                 );
 
-                if let Some(elem) =
-                    scale_relocate_crop(background.clone(), output_scale, zoom, ws_geo)
-                {
-                    elements.push(OutputRenderElements::from(elem));
-                }
+                elements.push(OutputRenderElements::from(ws_background));
             }
 
             elements.extend(
@@ -6351,9 +6361,6 @@ niri_render_elements! {
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
-        RelocatedSolidColor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
-            SolidColorRenderElement
-        >>>,
         ScreenshotUi = ScreenshotUiRenderElement,
         ExitConfirmDialog = ExitConfirmDialogRenderElement,
         Texture = PrimaryGpuTextureRenderElement,

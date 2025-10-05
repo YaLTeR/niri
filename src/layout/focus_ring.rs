@@ -65,7 +65,7 @@ impl FocusRing {
         scale: f64,
         alpha: f32,
     ) {
-        let width = self.config.width.0;
+        let width = self.config.width;
         self.full_size = win_size + Size::from((width, width)).upscale(2.);
 
         let color = if is_urgent {
@@ -261,7 +261,7 @@ impl FocusRing {
     }
 
     pub fn width(&self) -> f64 {
-        self.config.width.0
+        self.config.width
     }
 
     pub fn is_off(&self) -> bool {

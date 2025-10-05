@@ -1,6 +1,7 @@
 use core::f64;
 use std::rc::Rc;
 
+use niri_config::utils::MergeWith as _;
 use niri_config::{Color, CornerRadius, GradientInterpolation};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
@@ -180,15 +181,15 @@ impl<W: LayoutElement> Tile<W> {
         options: Rc<Options>,
     ) -> Self {
         let rules = window.rules();
-        let border_config = rules.border.resolve_against(options.border);
-        let focus_ring_config = rules.focus_ring.resolve_against(options.focus_ring.into());
-        let shadow_config = rules.shadow.resolve_against(options.shadow);
+        let border_config = options.layout.border.merged_with(&rules.border);
+        let focus_ring_config = options.layout.focus_ring.merged_with(&rules.focus_ring);
+        let shadow_config = options.layout.shadow.merged_with(&rules.shadow);
         let is_fullscreen = window.is_fullscreen();
 
         Self {
             window,
             border: FocusRing::new(border_config.into()),
-            focus_ring: FocusRing::new(focus_ring_config.into()),
+            focus_ring: FocusRing::new(focus_ring_config),
             shadow: Shadow::new(shadow_config),
             is_fullscreen,
             fullscreen_backdrop: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
@@ -220,10 +221,10 @@ impl<W: LayoutElement> Tile<W> {
         options: Rc<Options>,
     ) {
         // If preset widths or heights changed, clear our stored preset index.
-        if self.options.preset_column_widths != options.preset_column_widths {
+        if self.options.layout.preset_column_widths != options.layout.preset_column_widths {
             self.floating_preset_width_idx = None;
         }
-        if self.options.preset_window_heights != options.preset_window_heights {
+        if self.options.layout.preset_window_heights != options.layout.preset_window_heights {
             self.floating_preset_height_idx = None;
         }
 
@@ -233,15 +234,17 @@ impl<W: LayoutElement> Tile<W> {
 
         let rules = self.window.rules();
 
-        let border_config = rules.border.resolve_against(self.options.border);
+        let border_config = self.options.layout.border.merged_with(&rules.border);
         self.border.update_config(border_config.into());
 
-        let focus_ring_config = rules
+        let focus_ring_config = self
+            .options
+            .layout
             .focus_ring
-            .resolve_against(self.options.focus_ring.into());
-        self.focus_ring.update_config(focus_ring_config.into());
+            .merged_with(&rules.focus_ring);
+        self.focus_ring.update_config(focus_ring_config);
 
-        let shadow_config = rules.shadow.resolve_against(self.options.shadow);
+        let shadow_config = self.options.layout.shadow.merged_with(&rules.shadow);
         self.shadow.update_config(shadow_config);
     }
 
@@ -341,14 +344,16 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         let rules = self.window.rules();
-        let border_config = rules.border.resolve_against(self.options.border);
+        let border_config = self.options.layout.border.merged_with(&rules.border);
         self.border.update_config(border_config.into());
-        let focus_ring_config = rules
+        let focus_ring_config = self
+            .options
+            .layout
             .focus_ring
-            .resolve_against(self.options.focus_ring.into());
-        self.focus_ring.update_config(focus_ring_config.into());
+            .merged_with(&rules.focus_ring);
+        self.focus_ring.update_config(focus_ring_config);
 
-        let shadow_config = rules.shadow.resolve_against(self.options.shadow);
+        let shadow_config = self.options.layout.shadow.merged_with(&rules.shadow);
         self.shadow.update_config(shadow_config);
 
         let window_size = self.window_size();

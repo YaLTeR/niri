@@ -2,10 +2,12 @@ use std::cmp::max;
 use std::rc::Rc;
 use std::time::Duration;
 
+use niri_config::utils::MergeWith as _;
 use niri_config::{
     CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
+use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
 use smithay::output::Output;
@@ -29,6 +31,7 @@ use crate::animation::Clock;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
+use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::RenderTarget;
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
@@ -87,6 +90,9 @@ pub struct Workspace<W: LayoutElement> {
     /// This workspace's shadow in the overview.
     shadow: Shadow,
 
+    /// This workspace's background.
+    background_buffer: SolidColorBuffer,
+
     /// Clock for driving animations.
     pub(super) clock: Clock,
 
@@ -98,6 +104,9 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Optional name of this workspace.
     pub(super) name: Option<String>,
+
+    /// Layout config overrides for this workspace.
+    layout_config: Option<niri_config::LayoutPart>,
 
     /// Unique ID of this workspace.
     id: WorkspaceId,
@@ -202,7 +211,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn new_with_config(
         output: Output,
-        config: Option<WorkspaceConfig>,
+        mut config: Option<WorkspaceConfig>,
         clock: Clock,
         base_options: Rc<Options>,
     ) -> Self {
@@ -212,9 +221,14 @@ impl<W: LayoutElement> Workspace<W> {
             .map(OutputId)
             .unwrap_or(OutputId::new(&output));
 
+        let layout_config = config.as_mut().and_then(|c| c.layout.take().map(|x| x.0));
+
         let scale = output.current_scale();
-        let options =
-            Rc::new(Options::clone(&base_options).adjusted_for_scale(scale.fractional_scale()));
+        let options = Rc::new(
+            Options::clone(&base_options)
+                .with_merged_layout(layout_config.as_ref())
+                .adjusted_for_scale(scale.fractional_scale()),
+        );
 
         let view_size = output_size(&output);
         let working_area = compute_working_area(&output);
@@ -238,6 +252,8 @@ impl<W: LayoutElement> Workspace<W> {
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
 
+        let background_color = options.layout.background_color.to_array_unpremul();
+
         Self {
             scrolling,
             floating,
@@ -248,17 +264,19 @@ impl<W: LayoutElement> Workspace<W> {
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
+            background_buffer: SolidColorBuffer::new(view_size, background_color),
             output: Some(output),
             clock,
             base_options,
             options,
             name: config.map(|c| c.name.0),
+            layout_config,
             id: WorkspaceId::next(),
         }
     }
 
     pub fn new_with_config_no_outputs(
-        config: Option<WorkspaceConfig>,
+        mut config: Option<WorkspaceConfig>,
         clock: Clock,
         base_options: Rc<Options>,
     ) -> Self {
@@ -269,9 +287,14 @@ impl<W: LayoutElement> Workspace<W> {
                 .unwrap_or_default(),
         );
 
+        let layout_config = config.as_mut().and_then(|c| c.layout.take().map(|x| x.0));
+
         let scale = smithay::output::Scale::Integer(1);
-        let options =
-            Rc::new(Options::clone(&base_options).adjusted_for_scale(scale.fractional_scale()));
+        let options = Rc::new(
+            Options::clone(&base_options)
+                .with_merged_layout(layout_config.as_ref())
+                .adjusted_for_scale(scale.fractional_scale()),
+        );
 
         let view_size = Size::from((1280., 720.));
         let working_area = Rectangle::from_size(Size::from((1280., 720.)));
@@ -295,6 +318,8 @@ impl<W: LayoutElement> Workspace<W> {
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
 
+        let background_color = options.layout.background_color.to_array_unpremul();
+
         Self {
             scrolling,
             floating,
@@ -306,10 +331,12 @@ impl<W: LayoutElement> Workspace<W> {
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
+            background_buffer: SolidColorBuffer::new(view_size, background_color),
             clock,
             base_options,
             options,
             name: config.map(|c| c.name.0),
+            layout_config,
             id: WorkspaceId::next(),
         }
     }
@@ -370,7 +397,11 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn update_config(&mut self, base_options: Rc<Options>) {
         let scale = self.scale.fractional_scale();
-        let options = Rc::new(Options::clone(&base_options).adjusted_for_scale(scale));
+        let options = Rc::new(
+            Options::clone(&base_options)
+                .with_merged_layout(self.layout_config.as_ref())
+                .adjusted_for_scale(scale),
+        );
 
         self.scrolling.update_config(
             self.view_size,
@@ -390,8 +421,20 @@ impl<W: LayoutElement> Workspace<W> {
             compute_workspace_shadow_config(options.overview.workspace_shadow, self.view_size);
         self.shadow.update_config(shadow_config);
 
+        let background_color = options.layout.background_color.to_array_unpremul();
+        self.background_buffer.set_color(background_color);
+
         self.base_options = base_options;
         self.options = options;
+    }
+
+    pub fn update_layout_config(&mut self, layout_config: Option<niri_config::LayoutPart>) {
+        if self.layout_config == layout_config {
+            return;
+        }
+
+        self.layout_config = layout_config;
+        self.update_config(self.base_options.clone());
     }
 
     pub fn update_shaders(&mut self) {
@@ -534,6 +577,8 @@ impl<W: LayoutElement> Workspace<W> {
                 compute_workspace_shadow_config(self.options.overview.workspace_shadow, size);
             self.shadow.update_config(shadow_config);
         }
+
+        self.background_buffer.resize(size);
 
         if scale_transform_changed {
             for window in self.windows() {
@@ -754,7 +799,7 @@ impl<W: LayoutElement> Workspace<W> {
             Some(Some(width)) => Some(width),
             Some(None) => None,
             None if is_floating => None,
-            None => self.options.default_column_width,
+            None => self.options.layout.default_column_width,
         }
     }
 
@@ -836,6 +881,29 @@ impl<W: LayoutElement> Workspace<W> {
                 state.bounds = Some(self.scrolling.new_window_toplevel_bounds(rules));
             }
         });
+    }
+
+    pub(super) fn resolve_scrolling_width(
+        &self,
+        window: &W,
+        width: Option<PresetSize>,
+    ) -> ColumnWidth {
+        let width = width.unwrap_or_else(|| PresetSize::Fixed(window.size().w));
+        match width {
+            PresetSize::Fixed(fixed) => {
+                let mut fixed = f64::from(fixed);
+
+                // Add border width since ColumnWidth includes borders.
+                let rules = window.rules();
+                let border = self.options.layout.border.merged_with(&rules.border);
+                if !border.off {
+                    fixed += border.width * 2.;
+                }
+
+                ColumnWidth::Fixed(fixed)
+            }
+            PresetSize::Proportion(prop) => ColumnWidth::Proportion(prop),
+        }
     }
 
     pub fn focus_left(&mut self) -> bool {
@@ -1272,11 +1340,12 @@ impl<W: LayoutElement> Workspace<W> {
             // Come up with a default floating position close to the tile position.
             let stored_or_default = self.floating.stored_or_default_tile_pos(&removed.tile);
             if stored_or_default.is_none() {
-                let offset = if self.options.center_focused_column == CenterFocusedColumn::Always {
-                    Point::from((0., 0.))
-                } else {
-                    Point::from((50., 50.))
-                };
+                let offset =
+                    if self.options.layout.center_focused_column == CenterFocusedColumn::Always {
+                        Point::from((0., 0.))
+                    } else {
+                        Point::from((50., 50.))
+                    };
                 let pos = render_pos + offset;
                 let size = removed.tile.tile_size();
                 let pos = self.floating.clamp_within_working_area(pos, size);
@@ -1484,6 +1553,15 @@ impl<W: LayoutElement> Workspace<W> {
         self.shadow.render(renderer, Point::from((0., 0.)))
     }
 
+    pub fn render_background(&self) -> SolidColorRenderElement {
+        SolidColorRenderElement::from_buffer(
+            &self.background_buffer,
+            Point::new(0., 0.),
+            1.,
+            Kind::Unspecified,
+        )
+    }
+
     pub fn render_above_top_layer(&self) -> bool {
         self.scrolling.render_above_top_layer()
     }
@@ -1688,7 +1766,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn dnd_scroll_gesture_scroll(&mut self, pos: Point<f64, Logical>, speed: f64) -> bool {
         let config = &self.options.gestures.dnd_edge_view_scroll;
-        let trigger_width = config.trigger_width.0;
+        let trigger_width = config.trigger_width;
 
         // This working area intentionally does not include extra struts from Options.
         let x = pos.x - self.working_area.loc.x;
@@ -1769,6 +1847,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.working_area
     }
 
+    pub fn layout_config(&self) -> Option<&niri_config::LayoutPart> {
+        self.layout_config.as_ref()
+    }
+
     #[cfg(test)]
     pub fn scrolling(&self) -> &ScrollingSpace<W> {
         &self.scrolling
@@ -1787,7 +1869,9 @@ impl<W: LayoutElement> Workspace<W> {
         assert!(scale > 0.);
         assert!(scale.is_finite());
 
-        let options = Options::clone(&self.base_options).adjusted_for_scale(scale);
+        let options = Options::clone(&self.base_options)
+            .with_merged_layout(self.layout_config.as_ref())
+            .adjusted_for_scale(scale);
         assert_eq!(
             &*self.options, &options,
             "options must be base options adjusted for scale"
@@ -1795,6 +1879,12 @@ impl<W: LayoutElement> Workspace<W> {
 
         assert!(self.view_size.w > 0.);
         assert!(self.view_size.h > 0.);
+
+        assert_eq!(self.background_buffer.size(), self.view_size);
+        assert_eq!(
+            self.background_buffer.color().components(),
+            options.layout.background_color.to_array_unpremul(),
+        );
 
         assert_eq!(self.view_size, self.scrolling.view_size());
         assert_eq!(self.working_area, self.scrolling.parent_area());
@@ -1859,8 +1949,8 @@ fn compute_workspace_shadow_config(
     let norm = view_size.h / 1080.;
 
     let mut config = niri_config::Shadow::from(config);
-    config.softness.0 *= norm;
-    config.spread.0 *= norm;
+    config.softness *= norm;
+    config.spread *= norm;
     config.offset.x.0 *= norm;
     config.offset.y.0 *= norm;
 

@@ -33,6 +33,7 @@
 * [Animations](./Configuration:-Animations.md)
 * [Gestures](./Configuration:-Gestures.md)
 * [Debug Options](./Configuration:-Debug-Options.md)
+* [Include](./Configuration:-Include.md)
 
 ## Development
 * [Design Principles](./Development:-Design-Principles.md)
