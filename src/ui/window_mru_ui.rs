@@ -565,7 +565,7 @@ impl WindowMruUi {
         let inner = Inner {
             wmru,
             textures: RefCell::new(TextureCache::with_capacity(nids)),
-            focus_ring: FocusRing::new(options.focus_ring),
+            focus_ring: FocusRing::new(options.layout.focus_ring),
             options,
             view_offset: None,
             closing_thumbnails: vec![],

@@ -14,6 +14,7 @@ You can find documentation for various sections of the config on these wiki page
 * [`gestures {}`](./Configuration:-Gestures.md)
 * [`recent-windows {}`](./Configuration:-Recent-Windows.md)
 * [`debug {}`](./Configuration:-Debug-Options.md)
+* [`include "other.kdl"`](./Configuration:-Include.md)
 
 ### Loading
 

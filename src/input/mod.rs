@@ -409,7 +409,7 @@ impl State {
         let is_inhibiting_shortcuts = self.is_inhibiting_shortcuts();
         let (mru_ui_enabled, mru_mod_key) = {
             let config = &self.niri.config.borrow().recent_windows;
-            (!config.off, config.mod_key)
+            (config.on, config.mod_key)
         };
 
         // Accessibility modifier grabs should override XKB state changes (e.g. Caps Lock), so we
@@ -2035,7 +2035,7 @@ impl State {
                         if self.niri.layout.move_workspace_to_output_by_id(
                             old_idx,
                             output,
-                            new_output.clone(),
+                            &new_output,
                         ) {
                             // Cursor warp already calls `queue_redraw_all`
                             if !self.maybe_warp_cursor_to_focus_centered() {
@@ -2237,8 +2237,7 @@ impl State {
                 }
             }
             Action::MruClose => {
-                if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open()
+                if self.niri.config.borrow().recent_windows.on && self.niri.window_mru_ui.is_open()
                 {
                     if let Some(window) = { self.niri.close_mru_ui(MruCloseRequest::Current) } {
                         // Transfer focus to the selected window id.
@@ -2249,8 +2248,7 @@ impl State {
                 }
             }
             Action::MruCancel => {
-                if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open()
+                if self.niri.config.borrow().recent_windows.on && self.niri.window_mru_ui.is_open()
                 {
                     self.niri.window_mru_ui.close(MruCloseRequest::Cancelled);
                     // FIXME: granular
@@ -2258,7 +2256,7 @@ impl State {
                 }
             }
             Action::MruAdvance(dir, scope, filter) => {
-                if !self.niri.config.borrow().recent_windows.off {
+                if self.niri.config.borrow().recent_windows.on {
                     if self.niri.window_mru_ui.is_open() {
                         if let Some(wmru) = self
                             .niri
@@ -2306,8 +2304,7 @@ impl State {
                 }
             }
             Action::MruCloseCurrent => {
-                if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open()
+                if self.niri.config.borrow().recent_windows.on && self.niri.window_mru_ui.is_open()
                 {
                     if let Some(id) = self.niri.window_mru_ui.current_window_id() {
                         if let Some(w) = self.niri.find_window_by_id(id) {
@@ -2321,8 +2318,7 @@ impl State {
                 }
             }
             Action::MruFirst => {
-                if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open()
+                if self.niri.config.borrow().recent_windows.on && self.niri.window_mru_ui.is_open()
                 {
                     self.niri.window_mru_ui.first();
                     // FIXME: granular
@@ -2330,8 +2326,7 @@ impl State {
                 }
             }
             Action::MruLast => {
-                if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open()
+                if self.niri.config.borrow().recent_windows.on && self.niri.window_mru_ui.is_open()
                 {
                     self.niri.window_mru_ui.last();
                     // FIXME: granular
@@ -2339,8 +2334,7 @@ impl State {
                 }
             }
             Action::MruChangeScope(scope) => {
-                if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open()
+                if self.niri.config.borrow().recent_windows.on && self.niri.window_mru_ui.is_open()
                 {
                     if let Some(wmru) =
                         self.niri
@@ -2354,8 +2348,7 @@ impl State {
                 }
             }
             Action::MruCycleScope(direction) => {
-                if !self.niri.config.borrow().recent_windows.off
-                    && self.niri.window_mru_ui.is_open()
+                if self.niri.config.borrow().recent_windows.on && self.niri.window_mru_ui.is_open()
                 {
                     let scope = self.niri.window_mru_ui.scope().cycle(direction);
 
@@ -4849,6 +4842,20 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         } else {
             input::SendEventsMode::ENABLED
         });
+
+        #[rustfmt::skip]
+        const IDENTITY_MATRIX: [f32; 6] = [
+            1., 0., 0.,
+            0., 1., 0.,
+        ];
+
+        let _ = device.config_calibration_set_matrix(
+            c.calibration_matrix
+                .as_deref()
+                .and_then(|m| m.try_into().ok())
+                .or(device.config_calibration_default_matrix())
+                .unwrap_or(IDENTITY_MATRIX),
+        );
     }
 }
 

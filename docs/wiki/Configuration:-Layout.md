@@ -29,6 +29,7 @@ layout {
 
     focus-ring {
         // off
+        on
         width 4
         active-color "#7fc8ff"
         inactive-color "#505050"
@@ -40,6 +41,7 @@ layout {
 
     border {
         off
+        // on
         width 4
         active-color "#ffc87f"
         inactive-color "#505050"
@@ -50,6 +52,7 @@ layout {
     }
 
     shadow {
+        off
         // on
         softness 30
         spread 5
@@ -61,6 +64,7 @@ layout {
 
     tab-indicator {
         // off
+        on
         hide-when-single-tab
         place-within-column
         gap 5
@@ -79,6 +83,7 @@ layout {
 
     insert-hint {
         // off
+        on
         color "#ffc87f80"
         // gradient from="#ffbb6680" to="#ffc88080" angle=45 relative-to="workspace-view"
     }
@@ -91,6 +96,8 @@ layout {
     }
 }
 ```
+
+<sup>Since: next release</sup> You can override these settings for specific [outputs](./Configuration:-Outputs.md#layout-config-overrides) and [named workspaces](./Configuration:-Named-Workspaces.md#layout-config-overrides).
 
 ### `gaps`
 
@@ -550,4 +557,4 @@ layout {
 }
 ```
 
-You can also set the color per-output [in the output config](./Configuration:-Outputs.md#background-color).
+You can also set the color per-output [in the output config](./Configuration:-Outputs.md#layout-config-overrides).
