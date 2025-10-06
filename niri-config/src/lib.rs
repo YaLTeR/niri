@@ -2166,4 +2166,34 @@ mod tests {
         "#,
         );
     }
+
+    #[test]
+    fn include_if_exists_option() {
+        // Test that if-exists=true skips non-existent files
+        let result = Config::parse_mem(
+            r#"
+            include "non-existent-file.kdl" if-exists=true
+            layout { gaps 10; }
+            "#,
+        );
+        assert!(result.is_ok());
+
+        // Test that without if-exists, non-existent files cause an error
+        let result = Config::parse_mem(
+            r#"
+            include "another-non-existent-file.kdl"
+            layout { gaps 12; }
+            "#,
+        );
+        assert!(result.is_err());
+
+        // Test that if-exists=false also causes an error for non-existent files
+        let result = Config::parse_mem(
+            r#"
+            include "yet-another-non-existent-file.kdl" if-exists=false
+            layout { gaps 14; }
+            "#,
+        );
+        assert!(result.is_err());
+    }
 }
