@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
+use input::Event as LibinputEvent;
 use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -147,7 +148,20 @@ impl State {
             TouchCancel { event } => self.on_touch_cancel::<I>(event),
             TouchFrame { event } => self.on_touch_frame::<I>(event),
             SwitchToggle { event } => self.on_switch_toggle::<I>(event),
-            Special(_) => (),
+            Special(event) => {
+                // Try to handle tablet pad button events that smithay doesn't wrap
+                // Assume event is input::Event for libinput backend
+                if let Some(libinput_event) =
+                    <dyn std::any::Any>::downcast_ref::<LibinputEvent>(&event)
+                {
+                    match libinput_event {
+                        LibinputEvent::TabletPad(event) => {
+                            self.on_tablet_pad_button_libinput(event);
+                        }
+                        _ => (),
+                    }
+                }
+            }
         }
 
         // Don't hide overlays if consumed by a11y, so that you can use the screen reader
@@ -184,6 +198,12 @@ impl State {
                             warn!("tablet tool device has no size");
                         }
                     }
+                }
+
+                if device.has_capability(input::DeviceCapability::TabletPad) {
+                    // Store tablet pad device for button count tracking
+                    // For now, just log that we detected a tablet pad
+                    info!("Detected tablet pad device: {}", device.name());
                 }
 
                 if device.has_capability(input::DeviceCapability::Keyboard) {
@@ -3383,6 +3403,34 @@ impl State {
                 SERIAL_COUNTER.next_serial(),
                 event.time_msec(),
             );
+        }
+    }
+
+    fn on_tablet_pad_button_libinput(&mut self, event: &input::event::tablet_pad::TabletPadEvent) {
+        match event {
+            input::event::tablet_pad::TabletPadEvent::Button(event) => {
+                let pressed =
+                    event.button_state() == input::event::tablet_pad::ButtonState::Pressed;
+                let button_number = event.button_number();
+
+                if !pressed {
+                    return;
+                }
+
+                let trigger = Trigger::TabletPadButton(button_number);
+
+                // Use existing key binding logic
+                let config = self.niri.config.borrow();
+                let bindings = &config.binds;
+                let mod_key = self.backend.mod_key(&config);
+                let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+
+                if let Some(bind) = find_configured_bind(bindings, mod_key, trigger, mods) {
+                    drop(config);
+                    self.handle_bind(bind.clone());
+                }
+            }
+            _ => (), // Ignore other tablet pad events for now
         }
     }
 
