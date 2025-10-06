@@ -50,6 +50,7 @@ pub enum Trigger {
     TouchpadScrollUp,
     TouchpadScrollLeft,
     TouchpadScrollRight,
+    TabletPadButton(u32),
 }
 
 bitflags! {
@@ -956,6 +957,12 @@ impl FromStr for Key {
             Trigger::TouchpadScrollLeft
         } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
             Trigger::TouchpadScrollRight
+        } else if key.starts_with("TabletPadButton") {
+            let button_str = key.strip_prefix("TabletPadButton").unwrap();
+            match button_str.parse::<u32>() {
+                Ok(button) => Trigger::TabletPadButton(button),
+                Err(_) => return Err(miette!("invalid tablet pad button: {}", button_str)),
+            }
         } else {
             let keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
             if keysym.raw() == KEY_NoSymbol {
