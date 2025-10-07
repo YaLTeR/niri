@@ -1011,4 +1011,36 @@ mod tests {
             },
         );
     }
+
+    #[test]
+    fn parse_tablet_pad_buttons() {
+        assert_eq!(
+            "TabletPadButton0".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::TabletPadButton(0),
+                modifiers: Modifiers::empty()
+            },
+        );
+        assert_eq!(
+            "TabletPadButton5".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::TabletPadButton(5),
+                modifiers: Modifiers::empty()
+            },
+        );
+        assert_eq!(
+            "Mod+TabletPadButton1".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::TabletPadButton(1),
+                modifiers: Modifiers::COMPOSITOR
+            },
+        );
+        assert_eq!(
+            "Ctrl+Shift+TabletPadButton10".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::TabletPadButton(10),
+                modifiers: Modifiers::CTRL | Modifiers::SHIFT
+            },
+        );
+    }
 }
