@@ -1042,5 +1042,12 @@ mod tests {
                 modifiers: Modifiers::CTRL | Modifiers::SHIFT
             },
         );
+        assert_eq!(
+            "Ctrl+Z".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::z),
+                modifiers: Modifiers::CTRL
+            },
+        );
     }
 }
