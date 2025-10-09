@@ -206,6 +206,7 @@ pub trait LayoutElement {
     fn set_activated(&mut self, active: bool);
     fn set_active_in_column(&mut self, active: bool);
     fn set_floating(&mut self, floating: bool);
+    fn set_maximized(&mut self, maximized: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
     fn is_ignoring_opacity_window_rule(&self) -> bool;
 

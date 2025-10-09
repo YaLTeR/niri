@@ -490,6 +490,7 @@ fn make_ipc_window(
         pid: mapped.credentials().map(|c| c.pid),
         workspace_id: workspace_id.map(|id| id.get()),
         is_focused: mapped.is_focused(),
+        is_maximized: mapped.is_maximized(),
         is_floating: mapped.is_floating(),
         is_urgent: mapped.is_urgent(),
         layout,
@@ -683,8 +684,9 @@ impl State {
             };
 
             let workspace_id = ws_id.map(|id| id.get());
-            let mut changed =
-                ipc_win.workspace_id != workspace_id || ipc_win.is_floating != mapped.is_floating();
+            let mut changed = ipc_win.workspace_id != workspace_id
+                || ipc_win.is_floating != mapped.is_floating()
+                || ipc_win.is_maximized != mapped.is_maximized();
 
             changed |= with_toplevel_role(mapped.toplevel(), |role| {
                 ipc_win.title != role.title || ipc_win.app_id != role.app_id
