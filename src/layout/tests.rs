@@ -235,6 +235,8 @@ impl LayoutElement for TestWindow {
 
     fn set_floating(&mut self, _floating: bool) {}
 
+    fn set_maximized(&mut self, _maximized: bool) {}
+
     fn is_fullscreen(&self) -> bool {
         if self.0.is_windowed_fullscreen.get() {
             return false;

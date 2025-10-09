@@ -86,6 +86,9 @@ pub struct Mapped {
     /// Whether this window has the keyboard focus.
     is_focused: bool,
 
+    /// Whether this window is maximized.
+    is_maximized: bool,
+
     /// Whether this window is the active window in its column.
     is_active_in_column: bool,
 
@@ -240,6 +243,7 @@ impl Mapped {
             offscreen_data: RefCell::new(None),
             is_urgent: false,
             is_focused: false,
+            is_maximized: false,
             is_active_in_column: true,
             is_floating: false,
             is_window_cast_target: false,
@@ -312,6 +316,10 @@ impl Mapped {
 
     pub fn is_focused(&self) -> bool {
         self.is_focused
+    }
+
+    pub fn is_maximized(&self) -> bool {
+        self.is_maximized
     }
 
     pub fn is_active_in_column(&self) -> bool {
@@ -886,6 +894,12 @@ impl LayoutElement for Mapped {
     fn set_floating(&mut self, floating: bool) {
         let changed = self.is_floating != floating;
         self.is_floating = floating;
+        self.need_to_recompute_rules |= changed;
+    }
+
+    fn set_maximized(&mut self, maximized: bool) {
+        let changed = self.is_maximized != maximized;
+        self.is_maximized = maximized;
         self.need_to_recompute_rules |= changed;
     }
 
