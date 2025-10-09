@@ -2377,6 +2377,7 @@ dependencies = [
  "clap_complete_nushell",
  "directories",
  "drm-ffi",
+ "enumflags2",
  "fastrand",
  "futures-util",
  "git-version",
@@ -2399,6 +2400,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rayon",
+ "reis",
  "sd-notify",
  "serde",
  "serde_json",
@@ -3332,6 +3334,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "caf4aa5b0f434c91fe5c7f1ecb6a5ece2130b02ad2a590589dda5146df959001"
 
 [[package]]
+name = "reis"
+version = "0.5.0"
+source = "git+https://github.com/ids1024/reis#0f10af9eb85f4b5f3f51be8ccabc858755bf3dca"
+dependencies = [
+ "calloop 0.14.3",
+ "enumflags2",
+ "rustix 1.1.2",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3599,7 +3611,7 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.7.0"
-source = "git+https://github.com/Smithay/smithay.git#9ccbd35f51842934f22b5a85ca0e3be1b99b27f2"
+source = "git+https://github.com/axelkar/smithay.git?branch=advertise-modifier-state#baafa19a7cd77b9f34b20003775e08f9a1c09d15"
 dependencies = [
  "aliasable",
  "appendlist",
