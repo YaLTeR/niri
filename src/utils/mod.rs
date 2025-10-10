@@ -255,6 +255,64 @@ pub fn write_png_rgba8(
     writer.write_image_data(pixels)
 }
 
+/// Write a BMP image (32bpp BGRA, top-down) from RGBA8 pixels.
+pub fn write_bmp_rgba8(
+    mut w: impl Write,
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+) -> std::io::Result<()> {
+    // BMP header sizes
+    const FILE_HEADER_SIZE: usize = 14;
+    const INFO_HEADER_SIZE: usize = 40; // BITMAPINFOHEADER
+
+    let width_i32 = width as i32;
+    // Use positive height (bottom-up bitmap) for maximum compatibility.
+    let height_i32 = height as i32;
+    let row_size = (width as usize) * 4; // 32bpp, 4 bytes per pixel
+    let image_size = row_size * (height as usize);
+    let pixel_offset = (FILE_HEADER_SIZE + INFO_HEADER_SIZE) as u32;
+    let file_size = (FILE_HEADER_SIZE + INFO_HEADER_SIZE + image_size) as u32;
+
+    // BITMAPFILEHEADER
+    w.write_all(b"BM")?; // Signature
+    w.write_all(&file_size.to_le_bytes())?; // bfSize
+    w.write_all(&0u16.to_le_bytes())?; // bfReserved1
+    w.write_all(&0u16.to_le_bytes())?; // bfReserved2
+    w.write_all(&pixel_offset.to_le_bytes())?; // bfOffBits
+
+    // BITMAPINFOHEADER (40 bytes)
+    w.write_all(&40u32.to_le_bytes())?; // biSize
+    w.write_all(&width_i32.to_le_bytes())?; // biWidth
+    w.write_all(&height_i32.to_le_bytes())?; // biHeight (negative => top-down)
+    w.write_all(&1u16.to_le_bytes())?; // biPlanes
+    w.write_all(&32u16.to_le_bytes())?; // biBitCount (32 bpp)
+    w.write_all(&0u32.to_le_bytes())?; // biCompression = BI_RGB
+    w.write_all(&(image_size as u32).to_le_bytes())?; // biSizeImage
+    w.write_all(&2835u32.to_le_bytes())?; // biXPelsPerMeter (~72 DPI)
+    w.write_all(&2835u32.to_le_bytes())?; // biYPelsPerMeter
+    w.write_all(&0u32.to_le_bytes())?; // biClrUsed
+    w.write_all(&0u32.to_le_bytes())?; // biClrImportant
+
+    // Pixel data (bottom-up): write rows from last to first, RGBA -> BGRX (alpha cleared)
+    debug_assert_eq!(pixels.len(), (width as usize) * (height as usize) * 4);
+    for y in (0..(height as usize)).rev() {
+        let start = y * row_size;
+        let row = &pixels[start..start + row_size];
+        let mut i = 0;
+        while i < row.len() {
+            let r = row[i];
+            let g = row[i + 1];
+            let b = row[i + 2];
+            // B, G, R, X (alpha byte zeroed for compatibility)
+            w.write_all(&[b, g, r, 0])?;
+            i += 4;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn output_matches_name(output: &Output, target: &str) -> bool {
     let name = output.user_data().get::<OutputName>().unwrap();
     name.matches(target)
