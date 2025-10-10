@@ -773,4 +773,15 @@ impl State {
         state.apply(event.clone());
         server.send_event(event);
     }
+
+    pub fn ipc_screenshot_taken(&mut self, path: Option<String>) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let mut state = server.event_stream_state.borrow_mut();
+
+        let event = Event::ScreenshotTaken { path };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
 }

@@ -5608,6 +5608,17 @@ impl Niri {
             })
             .unwrap();
 
+        // Prepare to send screenshot completion event back to main thread.
+        let (event_tx, event_rx) = calloop::channel::sync_channel::<Option<String>>(1);
+        self.event_loop
+            .insert_source(event_rx, move |event, _, state| match event {
+                calloop::channel::Event::Msg(path) => {
+                    state.ipc_screenshot_taken(path);
+                }
+                calloop::channel::Event::Closed => (),
+            })
+            .unwrap();
+
         // Encode and save the image in a thread as it's slow.
         thread::spawn(move || {
             let mut buf = vec![];
@@ -5645,9 +5656,16 @@ impl Niri {
             }
 
             #[cfg(feature = "dbus")]
-            if let Err(err) = crate::utils::show_screenshot_notification(image_path) {
+            if let Err(err) = crate::utils::show_screenshot_notification(image_path.clone()) {
                 warn!("error showing screenshot notification: {err:?}");
             }
+
+            // Send screenshot completion event
+            let path_string = image_path
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned());
+            let _ = event_tx.send(path_string);
+
             #[cfg(not(feature = "dbus"))]
             drop(image_path);
         });
