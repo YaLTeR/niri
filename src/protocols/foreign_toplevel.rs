@@ -37,6 +37,8 @@ pub trait ForeignToplevelHandler {
     fn close(&mut self, wl_surface: WlSurface);
     fn set_fullscreen(&mut self, wl_surface: WlSurface, wl_output: Option<WlOutput>);
     fn unset_fullscreen(&mut self, wl_surface: WlSurface);
+    fn set_maximized(&mut self, wl_surface: WlSurface);
+    fn unset_maximized(&mut self, wl_surface: WlSurface);
 }
 
 struct ToplevelData {
@@ -388,8 +390,10 @@ where
         let surface = surface.clone();
 
         match request {
-            zwlr_foreign_toplevel_handle_v1::Request::SetMaximized => (),
-            zwlr_foreign_toplevel_handle_v1::Request::UnsetMaximized => (),
+            zwlr_foreign_toplevel_handle_v1::Request::SetMaximized => state.set_maximized(surface),
+            zwlr_foreign_toplevel_handle_v1::Request::UnsetMaximized => {
+                state.unset_maximized(surface)
+            }
             zwlr_foreign_toplevel_handle_v1::Request::SetMinimized => (),
             zwlr_foreign_toplevel_handle_v1::Request::UnsetMinimized => (),
             zwlr_foreign_toplevel_handle_v1::Request::Activate { .. } => {
