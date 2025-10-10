@@ -123,11 +123,15 @@ pub enum Action {
         #[knuffel(property(name = "write-to-disk"), default = true)] bool,
         #[knuffel(property(name = "show-pointer"), default = true)] bool,
     ),
-    ScreenshotWindow(#[knuffel(property(name = "write-to-disk"), default = true)] bool),
+    ScreenshotWindow(
+        #[knuffel(property(name = "write-to-disk"), default = true)] bool,
+        #[knuffel(property(name = "show-pointer"), default = false)] bool,
+    ),
     #[knuffel(skip)]
     ScreenshotWindowById {
         id: u64,
         write_to_disk: bool,
+        show_pointer: bool,
     },
     ToggleKeyboardShortcutsInhibit,
     CloseWindow,
@@ -372,11 +376,17 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ScreenshotWindow {
                 id: None,
                 write_to_disk,
-            } => Self::ScreenshotWindow(write_to_disk),
+                show_pointer,
+            } => Self::ScreenshotWindow(write_to_disk, show_pointer),
             niri_ipc::Action::ScreenshotWindow {
                 id: Some(id),
                 write_to_disk,
-            } => Self::ScreenshotWindowById { id, write_to_disk },
+                show_pointer,
+            } => Self::ScreenshotWindowById {
+                id,
+                write_to_disk,
+                show_pointer,
+            },
             niri_ipc::Action::ToggleKeyboardShortcutsInhibit {} => {
                 Self::ToggleKeyboardShortcutsInhibit
             }

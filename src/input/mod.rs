@@ -639,9 +639,8 @@ impl State {
             Action::Screenshot(show_cursor) => {
                 self.open_screenshot_ui(show_cursor);
             }
-            Action::ScreenshotWindow(write_to_disk) => {
+            Action::ScreenshotWindow(write_to_disk, show_pointer) => {
                 let focus = self.niri.layout.focus_with_monitor();
-                let include_pointer = false;
                 if let Some((mapped, monitor)) = focus {
                     self.backend.with_primary_renderer(|renderer| {
                         if let Err(err) = self.niri.screenshot_window(
@@ -649,15 +648,18 @@ impl State {
                             monitor,
                             mapped,
                             write_to_disk,
-                            include_pointer,
+                            show_pointer,
                         ) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
                 }
             }
-            Action::ScreenshotWindowById { id, write_to_disk } => {
-                let include_pointer = false;
+            Action::ScreenshotWindowById {
+                id,
+                write_to_disk,
+                show_pointer,
+            } => {
                 let mut windows = self.niri.layout.windows();
                 let window = windows.find(|(_, m)| m.id().get() == id);
                 if let Some((Some(monitor), mapped)) = window {
@@ -667,7 +669,7 @@ impl State {
                             monitor,
                             mapped,
                             write_to_disk,
-                            include_pointer,
+                            show_pointer,
                         ) {
                             warn!("error taking screenshot: {err:?}");
                         }
