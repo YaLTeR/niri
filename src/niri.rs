@@ -5605,6 +5605,7 @@ impl Niri {
                             String::from("image/bmp"),
                             String::from("image/x-bmp"),
                             String::from("image/x-MS-bmp"),
+                            String::from("image/x-ms-bmp"),
                             String::from("image/x-win-bitmap"),
                         ],
                         img,

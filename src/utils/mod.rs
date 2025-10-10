@@ -267,8 +267,8 @@ pub fn write_bmp_rgba8(
     const INFO_HEADER_SIZE: usize = 40; // BITMAPINFOHEADER
 
     let width_i32 = width as i32;
-    // Negative height encodes a top-down bitmap; avoids row reversal during write.
-    let height_i32 = -(height as i32);
+    // Use positive height (bottom-up bitmap) for maximum compatibility.
+    let height_i32 = height as i32;
     let row_size = (width as usize) * 4; // 32bpp, 4 bytes per pixel
     let image_size = row_size * (height as usize);
     let pixel_offset = (FILE_HEADER_SIZE + INFO_HEADER_SIZE) as u32;
@@ -294,9 +294,9 @@ pub fn write_bmp_rgba8(
     w.write_all(&0u32.to_le_bytes())?; // biClrUsed
     w.write_all(&0u32.to_le_bytes())?; // biClrImportant
 
-    // Pixel data: convert RGBA -> BGRA
+    // Pixel data (bottom-up): write rows from last to first, RGBA -> BGRX (alpha cleared)
     debug_assert_eq!(pixels.len(), (width as usize) * (height as usize) * 4);
-    for y in 0..(height as usize) {
+    for y in (0..(height as usize)).rev() {
         let start = y * row_size;
         let row = &pixels[start..start + row_size];
         let mut i = 0;
@@ -304,9 +304,8 @@ pub fn write_bmp_rgba8(
             let r = row[i];
             let g = row[i + 1];
             let b = row[i + 2];
-            let a = row[i + 3];
-            // BGRA order for 32bpp BI_RGB
-            w.write_all(&[b, g, r, a])?;
+            // B, G, R, X (alpha byte zeroed for compatibility)
+            w.write_all(&[b, g, r, 0])?;
             i += 4;
         }
     }

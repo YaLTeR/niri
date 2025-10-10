@@ -293,7 +293,7 @@ impl ClipboardImageData {
     fn select_bytes_for_mime(&self, mime_type: &str) -> Arc<[u8]> {
         match mime_type {
             // Common BMP MIME types seen in the wild
-            "image/bmp" | "image/x-bmp" | "image/x-MS-bmp" | "image/x-win-bitmap" => {
+            "image/bmp" | "image/x-bmp" | "image/x-MS-bmp" | "image/x-ms-bmp" | "image/x-win-bitmap" => {
                 self.bmp.clone()
             }
             // Default to PNG for anything else we advertised
