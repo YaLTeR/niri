@@ -1447,6 +1447,13 @@ pub enum Event {
         /// For example, the config file couldn't be parsed.
         failed: bool,
     },
+    /// A screenshot was taken.
+    ScreenshotTaken {
+        /// The file path where the screenshot was saved, if it was written to disk.
+        ///
+        /// If `None`, the screenshot was only copied to the clipboard.
+        path: Option<String>,
+    },
 }
 
 impl FromStr for WorkspaceReferenceArg {
