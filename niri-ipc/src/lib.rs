@@ -247,6 +247,8 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
     },
+    /// Enable or disable keyboard shortcuts for niri
+    ToggleForceShortcutsInhibit {},
     /// Enable or disable the keyboard shortcuts inhibitor (if any) for the focused surface.
     ToggleKeyboardShortcutsInhibit {},
     /// Close a window.

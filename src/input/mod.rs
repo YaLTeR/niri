@@ -322,15 +322,17 @@ impl State {
     }
 
     fn is_inhibiting_shortcuts(&self) -> bool {
-        self.niri
-            .keyboard_focus
-            .surface()
-            .and_then(|surface| {
-                self.niri
-                    .keyboard_shortcuts_inhibiting_surfaces
-                    .get(surface)
-            })
-            .is_some_and(KeyboardShortcutsInhibitor::is_active)
+        self.niri.is_force_inhibited
+            || self
+                .niri
+                .keyboard_focus
+                .surface()
+                .and_then(|surface| {
+                    self.niri
+                        .keyboard_shortcuts_inhibiting_surfaces
+                        .get(surface)
+                })
+                .is_some_and(KeyboardShortcutsInhibitor::is_active)
     }
 
     fn on_keyboard<I: InputBackend>(
@@ -666,6 +668,9 @@ impl State {
                         }
                     });
                 }
+            }
+            Action::ToggleForceShortcutsInhibit => {
+                self.niri.is_force_inhibited = !self.niri.is_force_inhibited;
             }
             Action::ToggleKeyboardShortcutsInhibit => {
                 if let Some(inhibitor) = self.niri.keyboard_focus.surface().and_then(|surface| {
@@ -2462,6 +2467,8 @@ impl State {
 
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
+        let not_inhibited = !self.niri.is_force_inhibited;
+
         // Ignore release events for mouse clicks that triggered a bind.
         if self.niri.suppressed_buttons.remove(&button_code) {
             return;
@@ -2497,7 +2504,11 @@ impl State {
 
             let is_overview_open = self.niri.layout.is_overview_open();
 
-            if is_overview_open && !pointer.is_grabbed() && button == Some(MouseButton::Right) {
+            if is_overview_open
+                && !pointer.is_grabbed()
+                && button == Some(MouseButton::Right)
+                && not_inhibited
+            {
                 if let Some((output, ws)) = self.niri.workspace_under_cursor(true) {
                     let ws_id = ws.id();
                     let ws_idx = self.niri.layout.find_workspace_by_id(ws_id).unwrap().0;
@@ -2525,7 +2536,7 @@ impl State {
                 }
             }
 
-            if button == Some(MouseButton::Middle) && !pointer.is_grabbed() {
+            if button == Some(MouseButton::Middle) && !pointer.is_grabbed() && not_inhibited {
                 let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                 if mod_down {
                     let output_ws = if is_overview_open {
@@ -2570,7 +2581,7 @@ impl State {
                 let window = mapped.window.clone();
 
                 // Check if we need to start an interactive move.
-                if button == Some(MouseButton::Left) && !pointer.is_grabbed() {
+                if button == Some(MouseButton::Left) && !pointer.is_grabbed() && not_inhibited {
                     let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                     if is_overview_open || mod_down {
                         let location = pointer.current_location();
@@ -2603,7 +2614,10 @@ impl State {
                     }
                 }
                 // Check if we need to start an interactive resize.
-                else if button == Some(MouseButton::Right) && !pointer.is_grabbed() {
+                else if button == Some(MouseButton::Right)
+                    && !pointer.is_grabbed()
+                    && not_inhibited
+                {
                     let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                     if mod_down {
                         let location = pointer.current_location();
@@ -4220,6 +4234,7 @@ fn allowed_when_locked(action: &Action) -> bool {
             | Action::PowerOnMonitors
             | Action::SwitchLayout(_)
             | Action::ToggleKeyboardShortcutsInhibit
+            | Action::ToggleForceShortcutsInhibit
     )
 }
 

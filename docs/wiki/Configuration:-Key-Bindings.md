@@ -405,3 +405,18 @@ binds {
     Super+Alt+L allow-inhibiting=false { spawn "swaylock"; }
 }
 ```
+
+#### `toggle-force-shortcuts-inhibit`
+
+<sup>Since: next release</sup>
+
+Some applications require specific key combinations that might interfere with your choice of `Mod` key. For example if you use `Alt`.
+This action will stop _all_ shortcuts and instead forward them to the focused surface.
+
+Note: This shortcut can not be inhibited as otherwise it means that you could not toggle it back off.
+
+```kdl
+binds {
+    Mod+Escape { toggle-force-shortcuts-inhibit; }
+}
+```
