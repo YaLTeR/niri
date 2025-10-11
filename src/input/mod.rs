@@ -322,15 +322,17 @@ impl State {
     }
 
     fn is_inhibiting_shortcuts(&self) -> bool {
-        self.niri
-            .keyboard_focus
-            .surface()
-            .and_then(|surface| {
-                self.niri
-                    .keyboard_shortcuts_inhibiting_surfaces
-                    .get(surface)
-            })
-            .is_some_and(KeyboardShortcutsInhibitor::is_active)
+        self.niri.is_force_inhibited
+            || self
+                .niri
+                .keyboard_focus
+                .surface()
+                .and_then(|surface| {
+                    self.niri
+                        .keyboard_shortcuts_inhibiting_surfaces
+                        .get(surface)
+                })
+                .is_some_and(KeyboardShortcutsInhibitor::is_active)
     }
 
     fn on_keyboard<I: InputBackend>(
@@ -666,6 +668,9 @@ impl State {
                         }
                     });
                 }
+            }
+            Action::ToggleForceShortcutsInhibit => {
+                self.niri.is_force_inhibited = !self.niri.is_force_inhibited;
             }
             Action::ToggleKeyboardShortcutsInhibit => {
                 if let Some(inhibitor) = self.niri.keyboard_focus.surface().and_then(|surface| {
@@ -4220,6 +4225,7 @@ fn allowed_when_locked(action: &Action) -> bool {
             | Action::PowerOnMonitors
             | Action::SwitchLayout(_)
             | Action::ToggleKeyboardShortcutsInhibit
+            | Action::ToggleForceShortcutsInhibit
     )
 }
 
