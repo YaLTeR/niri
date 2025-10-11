@@ -1972,7 +1972,16 @@ impl State {
                         .rev()
                         .collect::<Vec<_>>();
 
-                    if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale, None) {
+                    let pointer_elements: Vec<OutputRenderElements<GlesRenderer>> = vec![];
+                    if cast.dequeue_buffer_and_render(
+                        renderer,
+                        &elements,
+                        &pointer_elements,
+                        bbox.size,
+                        scale,
+                        None,
+                        None,
+                    ) {
                         cast.last_frame_time = get_monotonic_time();
                     }
                 });
@@ -5093,7 +5102,16 @@ impl Niri {
                 self.render(renderer, output, true, RenderTarget::Screencast)
             });
 
-            if cast.dequeue_buffer_and_render(renderer, elements, size, scale, None) {
+            let pointer_elements: Vec<OutputRenderElements<GlesRenderer>> = vec![];
+            if cast.dequeue_buffer_and_render(
+                renderer,
+                elements,
+                &pointer_elements,
+                size,
+                scale,
+                None,
+                None,
+            ) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
@@ -5189,12 +5207,20 @@ impl Niri {
                 _ => None,
             };
 
+            let pointer_elements: Vec<_> = if window_pointer_location.is_some() {
+                self.pointer_element(renderer, output)
+            } else {
+                vec![]
+            };
+
             if cast.dequeue_buffer_and_render(
                 renderer,
                 &elements,
+                &pointer_elements,
                 bbox.size,
                 scale,
                 window_pointer_location,
+                Some(self.seat.get_pointer().unwrap().current_location()),
             ) {
                 cast.last_frame_time = target_presentation_time;
             }
