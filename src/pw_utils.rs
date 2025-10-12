@@ -1135,7 +1135,7 @@ impl Cast {
             .unwrap();
         if damage.is_none() && cursor_damage.is_none() && *last_pointer_location == pointer_location
         {
-            debug!("no damage, skipping frame");
+            trace!("no damage, skipping frame");
             return false;
         }
         *last_pointer_location = pointer_location;
