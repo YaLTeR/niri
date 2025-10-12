@@ -1952,42 +1952,14 @@ impl State {
                 let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == *id) else {
                     return;
                 };
+                drop(windows);
 
                 // Use the cached output since it will be present even if the output was
                 // currently disconnected.
-                let Some(output) = self.niri.mapped_cast_output.get(&mapped.window) else {
+                let Some(output) = self.niri.mapped_cast_output.get(&mapped.window).cloned() else {
                     return;
                 };
-
-                let scale = Scale::from(output.current_scale().fractional_scale());
-                let bbox = mapped
-                    .window
-                    .bbox_with_popups()
-                    .to_physical_precise_up(scale);
-
-                match cast.ensure_size(bbox.size) {
-                    Ok(CastSizeChange::Ready) => (),
-                    Ok(CastSizeChange::Pending) => return,
-                    Err(err) => {
-                        warn!("error updating stream size, stopping screencast: {err:?}");
-                        drop(windows);
-                        let session_id = cast.session_id;
-                        self.niri.stop_cast(session_id);
-                        return;
-                    }
-                }
-
-                self.backend.with_primary_renderer(|renderer| {
-                    // FIXME: pointer.
-                    let elements = mapped
-                        .render_for_screen_cast(renderer, scale)
-                        .rev()
-                        .collect::<Vec<_>>();
-
-                    if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
-                        cast.last_frame_time = get_monotonic_time();
-                    }
-                });
+                self.niri.queue_redraw(&output);
             }
         }
     }
