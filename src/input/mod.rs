@@ -2144,6 +2144,19 @@ impl State {
                 }
                 self.niri.queue_redraw_all();
             }
+            Action::SetAnimations { off } => {
+                {
+                    let mut config = self.niri.config.borrow_mut();
+                    if config.animations.off == off {
+                        return;
+                    }
+                    config.animations.off = off;
+                }
+
+                self.niri.clock.set_complete_instantly(off);
+                self.niri.advance_animations();
+                self.niri.queue_redraw_all();
+            }
             Action::LoadConfigFile => {
                 if let Some(watcher) = &self.niri.config_file_watcher {
                     watcher.load_config();

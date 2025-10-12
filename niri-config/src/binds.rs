@@ -350,6 +350,10 @@ pub enum Action {
     UnsetWindowUrgent(u64),
     #[knuffel(skip)]
     LoadConfigFile,
+    #[knuffel(skip)]
+    SetAnimations {
+        off: bool,
+    },
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -644,6 +648,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
             niri_ipc::Action::LoadConfigFile {} => Self::LoadConfigFile,
+            niri_ipc::Action::SetAnimations { off } => Self::SetAnimations { off },
         }
     }
 }

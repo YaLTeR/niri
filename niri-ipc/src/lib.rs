@@ -215,6 +215,13 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(short, long))]
         delay_ms: Option<u16>,
     },
+    SetAnimations {
+        #[cfg_attr(
+            feature = "clap",
+            arg(long, action = clap::ArgAction::Set, default_value_t = true)
+        )]
+        off: bool,
+    },
     /// Open the screenshot UI.
     Screenshot {
         ///  Whether to show the mouse pointer by default in the screenshot UI.
