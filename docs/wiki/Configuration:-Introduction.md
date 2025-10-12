@@ -13,6 +13,7 @@ You can find documentation for various sections of the config on these wiki page
 * [`animations {}`](./Configuration:-Animations.md)
 * [`gestures {}`](./Configuration:-Gestures.md)
 * [`debug {}`](./Configuration:-Debug-Options.md)
+* [`include "other.kdl"`](./Configuration:-Include.md)
 
 ### Loading
 

@@ -583,7 +583,7 @@ impl ExtWorkspaceHandler for State {
         if let Some((old_output, old_idx)) = self.niri.find_output_and_workspace_index(reference) {
             self.niri
                 .layout
-                .move_workspace_to_output_by_id(old_idx, old_output, output);
+                .move_workspace_to_output_by_id(old_idx, old_output, &output);
         }
     }
 }

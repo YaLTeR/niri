@@ -201,12 +201,30 @@ fn check_target_output_and_workspace(
 
     let mut config = String::from(
         r##"
+output "headless-2" {
+    layout {
+        border {
+            on
+        }
+    }
+}
+
 workspace "ws-1" {
     open-on-output "headless-1"
 }
 
 workspace "ws-2" {
     open-on-output "headless-2"
+
+    layout {
+        border {
+            width 10
+        }
+
+        default-column-width {
+            fixed 500
+        }
+    }
 }
 
 window-rule {
@@ -263,7 +281,7 @@ window-rule {{
 
     snapshot_desc.push(format!("config:{config}"));
 
-    let config = Config::parse("config.kdl", &config).unwrap();
+    let config = Config::parse_mem(&config).unwrap();
 
     let mut f = Fixture::with_config(config);
     f.add_output(1, (1280, 720));
@@ -556,7 +574,7 @@ layout {
 
     snapshot_desc.push(format!("config:{config}"));
 
-    let config = Config::parse("config.kdl", &config).unwrap();
+    let config = Config::parse_mem(&config).unwrap();
 
     let mut f = Fixture::with_config(config);
     f.add_output(1, (1280, 720));
