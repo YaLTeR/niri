@@ -59,7 +59,6 @@ use smithay::reexports::calloop::{
     Interest, LoopHandle, LoopSignal, Mode, PostAction, RegistrationToken,
 };
 use smithay::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1;
-use smithay::reexports::wayland_protocols::wp::pointer_constraints;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::WmCapabilities;
 use smithay::reexports::wayland_protocols_misc::server_decoration as _server_decoration;
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
@@ -5107,20 +5106,27 @@ impl Niri {
                 continue;
             }
 
-            // FIXME: Hidden / embedded / metadata cursor
+            let embedded_cursor = matches!(cast.cursor_mode, CursorMode::Embedded);
             let elements = elements.get_or_insert_with(|| {
-                self.render(renderer, output, true, RenderTarget::Screencast)
+                self.render(renderer, output, embedded_cursor, RenderTarget::Screencast)
             });
 
-            let pointer_elements: Vec<OutputRenderElements<GlesRenderer>> = vec![];
+            let pointer_element = match cast.cursor_mode {
+                CursorMode::Metadata => self.pointer_element(renderer, output),
+                _ => vec![],
+            };
+
+            let (relocated_pointer_elements, pointer_hotspot) =
+                self.get_origin_pointer_element(scale, &pointer_element);
+
             if cast.dequeue_buffer_and_render(
                 renderer,
                 elements,
-                &pointer_elements,
+                &relocated_pointer_elements,
                 size,
                 scale,
-                None,
-                None,
+                Some(self.seat.get_pointer().unwrap().current_location()),
+                pointer_hotspot,
             ) {
                 cast.last_frame_time = target_presentation_time;
             }
@@ -5163,6 +5169,39 @@ impl Niri {
 
         let pointer_location = self.seat.get_pointer().unwrap().current_location();
         Some((pointer_location - window_offset).upscale(scale))
+    }
+
+    fn get_origin_pointer_element<'a>(
+        &self,
+        scale: Scale<f64>,
+        pointer_element: &'a Vec<OutputRenderElements<GlesRenderer>>,
+    ) -> (
+        Vec<RelocateRenderElement<&'a OutputRenderElements<GlesRenderer>>>,
+        Option<Point<i32, Physical>>,
+    ) {
+        if pointer_element.is_empty() {
+            return (vec![], None);
+        }
+        let pointer_geo = encompassing_geo(scale, pointer_element.iter());
+        let pointer_hotspot = self
+            .seat
+            .get_pointer()
+            .unwrap()
+            .current_location()
+            .to_physical_precise_round(scale)
+            - pointer_geo.loc;
+        let pointer_elements: Vec<_> = pointer_element
+            .iter()
+            .rev()
+            .map(|ele| {
+                RelocateRenderElement::from_element(
+                    ele,
+                    pointer_geo.loc.upscale(-1),
+                    Relocate::Relative,
+                )
+            })
+            .collect();
+        (pointer_elements, Some(pointer_hotspot))
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -5212,40 +5251,17 @@ impl Niri {
             }
 
             let elements: Vec<_> = mapped.render_for_screen_cast(renderer, scale).collect();
-            let window_pointer_location = match cast.cursor_mode {
-                CursorMode::Metadata => self.get_window_pointer_location(mapped, scale),
-                _ => None,
+            // FIXME: embedded cursor
+            let (window_pointer_location, pointer_element) = match cast.cursor_mode {
+                CursorMode::Metadata => (
+                    self.get_window_pointer_location(mapped, scale),
+                    self.pointer_element(renderer, output),
+                ),
+                _ => (None, vec![]),
             };
 
-            let pointer_element = if window_pointer_location.is_some() {
-                self.pointer_element(renderer, output)
-            } else {
-                vec![]
-            };
-            let (relocated_pointer_elements, pointer_hotspot) = if !pointer_element.is_empty() {
-                let pointer_geo = encompassing_geo(scale, pointer_element.iter());
-                let pointer_hotspot = self
-                    .seat
-                    .get_pointer()
-                    .unwrap()
-                    .current_location()
-                    .to_physical_precise_round(scale)
-                    - pointer_geo.loc;
-                let pointer_elements: Vec<_> = pointer_element
-                    .iter()
-                    .rev()
-                    .map(|ele| {
-                        RelocateRenderElement::from_element(
-                            ele,
-                            pointer_geo.loc.upscale(-1),
-                            Relocate::Relative,
-                        )
-                    })
-                    .collect();
-                (pointer_elements, Some(pointer_hotspot))
-            } else {
-                (vec![], None)
-            };
+            let (relocated_pointer_elements, pointer_hotspot) =
+                self.get_origin_pointer_element(scale, &pointer_element);
 
             if cast.dequeue_buffer_and_render(
                 renderer,
