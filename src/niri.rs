@@ -5207,20 +5207,44 @@ impl Niri {
                 _ => None,
             };
 
-            let pointer_elements: Vec<_> = if window_pointer_location.is_some() {
+            let pointer_element = if window_pointer_location.is_some() {
                 self.pointer_element(renderer, output)
             } else {
                 vec![]
+            };
+            let (relocated_pointer_elements, pointer_hotspot) = if !pointer_element.is_empty() {
+                let pointer_geo = encompassing_geo(scale, pointer_element.iter());
+                let pointer_hotspot = self
+                    .seat
+                    .get_pointer()
+                    .unwrap()
+                    .current_location()
+                    .to_physical_precise_round(scale)
+                    - pointer_geo.loc;
+                let pointer_elements: Vec<_> = pointer_element
+                    .iter()
+                    .rev()
+                    .map(|ele| {
+                        RelocateRenderElement::from_element(
+                            ele,
+                            pointer_geo.loc.upscale(-1),
+                            Relocate::Relative,
+                        )
+                    })
+                    .collect();
+                (pointer_elements, Some(pointer_hotspot))
+            } else {
+                (vec![], None)
             };
 
             if cast.dequeue_buffer_and_render(
                 renderer,
                 &elements,
-                &pointer_elements,
+                &relocated_pointer_elements,
                 bbox.size,
                 scale,
                 window_pointer_location,
-                Some(self.seat.get_pointer().unwrap().current_location()),
+                pointer_hotspot,
             ) {
                 cast.last_frame_time = target_presentation_time;
             }

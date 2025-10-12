@@ -130,6 +130,7 @@ enum CastState {
         plane_count: i32,
         // Lazily-initialized to keep the initialization to a single place.
         damage_tracker: Option<OutputDamageTracker>,
+        cursor_damage_tracker: Option<OutputDamageTracker>,
         last_pointer_location: Option<Point<f64, Logical>>,
     },
 }
@@ -480,11 +481,16 @@ impl PipeWire {
                             let modifier = *modifier;
                             let plane_count = *plane_count;
 
-                            let damage_tracker =
-                                if let CastState::Ready { damage_tracker, .. } = &mut *state {
-                                    damage_tracker.take()
+                            let (damage_tracker, cursor_damage_tracker) =
+                                if let CastState::Ready {
+                                    damage_tracker,
+                                    cursor_damage_tracker,
+                                    ..
+                                } = &mut *state
+                                {
+                                    (damage_tracker.take(), cursor_damage_tracker.take())
                                 } else {
-                                    None
+                                    (None, None)
                                 };
 
                             debug!(stream_id, "pw stream: moving to ready state");
@@ -495,6 +501,7 @@ impl PipeWire {
                                 modifier,
                                 plane_count,
                                 damage_tracker,
+                                cursor_damage_tracker,
                                 last_pointer_location: None,
                             };
 
@@ -530,6 +537,7 @@ impl PipeWire {
                                 modifier,
                                 plane_count: plane_count as i32,
                                 damage_tracker: None,
+                                cursor_damage_tracker: None,
                                 last_pointer_location: None,
                             };
 
@@ -995,7 +1003,7 @@ impl Cast {
         scale: Scale<f64>,
         pointer_elements: &[impl RenderElement<GlesRenderer>],
         pointer_location: &Option<Point<f64, Logical>>,
-        output_pointer_location: &Option<Point<f64, Logical>>,
+        pointer_hotspot: &Option<Point<i32, Physical>>,
     ) {
         let cursor_meta_ptr: *mut spa_meta_cursor = unsafe {
             spa_buffer_find_meta_data(
@@ -1018,6 +1026,14 @@ impl Cast {
             return;
         };
 
+        cursor_meta.id = 1;
+        cursor_meta.position.x = pointer_location.x.round() as i32;
+        cursor_meta.position.y = pointer_location.y.round() as i32;
+
+        let pointer_hotspot = pointer_hotspot.unwrap_or(Point::from((0, 0)));
+        cursor_meta.hotspot.x = pointer_hotspot.x;
+        cursor_meta.hotspot.y = pointer_hotspot.y;
+
         cursor_meta.bitmap_offset = mem::size_of::<spa_meta_cursor>() as _;
 
         let bitmap_meta_ptr = unsafe {
@@ -1031,23 +1047,9 @@ impl Cast {
             warn!("no cursor bitmap metadata found in buffer");
             return;
         };
-
-        let pointer_geo = encompassing_geo(scale, pointer_elements.iter());
-        let hotspot = output_pointer_location
-            .unwrap()
-            .to_physical_precise_round(scale)
-            - pointer_geo.loc;
-
-        cursor_meta.id = 1;
-        cursor_meta.position.x = pointer_location.x.round() as i32;
-        cursor_meta.position.y = pointer_location.y.round() as i32;
-        cursor_meta.hotspot.x = hotspot.x;
-        cursor_meta.hotspot.y = hotspot.y;
-        // TODO: Can we render only when cursor changes?
-        //  For this, bitmap_offset must be 0 when it does not change.
-
         let bitmap_meta = unsafe { bitmap_meta_ptr.as_mut().unwrap() };
 
+        let pointer_geo = encompassing_geo(scale, pointer_elements.iter());
         let size: Size<i32, Physical> = Size::from((
             std::cmp::min(pointer_geo.size.w, CURSOR_WIDTH as _),
             std::cmp::min(pointer_geo.size.h, CURSOR_HEIGHT as _),
@@ -1059,17 +1061,9 @@ impl Cast {
         bitmap_meta.offset = mem::size_of::<spa_meta_bitmap>() as _;
 
         let bitmap_data = unsafe { bitmap_meta_ptr.cast::<u8>().offset(bitmap_meta.offset as _) };
-
         let bitmap_slice =
             unsafe { slice::from_raw_parts_mut(bitmap_data, CURSOR_BITMAP_SIZE as usize) };
 
-        let pointer_elements = pointer_elements.iter().rev().map(|ele| {
-            RelocateRenderElement::from_element(
-                ele,
-                pointer_geo.loc.upscale(-1),
-                Relocate::Relative,
-            )
-        });
         let render_scale = if size.w <= CURSOR_WIDTH as _ && size.h <= CURSOR_HEIGHT as _ {
             scale
         } else {
@@ -1085,7 +1079,7 @@ impl Cast {
             render_scale,
             Transform::Normal,
             Fourcc::Argb8888,
-            pointer_elements,
+            pointer_elements.iter(),
         ) {
             Ok(pointer_vec) => pointer_vec,
             Err(_) => {
@@ -1107,12 +1101,13 @@ impl Cast {
         size: Size<i32, Physical>,
         scale: Scale<f64>,
         pointer_location: Option<Point<f64, Logical>>,
-        output_pointer_location: Option<Point<f64, Logical>>,
+        pointer_hotspot: Option<Point<i32, Physical>>,
     ) -> bool {
         let mut inner = self.inner.borrow_mut();
 
         let CastState::Ready {
             damage_tracker,
+            cursor_damage_tracker,
             last_pointer_location,
             ..
         } = &mut inner.state
@@ -1122,6 +1117,8 @@ impl Cast {
         };
         let damage_tracker = damage_tracker
             .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
+        let cursor_damage_tracker = cursor_damage_tracker
+            .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
 
         // Size change will drop the damage tracker, but scale change won't, so check it here.
         let OutputModeSource::Static { scale: t_scale, .. } = damage_tracker.mode() else {
@@ -1129,11 +1126,16 @@ impl Cast {
         };
         if *t_scale != scale {
             *damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+            *cursor_damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
         }
 
         let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
-        if damage.is_none() && *last_pointer_location == pointer_location {
-            trace!("no damage, skipping frame");
+        let (cursor_damage, _states) = cursor_damage_tracker
+            .damage_output(1, pointer_elements)
+            .unwrap();
+        if damage.is_none() && cursor_damage.is_none() && *last_pointer_location == pointer_location
+        {
+            debug!("no damage, skipping frame");
             return false;
         }
         *last_pointer_location = pointer_location;
@@ -1148,17 +1150,13 @@ impl Cast {
         unsafe {
             let spa_buffer = (*buffer).buffer;
             if matches!(self.cursor_mode, CursorMode::Metadata) {
-                if pointer_elements.is_empty() {
-                    // TODO: handle this
-                    warn!("cursor mode is metadata but no pointer elements provided");
-                }
                 Self::add_cursor_metadata(
                     renderer,
                     spa_buffer,
                     scale,
                     pointer_elements,
                     &pointer_location,
-                    &output_pointer_location,
+                    &pointer_hotspot,
                 );
             }
 
