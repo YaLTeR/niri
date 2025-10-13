@@ -44,6 +44,7 @@ window-rule {
     open-on-output "Some Company CoolMonitor 1234"
     open-on-workspace "chat"
     open-maximized true
+    open-maximized-to-edges true
     open-fullscreen true
     open-floating true
     open-focused false
@@ -416,9 +417,27 @@ window-rule {
 }
 ```
 
+#### `open-maximized-to-edges`
+
+Make the window open [maximized to edges](./Fullscreen-and-Maximize.md).
+
+```kdl
+window-rule {
+    open-maximized-to-edges true
+}
+```
+
+You can also set this to `false` to *prevent* a window from opening maximized to edges.
+
+```kdl
+window-rule {
+    open-maximized-to-edges false
+}
+```
+
 #### `open-fullscreen`
 
-Make the window open fullscreen.
+Make the window open [fullscreen](./Fullscreen-and-Maximize.md).
 
 ```kdl
 window-rule {
