@@ -410,8 +410,7 @@ impl<W: LayoutElement> Tile<W> {
 
         let draw_border_with_background = rules
             .draw_border_with_background
-            .unwrap_or_else(|| !self.window.has_ssd())
-            && fullscreen_progress < 1.;
+            .unwrap_or_else(|| !self.window.has_ssd());
         let border_width = self.visual_border_width().unwrap_or(0.);
 
         // Do the inverse of tile_size() in order to handle the unfullscreen animation for windows
@@ -438,7 +437,7 @@ impl<W: LayoutElement> Tile<W> {
             ),
             radius,
             self.scale,
-            1.,
+            1. - fullscreen_progress as f32,
         );
 
         let radius = if self.visual_border_width().is_some() {
