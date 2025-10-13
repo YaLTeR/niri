@@ -5141,6 +5141,7 @@ impl Niri {
     fn get_window_pointer_location(
         &self,
         mapped: &Mapped,
+        output: &Output,
         scale: Scale<f64>,
     ) -> Option<Point<f64, Logical>> {
         if self.layout.is_overview_open() {
@@ -5150,6 +5151,11 @@ impl Niri {
             return None;
         };
         if pointer_window.0 != mapped.window {
+            return None;
+        }
+
+        let monitor = self.layout.monitor_for_output(output).unwrap();
+        if monitor.are_transitions_ongoing() {
             return None;
         }
 
@@ -5254,7 +5260,7 @@ impl Niri {
             // FIXME: embedded cursor
             let (window_pointer_location, pointer_element) = match cast.cursor_mode {
                 CursorMode::Metadata => (
-                    self.get_window_pointer_location(mapped, scale),
+                    self.get_window_pointer_location(mapped, output, scale),
                     self.pointer_element(renderer, output),
                 ),
                 _ => (None, vec![]),
