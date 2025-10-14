@@ -39,6 +39,7 @@ pub mod layer_rule;
 pub mod layout;
 pub mod misc;
 pub mod output;
+pub mod recent_windows;
 pub mod utils;
 pub mod window_rule;
 pub mod workspace;
@@ -54,6 +55,8 @@ pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
+use crate::recent_windows::RecentWindowsPart;
+pub use crate::recent_windows::{RecentWindows, DEFAULT_MRU_COMMIT_MS};
 pub use crate::utils::FloatOrInt;
 use crate::utils::{Flag, MergeWith as _};
 pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
@@ -85,6 +88,7 @@ pub struct Config {
     pub switch_events: SwitchBinds,
     pub debug: Debug,
     pub workspaces: Vec<Workspace>,
+    pub recent_windows: RecentWindows,
 }
 
 #[derive(Debug, Clone)]
@@ -267,6 +271,11 @@ where
                     }
 
                     config.borrow_mut().layout.merge_with(&part);
+                }
+
+                "recent-windows" => {
+                    let part = RecentWindowsPart::decode_node(node, ctx)?;
+                    config.borrow_mut().recent_windows.merge_with(&part);
                 }
 
                 "include" => {
@@ -840,6 +849,11 @@ mod tests {
             }
             workspace "workspace-2"
             workspace "workspace-3"
+
+            recent-windows {
+                off
+                mod-key "Alt"
+            }
             "##,
         );
 
@@ -1429,6 +1443,30 @@ mod tests {
                     },
                 ),
                 overview_open_close: OverviewOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                window_mru_ui_open_close: WindowMruUiOpenCloseAnim(
+                    Animation {
+                        off: false,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                thumbnail_select: ThumbnailSelectAnim(
                     Animation {
                         off: false,
                         kind: Spring(
@@ -2051,6 +2089,11 @@ mod tests {
                     layout: None,
                 },
             ],
+            recent_windows: RecentWindows {
+                on: false,
+                mod_key: Alt,
+                enable_selection_animation: false,
+            },
         }
         "#);
     }
