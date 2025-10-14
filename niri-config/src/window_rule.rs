@@ -83,6 +83,8 @@ pub struct Match {
     #[knuffel(property)]
     pub is_focused: Option<bool>,
     #[knuffel(property)]
+    pub is_maximized: Option<bool>,
+    #[knuffel(property)]
     pub is_active_in_column: Option<bool>,
     #[knuffel(property)]
     pub is_floating: Option<bool>,

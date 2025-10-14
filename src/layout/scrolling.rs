@@ -904,6 +904,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         }
 
+        // Set window maximized if column is maximized
+        target_column.tiles[tile_idx]
+            .window_mut()
+            .set_maximized(target_column.is_full_width);
+
         // Adding a wider window into a column increases its width now (even if the window will
         // shrink later). Move the columns to account for this.
         let offset = self.column_x(col_idx + 1) - prev_next_x;
@@ -4637,7 +4642,12 @@ impl<W: LayoutElement> Column<W> {
     }
 
     fn toggle_full_width(&mut self) {
-        self.is_full_width = !self.is_full_width;
+        let is_full_width = !self.is_full_width;
+
+        self.tiles_mut()
+            .for_each(|(tile, _)| tile.window_mut().set_maximized(is_full_width));
+
+        self.is_full_width = is_full_width;
         self.update_tile_sizes(true);
     }
 

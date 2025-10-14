@@ -133,6 +133,13 @@ impl<'a> WindowRef<'a> {
         }
     }
 
+    pub fn is_maximized(self) -> bool {
+        match self {
+            WindowRef::Unmapped(_) => false,
+            WindowRef::Mapped(mapped) => mapped.is_maximized(),
+        }
+    }
+
     pub fn is_urgent(self) -> bool {
         match self {
             WindowRef::Unmapped(_) => false,
@@ -438,6 +445,12 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
 
     if let Some(is_focused) = m.is_focused {
         if window.is_focused() != is_focused {
+            return false;
+        }
+    }
+
+    if let Some(is_maximized) = m.is_maximized {
+        if window.is_maximized() != is_maximized {
             return false;
         }
     }
