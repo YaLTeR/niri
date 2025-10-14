@@ -1826,6 +1826,12 @@ impl State {
             return;
         }
 
+        // Redraw the pointer if hidden through cursor{} options
+        if self.niri.pointer_visibility == PointerVisibility::Hidden {
+            self.niri.pointer_visibility = PointerVisibility::Visible;
+            self.niri.queue_redraw_all();
+        }
+
         let default_output = self
             .niri
             .output_under_cursor()
