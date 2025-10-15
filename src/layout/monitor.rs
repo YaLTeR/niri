@@ -1152,11 +1152,15 @@ impl<W: LayoutElement> Monitor<W> {
                     let hint_height = gap - hint_gap * 2.;
 
                     let next_ws_geo = self.workspaces_render_geo().nth(ws_idx).unwrap();
-                    let hint_loc_diff = Point::from((0., hint_height + hint_gap));
-                    let hint_loc = next_ws_geo.loc - hint_loc_diff;
-                    let hint_size = Size::from((next_ws_geo.size.w, hint_height));
+                    let hint_width = round_logical_in_physical(scale, next_ws_geo.size.w * 0.75);
+                    let hint_x =
+                        round_logical_in_physical(scale, (next_ws_geo.size.w - hint_width) / 2.);
 
-                    // FIXME: sometimes the hint ends up 1 px wider than necessary and/or 1 px
+                    let hint_loc_diff = Point::from((-hint_x, hint_height + hint_gap));
+                    let hint_loc = next_ws_geo.loc - hint_loc_diff;
+                    let hint_size = Size::from((hint_width, hint_height));
+
+                    // Sometimes the hint ends up 1 px wider than necessary and/or 1 px
                     // narrower than necessary. The values here seem correct. Might have to do with
                     // how zooming out currently doesn't round to output scale properly.
 
