@@ -141,7 +141,7 @@ install -Dm644 -t %{buildroot}%{_userunitdir} ./resources/niri-shutdown.target
 %check
 # We're running into file descriptor limits...
 export RAYON_NUM_THREADS=2
-%cargo_test -- --workspace --exclude niri-visual-tests
+%cargo_test -- --workspace --exclude niri-visual-tests -- --test-threads=2
 %endif
 
 %files
