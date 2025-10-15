@@ -8,7 +8,7 @@ Maximized columns still leave space for [struts] and [gaps], and can contain mul
 The windows retain their borders.
 This is the simplest of the sizing modes, and is equivalent to `proportion 1.0` column width, or `set-column-width "100%"`.
 
-![Screenshot of a maximized column with two windows.](https://github.com/user-attachments/assets/23265cb5-7363-4531-ad0e-4968c516cf8d)
+![Screenshot of a maximized column with two windows.](./img/maximized-column.png)
 
 You can make a window open in a maximized column with the [`open-maximized true`](./Configuration:-Window-Rules.md#open-maximized) window rule.
 
@@ -23,7 +23,7 @@ Windows can also control maximizing-to-edges: when you click on the square icon 
 
 You can put multiple maximized windows into a [tabbed column](./Tabs.md), but not into a regular column.
 
-![Screenshot of a window maximized to edges.](https://github.com/user-attachments/assets/8ad29c80-0760-4c9b-b47a-e0f81ba80089)
+![Screenshot of a window maximized to edges.](./img/window-maximized-to-edges.png)
 
 You can make a window open maximized-to-edges, or prevent a window from maximizing upon opening, with the [`open-maximized-to-edges`](./Configuration:-Window-Rules.md#open-maximized-to-edges) window rule.
 
@@ -40,7 +40,7 @@ This backdrop helps match the screen size when the window itself remains too sma
 When a fullscreen window is focused and not animating, it will cover floating windows and the top layer-shell layer.
 If you want for example your layer-shell notifications or launcher to appear over fullscreen windows, configure the respective tools to put them on the overlay layer-shell layer.
 
-![Screenshot of a fullscreen window.](https://github.com/user-attachments/assets/96403b71-5420-47bd-9dde-5d0b20f980df)
+![Screenshot of a fullscreen window.](./img/fullscreen-window.png)
 
 You can make a window open fullscreen, or prevent a window from fullscreening upon opening, with the [`open-fullscreen`](./Configuration:-Window-Rules.md#open-fullscreen) window rule.
 
@@ -52,7 +52,7 @@ Then, unfullscreening/unmaximizing will bring it back into the floating layout a
 
 Thanks to scrollable tiling, fullscreen and maximized windows remain a normal participant of the layout: you can scroll left and right from them and see other windows.
 
-![Screenshot of the overview showing a fullscreen window with other windows side by side.](https://github.com/user-attachments/assets/e336ccd2-d967-4e04-aa0a-8c08518623cb)
+![Screenshot of the overview showing a fullscreen window with other windows side by side.](./img/fullscreen-window-in-overview.png)
 
 Fullscreen and maximize-to-edges are both special states that the windows are aware of and can control.
 Windows sometimes want to restore their fullscreen or, more frequently, maximized state when they open.
