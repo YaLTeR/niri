@@ -419,6 +419,8 @@ window-rule {
 
 #### `open-maximized-to-edges`
 
+<sup>Since: next release</sup>
+
 Make the window open [maximized to edges](./Fullscreen-and-Maximize.md).
 
 ```kdl
