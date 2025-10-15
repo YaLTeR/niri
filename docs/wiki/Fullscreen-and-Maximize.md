@@ -64,6 +64,18 @@ If the window does this, then `open-maximized-to-edges` and `open-fullscreen` wi
 However, some clients tend to request to be maximized shortly *after* the initial configure sequence, when the niri already sent them the initial size request (sometimes even after showing on screen, resulting in a quick resize right after opening).
 From niri's point of view, the window is already open by this point, so if the window does this, then the `open-maximized-to-edges` and `open-fullscreen` window rules don't do anything.
 
+## Windowed fullscreen
+
+<sup>Since: 25.05</sup>
+
+Niri can also tell a window that it's in fullscreen without actually making it fullscreen, via the `toggle-windowed-fullscreen` action.
+This is generally useful for screencasting browser-based presentations, when you want to hide the browser UI, but still have the window sized as a normal window.
+
+When in windowed fullscreen, you can use the niri action to maximize or unmaximize the window.
+Window-side titlebar maximize buttons and gestures may not work, since the window will always think that it's in fullscreen.
+
+See also windowed fullscreen on the [screencasting features wiki page](./Screencasting.md#windowed-fakedetached-fullscreen).
+
 
 [struts]: ./Configuration:-Layout.md#struts
 [gaps]: ./Configuration:-Layout.md#gaps
