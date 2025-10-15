@@ -24,7 +24,7 @@ use niri::utils::spawning::{
     REMOVE_ENV_RUST_BACKTRACE, REMOVE_ENV_RUST_LIB_BACKTRACE,
 };
 use niri::utils::{cause_panic, version, watcher, xwayland, IS_SYSTEMD_SERVICE};
-use niri_config::ConfigPath;
+use niri_config::{Config, ConfigPath};
 use niri_ipc::socket::SOCKET_PATH_ENV;
 use portable_atomic::Ordering;
 use sd_notify::NotifyState;
@@ -101,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Sub::Validate { config } => {
                 tracy_client::Client::start();
 
-                config_path(config).load()?;
+                config_path(config).load().config?;
                 info!("config is valid");
                 return Ok(());
             }
@@ -148,10 +148,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = config_path(cli.config);
     env::remove_var("NIRI_CONFIG");
     let (config_created_at, config_load_result) = config_path.load_or_create();
-    let config_errored = config_load_result.is_err();
-    let mut config = config_load_result
-        .map_err(|err| warn!("{err:?}"))
-        .unwrap_or_default();
+    let config_errored = config_load_result.config.is_err();
+    let mut config = config_load_result.config.unwrap_or_else(|err| {
+        warn!("{err:?}");
+        Config::load_default()
+    });
+    let config_includes = config_load_result.includes;
 
     let spawn_at_startup = mem::take(&mut config.spawn_at_startup);
     let spawn_sh_at_startup = mem::take(&mut config.spawn_sh_at_startup);
@@ -238,7 +240,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    watcher::setup(&mut state, &config_path);
+    watcher::setup(&mut state, &config_path, config_includes);
 
     // Spawn commands from cli and auto-start.
     spawn(cli.command, None);

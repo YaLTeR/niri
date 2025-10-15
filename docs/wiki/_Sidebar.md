@@ -13,6 +13,7 @@
 * [Nvidia](./Nvidia.md)
 * [Xwayland](./Xwayland.md)
 * [Gestures](./Gestures.md)
+* [Fullscreen and Maximize](./Fullscreen-and-Maximize.md)
 * [Packaging niri](./Packaging-niri.md)
 * [Integrating niri](./Integrating-niri.md)
 * [Accessibility](./Accessibility.md)
@@ -33,6 +34,7 @@
 * [Animations](./Configuration:-Animations.md)
 * [Gestures](./Configuration:-Gestures.md)
 * [Debug Options](./Configuration:-Debug-Options.md)
+* [Include](./Configuration:-Include.md)
 
 ## Development
 * [Design Principles](./Development:-Design-Principles.md)

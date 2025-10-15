@@ -1,5 +1,6 @@
 use std::cmp::{max, min};
 
+use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, WindowRule};
 use niri_config::{
     BlockOutFrom, BlurRule, BorderRule, CornerRadius, FloatingPosition, PresetSize, ShadowRule,
@@ -59,6 +60,9 @@ pub struct ResolvedWindowRules {
 
     /// Whether the window should open full-width.
     pub open_maximized: Option<bool>,
+
+    /// Whether the window should open maximized to edges (true maximized).
+    pub open_maximized_to_edges: Option<bool>,
 
     /// Whether the window should open fullscreen.
     pub open_fullscreen: Option<bool>,
@@ -181,6 +185,7 @@ impl ResolvedWindowRules {
             open_on_output: None,
             open_on_workspace: None,
             open_maximized: None,
+            open_maximized_to_edges: None,
             open_fullscreen: None,
             open_floating: None,
             open_focused: None,
@@ -306,6 +311,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_maximized {
                     resolved.open_maximized = Some(x);
+                }
+
+                if let Some(x) = rule.open_maximized_to_edges {
+                    resolved.open_maximized_to_edges = Some(x);
                 }
 
                 if let Some(x) = rule.open_fullscreen {

@@ -44,6 +44,7 @@ window-rule {
     open-on-output "Some Company CoolMonitor 1234"
     open-on-workspace "chat"
     open-maximized true
+    open-maximized-to-edges true
     open-fullscreen true
     open-floating true
     open-focused false
@@ -172,7 +173,7 @@ window-rule {
 }
 ```
 
-You can find the title and the app ID of the currently focused window by running `niri msg focused-window`.
+You can find the title and the app ID of a window by running `niri msg pick-window` and clicking on the window in question.
 
 > [!TIP]
 > Another way to find the window title and app ID is to configure the `wlr/taskbar` module in [Waybar](https://github.com/Alexays/Waybar) to include them in the tooltip:
@@ -416,9 +417,29 @@ window-rule {
 }
 ```
 
+#### `open-maximized-to-edges`
+
+<sup>Since: next release</sup>
+
+Make the window open [maximized to edges](./Fullscreen-and-Maximize.md).
+
+```kdl
+window-rule {
+    open-maximized-to-edges true
+}
+```
+
+You can also set this to `false` to *prevent* a window from opening maximized to edges.
+
+```kdl
+window-rule {
+    open-maximized-to-edges false
+}
+```
+
 #### `open-fullscreen`
 
-Make the window open fullscreen.
+Make the window open [fullscreen](./Fullscreen-and-Maximize.md).
 
 ```kdl
 window-rule {

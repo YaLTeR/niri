@@ -1514,6 +1514,23 @@ impl State {
             Action::MaximizeColumn => {
                 self.niri.layout.toggle_full_width();
             }
+            Action::MaximizeWindowToEdges => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.toggle_maximized(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::MaximizeWindowToEdgesById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_maximized(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::FocusMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.focus_output(&output);
@@ -1950,7 +1967,7 @@ impl State {
                         if self.niri.layout.move_workspace_to_output_by_id(
                             old_idx,
                             output,
-                            new_output.clone(),
+                            &new_output,
                         ) {
                             // Cursor warp already calls `queue_redraw_all`
                             if !self.maybe_warp_cursor_to_focus_centered() {
@@ -4564,6 +4581,20 @@ pub fn apply_libinput_settings(config: &niri_config::Input, device: &mut input::
         } else {
             input::SendEventsMode::ENABLED
         });
+
+        #[rustfmt::skip]
+        const IDENTITY_MATRIX: [f32; 6] = [
+            1., 0., 0.,
+            0., 1., 0.,
+        ];
+
+        let _ = device.config_calibration_set_matrix(
+            c.calibration_matrix
+                .as_deref()
+                .and_then(|m| m.try_into().ok())
+                .or(device.config_calibration_default_matrix())
+                .unwrap_or(IDENTITY_MATRIX),
+        );
     }
 }
 

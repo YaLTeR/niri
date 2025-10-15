@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::iter::zip;
 use std::rc::Rc;
 
+use niri_config::utils::MergeWith as _;
 use niri_config::{PresetSize, RelativeTo};
 use niri_ipc::{PositionChange, SizeChange, WindowLayout};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -340,7 +341,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
     }
 
     pub fn new_window_toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
-        let border_config = rules.border.resolve_against(self.options.border);
+        let border_config = self.options.layout.border.merged_with(&rules.border);
         compute_toplevel_bounds(border_config, self.working_area.size)
     }
 
@@ -413,8 +414,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         // unfullscreen it.
         let floating_size = tile.floating_window_size;
         let win = tile.window_mut();
-        let mut size = if win.is_pending_fullscreen() {
-            // If the window was fullscreen without a floating size, ask for (0, 0).
+        let mut size = if !win.pending_sizing_mode().is_normal() {
+            // If the window was fullscreen or maximized without a floating size, ask for (0, 0).
             floating_size.unwrap_or_default()
         } else {
             // If the window wasn't fullscreen without a floating size (e.g. it was tiled before),
@@ -633,7 +634,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let available_size = self.working_area.size.w;
 
-        let len = self.options.preset_column_widths.len();
+        let len = self.options.layout.preset_column_widths.len();
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_width_idx {
             (idx + if forwards { 1 } else { len - 1 }) % len
@@ -643,6 +644,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
             let mut it = self
                 .options
+                .layout
                 .preset_column_widths
                 .iter()
                 .map(|preset| resolve_preset_size(*preset, available_size));
@@ -668,7 +670,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             }
         };
 
-        let preset = self.options.preset_column_widths[preset_idx];
+        let preset = self.options.layout.preset_column_widths[preset_idx];
         self.set_window_width(Some(&id), SizeChange::from(preset), true);
 
         self.tiles[idx].floating_preset_width_idx = Some(preset_idx);
@@ -693,7 +695,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
         let available_size = self.working_area.size.h;
 
-        let len = self.options.preset_window_heights.len();
+        let len = self.options.layout.preset_window_heights.len();
         let tile = &mut self.tiles[idx];
         let preset_idx = if let Some(idx) = tile.floating_preset_height_idx {
             (idx + if forwards { 1 } else { len - 1 }) % len
@@ -703,6 +705,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
             let mut it = self
                 .options
+                .layout
                 .preset_window_heights
                 .iter()
                 .map(|preset| resolve_preset_size(*preset, available_size));
@@ -728,7 +731,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             }
         };
 
-        let preset = self.options.preset_window_heights[preset_idx];
+        let preset = self.options.layout.preset_window_heights[preset_idx];
         self.set_window_height(Some(&id), SizeChange::from(preset), true);
 
         let tile = &mut self.tiles[idx];
@@ -1157,7 +1160,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 .map(|resize| resize.data);
             win.set_interactive_resize(resize_data);
 
-            let border_config = win.rules().border.resolve_against(self.options.border);
+            let border_config = self.options.layout.border.merged_with(&win.rules().border);
             let bounds = compute_toplevel_bounds(border_config, self.working_area.size);
             win.set_bounds(bounds);
 
@@ -1221,14 +1224,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
         height: Option<PresetSize>,
         rules: &ResolvedWindowRules,
     ) -> Size<i32, Logical> {
-        let border = rules.border.resolve_against(self.options.border);
+        let border = self.options.layout.border.merged_with(&rules.border);
 
         let resolve = |size: Option<PresetSize>, working_area_size: f64| {
             if let Some(size) = size {
                 let size = match resolve_preset_size(size, working_area_size) {
                     ResolvedSize::Tile(mut size) => {
                         if !border.off {
-                            size -= border.width.0 * 2.;
+                            size -= border.width * 2.;
                         }
                         size
                     }
@@ -1311,6 +1314,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         assert_eq!(self.tiles.len(), self.data.len());
 
         for (i, (tile, data)) in zip(&self.tiles, &self.data).enumerate() {
+            use crate::layout::SizingMode;
+
             assert!(Rc::ptr_eq(&self.options, &tile.options));
             assert_eq!(self.view_size, tile.view_size());
             assert_eq!(self.clock, tile.clock);
@@ -1318,15 +1323,16 @@ impl<W: LayoutElement> FloatingSpace<W> {
             tile.verify_invariants();
 
             if let Some(idx) = tile.floating_preset_width_idx {
-                assert!(idx < self.options.preset_column_widths.len());
+                assert!(idx < self.options.layout.preset_column_widths.len());
             }
             if let Some(idx) = tile.floating_preset_height_idx {
-                assert!(idx < self.options.preset_window_heights.len());
+                assert!(idx < self.options.layout.preset_window_heights.len());
             }
 
-            assert!(
-                !tile.window().is_pending_fullscreen(),
-                "floating windows cannot be fullscreen"
+            assert_eq!(
+                tile.window().pending_sizing_mode(),
+                SizingMode::Normal,
+                "floating windows cannot be maximized or fullscreen"
             );
 
             data.verify_invariants();
@@ -1366,7 +1372,7 @@ fn compute_toplevel_bounds(
 ) -> Size<i32, Logical> {
     let mut border = 0.;
     if !border_config.off {
-        border = border_config.width.0 * 2.;
+        border = border_config.width * 2.;
     }
 
     Size::from((

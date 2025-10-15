@@ -12,7 +12,7 @@ use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
 use smithay::input::keyboard::Keysym;
 
-use crate::utils::expect_only_children;
+use crate::utils::{expect_only_children, MergeWith};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds(pub Vec<Bind>);
@@ -75,6 +75,18 @@ pub struct SwitchBinds {
     pub tablet_mode_on: Option<SwitchAction>,
     #[knuffel(child)]
     pub tablet_mode_off: Option<SwitchAction>,
+}
+
+impl MergeWith<SwitchBinds> for SwitchBinds {
+    fn merge_with(&mut self, part: &SwitchBinds) {
+        merge_clone_opt!(
+            (self, part),
+            lid_open,
+            lid_close,
+            tablet_mode_on,
+            tablet_mode_off,
+        );
+    }
 }
 
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
@@ -291,6 +303,9 @@ pub enum Action {
     #[knuffel(skip)]
     SwitchPresetWindowHeightBackById(u64),
     MaximizeColumn,
+    MaximizeWindowToEdges,
+    #[knuffel(skip)]
+    MaximizeWindowToEdgesById(u64),
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
     ExpandColumnToAvailableWidth,
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
@@ -556,6 +571,10 @@ impl From<niri_ipc::Action> for Action {
                 Self::SwitchPresetWindowHeightBackById(id)
             }
             niri_ipc::Action::MaximizeColumn {} => Self::MaximizeColumn,
+            niri_ipc::Action::MaximizeWindowToEdges { id: None } => Self::MaximizeWindowToEdges,
+            niri_ipc::Action::MaximizeWindowToEdges { id: Some(id) } => {
+                Self::MaximizeWindowToEdgesById(id)
+            }
             niri_ipc::Action::SetColumnWidth { change } => Self::SetColumnWidth(change),
             niri_ipc::Action::ExpandColumnToAvailableWidth {} => Self::ExpandColumnToAvailableWidth,
             niri_ipc::Action::SwitchLayout { layout } => Self::SwitchLayout(layout),

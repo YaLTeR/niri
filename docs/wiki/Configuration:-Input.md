@@ -96,6 +96,7 @@ input {
     touch {
         // off
         map-to-output "eDP-1"
+        // calibration-matrix 1.0 0.0 0.0 0.0 1.0 0.0
     }
 
     // disable-power-key-handling
@@ -256,9 +257,11 @@ Settings specific to `touchpad` and `mouse`:
 
     <sup>Since: 25.08</sup> You can also override horizontal and vertical scroll factor separately like so: `scroll-factor horizontal=2.0 vertical=-1.0`
 
-Settings specific to `tablet`s:
+Settings specific to `tablet` and `touch`:
 
-- `calibration-matrix`: <sup>Since: 25.02</sup> set to six floating point numbers to change the calibration matrix. See the [`LIBINPUT_CALIBRATION_MATRIX` documentation](https://wayland.freedesktop.org/libinput/doc/latest/device-configuration-via-udev.html) for examples.
+- `calibration-matrix`: set to six floating point numbers to change the calibration matrix. See the [`LIBINPUT_CALIBRATION_MATRIX` documentation](https://wayland.freedesktop.org/libinput/doc/latest/device-configuration-via-udev.html) for examples.
+    - <sup>Since: 25.02</sup> for `tablet`
+    - <sup>Since: next release</sup> for `touch`
 
 Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
 

@@ -1,4 +1,5 @@
 use niri_config::layer_rule::{LayerRule, Match};
+use niri_config::utils::MergeWith as _;
 use niri_config::{BlockOutFrom, BlurRule, CornerRadius, ShadowRule};
 use smithay::desktop::LayerSurface;
 
