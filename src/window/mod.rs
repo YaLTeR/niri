@@ -119,6 +119,12 @@ pub struct ResolvedWindowRules {
 
     /// Override whether to set the Tiled xdg-toplevel state on the window.
     pub tiled_state: Option<bool>,
+
+    /// Whether to force a render on this window.
+    pub force_render: Option<bool>,
+
+    /// force render fps limit for this window.
+    pub force_render_fps: Option<u16>,
 }
 
 impl<'a> WindowRef<'a> {
@@ -240,6 +246,8 @@ impl ResolvedWindowRules {
             variable_refresh_rate: None,
             scroll_factor: None,
             tiled_state: None,
+            force_render: None,
+            force_render_fps: None,
         }
     }
 
@@ -364,6 +372,14 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.tiled_state {
                     resolved.tiled_state = Some(x);
+                }
+
+                if let Some(x) = rule.force_render {
+                    resolved.force_render = Some(x);
+                }
+
+                if let Some(x) = rule.force_render_fps {
+                    resolved.force_render_fps = Some(x);
                 }
             }
 
