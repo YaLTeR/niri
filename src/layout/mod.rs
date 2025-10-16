@@ -3180,6 +3180,13 @@ impl<W: LayoutElement> Layout<W> {
         workspace.switch_focus_floating_tiling();
     }
 
+    pub fn toggle_floating_layout(&mut self) {
+        let Some(workspace) = self.active_workspace_mut() else {
+            return;
+        };
+        workspace.toggle_floating_layout();
+    }
+
     pub fn move_floating_window(
         &mut self,
         id: Option<&W::Id>,
