@@ -2248,6 +2248,21 @@ impl<W: LayoutElement> Layout<W> {
         mon.active_window().map(|win| (win, &mon.output))
     }
 
+    /// NOTE: ignores InteractiveMoveState
+    pub fn focus_with_monitor(&self) -> Option<(&W, &Monitor<W>)> {
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &self.monitor_set
+        else {
+            return None;
+        };
+
+        let mon = &monitors[*active_monitor_idx];
+        mon.active_window().map(|win| (win, mon))
+    }
+
     pub fn interactive_moved_window_under(
         &self,
         output: &Output,

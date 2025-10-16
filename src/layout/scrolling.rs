@@ -2556,6 +2556,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         view.intersection(tile_rect)
     }
 
+    /// Returns the geometry of the active tile relative to the view.
+    ///
+    /// During animations, assumes the final view position.
+    pub fn active_tile_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
+        let col = self.columns.get(self.active_column_idx)?;
+
+        let final_view_offset = self.view_offset.target();
+        let view_off = Point::from((-final_view_offset, 0.));
+
+        let (tile, tile_off) = col.tiles().nth(col.active_tile_idx).unwrap();
+
+        let tile_pos = view_off + tile_off;
+        let tile_size = tile.tile_size();
+        let tile_rect = Rectangle::new(tile_pos, tile_size);
+
+        Some(tile_rect)
+    }
+
     pub fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
         for col in &self.columns {
             for (tile, pos) in col.tiles() {

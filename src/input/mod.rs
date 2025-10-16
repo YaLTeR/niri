@@ -640,28 +640,35 @@ impl State {
                 self.open_screenshot_ui(show_cursor);
             }
             Action::ScreenshotWindow(write_to_disk) => {
-                let focus = self.niri.layout.focus_with_output();
-                if let Some((mapped, output)) = focus {
+                let focus = self.niri.layout.focus_with_monitor();
+                let include_pointer = false;
+                if let Some((mapped, monitor)) = focus {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) =
-                            self.niri
-                                .screenshot_window(renderer, output, mapped, write_to_disk)
-                        {
+                        if let Err(err) = self.niri.screenshot_window(
+                            renderer,
+                            monitor,
+                            mapped,
+                            write_to_disk,
+                            include_pointer,
+                        ) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
                 }
             }
             Action::ScreenshotWindowById { id, write_to_disk } => {
+                let include_pointer = false;
                 let mut windows = self.niri.layout.windows();
                 let window = windows.find(|(_, m)| m.id().get() == id);
                 if let Some((Some(monitor), mapped)) = window {
-                    let output = monitor.output();
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) =
-                            self.niri
-                                .screenshot_window(renderer, output, mapped, write_to_disk)
-                        {
+                        if let Err(err) = self.niri.screenshot_window(
+                            renderer,
+                            monitor,
+                            mapped,
+                            write_to_disk,
+                            include_pointer,
+                        ) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });

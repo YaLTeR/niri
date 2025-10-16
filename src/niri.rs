@@ -137,9 +137,12 @@ use crate::input::{
 use crate::ipc::server::IpcServer;
 use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
+use crate::layout::monitor::Monitor;
 use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::{Workspace, WorkspaceId};
-use crate::layout::{HitType, Layout, LayoutElement as _, MonitorRenderElement};
+use crate::layout::{
+    HitType, Layout, LayoutElement, LayoutElementRenderElement, MonitorRenderElement,
+};
 use crate::niri_render_elements;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
@@ -5538,12 +5541,14 @@ impl Niri {
     pub fn screenshot_window(
         &self,
         renderer: &mut GlesRenderer,
-        output: &Output,
+        monitor: &Monitor<Mapped>,
         mapped: &Mapped,
         write_to_disk: bool,
+        include_pointer: bool,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_window");
 
+        let output = monitor.output();
         let scale = Scale::from(output.current_scale().fractional_scale());
         let alpha =
             if mapped.sizing_mode().is_fullscreen() || mapped.is_ignoring_opacity_window_rule() {
@@ -5551,25 +5556,66 @@ impl Niri {
             } else {
                 mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
             };
-        // FIXME: pointer.
-        let elements = mapped.render(
+
+        let mut elements: Vec<RelocateRenderElement<OutputRenderElements<GlesRenderer>>> = vec![];
+
+        let mapped_elements = mapped.render(
             renderer,
             mapped.window.geometry().loc.to_f64(),
             scale,
             alpha,
             RenderTarget::ScreenCapture,
         );
-        let geo = encompassing_geo(scale, elements.iter());
-        let elements = elements.iter().rev().map(|elem| {
-            RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
-        });
+        let geo = encompassing_geo(scale, mapped_elements.iter());
+        elements.extend(mapped_elements.into_iter().rev().map(|elem| {
+            RelocateRenderElement::from_element(
+                OutputRenderElements::<GlesRenderer>::LayoutElement(elem),
+                geo.loc.upscale(-1),
+                Relocate::Relative,
+            )
+        }));
+
+        let pointer_elements = if include_pointer {
+            self.pointer_element(renderer, output)
+        } else {
+            vec![]
+        };
+        if let Some(tile_geo) = monitor.active_workspace_ref().active_tile_rectangle() {
+            let border_offset = {
+                let tile = monitor.active_workspace_ref().tiles().next().unwrap();
+                let border_width = tile.effective_border_width().unwrap_or(0.0);
+                Point::new(border_width, border_width)
+            };
+
+            let decoration_offset = {
+                let window_bbox = mapped.window.bbox();
+                let window_geo = mapped.window.geometry();
+                window_bbox.loc - window_geo.loc
+            };
+
+            let pointer_geo = encompassing_geo(scale, pointer_elements.iter());
+
+            let pointer_loc = pointer_geo.loc
+                - tile_geo.loc.to_physical_precise_round(scale)
+                - decoration_offset.to_physical_precise_round(scale)
+                - border_offset.to_physical_precise_round(scale);
+
+            elements.extend(
+                pointer_elements.into_iter().rev().map(|e| {
+                    RelocateRenderElement::from_element(e, pointer_loc, Relocate::Absolute)
+                }),
+            );
+        } else {
+            tracing::warn!("could not determine tile geometry. the cursor will not be rendered");
+        }
+
         let pixels = render_to_vec(
             renderer,
             geo.size,
             scale,
             Transform::Normal,
             Fourcc::Abgr8888,
-            elements,
+            elements.into_iter(),
         )?;
 
         self.save_screenshot(geo.size, pixels, write_to_disk)
@@ -6367,5 +6413,6 @@ niri_render_elements! {
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
+        LayoutElement = LayoutElementRenderElement<R>,
     }
 }
