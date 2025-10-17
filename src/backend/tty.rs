@@ -508,7 +508,7 @@ impl Tty {
         path: &Path,
         niri: &mut Niri,
     ) -> anyhow::Result<()> {
-        debug!("device added: {device_id} {path:?}");
+        debug!("adding device: {device_id} {path:?}");
 
         let node = DrmNode::from_dev_id(device_id)?;
 
@@ -746,7 +746,7 @@ impl Tty {
     }
 
     fn device_removed(&mut self, device_id: dev_t, niri: &mut Niri) {
-        debug!("device removed: {device_id}");
+        debug!("removing device: {device_id}");
 
         let Ok(node) = DrmNode::from_dev_id(device_id) else {
             warn!("error creating DrmNode");
