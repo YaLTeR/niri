@@ -649,8 +649,22 @@ impl Tty {
             return;
         };
 
+        if self.ignored_nodes.contains(&node) {
+            debug!("node is ignored, skipping");
+            return;
+        }
+
         let Some(device) = self.devices.get_mut(&node) else {
-            warn!("no such device");
+            if let Some(path) = node.dev_path() {
+                warn!("unknown device; trying to add");
+
+                if let Err(err) = self.device_added(device_id, &path, niri) {
+                    warn!("error adding device: {err:?}");
+                }
+            } else {
+                warn!("unknown device");
+            }
+
             return;
         };
 
@@ -754,7 +768,7 @@ impl Tty {
         };
 
         let Some(device) = self.devices.get_mut(&node) else {
-            warn!("no such device");
+            warn!("unknown device");
             return;
         };
 
