@@ -537,7 +537,7 @@ impl Tty {
         path: &Path,
         niri: &mut Niri,
     ) -> anyhow::Result<()> {
-        debug!("device added: {device_id} {path:?}");
+        debug!("adding device: {device_id} {path:?}");
 
         let node = DrmNode::from_dev_id(device_id)?;
 
@@ -687,8 +687,22 @@ impl Tty {
             return;
         };
 
+        if self.ignored_nodes.contains(&node) {
+            debug!("node is ignored, skipping");
+            return;
+        }
+
         let Some(device) = self.devices.get_mut(&node) else {
-            warn!("no such device");
+            if let Some(path) = node.dev_path() {
+                warn!("unknown device; trying to add");
+
+                if let Err(err) = self.device_added(device_id, &path, niri) {
+                    warn!("error adding device: {err:?}");
+                }
+            } else {
+                warn!("unknown device");
+            }
+
             return;
         };
 
@@ -784,7 +798,7 @@ impl Tty {
     }
 
     fn device_removed(&mut self, device_id: dev_t, niri: &mut Niri) {
-        debug!("device removed: {device_id}");
+        debug!("removing device: {device_id}");
 
         let Ok(node) = DrmNode::from_dev_id(device_id) else {
             warn!("error creating DrmNode");
@@ -792,7 +806,7 @@ impl Tty {
         };
 
         let Some(device) = self.devices.get_mut(&node) else {
-            warn!("no such device");
+            warn!("unknown device");
             return;
         };
 

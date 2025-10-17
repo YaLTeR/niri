@@ -1514,6 +1514,23 @@ impl State {
             Action::MaximizeColumn => {
                 self.niri.layout.toggle_full_width();
             }
+            Action::MaximizeWindowToEdges => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.toggle_maximized(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::MaximizeWindowToEdgesById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_maximized(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::FocusMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
                     self.niri.layout.focus_output(&output);
