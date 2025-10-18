@@ -2,11 +2,12 @@ use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger};
+use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger, Xkb};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -17,6 +18,7 @@ use smithay::backend::input::{
     TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
+use smithay::input::keyboard::KeyboardHandle;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
@@ -63,6 +65,8 @@ pub mod touch_resize_grab;
 use backend_ext::{NiriInputBackend as InputBackend, NiriInputDevice as _};
 
 pub const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(400);
+
+static RESETKEYMAP: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabletData {
@@ -333,16 +337,20 @@ impl State {
             .is_some_and(KeyboardShortcutsInhibitor::is_active)
     }
 
-    fn on_keyboard<I: InputBackend>(
+    pub fn on_keyboard_real(
         &mut self,
-        event: I::KeyboardKeyEvent,
+        key: Keycode,
+        state: KeyState,
+        time: u32,
+        keyboard: KeyboardHandle<Self>,
         consumed_by_a11y: &mut bool,
     ) {
+        RESETKEYMAP.store(true, Ordering::SeqCst);
+
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
         let serial = SERIAL_COUNTER.next_serial();
-        let time = Event::time_msec(&event);
-        let pressed = event.state() == KeyState::Pressed;
+        let pressed = state == KeyState::Pressed;
 
         // Stop bind key repeat on any release. This won't work 100% correctly in cases like:
         // 1. Press Mod
@@ -366,23 +374,14 @@ impl State {
         // Accessibility modifier grabs should override XKB state changes (e.g. Caps Lock), so we
         // need to process them before keyboard.input() below.
         #[cfg(feature = "dbus")]
-        if self.a11y_process_key(
-            Duration::from_millis(u64::from(time)),
-            event.key_code(),
-            event.state(),
-        ) {
+        if self.a11y_process_key(Duration::from_millis(u64::from(time)), key, state) {
             *consumed_by_a11y = true;
             return;
         }
 
-        let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
-            self,
-            event.key_code(),
-            event.state(),
-            serial,
-            time,
-            |this, mods, keysym| {
-                let key_code = event.key_code();
+        let Some(Some(bind)) =
+            keyboard.input(self, key, state, serial, time, |this, mods, keysym| {
+                let key_code = key;
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
 
@@ -443,8 +442,8 @@ impl State {
                 }
 
                 res
-            },
-        ) else {
+            })
+        else {
             return;
         };
 
@@ -455,6 +454,33 @@ impl State {
         self.handle_bind(bind.clone());
 
         self.start_key_repeat(bind);
+    }
+    fn on_keyboard<I: InputBackend>(
+        &mut self,
+        event: I::KeyboardKeyEvent,
+        consumed_by_a11y: &mut bool,
+    ) {
+        {
+            let config = self.niri.config.borrow();
+            let xkb_config = config.input.keyboard.xkb.clone();
+            std::mem::drop(config);
+            if RESETKEYMAP.load(Ordering::Relaxed) {
+                if xkb_config != Xkb::default() {
+                    self.set_xkb_config(xkb_config.to_xkb_config());
+                } else {
+                    let xkb = self.niri.xkb_from_locale1.clone().unwrap_or_default();
+                    self.set_xkb_config(xkb.to_xkb_config());
+                }
+            }
+        }
+        self.on_keyboard_real(
+            event.key_code(),
+            event.state(),
+            Event::time_msec(&event),
+            self.niri.seat.get_keyboard().unwrap(),
+            consumed_by_a11y,
+        );
+        RESETKEYMAP.store(false, Ordering::SeqCst);
     }
 
     fn start_key_repeat(&mut self, bind: Bind) {
