@@ -311,7 +311,9 @@ fn arbitrary_size_change() -> impl Strategy<Value = SizeChange> {
 fn arbitrary_position_change() -> impl Strategy<Value = PositionChange> {
     prop_oneof![
         (-1000f64..1000f64).prop_map(PositionChange::SetFixed),
+        any::<f64>().prop_map(PositionChange::SetProportion),
         (-1000f64..1000f64).prop_map(PositionChange::AdjustFixed),
+        any::<f64>().prop_map(PositionChange::AdjustProportion),
         any::<f64>().prop_map(PositionChange::SetFixed),
         any::<f64>().prop_map(PositionChange::AdjustFixed),
     ]
