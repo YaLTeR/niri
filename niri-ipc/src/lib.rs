@@ -223,6 +223,8 @@ pub enum Action {
 
         /// Path to save the screenshot to.
         ///
+        /// The path must be absolute, otherwise an error is returned.
+        ///
         /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
         path: Option<String>,
@@ -240,6 +242,8 @@ pub enum Action {
         show_pointer: bool,
 
         /// Path to save the screenshot to.
+        ///
+        /// The path must be absolute, otherwise an error is returned.
         ///
         /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
@@ -260,6 +264,8 @@ pub enum Action {
         write_to_disk: bool,
 
         /// Path to save the screenshot to.
+        ///
+        /// The path must be absolute, otherwise an error is returned.
         ///
         /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]

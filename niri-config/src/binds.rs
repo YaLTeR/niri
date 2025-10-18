@@ -120,16 +120,19 @@ pub enum Action {
     ScreenshotTogglePointer,
     Screenshot(
         #[knuffel(property(name = "show-pointer"), default = true)] bool,
-        #[knuffel(property(name = "path"))] Option<String>,
+        // Path; not settable from knuffel
+        Option<String>,
     ),
     ScreenshotScreen(
         #[knuffel(property(name = "write-to-disk"), default = true)] bool,
         #[knuffel(property(name = "show-pointer"), default = true)] bool,
-        #[knuffel(property(name = "path"))] Option<String>,
+        // Path; not settable from knuffel
+        Option<String>,
     ),
     ScreenshotWindow(
         #[knuffel(property(name = "write-to-disk"), default = true)] bool,
-        #[knuffel(property(name = "path"))] Option<String>,
+        // Path; not settable from knuffel
+        Option<String>,
     ),
     #[knuffel(skip)]
     ScreenshotWindowById {

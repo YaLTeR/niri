@@ -212,11 +212,8 @@ pub fn expand_home(path: &Path) -> anyhow::Result<Option<PathBuf>> {
     }
 }
 
-pub fn make_screenshot_path(
-    path: Option<String>,
-    config: &Config,
-) -> anyhow::Result<Option<PathBuf>> {
-    let Some(path) = path.or_else(|| config.screenshot_path.0.clone()) else {
+pub fn make_screenshot_path(config: &Config) -> anyhow::Result<Option<PathBuf>> {
+    let Some(path) = &config.screenshot_path.0 else {
         return Ok(None);
     };
 

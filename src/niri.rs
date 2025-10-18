@@ -1902,17 +1902,15 @@ impl State {
     }
 
     pub fn confirm_screenshot(&mut self, write_to_disk: bool) {
-        let ScreenshotUi::Open { ref path, .. } = self.niri.screenshot_ui else {
+        let ScreenshotUi::Open { path, .. } = &mut self.niri.screenshot_ui else {
             return;
         };
+        let path = path.take();
 
         self.backend.with_primary_renderer(|renderer| {
             match self.niri.screenshot_ui.capture(renderer) {
                 Ok((size, pixels)) => {
-                    if let Err(err) =
-                        self.niri
-                            .save_screenshot(size, pixels, write_to_disk, path.clone())
-                    {
+                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk, path) {
                         warn!("error saving screenshot: {err:?}");
                     }
                 }
@@ -5614,15 +5612,20 @@ impl Niri {
         size: Size<i32, Physical>,
         pixels: Vec<u8>,
         write_to_disk: bool,
-        path: Option<String>,
+        path_arg: Option<String>,
     ) -> anyhow::Result<()> {
         let path = write_to_disk
-            .then(|| match make_screenshot_path(path, &self.config.borrow()) {
-                Ok(path) => path,
-                Err(err) => {
-                    warn!("error making screenshot path: {err:?}");
-                    None
-                }
+            .then(|| {
+                // When given an explicit path, don't try to strftime it or create parents.
+                path_arg.map(|p| (PathBuf::from(p), false)).or_else(|| {
+                    match make_screenshot_path(&self.config.borrow()) {
+                        Ok(path) => path.map(|p| (p, true)),
+                        Err(err) => {
+                            warn!("error making screenshot path: {err:?}");
+                            None
+                        }
+                    }
+                })
             })
             .flatten();
 
@@ -5658,15 +5661,17 @@ impl Niri {
 
             let mut image_path = None;
 
-            if let Some(path) = path {
+            if let Some((path, create_parent)) = path {
                 debug!("saving screenshot to {path:?}");
 
-                if let Some(parent) = path.parent() {
-                    // Relative paths with one component, i.e. "test.png", have Some("") parent.
-                    if !parent.as_os_str().is_empty() {
-                        if let Err(err) = std::fs::create_dir(parent) {
-                            if err.kind() != std::io::ErrorKind::AlreadyExists {
-                                warn!("error creating screenshot directory: {err:?}");
+                if create_parent {
+                    if let Some(parent) = path.parent() {
+                        // Relative paths with one component, i.e. "test.png", have Some("") parent.
+                        if !parent.as_os_str().is_empty() {
+                            if let Err(err) = std::fs::create_dir(parent) {
+                                if err.kind() != std::io::ErrorKind::AlreadyExists {
+                                    warn!("error creating screenshot directory: {err:?}");
+                                }
                             }
                         }
                     }
@@ -5735,7 +5740,7 @@ impl Niri {
             elements,
         )?;
 
-        let path = make_screenshot_path(None, &self.config.borrow())
+        let path = make_screenshot_path(&self.config.borrow())
             .ok()
             .flatten()
             .unwrap_or_else(|| {
