@@ -643,6 +643,11 @@ where
                         }
                     };
 
+                if refresh == 0 {
+                    warn!("SetCustomMode: refresh 0 requested, ignoring");
+                    return;
+                }
+
                 new_config.mode = Some(niri_config::output::Mode {
                     custom: true,
                     mode: niri_ipc::ConfiguredMode {

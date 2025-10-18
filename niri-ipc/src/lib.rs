@@ -978,7 +978,7 @@ pub enum OutputAction {
     },
     /// Set a custom output mode.
     CustomMode {
-        /// Custom mode to set
+        /// Custom mode to set.
         #[cfg_attr(feature = "clap", arg())]
         mode: ConfiguredMode,
     },
@@ -1015,10 +1015,10 @@ pub enum OutputAction {
         #[cfg_attr(feature = "clap", arg())]
         vtotal: u16,
         /// Horizontal sync polarity: "+hsync" or "-hsync".
-        #[cfg_attr(feature = "clap", arg())]
+        #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
         hsync_polarity: HSyncPolarity,
         /// Vertical sync polarity: "+vsync" or "-vsync".
-        #[cfg_attr(feature = "clap", arg())]
+        #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
         vsync_polarity: VSyncPolarity,
     },
     /// Set the output scale.

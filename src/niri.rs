@@ -1790,25 +1790,25 @@ impl State {
             }
             niri_ipc::OutputAction::Modeline {
                 clock,
-                hdisplay: hdisp,
+                hdisplay,
                 hsync_start,
                 hsync_end,
                 htotal,
-                vdisplay: vdisp,
+                vdisplay,
                 vsync_start,
                 vsync_end,
                 vtotal,
                 hsync_polarity,
                 vsync_polarity,
             } => {
-                config.mode = None;
+                // Do not reset config.mode to None since it's used as a fallback.
                 config.modeline = Some(niri_config::output::Modeline {
                     clock,
-                    hdisplay: hdisp,
+                    hdisplay,
                     hsync_start,
                     hsync_end,
                     htotal,
-                    vdisplay: vdisp,
+                    vdisplay,
                     vsync_start,
                     vsync_end,
                     vtotal,

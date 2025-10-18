@@ -15,7 +15,7 @@ pub struct Mode {
     pub mode: ConfiguredMode,
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct Modeline {
     /// The rate at which pixels are drawn in MHz.
     #[knuffel(argument)]

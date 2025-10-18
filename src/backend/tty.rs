@@ -893,26 +893,34 @@ impl Tty {
             trace!("{m:?}");
         }
 
-        let mode = if let Some(modeline) = &config.modeline {
-            calculate_drm_mode_from_modeline(&modeline)
-        } else {
-            let (mode, fallback) =
-                pick_mode(&connector, config.mode).ok_or_else(|| anyhow!("no mode"))?;
-            if fallback {
-                let target = config.mode.unwrap();
-                warn!(
-                    "configured mode {}x{}{} could not be found, falling back to preferred",
-                    target.mode.width,
-                    target.mode.height,
-                    if let Some(refresh) = target.mode.refresh {
-                        format!("@{refresh}")
-                    } else {
-                        String::new()
-                    },
-                );
+        let mut mode = None;
+        if let Some(modeline) = &config.modeline {
+            match calculate_drm_mode_from_modeline(modeline) {
+                Ok(x) => mode = Some(x),
+                Err(err) => {
+                    warn!("invalid custom modeline; falling back to advertised modes: {err:?}");
+                }
             }
-            mode
+        }
+
+        let (mode, fallback) = match mode {
+            Some(x) => (x, false),
+            None => pick_mode(&connector, config.mode).ok_or_else(|| anyhow!("no mode"))?,
         };
+
+        if fallback {
+            let target = config.mode.unwrap();
+            warn!(
+                "configured mode {}x{}{} could not be found, falling back to preferred",
+                target.mode.width,
+                target.mode.height,
+                if let Some(refresh) = target.mode.refresh {
+                    format!("@{refresh}")
+                } else {
+                    String::new()
+                },
+            );
+        }
 
         debug!("picking mode: {mode:?}");
 
@@ -1971,15 +1979,29 @@ impl Tty {
                     continue;
                 };
 
-                let (mode, fallback) = if let Some(modeline) = &config.modeline {
-                    let drm_mode = calculate_drm_mode_from_modeline(&modeline);
-                    (drm_mode, false)
-                } else {
-                    let Some((mode, fallback)) = pick_mode(connector, config.mode) else {
-                        warn!("couldn't pick mode for enabled connector");
-                        continue;
-                    };
-                    (mode, fallback)
+                let mut mode = None;
+                if let Some(modeline) = &config.modeline {
+                    match calculate_drm_mode_from_modeline(modeline) {
+                        Ok(x) => mode = Some(x),
+                        Err(err) => {
+                            warn!(
+                                "output {:?}: invalid custom modeline; \
+                                 falling back to advertised modes: {err:?}",
+                                surface.name.connector
+                            );
+                        }
+                    }
+                }
+
+                let (mode, fallback) = match mode {
+                    Some(x) => (x, false),
+                    None => match pick_mode(connector, config.mode) {
+                        Some(result) => result,
+                        None => {
+                            warn!("couldn't pick mode for enabled connector");
+                            continue;
+                        }
+                    },
                 };
 
                 let change_mode = surface.compositor.pending_mode() != mode;
@@ -2532,25 +2554,53 @@ fn queue_estimated_vblank_timer(
     output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
 }
 
-pub fn calculate_drm_mode_from_modeline(modeline: &Modeline) -> DrmMode {
+pub fn calculate_drm_mode_from_modeline(modeline: &Modeline) -> anyhow::Result<DrmMode> {
+    ensure!(
+        modeline.hdisplay < modeline.hsync_start,
+        "hdisplay {} must be < hsync_start {}",
+        modeline.hdisplay,
+        modeline.hsync_start
+    );
+    ensure!(
+        modeline.hsync_start < modeline.hsync_end,
+        "hsync_start {} must be < hsync_end {}",
+        modeline.hsync_start,
+        modeline.hsync_end
+    );
+    ensure!(
+        modeline.hsync_end < modeline.htotal,
+        "hsync_end {} must be < htotal {}",
+        modeline.hsync_end,
+        modeline.htotal
+    );
+    ensure!(
+        modeline.vdisplay < modeline.vsync_start,
+        "vdisplay {} must be < vsync_start {}",
+        modeline.vdisplay,
+        modeline.vsync_start
+    );
+    ensure!(
+        modeline.vsync_start < modeline.vsync_end,
+        "vsync_start {} must be < vsync_end {}",
+        modeline.vsync_start,
+        modeline.vsync_end
+    );
+    ensure!(
+        modeline.vsync_end < modeline.vtotal,
+        "vsync_end {} must be < vtotal {}",
+        modeline.vsync_end,
+        modeline.vtotal
+    );
+
     let pixel_clock_kilo_hertz = modeline.clock * 1000.0;
-    assert!(
-        modeline.hdisplay < modeline.hsync_start
-            && (modeline.hsync_start < modeline.hsync_end)
-            && (modeline.hsync_end < modeline.htotal)
-    );
-    assert!(
-        modeline.vdisplay < modeline.vsync_start
-            && (modeline.vsync_start < modeline.vsync_end)
-            && (modeline.vsync_end < modeline.vtotal)
-    );
     // Calculated as documented in the CVT 1.2 standard:
     // https://app.box.com/s/vcocw3z73ta09txiskj7cnk6289j356b/file/93518784646
     let vrefresh_hertz = (pixel_clock_kilo_hertz * 1000.0)
         / (modeline.htotal as u64 * modeline.vtotal as u64) as f64;
-    if !vrefresh_hertz.is_finite() {
-        error!("Modeline calculation went out of bounds.")
-    }
+    ensure!(
+        vrefresh_hertz.is_finite(),
+        "calculated refresh rate is not finite"
+    );
     let vrefresh_rounded = vrefresh_hertz.round() as u32;
 
     let flags = match modeline.hsync_polarity {
@@ -2568,7 +2618,7 @@ pub fn calculate_drm_mode_from_modeline(modeline: &Modeline) -> DrmMode {
     let name = modeinfo_name_slice_from_string(&mode_name);
 
     // https://www.kernel.org/doc/html/v6.17/gpu/drm-uapi.html#c.drm_mode_modeinfo
-    DrmMode::from(drm_mode_modeinfo {
+    Ok(DrmMode::from(drm_mode_modeinfo {
         clock: pixel_clock_kilo_hertz.round() as u32,
         hdisplay: modeline.hdisplay,
         hsync_start: modeline.hsync_start,
@@ -2585,7 +2635,7 @@ pub fn calculate_drm_mode_from_modeline(modeline: &Modeline) -> DrmMode {
         type_: drm_ffi::DRM_MODE_TYPE_USERDEF,
         hskew: 0,
         vscan: 0,
-    })
+    }))
 }
 
 pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mode {
@@ -2653,16 +2703,13 @@ pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mod
 
 // Returns a c-string of maximally 31 Rust string chars + null terminator. Excess characters are
 // dropped.
-fn modeinfo_name_slice_from_string(mode_name: &String) -> [core::ffi::c_char; 32] {
+fn modeinfo_name_slice_from_string(mode_name: &str) -> [core::ffi::c_char; 32] {
     let mut name: [core::ffi::c_char; 32] = [0; 32];
-    let min_length = 31.min(mode_name.len());
 
-    let slice = mode_name.as_bytes()[..min_length]
-        .iter()
-        .map(|char_byte| *char_byte as i8)
-        .collect::<Vec<i8>>();
+    for (a, b) in zip(&mut name[..31], mode_name.as_bytes()) {
+        *a = *b as i8;
+    }
 
-    name[0..slice.len()].copy_from_slice(slice.as_slice());
     name
 }
 
@@ -2944,7 +2991,7 @@ mod tests {
             hsync_polarity: HSyncPolarity::NHSync,
             vsync_polarity: VSyncPolarity::PVSync,
         };
-        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline1), @"Mode {
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline1).unwrap(), @"Mode {
     name: \"1920x1080@59.96\",
     clock: 173000,
     size: (
@@ -2981,7 +3028,7 @@ mod tests {
             hsync_polarity: HSyncPolarity::NHSync,
             vsync_polarity: VSyncPolarity::PVSync,
         };
-        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline2), @"Mode {
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline2).unwrap(), @"Mode {
     name: \"1920x1080@143.88\",
     clock: 452500,
     size: (
