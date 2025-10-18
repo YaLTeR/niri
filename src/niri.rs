@@ -153,6 +153,8 @@ use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::pw_utils::{Cast, PipeWire};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::pw_utils::{CastSizeChange, PwToNiri};
+#[cfg(feature = "xdp-gnome-remote-desktop")]
+use crate::remote_desktop::RemoteDesktopState;
 use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -417,6 +419,9 @@ pub struct Niri {
     /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
     #[cfg(feature = "xdp-gnome-screencast")]
     pub dynamic_cast_id_for_portal: MappedId,
+
+    #[cfg(feature = "xdp-gnome-remote-desktop")]
+    pub remote_desktop: RemoteDesktopState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -644,6 +649,7 @@ impl KeyboardFocus {
 }
 
 pub struct State {
+    /// The backend for input events and graphical output.
     pub backend: Backend,
     pub niri: Niri,
 }
@@ -2070,19 +2076,19 @@ impl State {
         use crate::dbus::mutter_screen_cast::StreamTargetId;
 
         match msg {
-            ScreenCastToNiri::StartCast {
+            ScreenCastToNiri::StartStream {
                 session_id,
                 stream_id,
                 target,
                 cursor_mode,
                 signal_ctx,
             } => {
-                let _span = tracy_client::span!("StartCast");
+                let _span = tracy_client::span!("StartStream");
 
-                debug!(session_id, stream_id, "StartCast");
+                debug!(session_id, stream_id, "StartStream");
 
                 let Some(gbm) = self.backend.gbm_device() else {
-                    warn!("error starting screencast: no GBM device available");
+                    warn!("error starting screencast stream: no GBM device available");
                     self.niri.stop_cast(session_id);
                     return;
                 };
@@ -2095,7 +2101,7 @@ impl State {
                         Ok(pipewire) => self.niri.pipewire.insert(pipewire),
                         Err(err) => {
                             warn!(
-                                "error starting screencast: PipeWire failed to initialize: {err:?}"
+                                "error starting screencast stream: PipeWire failed to initialize: {err:?}"
                             );
                             self.niri.stop_cast(session_id);
                             return;
@@ -2109,7 +2115,7 @@ impl State {
                         let global_space = &self.niri.global_space;
                         let output = global_space.outputs().find(|out| out.name() == name);
                         let Some(output) = output else {
-                            warn!("error starting screencast: requested output is missing");
+                            warn!("error starting screencast stream: requested output is missing");
                             self.niri.stop_cast(session_id);
                             return;
                         };
@@ -2133,7 +2139,7 @@ impl State {
                         let Some(window) = self.niri.layout.windows().find_map(|(_, mapped)| {
                             (mapped.id().get() == id).then_some(&mapped.window)
                         }) else {
-                            warn!("error starting screencast: requested window is missing");
+                            warn!("error starting screencast stream: requested window is missing");
                             self.niri.stop_cast(session_id);
                             return;
                         };
@@ -2141,7 +2147,7 @@ impl State {
                         // Use the cached output since it will be present even if the output was
                         // currently disconnected.
                         let Some(output) = self.niri.mapped_cast_output.get(window) else {
-                            warn!("error starting screencast: requested window is missing");
+                            warn!("error starting screencast stream: requested window is missing");
                             self.niri.stop_cast(session_id);
                             return;
                         };
@@ -2189,12 +2195,15 @@ impl State {
                         self.niri.casts.push(cast);
                     }
                     Err(err) => {
-                        warn!("error starting screencast: {err:?}");
+                        warn!("error starting screencast stream: {err:?}");
                         self.niri.stop_cast(session_id);
                     }
                 }
             }
-            ScreenCastToNiri::StopCast { session_id } => self.niri.stop_cast(session_id),
+            ScreenCastToNiri::StopCast { session_id, reason } => {
+                debug!(session_id, ?reason, "Handling ScreenCastToNiri::StopCast");
+                self.niri.stop_cast(session_id)
+            },
         }
     }
 
@@ -2746,6 +2755,8 @@ impl Niri {
 
             #[cfg(feature = "xdp-gnome-screencast")]
             dynamic_cast_id_for_portal: MappedId::next(),
+            #[cfg(feature = "xdp-gnome-remote-desktop")]
+            remote_desktop: RemoteDesktopState::default(),
         };
 
         niri.reset_pointer_inactivity_timer();
@@ -5373,6 +5384,7 @@ impl Niri {
         Ok((sync, damages))
     }
 
+    /// Stops all streams associated with the specified screencast session.
     #[cfg(feature = "xdp-gnome-screencast")]
     fn stop_cast(&mut self, session_id: usize) {
         let _span = tracy_client::span!("Niri::stop_cast");
@@ -5400,7 +5412,7 @@ impl Niri {
             async_io::block_on(async move {
                 iface
                     .get()
-                    .stop(server.inner(), iface.signal_emitter().clone())
+                    .stop_from_stopcast(server.inner(), iface.signal_emitter())
                     .await
             });
         }
