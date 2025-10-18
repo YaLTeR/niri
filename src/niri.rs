@@ -1777,8 +1777,44 @@ impl State {
             niri_ipc::OutputAction::Mode { mode } => {
                 config.mode = match mode {
                     niri_ipc::ModeToSet::Automatic => None,
-                    niri_ipc::ModeToSet::Specific(mode) => Some(mode),
-                }
+                    niri_ipc::ModeToSet::Specific(mode) => Some(niri_config::output::Mode {
+                        custom: false,
+                        mode,
+                    }),
+                };
+                config.modeline = None;
+            }
+            niri_ipc::OutputAction::CustomMode { mode } => {
+                config.mode = Some(niri_config::output::Mode { custom: true, mode });
+                config.modeline = None;
+            }
+            niri_ipc::OutputAction::Modeline {
+                clock,
+                hdisplay,
+                hsync_start,
+                hsync_end,
+                htotal,
+                vdisplay,
+                vsync_start,
+                vsync_end,
+                vtotal,
+                hsync_polarity,
+                vsync_polarity,
+            } => {
+                // Do not reset config.mode to None since it's used as a fallback.
+                config.modeline = Some(niri_config::output::Modeline {
+                    clock,
+                    hdisplay,
+                    hsync_start,
+                    hsync_end,
+                    htotal,
+                    vdisplay,
+                    vsync_start,
+                    vsync_end,
+                    vtotal,
+                    hsync_polarity,
+                    vsync_polarity,
+                })
             }
             niri_ipc::OutputAction::Scale { scale } => {
                 config.scale = match scale {
