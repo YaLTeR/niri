@@ -1902,17 +1902,15 @@ impl State {
     }
 
     pub fn confirm_screenshot(&mut self, write_to_disk: bool) {
-        let ScreenshotUi::Open { ref path, .. } = self.niri.screenshot_ui else {
+        let ScreenshotUi::Open { path, .. } = &mut self.niri.screenshot_ui else {
             return;
         };
+        let path = path.take();
 
         self.backend.with_primary_renderer(|renderer| {
             match self.niri.screenshot_ui.capture(renderer) {
                 Ok((size, pixels)) => {
-                    if let Err(err) =
-                        self.niri
-                            .save_screenshot(size, pixels, write_to_disk, path.clone())
-                    {
+                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk, path) {
                         warn!("error saving screenshot: {err:?}");
                     }
                 }
