@@ -220,6 +220,10 @@ pub enum Action {
         ///  Whether to show the mouse pointer by default in the screenshot UI.
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
+
+        /// Whether to wait for the user pressing enter before confirming the screenshot
+        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = false))]
+        auto_confirm: bool,
     },
     /// Screenshot the focused screen.
     ScreenshotScreen {

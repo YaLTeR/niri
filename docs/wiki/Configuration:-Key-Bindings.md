@@ -382,6 +382,15 @@ binds {
 }
 ```
 
+<sup>Since: next release</sup> You can make it so that a screenshot is taken as soon as a rectangular area is selected (without needing to press Enter) with the `auto-confirm=true` property:
+
+```kdl
+binds {
+    // Take the screenshot as soon as the user releases the mouse
+    Print { screenshot auto-confirm=true; }
+}
+```
+
 #### `toggle-keyboard-shortcuts-inhibit`
 
 <sup>Since: 25.02</sup>
