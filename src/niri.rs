@@ -5612,15 +5612,31 @@ impl Niri {
         size: Size<i32, Physical>,
         pixels: Vec<u8>,
         write_to_disk: bool,
-        path: Option<String>,
+        path_arg: Option<String>,
     ) -> anyhow::Result<()> {
         let path = write_to_disk
-            .then(|| match make_screenshot_path(path, &self.config.borrow()) {
-                Ok(path) => path,
-                Err(err) => {
-                    warn!("error making screenshot path: {err:?}");
-                    None
-                }
+            .then(|| {
+                path_arg.map(PathBuf::from).or_else(|| {
+                    match make_screenshot_path(&self.config.borrow()) {
+                        Ok(path) => {
+                            if let Some(ref config_path) = path {
+                                if let Some(parent) = config_path.parent() {
+                                    if let Err(err) = std::fs::create_dir(parent) {
+                                        if err.kind() != std::io::ErrorKind::AlreadyExists {
+                                            warn!("error creating screenshot directory: {err:?}");
+                                        }
+                                    }
+                                }
+                            }
+
+                            path
+                        }
+                        Err(err) => {
+                            warn!("error making screenshot path: {err:?}");
+                            None
+                        }
+                    }
+                })
             })
             .flatten();
 
@@ -5658,14 +5674,6 @@ impl Niri {
 
             if let Some(path) = path {
                 debug!("saving screenshot to {path:?}");
-
-                if let Some(parent) = path.parent() {
-                    if let Err(err) = std::fs::create_dir(parent) {
-                        if err.kind() != std::io::ErrorKind::AlreadyExists {
-                            warn!("error creating screenshot directory: {err:?}");
-                        }
-                    }
-                }
 
                 match std::fs::write(&path, buf) {
                     Ok(()) => image_path = Some(path),
@@ -5730,7 +5738,7 @@ impl Niri {
             elements,
         )?;
 
-        let path = make_screenshot_path(None, &self.config.borrow())
+        let path = make_screenshot_path(&self.config.borrow())
             .ok()
             .flatten()
             .unwrap_or_else(|| {
