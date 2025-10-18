@@ -129,6 +129,7 @@ pub enum Action {
         id: u64,
         write_to_disk: bool,
     },
+    ToggleForceShortcutsInhibit,
     ToggleKeyboardShortcutsInhibit,
     CloseWindow,
     #[knuffel(skip)]
@@ -377,6 +378,9 @@ impl From<niri_ipc::Action> for Action {
                 id: Some(id),
                 write_to_disk,
             } => Self::ScreenshotWindowById { id, write_to_disk },
+            niri_ipc::Action::ToggleForceShortcutsInhibit {} => {
+                Self::ToggleForceShortcutsInhibit
+            }
             niri_ipc::Action::ToggleKeyboardShortcutsInhibit {} => {
                 Self::ToggleKeyboardShortcutsInhibit
             }
@@ -874,7 +878,11 @@ where
 
                     // The toggle-inhibit action must always be uninhibitable.
                     // Otherwise, it would be impossible to trigger it.
-                    if matches!(action, Action::ToggleKeyboardShortcutsInhibit) {
+                    if matches!(
+                        action,
+                        Action::ToggleKeyboardShortcutsInhibit
+                            | Action::ToggleForceShortcutsInhibit
+                    ) {
                         allow_inhibiting = false;
                     }
 

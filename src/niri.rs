@@ -261,6 +261,8 @@ pub struct Niri {
     /// startup, libinput will immediately send a closed event.
     pub is_lid_closed: bool,
 
+    pub is_force_inhibited: bool,
+
     pub devices: HashSet<input::Device>,
     pub tablets: HashMap<input::Device, TabletData>,
     pub touch: HashSet<input::Device>,
@@ -2626,6 +2628,7 @@ impl Niri {
             blocker_cleared_rx,
             monitors_active: true,
             is_lid_closed: false,
+            is_force_inhibited: false,
 
             devices: HashSet::new(),
             tablets: HashMap::new(),
