@@ -726,6 +726,16 @@ impl State {
         self.niri.notified_activity_this_iteration = false;
     }
 
+    pub fn set_lid_closed(&mut self, is_closed: bool) {
+        if self.niri.is_lid_closed == is_closed {
+            return;
+        }
+
+        debug!("laptop lid {}", if is_closed { "closed" } else { "opened" });
+        self.niri.is_lid_closed = is_closed;
+        self.backend.on_output_config_changed(&mut self.niri);
+    }
+
     fn refresh(&mut self) {
         let _span = tracy_client::span!("State::refresh");
 

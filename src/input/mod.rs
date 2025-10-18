@@ -3931,9 +3931,8 @@ impl State {
 
         if switch == Switch::Lid {
             let is_closed = evt.state() == SwitchState::On;
-            debug!("lid switch {}", if is_closed { "closed" } else { "opened" });
-            self.niri.is_lid_closed = is_closed;
-            self.backend.on_output_config_changed(&mut self.niri);
+            trace!("lid switch {}", if is_closed { "closed" } else { "opened" });
+            self.set_lid_closed(is_closed);
         }
 
         let action = {
