@@ -512,6 +512,16 @@ impl Tty {
 
         let node = DrmNode::from_dev_id(device_id)?;
 
+        // Skip render node on udev event
+        // https://gitlab.freedesktop.org/wlroots/wlroots/-/commit/768fbaad54027f8dd027e7e015e8eeb93cb38c52
+        match node.ty() {
+            NodeType::Render => {
+                debug!("render node, skipping");
+                return Ok(());
+            }
+            _ => {}
+        }
+
         if self.ignored_nodes.contains(&node) {
             debug!("node is ignored, skipping");
             return Ok(());
