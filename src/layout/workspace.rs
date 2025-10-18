@@ -1545,7 +1545,7 @@ impl<W: LayoutElement> Workspace<W> {
                 }
                 PositionChange::AdjustFixed(x) => pos.x += x,
                 PositionChange::AdjustProportion(prop) => {
-                    let current_prop = (pos.x - working_area_loc.x) / available_width;
+                    let current_prop = (pos.x - working_area_loc.x) / available_width.max(1.);
                     let prop = (current_prop + prop / 100.).clamp(0., MAX_F);
                     pos.x = available_width * prop + working_area_loc.x;
                 }
@@ -1558,7 +1558,7 @@ impl<W: LayoutElement> Workspace<W> {
                 }
                 PositionChange::AdjustFixed(y) => pos.y += y,
                 PositionChange::AdjustProportion(prop) => {
-                    let current_prop = (pos.y - working_area_loc.y) / available_height;
+                    let current_prop = (pos.y - working_area_loc.y) / available_height.max(1.);
                     let prop = (current_prop + prop / 100.).clamp(0., MAX_F);
                     pos.y = available_height * prop + working_area_loc.y;
                 }
