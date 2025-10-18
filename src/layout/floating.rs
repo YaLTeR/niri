@@ -356,6 +356,18 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.working_area.intersection(tile_rect)
     }
 
+    /// Returns the geometry of the active tile relative to the working area.
+    ///
+    /// During animations, assumes the final tile position.
+    pub fn active_tile_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
+        let (tile, offset) = self.tiles_with_offsets().next()?;
+
+        let tile_size = tile.tile_size();
+        let tile_rect = Rectangle::new(offset, tile_size);
+
+        Some(tile_rect)
+    }
+
     pub fn popup_target_rect(&self, id: &W::Id) -> Option<Rectangle<f64, Logical>> {
         for (tile, pos) in self.tiles_with_offsets() {
             if tile.window().id() == id {

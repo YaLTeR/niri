@@ -246,6 +246,10 @@ pub enum Action {
         /// The screenshot is saved according to the `screenshot-path` config setting.
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
+
+        /// Whether to include the mouse pointer in the screenshot.
+        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = false))]
+        show_pointer: bool,
     },
     /// Enable or disable the keyboard shortcuts inhibitor (if any) for the focused surface.
     ToggleKeyboardShortcutsInhibit {},
