@@ -34,6 +34,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::EventStream => Request::EventStream,
         Msg::RequestError => Request::ReturnError,
         Msg::OverviewState => Request::OverviewState,
+        Msg::Binds => Request::Binds,
     };
 
     let mut socket = Socket::connect().context("error connecting to the niri socket")?;
@@ -488,6 +489,52 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
             } else {
                 println!("Overview is closed.");
             }
+        }
+        Msg::Binds => {
+            let Response::Binds(response) = response else {
+                bail!("unexpected response: expect Binds, got {response:?}");
+            };
+
+            if json {
+                let response =
+                    serde_json::to_string(&response).context("error formatting response")?;
+                println!("{response}");
+                return Ok(());
+            }
+
+            let mut output = String::new();
+            for bind in response.binds {
+                let niri_ipc::Bind {
+                    trigger,
+                    modifiers,
+                    hotkey_overlay_title,
+                    repeat,
+                    action,
+                    cooldown,
+                    allow_when_locked,
+                    allow_inhibiting,
+                } = bind;
+                let modifiers = modifiers.join("+");
+                let trigger = trigger.unwrap_or(String::from("<unknown>"));
+                output.push_str(format!("{modifiers}+{trigger}\n").as_ref());
+                if let Some(title) = hotkey_overlay_title {
+                    output.push_str(format!("Title: {title}\n").as_ref());
+                } else {
+                    output.push_str("No title\n");
+                }
+                output.push_str(format!("Action: {action}\n").as_ref());
+                output.push_str(format!("Can repeat: {repeat}").as_ref());
+                if let Some(cd) = cooldown {
+                    let ms = cd.as_millis();
+                    output.push_str(format!("Cooldown: {ms}ms\n").as_ref());
+                } else {
+                    output.push_str("No cooldown");
+                }
+                output.push_str(format!("Allow when locked: {allow_when_locked}\n").as_ref());
+                output.push_str(format!("Allow inhibiting: {allow_inhibiting}\n").as_ref());
+                output.push_str("\n");
+            }
+            println!("{output}");
         }
     }
 
