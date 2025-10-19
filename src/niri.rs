@@ -2777,8 +2777,6 @@ impl Niri {
 
     #[cfg(feature = "dbus")]
     pub fn inhibit_power_key(&mut self) -> anyhow::Result<()> {
-        use std::os::fd::{AsRawFd, BorrowedFd};
-
         use smithay::reexports::rustix::io::{fcntl_setfd, FdFlags};
 
         let conn = zbus::blocking::Connection::system()?;
@@ -2794,8 +2792,7 @@ impl Niri {
         let fd: zbus::zvariant::OwnedFd = message.body().deserialize()?;
 
         // Don't leak the fd to child processes.
-        let borrowed = unsafe { BorrowedFd::borrow_raw(fd.as_raw_fd()) };
-        if let Err(err) = fcntl_setfd(borrowed, FdFlags::CLOEXEC) {
+        if let Err(err) = fcntl_setfd(&fd, FdFlags::CLOEXEC) {
             warn!("error setting CLOEXEC on inhibit fd: {err:?}");
         };
 
