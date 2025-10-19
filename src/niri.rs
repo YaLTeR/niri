@@ -5665,7 +5665,7 @@ impl Niri {
                     if let Some(parent) = path.parent() {
                         // Relative paths with one component, i.e. "test.png", have Some("") parent.
                         if !parent.as_os_str().is_empty() {
-                            if let Err(err) = std::fs::create_dir(parent) {
+                            if let Err(err) = std::fs::create_dir_all(parent) {
                                 if err.kind() != std::io::ErrorKind::AlreadyExists {
                                     warn!("error creating screenshot directory: {err:?}");
                                 }
