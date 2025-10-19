@@ -137,4 +137,16 @@ Here's an example showing a windowed-fullscreen Google Slides [presentation](htt
 
 ![Windowed Google Slides presentation, another window showing the presenter view, and another window showing Zoom UI casting the presentation.](https://github.com/user-attachments/assets/b2b49eea-f5a0-4c0a-b537-51fd1949a59d)
 
+### Screen mirroring
+
+For presentations it can be useful to mirror one output to another window, which then can be moved to a different output.
+This can be achieved using [`wl-mirror`](https://github.com/Ferdi265/wl-mirror):
+```kdl
+binds {
+    Mod+P repeat=false { spawn-sh "wl-mirror $(niri msg --json focused-output | jq -r .name)"; }
+}
+```
+Focus the output you want to mirror, press <kbd>Mod + P</kbd> and move the `wl-mirror` window to the target output.
+Finally, fullscreen the `wl-mirror` window.
+
 [OBS]: https://obsproject.com/
