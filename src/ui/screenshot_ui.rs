@@ -63,6 +63,7 @@ pub enum ScreenshotUi {
         open_anim: Animation,
         clock: Clock,
         config: Rc<RefCell<Config>>,
+        path: Option<String>,
     },
 }
 
@@ -141,6 +142,7 @@ impl ScreenshotUi {
         screenshots: HashMap<Output, [OutputScreenshot; 3]>,
         default_output: Output,
         show_pointer: bool,
+        path: Option<String>,
     ) -> bool {
         if screenshots.is_empty() {
             return false;
@@ -235,6 +237,7 @@ impl ScreenshotUi {
             open_anim,
             clock: clock.clone(),
             config: config.clone(),
+            path,
         };
 
         self.update_buffers();

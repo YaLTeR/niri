@@ -1511,14 +1511,18 @@ impl<W: LayoutElement> Workspace<W> {
                 return;
             };
 
-            let working_area_loc = self.floating.working_area().loc;
             let pos = self.floating.stored_or_default_tile_pos(tile);
 
             // If there's no stored floating position, we can only set both components at once, not
             // adjust.
             let pos = pos.or_else(|| {
-                (matches!(x, PositionChange::SetFixed(_))
-                    && matches!(y, PositionChange::SetFixed(_)))
+                (matches!(
+                    x,
+                    PositionChange::SetFixed(_) | PositionChange::SetProportion(_)
+                ) && matches!(
+                    y,
+                    PositionChange::SetFixed(_) | PositionChange::SetProportion(_)
+                ))
                 .then_some(Point::default())
             });
 
@@ -1526,13 +1530,38 @@ impl<W: LayoutElement> Workspace<W> {
                 return;
             };
 
+            let working_area = self.floating.working_area();
+            let available_width = working_area.size.w;
+            let available_height = working_area.size.h;
+            let working_area_loc = working_area.loc;
+
+            const MAX_F: f64 = 10000.;
+
             match x {
                 PositionChange::SetFixed(x) => pos.x = x + working_area_loc.x,
+                PositionChange::SetProportion(prop) => {
+                    let prop = (prop / 100.).clamp(0., MAX_F);
+                    pos.x = available_width * prop + working_area_loc.x;
+                }
                 PositionChange::AdjustFixed(x) => pos.x += x,
+                PositionChange::AdjustProportion(prop) => {
+                    let current_prop = (pos.x - working_area_loc.x) / available_width.max(1.);
+                    let prop = (current_prop + prop / 100.).clamp(0., MAX_F);
+                    pos.x = available_width * prop + working_area_loc.x;
+                }
             }
             match y {
                 PositionChange::SetFixed(y) => pos.y = y + working_area_loc.y,
+                PositionChange::SetProportion(prop) => {
+                    let prop = (prop / 100.).clamp(0., MAX_F);
+                    pos.y = available_height * prop + working_area_loc.y;
+                }
                 PositionChange::AdjustFixed(y) => pos.y += y,
+                PositionChange::AdjustProportion(prop) => {
+                    let current_prop = (pos.y - working_area_loc.y) / available_height.max(1.);
+                    let prop = (current_prop + prop / 100.).clamp(0., MAX_F);
+                    pos.y = available_height * prop + working_area_loc.y;
+                }
             }
 
             let pos = self.floating.logical_to_size_frac(pos);
