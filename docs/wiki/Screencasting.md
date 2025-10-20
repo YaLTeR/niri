@@ -139,7 +139,8 @@ Here's an example showing a windowed-fullscreen Google Slides [presentation](htt
 
 ### Screen mirroring
 
-For presentations it can be useful to mirror an output to another. Currently, niri doesn't have built-in output mirroring, but you can use a third-party tool [`wl-mirror`](https://github.com/Ferdi265/wl-mirror) that mirrors an output to a window.
+For presentations it can be useful to mirror an output to another.
+Currently, niri doesn't have built-in output mirroring, but you can use a third-party tool [`wl-mirror`](https://github.com/Ferdi265/wl-mirror) that mirrors an output to a window.
 Note that the command below requires [`jq`](https://jqlang.org/download/) to be installed.
 ```kdl
 binds {
