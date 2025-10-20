@@ -148,6 +148,6 @@ binds {
 }
 ```
 Focus the output you want to mirror, press <kbd>Mod</kbd><kbd>P</kbd> and move the `wl-mirror` window to the target output.
-Finally, fullscreen the `wl-mirror` window (by default, <kbd>Mod</kbd><kbd>Shift</kbd><kbd>P</kbd>).
+Finally, fullscreen the `wl-mirror` window (by default, <kbd>Mod</kbd><kbd>Shift</kbd><kbd>F</kbd>).
 
 [OBS]: https://obsproject.com/
