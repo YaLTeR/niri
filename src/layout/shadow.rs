@@ -1,7 +1,7 @@
 use std::iter::zip;
 
 use niri_config::CornerRadius;
-use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::utils::{Coordinate, Logical, Point, Rectangle, Size};
 
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
@@ -54,8 +54,9 @@ impl Shadow {
         // Adjust width to draw all necessary pixels.
         let width = ceil(sigma * 3.);
 
-        let offset = self.config.offset;
-        let offset = Point::from((ceil(offset.x.0), ceil(offset.y.0)));
+        let offset_x = ceil(self.config.offset.x.0 + self.config.struts.left.0);
+        let offset_y = ceil(self.config.offset.y.0 + self.config.struts.top.0);
+        let offset = Point::from((offset_x, offset_y));
 
         let spread = self.config.spread;
         let spread = ceil(spread.abs()).copysign(spread);
@@ -63,15 +64,25 @@ impl Shadow {
 
         let win_radius = radius.fit_to(win_size.w as f32, win_size.h as f32);
 
+        let box_size = Size::new(
+            win_size
+                .w
+                .saturating_sub(ceil(self.config.struts.right.0 + self.config.struts.left.0))
+                .max(0.),
+            win_size
+                .h
+                .saturating_sub(ceil(self.config.struts.bottom.0 + self.config.struts.top.0))
+                .max(0.),
+        );
         let box_size = if spread >= 0. {
-            win_size + Size::from((spread, spread)).upscale(2.)
+            box_size + Size::new(spread, spread).upscale(2.)
         } else {
             // This is a saturating sub.
-            win_size - Size::from((-spread, -spread)).upscale(2.)
+            box_size - Size::new(-spread, -spread).upscale(2.)
         };
         let radius = win_radius.expanded_by(spread as f32);
 
-        let shader_size = box_size + Size::from((width, width)).upscale(2.);
+        let shader_size = box_size + Size::new(width, width).upscale(2.);
 
         let color = if is_active {
             self.config.color
