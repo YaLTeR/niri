@@ -2018,7 +2018,12 @@ impl<W: LayoutElement> Workspace<W> {
         assert!(self.view_size.w > 0.);
         assert!(self.view_size.h > 0.);
 
-        assert_eq!(self.background_buffer.size(), self.view_size);
+        if options.layout.background_in_working_area_only {
+            assert_eq!(self.background_buffer.size(), self.working_area.size);
+        } else {
+            assert_eq!(self.background_buffer.size(), self.view_size);
+        }
+
         assert_eq!(
             self.background_buffer.color().components(),
             options.layout.background_color.to_array_unpremul(),
