@@ -34,7 +34,7 @@ impl Shadow {
 
     pub fn update_render_elements(
         &mut self,
-        win_size: Size<f64, Logical>,
+        content_geometry: Rectangle<f64, Logical>,
         is_active: bool,
         radius: CornerRadius,
         scale: f64,
@@ -48,14 +48,17 @@ impl Shadow {
         // * We do not divide anything, only add, subtract and multiply by integers.
         // * At rendering time, tile positions are rounded to physical pixels.
 
+        let win_size = content_geometry.size;
+        let content = content_geometry.loc;
+
         let width = self.config.softness;
         // Like in CSS box-shadow.
         let sigma = width / 2.;
         // Adjust width to draw all necessary pixels.
         let width = ceil(sigma * 3.);
 
-        let offset_x = ceil(self.config.offset.x.0 + self.config.struts.left.0);
-        let offset_y = ceil(self.config.offset.y.0 + self.config.struts.top.0);
+        let offset_x = content.x + ceil(self.config.offset.x.0 + self.config.struts.left.0);
+        let offset_y = content.y + ceil(self.config.offset.y.0 + self.config.struts.top.0);
         let offset = Point::from((offset_x, offset_y));
 
         let spread = self.config.spread;
@@ -96,7 +99,7 @@ impl Shadow {
         let shader_geo = Rectangle::new(Point::from((-width, -width)), shader_size);
 
         // This is actually offset relative to shader_geo, this is handled below.
-        let window_geo = Rectangle::new(Point::from((0., 0.)), win_size);
+        let window_geo = Rectangle::new(content, win_size);
 
         if !self.config.draw_behind_window {
             let top_left = ceil(f64::from(win_radius.top_left));
