@@ -57,8 +57,8 @@ impl Shadow {
         // Adjust width to draw all necessary pixels.
         let width = ceil(sigma * 3.);
 
-        let offset_x = content.x + ceil(self.config.offset.x.0 + self.config.struts.left.0);
-        let offset_y = content.y + ceil(self.config.offset.y.0 + self.config.struts.top.0);
+        let offset_x = ceil(content.x + self.config.offset.x.0 + self.config.struts.left.0);
+        let offset_y = ceil(content.y + self.config.offset.y.0 + self.config.struts.top.0);
         let offset = Point::from((offset_x, offset_y));
 
         let spread = self.config.spread;
