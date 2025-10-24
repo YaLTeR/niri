@@ -114,15 +114,41 @@ impl OutputManagementManagerState {
                 let modes_changed = old.modes != conf.modes;
                 if modes_changed {
                     changed = true;
-                    if old.modes.len() != conf.modes.len() {
-                        error!("output's old mode count doesn't match new modes");
-                    } else {
-                        for client in self.clients.values() {
-                            if let Some((_, modes)) = client.heads.get(output) {
-                                for (wl_mode, mode) in zip(modes, &conf.modes) {
-                                    wl_mode.size(i32::from(mode.width), i32::from(mode.height));
-                                    if let Ok(refresh_rate) = mode.refresh_rate.try_into() {
-                                        wl_mode.refresh(refresh_rate);
+                    for client in self.clients.values() {
+                        if let Some((head, modes)) = client.heads.get(output) {
+                            // ends on the shortest iterator
+                            let zwlr_modes_with_modes = zip(modes, &conf.modes);
+                            let least_modes_len = zwlr_modes_with_modes.len();
+
+                            for (wl_mode, mode) in zwlr_modes_with_modes {
+                                wl_mode.size(i32::from(mode.width), i32::from(mode.height));
+                                if let Ok(refresh_rate) = mode.refresh_rate.try_into() {
+                                    wl_mode.refresh(refresh_rate);
+                                }
+                            }
+                            if let Some(client) = client.manager.client() {
+                                if conf.modes.len() > least_modes_len {
+                                    for mode in conf.modes[least_modes_len..].iter() {
+                                        // One or more modes were added
+                                        let new_mode = client
+                                            .create_resource::<ZwlrOutputModeV1, _, State>(
+                                                &self.display,
+                                                head.version(),
+                                                (),
+                                            )
+                                            .unwrap();
+                                        head.mode(&new_mode);
+                                        new_mode
+                                            .size(i32::from(mode.width), i32::from(mode.height));
+                                        if let Ok(refresh_rate) = mode.refresh_rate.try_into() {
+                                            new_mode.refresh(refresh_rate)
+                                        }
+                                    }
+                                } else if modes.len() > least_modes_len {
+                                    // One or more modes were removed
+                                    for mode in modes[least_modes_len..].iter() {
+                                        // One or more modes were added
+                                        mode.finished();
                                     }
                                 }
                             }

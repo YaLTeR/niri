@@ -2638,7 +2638,7 @@ pub fn calculate_drm_mode_from_modeline(modeline: &Modeline) -> anyhow::Result<D
     }))
 }
 
-pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mode {
+pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> DrmMode {
     // Cross-checked with sway's implementation:
     // https://gitlab.freedesktop.org/wlroots/wlroots/-/blob/22528542970687720556035790212df8d9bb30bb/backend/drm/util.c#L251
 
@@ -2698,7 +2698,7 @@ pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> control::Mod
         vscan: 0,
     };
 
-    control::Mode::from(drm_ffi_mode)
+    DrmMode::from(drm_ffi_mode)
 }
 
 // Returns a c-string of maximally 31 Rust string chars + null terminator. Excess characters are
