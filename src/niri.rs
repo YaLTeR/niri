@@ -5696,7 +5696,7 @@ impl Niri {
             }
 
             #[cfg(feature = "dbus")]
-            if let Err(err) = crate::utils::show_screenshot_notification(image_path.clone()) {
+            if let Err(err) = crate::utils::show_screenshot_notification(image_path.as_ref()) {
                 warn!("error showing screenshot notification: {err:?}");
             }
 
@@ -5705,9 +5705,6 @@ impl Niri {
                 .as_ref()
                 .map(|p| p.to_string_lossy().into_owned());
             let _ = event_tx.send(path_string);
-
-            #[cfg(not(feature = "dbus"))]
-            drop(image_path);
         });
 
         Ok(())
