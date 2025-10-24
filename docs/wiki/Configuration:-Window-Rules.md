@@ -84,6 +84,13 @@ window-rule {
         draw-behind-window true
         color "#00000064"
         // inactive-color "#00000064"
+
+        struts {
+            // left 8
+            // right 8
+            // top -8
+            // bottom -8
+        }
     }
 
     tab-indicator {

@@ -24,6 +24,7 @@ pub struct Layout {
     pub gaps: f64,
     pub struts: Struts,
     pub background_color: Color,
+    pub background_in_working_area_only: bool,
 }
 
 impl Default for Layout {
@@ -52,6 +53,7 @@ impl Default for Layout {
                 PresetSize::Proportion(2. / 3.),
             ],
             background_color: DEFAULT_BACKGROUND_COLOR,
+            background_in_working_area_only: false,
         }
     }
 }
@@ -67,6 +69,7 @@ impl MergeWith<LayoutPart> for Layout {
             insert_hint,
             always_center_single_column,
             empty_workspace_above_first,
+            background_in_working_area_only,
             gaps,
         );
 
@@ -126,6 +129,8 @@ pub struct LayoutPart {
     pub struts: Option<Struts>,
     #[knuffel(child)]
     pub background_color: Option<Color>,
+    #[knuffel(child)]
+    pub background_in_working_area_only: Option<Flag>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]

@@ -5,7 +5,7 @@ use smithay::backend::renderer::element::surface::{
 };
 use smithay::backend::renderer::element::Kind;
 use smithay::desktop::{LayerSurface, PopupManager};
-use smithay::utils::{Logical, Point, Scale, Size};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
 
 use super::ResolvedLayerRules;
@@ -102,8 +102,13 @@ impl MappedLayer {
 
         let radius = self.rules.geometry_corner_radius.unwrap_or_default();
         // FIXME: is_active based on keyboard focus?
-        self.shadow
-            .update_render_elements(size, true, radius, self.scale, 1.);
+        self.shadow.update_render_elements(
+            Rectangle::new(Point::new(0., 0.), size),
+            true,
+            radius,
+            self.scale,
+            1.,
+        );
     }
 
     pub fn are_animations_ongoing(&self) -> bool {

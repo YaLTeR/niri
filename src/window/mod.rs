@@ -222,6 +222,7 @@ impl ResolvedWindowRules {
                 draw_behind_window: None,
                 color: None,
                 inactive_color: None,
+                struts: None,
             },
             tab_indicator: TabIndicatorRule {
                 active_color: None,

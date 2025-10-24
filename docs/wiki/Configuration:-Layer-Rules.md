@@ -29,6 +29,13 @@ layer-rule {
         draw-behind-window true
         color "#00000064"
         // inactive-color "#00000064"
+
+        struts {
+            // left 8
+            // right 8
+            // top -8
+            // bottom -8
+        }
     }
 
     geometry-corner-radius 12
@@ -126,6 +133,8 @@ That is, enabling shadows in the layout config section won't automatically enabl
 > For example, if a layer surface includes some invisible margins (like mako), niri has no way of knowing that, and will draw the shadow behind the entire surface, including the invisible margins.
 >
 > So to use niri shadows, you'll need to configure layer-shell clients to remove their own margins or shadows.
+> Alternatively, you can [configure shadow `struts`](./Configuration:-Layout.md#shadow)
+> to tell niri how the shadow should be sized.
 
 ```kdl
 // Add a shadow for fuzzel.

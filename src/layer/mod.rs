@@ -42,6 +42,7 @@ impl ResolvedLayerRules {
                 draw_behind_window: None,
                 color: None,
                 inactive_color: None,
+                struts: None,
             },
             geometry_corner_radius: None,
             place_within_backdrop: false,
