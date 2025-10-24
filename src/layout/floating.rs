@@ -413,8 +413,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         // unfullscreen it.
         let floating_size = tile.floating_window_size;
         let win = tile.window_mut();
-        let mut size = if win.is_pending_fullscreen() {
-            // If the window was fullscreen without a floating size, ask for (0, 0).
+        let mut size = if !win.pending_sizing_mode().is_normal() {
+            // If the window was fullscreen or maximized without a floating size, ask for (0, 0).
             floating_size.unwrap_or_default()
         } else {
             // If the window wasn't fullscreen without a floating size (e.g. it was tiled before),
@@ -961,17 +961,42 @@ impl<W: LayoutElement> FloatingSpace<W> {
         };
         let idx = self.idx_of(id).unwrap();
 
-        let mut new_pos = self.data[idx].logical_pos;
+        let mut pos = self.data[idx].logical_pos;
+
+        let available_width = self.working_area.size.w;
+        let available_height = self.working_area.size.h;
+        let working_area_loc = self.working_area.loc;
+
+        const MAX_F: f64 = 10000.;
+
         match x {
-            PositionChange::SetFixed(x) => new_pos.x = x + self.working_area.loc.x,
-            PositionChange::AdjustFixed(x) => new_pos.x += x,
+            PositionChange::SetFixed(x) => pos.x = x + working_area_loc.x,
+            PositionChange::SetProportion(prop) => {
+                let prop = (prop / 100.).clamp(0., MAX_F);
+                pos.x = available_width * prop + working_area_loc.x;
+            }
+            PositionChange::AdjustFixed(x) => pos.x += x,
+            PositionChange::AdjustProportion(prop) => {
+                let current_prop = (pos.x - working_area_loc.x) / available_width.max(1.);
+                let prop = (current_prop + prop / 100.).clamp(0., MAX_F);
+                pos.x = available_width * prop + working_area_loc.x;
+            }
         }
         match y {
-            PositionChange::SetFixed(y) => new_pos.y = y + self.working_area.loc.y,
-            PositionChange::AdjustFixed(y) => new_pos.y += y,
+            PositionChange::SetFixed(y) => pos.y = y + working_area_loc.y,
+            PositionChange::SetProportion(prop) => {
+                let prop = (prop / 100.).clamp(0., MAX_F);
+                pos.y = available_height * prop + working_area_loc.y;
+            }
+            PositionChange::AdjustFixed(y) => pos.y += y,
+            PositionChange::AdjustProportion(prop) => {
+                let current_prop = (pos.y - working_area_loc.y) / available_height.max(1.);
+                let prop = (current_prop + prop / 100.).clamp(0., MAX_F);
+                pos.y = available_height * prop + working_area_loc.y;
+            }
         }
 
-        self.move_to(idx, new_pos, animate);
+        self.move_to(idx, pos, animate);
     }
 
     pub fn center_window(&mut self, id: Option<&W::Id>) {
@@ -1312,6 +1337,8 @@ impl<W: LayoutElement> FloatingSpace<W> {
         assert_eq!(self.tiles.len(), self.data.len());
 
         for (i, (tile, data)) in zip(&self.tiles, &self.data).enumerate() {
+            use crate::layout::SizingMode;
+
             assert!(Rc::ptr_eq(&self.options, &tile.options));
             assert_eq!(self.view_size, tile.view_size());
             assert_eq!(self.clock, tile.clock);
@@ -1325,9 +1352,10 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 assert!(idx < self.options.layout.preset_window_heights.len());
             }
 
-            assert!(
-                !tile.window().is_pending_fullscreen(),
-                "floating windows cannot be fullscreen"
+            assert_eq!(
+                tile.window().pending_sizing_mode(),
+                SizingMode::Normal,
+                "floating windows cannot be maximized or fullscreen"
             );
 
             data.verify_invariants();

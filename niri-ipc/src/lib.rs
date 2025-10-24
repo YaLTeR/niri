@@ -220,6 +220,14 @@ pub enum Action {
         ///  Whether to show the mouse pointer by default in the screenshot UI.
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
+
+        /// Path to save the screenshot to.
+        ///
+        /// The path must be absolute, otherwise an error is returned.
+        ///
+        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
+        path: Option<String>,
     },
     /// Screenshot the focused screen.
     ScreenshotScreen {
@@ -232,6 +240,14 @@ pub enum Action {
         /// Whether to include the mouse pointer in the screenshot.
         #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
         show_pointer: bool,
+
+        /// Path to save the screenshot to.
+        ///
+        /// The path must be absolute, otherwise an error is returned.
+        ///
+        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
+        path: Option<String>,
     },
     /// Screenshot a window.
     #[cfg_attr(feature = "clap", clap(about = "Screenshot the focused window"))]
@@ -246,6 +262,14 @@ pub enum Action {
         /// The screenshot is saved according to the `screenshot-path` config setting.
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
+
+        /// Path to save the screenshot to.
+        ///
+        /// The path must be absolute, otherwise an error is returned.
+        ///
+        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
+        path: Option<String>,
     },
     /// Enable or disable the keyboard shortcuts inhibitor (if any) for the focused surface.
     ToggleKeyboardShortcutsInhibit {},
@@ -713,6 +737,14 @@ pub enum Action {
     },
     /// Toggle the maximized state of the focused column.
     MaximizeColumn {},
+    /// Toggle the maximized-to-edges state of the focused window.
+    MaximizeWindowToEdges {
+        /// Id of the window to maximize.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Change the width of the focused column.
     SetColumnWidth {
         /// How to change the width.
@@ -805,14 +837,14 @@ pub enum Action {
         /// How to change the X position.
         #[cfg_attr(
             feature = "clap",
-            arg(short, long, default_value = "+0", allow_negative_numbers = true)
+            arg(short, long, default_value = "+0", allow_hyphen_values = true)
         )]
         x: PositionChange,
 
         /// How to change the Y position.
         #[cfg_attr(
             feature = "clap",
-            arg(short, long, default_value = "+0", allow_negative_numbers = true)
+            arg(short, long, default_value = "+0", allow_hyphen_values = true)
         )]
         y: PositionChange,
     },
@@ -905,8 +937,12 @@ pub enum SizeChange {
 pub enum PositionChange {
     /// Set the position in logical pixels.
     SetFixed(f64),
+    /// Set the position as a proportion of the working area.
+    SetProportion(f64),
     /// Add or subtract to the current position in logical pixels.
     AdjustFixed(f64),
+    /// Add or subtract to the current position as a proportion of the working area.
+    AdjustProportion(f64),
 }
 
 /// Workspace reference (id, index or name) to operate on.
@@ -1518,17 +1554,38 @@ impl FromStr for PositionChange {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let value = s;
-        match value.bytes().next() {
-            Some(b'-' | b'+') => {
-                let value = value.parse().map_err(|_| "error parsing value")?;
-                Ok(Self::AdjustFixed(value))
+        match s.split_once('%') {
+            Some((value, empty)) => {
+                if !empty.is_empty() {
+                    return Err("trailing characters after '%' are not allowed");
+                }
+
+                match value.bytes().next() {
+                    Some(b'-' | b'+') => {
+                        let value = value.parse().map_err(|_| "error parsing value")?;
+                        Ok(Self::AdjustProportion(value))
+                    }
+                    Some(_) => {
+                        let value = value.parse().map_err(|_| "error parsing value")?;
+                        Ok(Self::SetProportion(value))
+                    }
+                    None => Err("value is missing"),
+                }
             }
-            Some(_) => {
-                let value = value.parse().map_err(|_| "error parsing value")?;
-                Ok(Self::SetFixed(value))
+            None => {
+                let value = s;
+                match value.bytes().next() {
+                    Some(b'-' | b'+') => {
+                        let value = value.parse().map_err(|_| "error parsing value")?;
+                        Ok(Self::AdjustFixed(value))
+                    }
+                    Some(_) => {
+                        let value = value.parse().map_err(|_| "error parsing value")?;
+                        Ok(Self::SetFixed(value))
+                    }
+                    None => Err("value is missing"),
+                }
             }
-            None => Err("value is missing"),
         }
     }
 }
@@ -1685,9 +1742,18 @@ mod tests {
             PositionChange::AdjustFixed(-10.),
         );
 
-        assert!("10%".parse::<PositionChange>().is_err());
-        assert!("+10%".parse::<PositionChange>().is_err());
-        assert!("-10%".parse::<PositionChange>().is_err());
+        assert_eq!(
+            "10%".parse::<PositionChange>().unwrap(),
+            PositionChange::SetProportion(10.)
+        );
+        assert_eq!(
+            "+10%".parse::<PositionChange>().unwrap(),
+            PositionChange::AdjustProportion(10.)
+        );
+        assert_eq!(
+            "-10%".parse::<PositionChange>().unwrap(),
+            PositionChange::AdjustProportion(-10.)
+        );
         assert!("-".parse::<PositionChange>().is_err());
         assert!("10% ".parse::<PositionChange>().is_err());
     }

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::{env, io, process};
@@ -17,8 +17,8 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response, WindowLayout,
-    Workspace,
+    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
+    WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -379,6 +379,8 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::PickedColor(color)
         }
         Request::Action(action) => {
+            validate_action(&action)?;
+
             let (tx, rx) = async_channel::bounded(1);
 
             let action = niri_config::Action::from(action);
@@ -449,6 +451,23 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
     };
 
     Ok(response)
+}
+
+fn validate_action(action: &Action) -> Result<(), String> {
+    if let Action::Screenshot { path, .. }
+    | Action::ScreenshotScreen { path, .. }
+    | Action::ScreenshotWindow { path, .. } = action
+    {
+        if let Some(path) = path {
+            // Relative paths are resolved against the niri compositor's working directory, which
+            // is almost certainly not what you want.
+            if !Path::new(path).is_absolute() {
+                return Err(format!("path must be absolute: {path}"));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn handle_event_stream_client(client: EventStreamClient) -> anyhow::Result<()> {

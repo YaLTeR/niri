@@ -120,6 +120,8 @@ use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_locale1::Locale1ToNiri;
 #[cfg(feature = "dbus")]
+use crate::dbus::freedesktop_login1::Login1ToNiri;
+#[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
@@ -724,6 +726,18 @@ impl State {
         self.niri.clock.clear();
         self.niri.pointer_inactivity_timer_got_reset = false;
         self.niri.notified_activity_this_iteration = false;
+    }
+
+    // We monitor both libinput and logind: libinput is always there (including without DBus), but
+    // it misses some switch events (e.g. after unsuspend) on some systems.
+    pub fn set_lid_closed(&mut self, is_closed: bool) {
+        if self.niri.is_lid_closed == is_closed {
+            return;
+        }
+
+        debug!("laptop lid {}", if is_closed { "closed" } else { "opened" });
+        self.niri.is_lid_closed = is_closed;
+        self.backend.on_output_config_changed(&mut self.niri);
     }
 
     fn refresh(&mut self) {
@@ -1821,9 +1835,15 @@ impl State {
         self.niri.output_management_state.notify_changes(new_config);
     }
 
-    pub fn open_screenshot_ui(&mut self, show_pointer: bool) {
+    pub fn open_screenshot_ui(&mut self, show_pointer: bool, path: Option<String>) {
         if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
             return;
+        }
+
+        // Redraw the pointer if hidden through cursor{} options
+        if self.niri.pointer_visibility == PointerVisibility::Hidden {
+            self.niri.pointer_visibility = PointerVisibility::Visible;
+            self.niri.queue_redraw_all();
         }
 
         let default_output = self
@@ -1856,7 +1876,7 @@ impl State {
         self.backend.with_primary_renderer(|renderer| {
             self.niri
                 .screenshot_ui
-                .open(renderer, screenshots, default_output, show_pointer)
+                .open(renderer, screenshots, default_output, show_pointer, path)
         });
 
         self.niri
@@ -1882,14 +1902,15 @@ impl State {
     }
 
     pub fn confirm_screenshot(&mut self, write_to_disk: bool) {
-        if !self.niri.screenshot_ui.is_open() {
+        let ScreenshotUi::Open { path, .. } = &mut self.niri.screenshot_ui else {
             return;
-        }
+        };
+        let path = path.take();
 
         self.backend.with_primary_renderer(|renderer| {
             match self.niri.screenshot_ui.capture(renderer) {
                 Ok((size, pixels)) => {
-                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk) {
+                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk, path) {
                         warn!("error saving screenshot: {err:?}");
                     }
                 }
@@ -2283,6 +2304,14 @@ impl State {
     }
 
     #[cfg(feature = "dbus")]
+    pub fn on_login1_msg(&mut self, msg: Login1ToNiri) {
+        let Login1ToNiri::LidClosedChanged(is_closed) = msg;
+
+        trace!("login1 lid {}", if is_closed { "closed" } else { "opened" });
+        self.set_lid_closed(is_closed);
+    }
+
+    #[cfg(feature = "dbus")]
     pub fn on_locale1_msg(&mut self, msg: Locale1ToNiri) {
         let Locale1ToNiri::XkbChanged(xkb) = msg;
 
@@ -2339,7 +2368,7 @@ impl Niri {
         let compositor_state = CompositorState::new_v6::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new_with_capabilities::<State>(
             &display_handle,
-            [WmCapabilities::Fullscreen],
+            [WmCapabilities::Fullscreen, WmCapabilities::Maximize],
         );
         let xdg_decoration_state =
             XdgDecorationState::new_with_filter::<State, _>(&display_handle, |client| {
@@ -2748,8 +2777,6 @@ impl Niri {
 
     #[cfg(feature = "dbus")]
     pub fn inhibit_power_key(&mut self) -> anyhow::Result<()> {
-        use std::os::fd::{AsRawFd, BorrowedFd};
-
         use smithay::reexports::rustix::io::{fcntl_setfd, FdFlags};
 
         let conn = zbus::blocking::Connection::system()?;
@@ -2765,8 +2792,7 @@ impl Niri {
         let fd: zbus::zvariant::OwnedFd = message.body().deserialize()?;
 
         // Don't leak the fd to child processes.
-        let borrowed = unsafe { BorrowedFd::borrow_raw(fd.as_raw_fd()) };
-        if let Err(err) = fcntl_setfd(borrowed, FdFlags::CLOEXEC) {
+        if let Err(err) = fcntl_setfd(&fd, FdFlags::CLOEXEC) {
             warn!("error setting CLOEXEC on inhibit fd: {err:?}");
         };
 
@@ -5505,6 +5531,7 @@ impl Niri {
         output: &Output,
         write_to_disk: bool,
         include_pointer: bool,
+        path: Option<String>,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot");
 
@@ -5531,7 +5558,7 @@ impl Niri {
             elements,
         )?;
 
-        self.save_screenshot(size, pixels, write_to_disk)
+        self.save_screenshot(size, pixels, write_to_disk, path)
             .context("error saving screenshot")
     }
 
@@ -5541,15 +5568,17 @@ impl Niri {
         output: &Output,
         mapped: &Mapped,
         write_to_disk: bool,
+        path: Option<String>,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_window");
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let alpha = if mapped.is_fullscreen() || mapped.is_ignoring_opacity_window_rule() {
-            1.
-        } else {
-            mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
-        };
+        let alpha =
+            if mapped.sizing_mode().is_fullscreen() || mapped.is_ignoring_opacity_window_rule() {
+                1.
+            } else {
+                mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
+            };
         // FIXME: pointer.
         let elements = mapped.render(
             renderer,
@@ -5571,7 +5600,7 @@ impl Niri {
             elements,
         )?;
 
-        self.save_screenshot(geo.size, pixels, write_to_disk)
+        self.save_screenshot(geo.size, pixels, write_to_disk, path)
             .context("error saving screenshot")
     }
 
@@ -5580,14 +5609,20 @@ impl Niri {
         size: Size<i32, Physical>,
         pixels: Vec<u8>,
         write_to_disk: bool,
+        path_arg: Option<String>,
     ) -> anyhow::Result<()> {
         let path = write_to_disk
-            .then(|| match make_screenshot_path(&self.config.borrow()) {
-                Ok(path) => path,
-                Err(err) => {
-                    warn!("error making screenshot path: {err:?}");
-                    None
-                }
+            .then(|| {
+                // When given an explicit path, don't try to strftime it or create parents.
+                path_arg.map(|p| (PathBuf::from(p), false)).or_else(|| {
+                    match make_screenshot_path(&self.config.borrow()) {
+                        Ok(path) => path.map(|p| (p, true)),
+                        Err(err) => {
+                            warn!("error making screenshot path: {err:?}");
+                            None
+                        }
+                    }
+                })
             })
             .flatten();
 
@@ -5634,13 +5669,18 @@ impl Niri {
 
             let mut image_path = None;
 
-            if let Some(path) = path {
+            if let Some((path, create_parent)) = path {
                 debug!("saving screenshot to {path:?}");
 
-                if let Some(parent) = path.parent() {
-                    if let Err(err) = std::fs::create_dir(parent) {
-                        if err.kind() != std::io::ErrorKind::AlreadyExists {
-                            warn!("error creating screenshot directory: {err:?}");
+                if create_parent {
+                    if let Some(parent) = path.parent() {
+                        // Relative paths with one component, i.e. "test.png", have Some("") parent.
+                        if !parent.as_os_str().is_empty() {
+                            if let Err(err) = std::fs::create_dir_all(parent) {
+                                if err.kind() != std::io::ErrorKind::AlreadyExists {
+                                    warn!("error creating screenshot directory: {err:?}");
+                                }
+                            }
                         }
                     }
                 }

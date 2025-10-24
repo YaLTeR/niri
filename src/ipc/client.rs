@@ -1,20 +1,34 @@
 use std::io::ErrorKind;
 use std::iter::Peekable;
-use std::slice;
+use std::path::Path;
+use std::{env, slice};
 
 use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
-    Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview, Request,
-    Response, Transform, Window, WindowLayout,
+    Action, Event, KeyboardLayouts, LogicalOutput, Mode, Output, OutputConfigChanged, Overview,
+    Request, Response, Transform, Window, WindowLayout,
 };
 use serde_json::json;
 
 use crate::cli::Msg;
 use crate::utils::version;
 
-pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
+pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
+    // For actions taking paths, prepend the niri CLI's working directory.
+    if let Msg::Action {
+        action:
+            Action::Screenshot { path, .. }
+            | Action::ScreenshotScreen { path, .. }
+            | Action::ScreenshotWindow { path, .. },
+    } = &mut msg
+    {
+        if let Some(path) = path {
+            ensure_absolute_path(path).context("error making the path absolute")?;
+        }
+    }
+
     let request = match &msg {
         Msg::Version => Request::Version,
         Msg::Outputs => Request::Outputs,
@@ -675,6 +689,19 @@ fn fmt_rounded(x: f64) -> String {
     } else {
         format!("{x:.2}")
     }
+}
+
+fn ensure_absolute_path(path: &mut String) -> anyhow::Result<()> {
+    let p = Path::new(path);
+    if p.is_relative() {
+        let mut cwd = env::current_dir().context("error getting current working directory")?;
+        cwd.push(p);
+        match cwd.into_os_string().into_string() {
+            Ok(absolute) => *path = absolute,
+            Err(cwd) => bail!("couldn't convert absolute path to string: {cwd:?}"),
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
