@@ -6,7 +6,7 @@ use std::num::NonZeroU64;
 use std::os::fd::{AsFd, OwnedFd};
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 use std::{io, mem};
 
@@ -124,7 +124,7 @@ type GbmDrmCompositor = DrmCompositor<
 
 pub struct OutputDevice {
     token: RegistrationToken,
-    render_node: DrmNode,
+    render_node: Option<DrmNode>,
     drm_scanner: DrmScanner,
     surfaces: HashMap<crtc::Handle, Surface>,
     known_crtcs: HashMap<crtc::Handle, CrtcInfo>,
@@ -132,6 +132,7 @@ pub struct OutputDevice {
     // See https://github.com/Smithay/smithay/issues/1102.
     drm: DrmDevice,
     gbm: GbmDevice<DrmDeviceFd>,
+    allocator: GbmAllocator<DrmDeviceFd>,
 
     pub drm_lease_state: Option<DrmLeaseState>,
     non_desktop_connectors: HashSet<(connector::Handle, crtc::Handle)>,
@@ -353,7 +354,31 @@ impl Tty {
     }
 
     pub fn init(&mut self, niri: &mut Niri) {
+        // Initialize the primary node first as later nodes might
+        // depend on the primary render node beeing available.
+        let mut primary_node_initialized = false;
+        if let Some((primary_device_id, primary_device_path)) = self
+            .udev_dispatcher
+            .clone()
+            .as_source_ref()
+            .device_list()
+            .find(|&(device_id, _)| device_id == self.primary_node.dev_id())
+        {
+            primary_node_initialized = self
+                .device_added(primary_device_id, primary_device_path, niri)
+                .inspect_err(|err| warn!("error initializing the primary device: {err:?}"))
+                .is_ok();
+        };
+
+        if !primary_node_initialized {
+            warn!("failed to pre-initialize primary node, display only devices might not work");
+        }
+
         for (device_id, path) in self.udev_dispatcher.clone().as_source_ref().device_list() {
+            if primary_node_initialized && device_id == self.primary_node.dev_id() {
+                continue;
+            }
+
             if let Err(err) = self.device_added(device_id, path, niri) {
                 warn!("error adding device: {err:?}");
             }
@@ -531,28 +556,60 @@ impl Tty {
         let (drm, drm_notifier) = DrmDevice::new(device_fd.clone(), true)?;
         let gbm = GbmDevice::new(device_fd)?;
 
-        let display = unsafe { EGLDisplay::new(gbm.clone())? };
-        let egl_device = EGLDevice::device_for_display(&display)?;
+        let mut try_initialize_gpu = || {
+            let display = unsafe { EGLDisplay::new(gbm.clone())? };
+            let egl_device = EGLDevice::device_for_display(&display)?;
 
-        let render_node = egl_device
-            .try_get_render_node()?
-            .context("no render node")?;
-        self.gpu_manager
-            .as_mut()
-            .add_node(render_node, gbm.clone())
-            .context("error adding render node to GPU manager")?;
+            // NOTE: software EGL devices (e.g., llvmpipe/softpipe) are intentionally rejected.
+            // It's unclear if they have ever worked prior to this check. But noting here in case
+            // this needs to be referenced in the future.
+            anyhow::ensure!(!egl_device.is_software(), "skipping software device");
 
-        if node == self.primary_node || render_node == self.primary_render_node {
+            let render_node = egl_device
+                .try_get_render_node()
+                .ok()
+                .flatten()
+                .unwrap_or(node);
+            self.gpu_manager
+                .as_mut()
+                .add_node(render_node, gbm.clone())
+                .context("error adding render node to GPU manager")?;
+
+            anyhow::Ok(render_node)
+        };
+
+        let render_node = try_initialize_gpu()
+            .inspect_err(|err| {
+                warn!("failed to initialze renderer, falling back to primary gpu: {err:?}");
+            })
+            .ok();
+
+        let allocator = render_node
+            .is_some()
+            .then_some(&gbm)
+            .or(self
+                .devices
+                .get(&self.primary_node)
+                .map(|device| &device.gbm))
+            .map(|gbm| {
+                let gbm_flags = GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT;
+                GbmAllocator::new(gbm.clone(), gbm_flags)
+            })
+            .ok_or(anyhow!("no allocator available for device"))?;
+
+        let is_primary_render_node =
+            render_node.is_some_and(|render_node| render_node == self.primary_render_node);
+        if node == self.primary_node || is_primary_render_node {
             if node == self.primary_node {
                 debug!("this is the primary node");
             }
-            if render_node == self.primary_render_node {
+            if is_primary_render_node {
                 debug!("this is the primary render node");
             }
 
             let mut renderer = self
                 .gpu_manager
-                .single_renderer(&render_node)
+                .single_renderer(&self.primary_render_node)
                 .context("error creating renderer")?;
 
             if let Err(err) = renderer.bind_wl_display(&niri.display_handle) {
@@ -579,10 +636,12 @@ impl Tty {
 
             // Create the dmabuf global.
             let primary_formats = renderer.dmabuf_formats();
-            let default_feedback =
-                DmabufFeedbackBuilder::new(render_node.dev_id(), primary_formats.clone())
-                    .build()
-                    .context("error building default dmabuf feedback")?;
+            let default_feedback = DmabufFeedbackBuilder::new(
+                self.primary_render_node.dev_id(),
+                primary_formats.clone(),
+            )
+            .build()
+            .context("error building default dmabuf feedback")?;
             let dmabuf_global = niri
                 .dmabuf_state
                 .create_global_with_default_feedback::<State>(
@@ -599,6 +658,7 @@ impl Tty {
                         primary_formats.clone(),
                         self.primary_render_node,
                         device.render_node,
+                        node,
                     ) {
                         Ok(feedback) => {
                             surface.dmabuf_feedback = Some(feedback);
@@ -634,6 +694,7 @@ impl Tty {
             render_node,
             drm,
             gbm,
+            allocator,
             drm_scanner: DrmScanner::new(),
             surfaces: HashMap::new(),
             known_crtcs: HashMap::new(),
@@ -806,8 +867,8 @@ impl Tty {
             lease_state.disable_global::<State>();
         }
 
-        if node == self.primary_node || device.render_node == self.primary_render_node {
-            match self.gpu_manager.single_renderer(&device.render_node) {
+        if node == self.primary_node || device.render_node == Some(self.primary_render_node) {
+            match self.gpu_manager.single_renderer(&self.primary_render_node) {
                 Ok(mut renderer) => renderer.unbind_wl_display(),
                 Err(err) => {
                     warn!("error creating renderer during device removal: {err}");
@@ -842,10 +903,9 @@ impl Tty {
             }
         }
 
-        self.gpu_manager.as_mut().remove_node(&device.render_node);
-        // Trigger re-enumeration in order to remove the device from gpu_manager.
-        let _ = self.gpu_manager.devices();
-
+        if let Some(render_node) = device.render_node {
+            self.gpu_manager.as_mut().remove_node(&render_node);
+        }
         niri.event_loop.remove(device.token);
 
         self.refresh_ipc_outputs(niri);
@@ -985,10 +1045,6 @@ impl Tty {
             }
         }
 
-        // Create GBM allocator.
-        let gbm_flags = GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT;
-        let allocator = GbmAllocator::new(device.gbm.clone(), gbm_flags);
-
         // Update the output mode.
         let (physical_width, physical_height) = connector.size().unwrap_or((0, 0));
 
@@ -1016,12 +1072,16 @@ impl Tty {
             .insert_if_missing(|| TtyOutputState { node, crtc });
         output.user_data().insert_if_missing(|| output_name.clone());
 
-        let renderer = self.gpu_manager.single_renderer(&device.render_node)?;
+        let render_node = device.render_node.unwrap_or(self.primary_render_node);
+        let renderer = self.gpu_manager.single_renderer(&render_node)?;
         let egl_context = renderer.as_ref().egl_context();
         let render_formats = egl_context.dmabuf_render_formats();
 
         // Filter out the CCS modifiers as they have increased bandwidth, causing some monitor
         // configurations to stop working.
+        //
+        // For display only devices restrict to linear buffers as this should provide best
+        // compatibility
         //
         // The invalid modifier attempt below should make this unnecessary in some cases, but it
         // would still be a bad idea to remove this until Smithay has some kind of full-device
@@ -1031,7 +1091,11 @@ impl Tty {
             .iter()
             .copied()
             .filter(|format| {
-                !matches!(
+                if device.render_node.is_none() {
+                    return format.modifier == Modifier::Linear;
+                }
+
+                let is_ccs = matches!(
                     format.modifier,
                     Modifier::I915_y_tiled_ccs
                     // I915_FORMAT_MOD_Yf_TILED_CCS
@@ -1046,7 +1110,9 @@ impl Tty {
                     | Modifier::Unrecognized(0x10000000000000b)
                     // I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC
                     | Modifier::Unrecognized(0x10000000000000c)
-                )
+                );
+
+                !is_ccs
             })
             .collect::<FormatSet>();
 
@@ -1055,7 +1121,7 @@ impl Tty {
             OutputModeSource::Auto(output.clone()),
             surface,
             None,
-            allocator.clone(),
+            device.allocator.clone(),
             GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
             SUPPORTED_COLOR_FORMATS,
             // This is only used to pick a good internal format, so it can use the surface's render
@@ -1085,7 +1151,7 @@ impl Tty {
                     OutputModeSource::Auto(output.clone()),
                     surface,
                     None,
-                    allocator,
+                    device.allocator.clone(),
                     GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
                     SUPPORTED_COLOR_FORMATS,
                     render_formats,
@@ -1109,6 +1175,7 @@ impl Tty {
                 primary_formats,
                 self.primary_render_node,
                 device.render_node,
+                node,
             ) {
                 Ok(feedback) => {
                     dmabuf_feedback = Some(feedback);
@@ -1248,17 +1315,23 @@ impl Tty {
         trace!("vblank on {name} {meta:?}");
         span.emit_text(name);
 
+        let mut meta = meta;
+        if !matches!(meta.time, DrmEventTime::Monotonic(_)) {
+            meta.time = DrmEventTime::Monotonic(Duration::ZERO);
+        }
+
         let presentation_time = match meta.time {
             DrmEventTime::Monotonic(time) => time,
-            DrmEventTime::Realtime(_) => {
-                // Not supported.
-
-                // This value will be ignored in the frame clock code.
-                Duration::ZERO
-            }
+            DrmEventTime::Realtime(_) => unreachable!(),
         };
         let presentation_time = if niri.config.borrow().debug.emulate_zero_presentation_time {
             Duration::ZERO
+        } else {
+            presentation_time
+        };
+
+        let time = if presentation_time.is_zero() {
+            now
         } else {
             presentation_time
         };
@@ -1302,6 +1375,54 @@ impl Tty {
             return;
         };
 
+        if let Some(vblank_throttle_timer_token) = output_state.vblank_throttle_timer_token.take() {
+            niri.event_loop.remove(vblank_throttle_timer_token);
+        }
+
+        let refresh_interval = output_state.frame_clock.refresh_interval();
+        let vblank_remaining_time =
+            output_state
+                .last_drm_vblank_timestamp
+                .and_then(|last_drm_vblank_timestamp| {
+                    let refresh_interval = refresh_interval?;
+                    let vblank_diff = time.saturating_sub(last_drm_vblank_timestamp);
+                    Some(refresh_interval.saturating_sub(vblank_diff))
+                });
+
+        if let (Some(refresh_interval), Some(vblank_remaining_time)) =
+            (refresh_interval, vblank_remaining_time)
+        {
+            if vblank_remaining_time > refresh_interval / 2 {
+                static WARN_ONCE: Once = Once::new();
+                WARN_ONCE
+                    .call_once(|| warn!("output running faster as expected, throttling vblanks"));
+
+                let throttled_time = if presentation_time.is_zero() {
+                    Duration::ZERO
+                } else {
+                    presentation_time.saturating_add(vblank_remaining_time)
+                };
+                let throttled_metadata = DrmEventMetadata {
+                    sequence: meta.sequence,
+                    time: DrmEventTime::Monotonic(throttled_time),
+                };
+                let timer_token = niri
+                    .event_loop
+                    .insert_source(
+                        Timer::from_duration(vblank_remaining_time),
+                        move |_, _, state| {
+                            let tty = state.backend.tty();
+                            tty.on_vblank(&mut state.niri, node, crtc, throttled_metadata);
+                            TimeoutAction::Drop
+                        },
+                    )
+                    .expect("failed to register vblank throttle timer");
+                output_state.vblank_throttle_timer_token = Some(timer_token);
+                return;
+            }
+        }
+        output_state.last_drm_vblank_timestamp = Some(time);
+
         let redraw_needed = match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
             RedrawState::WaitingForVBlank { redraw_needed } => redraw_needed,
             state @ (RedrawState::Idle
@@ -1340,12 +1461,9 @@ impl Tty {
                 let mut flags = wp_presentation_feedback::Kind::Vsync
                     | wp_presentation_feedback::Kind::HwCompletion;
 
-                let time = if presentation_time.is_zero() {
-                    now
-                } else {
+                if !presentation_time.is_zero() {
                     flags.insert(wp_presentation_feedback::Kind::HwClock);
-                    presentation_time
-                };
+                }
 
                 feedback.presented::<_, smithay::utils::Monotonic>(time, refresh, seq, flags);
 
@@ -1465,7 +1583,7 @@ impl Tty {
 
         let mut renderer = match self.gpu_manager.renderer(
             &self.primary_render_node,
-            &device.render_node,
+            &device.render_node.unwrap_or(self.primary_render_node),
             surface.compositor.format(),
         ) {
             Ok(renderer) => renderer,
@@ -1800,7 +1918,7 @@ impl Tty {
         let device = self
             .devices
             .values()
-            .find(|d| d.render_node == self.primary_render_node);
+            .find(|d| d.render_node == Some(self.primary_render_node));
         // Otherwise, try to get the device corresponding to the primary node.
         let device = device.or_else(|| self.devices.get(&self.primary_node));
 
@@ -2326,7 +2444,8 @@ fn surface_dmabuf_feedback(
     compositor: &GbmDrmCompositor,
     primary_formats: FormatSet,
     primary_render_node: DrmNode,
-    surface_render_node: DrmNode,
+    surface_render_node: Option<DrmNode>,
+    surface_scanout_node: DrmNode,
 ) -> Result<SurfaceDmabufFeedback, io::Error> {
     let surface = compositor.surface();
     let planes = surface.planes();
@@ -2351,7 +2470,11 @@ fn surface_dmabuf_feedback(
 
     // HACK: AMD iGPU + dGPU systems share some modifiers between the two, and yet cross-device
     // buffers produce a glitched scanout if the modifier is not Linear...
-    if primary_render_node != surface_render_node {
+    // Also limit scan-out formats to linear if we have a device without a render node
+    if surface_render_node
+        .map(|surface_render_node| surface_render_node != primary_render_node)
+        .unwrap_or(true)
+    {
         primary_scanout_formats.retain(|f| f.modifier == Modifier::Linear);
         primary_or_overlay_scanout_formats.retain(|f| f.modifier == Modifier::Linear);
     }
@@ -2370,12 +2493,12 @@ fn surface_dmabuf_feedback(
     let scanout = builder
         .clone()
         .add_preference_tranche(
-            surface_render_node.dev_id(),
+            surface_scanout_node.dev_id(),
             Some(TrancheFlags::Scanout),
             primary_scanout_formats,
         )
         .add_preference_tranche(
-            surface_render_node.dev_id(),
+            surface_scanout_node.dev_id(),
             Some(TrancheFlags::Scanout),
             primary_or_overlay_scanout_formats,
         )
@@ -2383,7 +2506,9 @@ fn surface_dmabuf_feedback(
 
     // If this is the primary node surface, send scanout formats in both tranches to avoid
     // duplication.
-    let render = if primary_render_node == surface_render_node {
+    let render = if surface_render_node
+        .is_some_and(|surface_render_node| surface_render_node == primary_render_node)
+    {
         scanout.clone()
     } else {
         builder.build()?
