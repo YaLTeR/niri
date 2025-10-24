@@ -777,6 +777,49 @@ mod tests {
     }
 
     #[test]
+    fn parse_tablets_name() {
+        // Test no name and name provided
+        let parsed = do_parse(
+            r#"
+            tablet {
+                map-to-output "eDP-1"
+            }
+
+            tablet "ELAN9009:00 04F3:2F2A Stylus" {
+                map-to-output "DP-1"
+            }
+            "#,
+        );
+
+        assert_debug_snapshot!(parsed.tablets, @r#"
+        Tablets(
+            [
+                Tablet {
+                    name: None,
+                    off: false,
+                    calibration_matrix: None,
+                    map_to_output: Some(
+                        "eDP-1",
+                    ),
+                    left_handed: false,
+                },
+                Tablet {
+                    name: Some(
+                        "ELAN9009:00 04F3:2F2A Stylus",
+                    ),
+                    off: false,
+                    calibration_matrix: None,
+                    map_to_output: Some(
+                        "DP-1",
+                    ),
+                    left_handed: false,
+                },
+            ],
+        )
+        "#);
+    }
+
+    #[test]
     fn parse_touch_screens_name() {
         // Test no name and name provided
         let parsed = do_parse(
