@@ -467,7 +467,7 @@ pub fn handle_msg(msg: Msg, json: bool) -> anyhow::Result<()> {
                         };
                         println!("Config loaded {status}");
                     }
-                    Event::ScreenshotTaken { path } => {
+                    Event::ScreenshotCaptured { path } => {
                         let mut parts = vec![];
                         if let Some(path) = &path {
                             parts.push(format!("saved to {path}"));

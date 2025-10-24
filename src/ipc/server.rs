@@ -780,7 +780,7 @@ impl State {
         };
         let mut state = server.event_stream_state.borrow_mut();
 
-        let event = Event::ScreenshotTaken { path };
+        let event = Event::ScreenshotCaptured { path };
         state.apply(event.clone());
         server.send_event(event);
     }
