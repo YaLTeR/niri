@@ -333,6 +333,36 @@ impl MergeWith<BorderRule> for FocusRing {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Blur {
+    pub on: bool,
+    pub passes: u32,
+    pub radius: FloatOrInt<0, 1024>,
+    pub noise: FloatOrInt<0, 1024>,
+}
+
+impl Default for Blur {
+    fn default() -> Self {
+        Self {
+            on: false,
+            passes: 0,
+            radius: FloatOrInt(0.0),
+            noise: FloatOrInt(0.0),
+        }
+    }
+}
+
+impl MergeWith<BlurRule> for Blur {
+    fn merge_with(&mut self, part: &BlurRule) {
+        self.on |= part.on;
+        if part.off {
+            self.on = false;
+        }
+
+        merge_clone!((self, part), passes, radius, noise);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Shadow {
     pub on: bool,
     pub offset: ShadowOffset,
@@ -639,6 +669,20 @@ pub struct BorderRule {
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct BlurRule {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub passes: Option<u32>,
+    #[knuffel(child, unwrap(argument))]
+    pub radius: Option<FloatOrInt<0, 1024>>,
+    #[knuffel(child, unwrap(argument))]
+    pub noise: Option<FloatOrInt<0, 1024>>,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
 pub struct ShadowRule {
     #[knuffel(child)]
     pub off: bool,
@@ -685,6 +729,19 @@ impl MergeWith<Self> for BorderRule {
             (active_color, active_gradient),
             (inactive_color, inactive_gradient),
             (urgent_color, urgent_gradient),
+        );
+    }
+}
+
+impl MergeWith<Self> for BlurRule {
+    fn merge_with(&mut self, part: &Self) {
+        merge_on_off!((self, part));
+
+        merge_clone_opt!(
+            (self, part),
+            passes,
+            radius,
+            noise,
         );
     }
 }

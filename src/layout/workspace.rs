@@ -1638,17 +1638,24 @@ impl<W: LayoutElement> Workspace<W> {
         impl Iterator<Item = WorkspaceRenderElement<R>>,
     ) {
         let scrolling_focus_ring = focus_ring && !self.floating_is_active();
-        let scrolling = self
-            .scrolling
-            .render_elements(renderer, target, scrolling_focus_ring);
+        let scrolling = self.scrolling.render_elements(
+            renderer,
+            target,
+            scrolling_focus_ring,
+            self.current_output().unwrap(),
+        );
         let scrolling = scrolling.into_iter().map(WorkspaceRenderElement::from);
 
         let floating_focus_ring = focus_ring && self.floating_is_active();
         let floating = self.is_floating_visible().then(|| {
             let view_rect = Rectangle::from_size(self.view_size);
-            let floating =
-                self.floating
-                    .render_elements(renderer, view_rect, target, floating_focus_ring);
+            let floating = self.floating.render_elements(
+                renderer,
+                view_rect,
+                target,
+                floating_focus_ring,
+                self.current_output().unwrap(),
+            );
             floating.into_iter().map(WorkspaceRenderElement::from)
         });
         let floating = floating.into_iter().flatten();

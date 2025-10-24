@@ -235,6 +235,18 @@ impl LayoutElement for TestWindow {
 
     fn set_floating(&mut self, _floating: bool) {}
 
+    fn is_floating(&self) -> bool {
+        false
+    }
+
+    fn is_fullscreen(&self) -> bool {
+        if self.0.is_windowed_fullscreen.get() {
+            return false;
+        }
+
+        self.0.is_fullscreen.get()
+    }
+
     fn sizing_mode(&self) -> SizingMode {
         self.0.sizing_mode.get()
     }
