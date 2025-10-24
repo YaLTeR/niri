@@ -118,6 +118,13 @@ niri_render_elements! {
 pub type LayoutElementRenderSnapshot =
     RenderSnapshot<BakedBuffer<TextureBuffer<GlesTexture>>, BakedBuffer<SolidColorBuffer>>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SizingMode {
+    Normal,
+    Maximized,
+    Fullscreen,
+}
+
 pub trait LayoutElement {
     /// Type that can be used as a unique ID of this element.
     type Id: PartialEq + std::fmt::Debug + Clone;
@@ -185,14 +192,14 @@ pub trait LayoutElement {
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
-        is_fullscreen: bool,
+        mode: SizingMode,
         animate: bool,
         transaction: Option<Transaction>,
     );
 
     /// Requests the element to change size once, clearing the request afterwards.
     fn request_size_once(&mut self, size: Size<i32, Logical>, animate: bool) {
-        self.request_size(size, false, animate, None);
+        self.request_size(size, SizingMode::Normal, animate, None);
     }
 
     fn min_size(&self) -> Size<i32, Logical>;
@@ -214,15 +221,15 @@ pub trait LayoutElement {
     fn configure_intent(&self) -> ConfigureIntent;
     fn send_pending_configure(&mut self);
 
-    /// Whether the element is currently fullscreen.
+    /// The element's current sizing mode.
     ///
     /// This will *not* switch immediately after a [`LayoutElement::request_size()`] call.
-    fn is_fullscreen(&self) -> bool;
+    fn sizing_mode(&self) -> SizingMode;
 
-    /// Whether we're requesting the element to be fullscreen.
+    /// The sizing mode that we're requesting the element to assume.
     ///
     /// This *will* switch immediately after a [`LayoutElement::request_size()`] call.
-    fn is_pending_fullscreen(&self) -> bool;
+    fn pending_sizing_mode(&self) -> SizingMode;
 
     /// Size previously requested through [`LayoutElement::request_size()`].
     fn requested_size(&self) -> Option<Size<i32, Logical>>;
@@ -240,7 +247,7 @@ pub trait LayoutElement {
     ///
     /// The default impl is for testing only, it will not preserve the window's own size changes.
     fn expected_size(&self) -> Option<Size<i32, Logical>> {
-        if self.is_fullscreen() {
+        if self.sizing_mode().is_fullscreen() {
             return None;
         }
 
@@ -500,6 +507,23 @@ struct OverviewGesture {
     start: f64,
     /// Current progress.
     value: f64,
+}
+
+impl SizingMode {
+    #[must_use]
+    pub fn is_normal(&self) -> bool {
+        matches!(self, Self::Normal)
+    }
+
+    #[must_use]
+    pub fn is_fullscreen(&self) -> bool {
+        matches!(self, Self::Fullscreen)
+    }
+
+    #[must_use]
+    pub fn is_maximized(&self) -> bool {
+        matches!(self, Self::Maximized)
+    }
 }
 
 impl<W: LayoutElement> InteractiveMoveState<W> {
@@ -2321,7 +2345,7 @@ impl<W: LayoutElement> Layout<W> {
                 }
                 InteractiveMoveState::Moving(move_) => {
                     assert_eq!(self.clock, move_.tile.clock);
-                    assert!(!move_.tile.window().is_pending_fullscreen());
+                    assert!(move_.tile.window().pending_sizing_mode().is_normal());
 
                     move_.tile.verify_invariants();
 
@@ -3456,7 +3480,7 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn toggle_windowed_fullscreen(&mut self, id: &W::Id) {
         let (_, window) = self.windows().find(|(_, win)| win.id() == id).unwrap();
-        if window.is_pending_fullscreen() {
+        if window.pending_sizing_mode().is_fullscreen() {
             // Remove the real fullscreen.
             for ws in self.workspaces_mut() {
                 if ws.has_window(id) {
@@ -3472,6 +3496,36 @@ impl<W: LayoutElement> Layout<W> {
                 window.request_windowed_fullscreen(!window.is_pending_windowed_fullscreen());
             }
         });
+    }
+
+    pub fn set_maximized(&mut self, id: &W::Id, maximize: bool) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == id {
+                return;
+            }
+        }
+
+        for ws in self.workspaces_mut() {
+            if ws.has_window(id) {
+                ws.set_maximized(id, maximize);
+                return;
+            }
+        }
+    }
+
+    pub fn toggle_maximized(&mut self, id: &W::Id) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
+            if move_.tile.window().id() == id {
+                return;
+            }
+        }
+
+        for ws in self.workspaces_mut() {
+            if ws.has_window(id) {
+                ws.toggle_maximized(id);
+                return;
+            }
+        }
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, output: &Output, is_touchpad: bool) {
@@ -3838,11 +3892,20 @@ impl<W: LayoutElement> Layout<W> {
                 // in the middle of interactive_move_update() and the confusion that causes.
                 self.interactive_move = None;
 
+                // Unset fullscreen before removing the tile. This will restore its size properly,
+                // and move it to floating if needed, so we don't have to deal with that here.
+                let ws = self
+                    .workspaces_mut()
+                    .find(|ws| ws.has_window(&window_id))
+                    .unwrap();
+                ws.set_fullscreen(window, false);
+                ws.set_maximized(window, false);
+
                 let RemovedTile {
                     mut tile,
                     width,
                     is_full_width,
-                    mut is_floating,
+                    is_floating,
                 } = self.remove_window(window, Transaction::new()).unwrap();
 
                 tile.stop_move_animations();
@@ -3860,33 +3923,6 @@ impl<W: LayoutElement> Layout<W> {
                     .with_merged_layout(workspace_config.as_ref().map(|(_, c)| c))
                     .adjusted_for_scale(scale);
                 tile.update_config(view_size, scale, Rc::new(options));
-
-                // Unfullscreen.
-                let floating_size = tile.floating_window_size;
-                let unfullscreen_to_floating = tile.unfullscreen_to_floating;
-                let win = tile.window_mut();
-                if win.is_pending_fullscreen() {
-                    // If we're unfullscreening to floating, use the stored floating size,
-                    // otherwise use (0, 0).
-                    let mut size = if unfullscreen_to_floating {
-                        floating_size.unwrap_or_default()
-                    } else {
-                        Size::from((0, 0))
-                    };
-
-                    // Apply min/max size window rules. If requesting a concrete size, apply
-                    // completely; if requesting (0, 0), apply only when min/max results in a fixed
-                    // size.
-                    let min_size = win.min_size();
-                    let max_size = win.max_size();
-                    size.w = ensure_min_max_size_maybe_zero(size.w, min_size.w, max_size.w);
-                    size.h = ensure_min_max_size_maybe_zero(size.h, min_size.h, max_size.h);
-
-                    win.request_size_once(size, true);
-
-                    // If we're unfullscreening to floating, default to the floating layout.
-                    is_floating = unfullscreen_to_floating;
-                }
 
                 if is_floating {
                     // Unlock the view in case we locked it moving a fullscreen window that is
@@ -4148,7 +4184,7 @@ impl<W: LayoutElement> Layout<W> {
                     };
 
                 let win_id = move_.tile.window().id().clone();
-                let window_render_loc = move_.tile_render_location(zoom) + move_.tile.window_loc();
+                let tile_render_loc = move_.tile_render_location(zoom);
 
                 let ws_idx = match insert_ws {
                     InsertWorkspace::Existing(ws_id) => mon
@@ -4245,18 +4281,17 @@ impl<W: LayoutElement> Layout<W> {
                 }
 
                 // needed because empty_workspace_above_first could have modified the idx
-                let (tile, tile_render_loc, ws_geo) = mon
+                let (tile, tile_offset, ws_geo) = mon
                     .workspaces_with_render_geo_mut(false)
                     .find_map(|(ws, geo)| {
                         ws.tiles_with_render_positions_mut(false)
                             .find(|(tile, _)| tile.window().id() == &win_id)
-                            .map(|(tile, tile_render_loc)| (tile, tile_render_loc, geo))
+                            .map(|(tile, tile_offset)| (tile, tile_offset, geo))
                     })
                     .unwrap();
-                let new_window_render_loc =
-                    ws_geo.loc + (tile_render_loc + tile.window_loc()).upscale(zoom);
+                let new_tile_render_loc = ws_geo.loc + tile_offset.upscale(zoom);
 
-                tile.animate_move_from((window_render_loc - new_window_render_loc).downscale(zoom));
+                tile.animate_move_from((tile_render_loc - new_tile_render_loc).downscale(zoom));
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 if workspaces.is_empty() {

@@ -605,14 +605,17 @@ impl State {
                     self.niri.do_screen_transition(renderer, delay_ms);
                 });
             }
-            Action::ScreenshotScreen(write_to_disk, show_pointer) => {
+            Action::ScreenshotScreen(write_to_disk, show_pointer, path) => {
                 let active = self.niri.layout.active_output().cloned();
                 if let Some(active) = active {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) =
-                            self.niri
-                                .screenshot(renderer, &active, write_to_disk, show_pointer)
-                        {
+                        if let Err(err) = self.niri.screenshot(
+                            renderer,
+                            &active,
+                            write_to_disk,
+                            show_pointer,
+                            path,
+                        ) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
@@ -636,32 +639,42 @@ impl State {
                 self.niri.screenshot_ui.toggle_pointer();
                 self.niri.queue_redraw_all();
             }
-            Action::Screenshot(show_cursor) => {
-                self.open_screenshot_ui(show_cursor);
+            Action::Screenshot(show_cursor, path) => {
+                self.open_screenshot_ui(show_cursor, path);
             }
-            Action::ScreenshotWindow(write_to_disk) => {
+            Action::ScreenshotWindow(write_to_disk, path) => {
                 let focus = self.niri.layout.focus_with_output();
                 if let Some((mapped, output)) = focus {
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) =
-                            self.niri
-                                .screenshot_window(renderer, output, mapped, write_to_disk)
-                        {
+                        if let Err(err) = self.niri.screenshot_window(
+                            renderer,
+                            output,
+                            mapped,
+                            write_to_disk,
+                            path,
+                        ) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
                 }
             }
-            Action::ScreenshotWindowById { id, write_to_disk } => {
+            Action::ScreenshotWindowById {
+                id,
+                write_to_disk,
+                path,
+            } => {
                 let mut windows = self.niri.layout.windows();
                 let window = windows.find(|(_, m)| m.id().get() == id);
                 if let Some((Some(monitor), mapped)) = window {
                     let output = monitor.output();
                     self.backend.with_primary_renderer(|renderer| {
-                        if let Err(err) =
-                            self.niri
-                                .screenshot_window(renderer, output, mapped, write_to_disk)
-                        {
+                        if let Err(err) = self.niri.screenshot_window(
+                            renderer,
+                            output,
+                            mapped,
+                            write_to_disk,
+                            path,
+                        ) {
                             warn!("error taking screenshot: {err:?}");
                         }
                     });
@@ -1513,6 +1526,23 @@ impl State {
             }
             Action::MaximizeColumn => {
                 self.niri.layout.toggle_full_width();
+            }
+            Action::MaximizeWindowToEdges => {
+                let focus = self.niri.layout.focus().map(|m| m.window.clone());
+                if let Some(window) = focus {
+                    self.niri.layout.toggle_maximized(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::MaximizeWindowToEdgesById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_maximized(&window);
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
             }
             Action::FocusMonitorLeft => {
                 if let Some(output) = self.niri.output_left() {
@@ -3914,9 +3944,8 @@ impl State {
 
         if switch == Switch::Lid {
             let is_closed = evt.state() == SwitchState::On;
-            debug!("lid switch {}", if is_closed { "closed" } else { "opened" });
-            self.niri.is_lid_closed = is_closed;
-            self.backend.on_output_config_changed(&mut self.niri);
+            trace!("lid switch {}", if is_closed { "closed" } else { "opened" });
+            self.set_lid_closed(is_closed);
         }
 
         let action = {
