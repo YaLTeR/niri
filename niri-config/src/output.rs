@@ -248,6 +248,7 @@ impl<S: ErrorSpan> Decode<S> for Modeline {
             hsync_end,
             htotal,
         );
+        ensure!(0u16 < htotal, ctx, htotal_value, "htotal {} > 0", htotal);
         ensure!(
             vdisplay < vsync_start,
             ctx,
@@ -272,6 +273,8 @@ impl<S: ErrorSpan> Decode<S> for Modeline {
             vsync_end,
             vtotal,
         );
+        ensure!(0u16 < vtotal, ctx, vtotal_value, "vtotal {} > 0", vtotal);
+
         if let Some(extra) = arguments.next() {
             ctx.emit_error(DecodeError::unexpected(
                 &extra.literal,
