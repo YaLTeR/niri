@@ -408,6 +408,7 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             } else {
                 OutputConfigChanged::OutputWasMissing
             };
+            action.validate()?;
             drop(ipc_outputs);
 
             ctx.event_loop.insert_idle(move |state| {
