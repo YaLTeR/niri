@@ -5703,7 +5703,8 @@ impl Niri {
             // Send screenshot completion event
             let path_string = image_path
                 .as_ref()
-                .map(|p| p.to_string_lossy().into_owned());
+                .and_then(|p| p.to_str())
+                .map(|s| s.to_owned());
             let _ = event_tx.send(path_string);
         });
 
