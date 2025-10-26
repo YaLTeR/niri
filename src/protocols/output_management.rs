@@ -111,13 +111,14 @@ impl OutputManagementManagerState {
                 }
 
                 // TTY outputs can't change modes I think, however, winit and virtual outputs can.
+                // Custom modes can add and remove a mode on the TTY.
                 let modes_changed = old.modes != conf.modes;
                 if modes_changed {
                     changed = true;
-                    for client in self.clients.values() {
-                        if let Some((head, modes)) = client.heads.get(output) {
+                    for client in self.clients.values_mut() {
+                        if let Some((head, modes)) = client.heads.get_mut(output) {
                             // ends on the shortest iterator
-                            let zwlr_modes_with_modes = zip(modes, &conf.modes);
+                            let zwlr_modes_with_modes = zip(modes.iter(), &conf.modes);
                             let least_modes_len = zwlr_modes_with_modes.len();
 
                             for (wl_mode, mode) in zwlr_modes_with_modes {
@@ -126,6 +127,7 @@ impl OutputManagementManagerState {
                                     wl_mode.refresh(refresh_rate);
                                 }
                             }
+
                             if let Some(client) = client.manager.client() {
                                 if conf.modes.len() > least_modes_len {
                                     for mode in conf.modes[least_modes_len..].iter() {
@@ -143,10 +145,11 @@ impl OutputManagementManagerState {
                                         if let Ok(refresh_rate) = mode.refresh_rate.try_into() {
                                             new_mode.refresh(refresh_rate)
                                         }
+                                        modes.push(new_mode);
                                     }
                                 } else if modes.len() > least_modes_len {
                                     // One or more modes were removed
-                                    for mode in modes[least_modes_len..].iter() {
+                                    for mode in modes.drain(least_modes_len..) {
                                         // One or more modes were added
                                         mode.finished();
                                     }

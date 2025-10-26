@@ -1050,13 +1050,13 @@ pub enum OutputAction {
 macro_rules! ensure {
     ($cond:expr, $fmt:literal $($arg:tt)* ) => {
         if !$cond {
-            return Err(format!($fmt $($arg)*).into());
+            return Err(format!($fmt $($arg)*));
         }
     };
 }
 
 impl OutputAction {
-    /// Validates extra constraints that were difficult to represent with clap.
+    /// Validates some required constraints on the modeline and custom mode.
     pub fn validate(&self) -> Result<(), String> {
         match self {
             OutputAction::Modeline {
@@ -1088,11 +1088,7 @@ impl OutputAction {
                     hsync_end,
                     htotal,
                 );
-                ensure!(
-                    0u16 < *htotal,
-                    "htotal {} > 0",
-                    htotal,
-                );
+                ensure!(0u16 < *htotal, "htotal {} > 0", htotal,);
                 ensure!(
                     vdisplay < vsync_start,
                     "vdisplay {} must be < vsync_start {}",
@@ -1111,11 +1107,7 @@ impl OutputAction {
                     vsync_end,
                     vtotal,
                 );
-                ensure!(
-                    0u16 < *vtotal,
-                    "vtotal {} > 0",
-                    vtotal,
-                );
+                ensure!(0u16 < *vtotal, "vtotal {} > 0", vtotal,);
                 Ok(())
             }
             OutputAction::CustomMode {

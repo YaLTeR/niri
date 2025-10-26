@@ -397,6 +397,8 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::Handled
         }
         Request::Output { output, action } => {
+            action.validate()?;
+
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap();
             let found = ipc_outputs
                 .values()
@@ -406,7 +408,6 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             } else {
                 OutputConfigChanged::OutputWasMissing
             };
-            action.validate()?;
             drop(ipc_outputs);
 
             ctx.event_loop.insert_idle(move |state| {

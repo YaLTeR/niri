@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::str::FromStr;
 
 use knuffel::ast::SpannedNode;
@@ -15,10 +16,7 @@ pub struct Outputs(pub Vec<Output>);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Mode {
-    // #[knuffel(property, default = false)]
     pub custom: bool,
-
-    // #[knuffel(argument, str)]
     pub mode: ConfiguredMode,
 }
 
@@ -66,37 +64,19 @@ impl<S: ErrorSpan> knuffel::Decode<S> for Mode {
         let mode = if let Some(mode_str) = arguments.next() {
             let temp_mode: String = knuffel::traits::DecodeScalar::decode(mode_str, ctx)?;
 
-            let res = || {
-                let Some((width, rest)) = temp_mode.as_str().split_once('x') else {
-                    return Err("no 'x' separator found");
-                };
-
-                let (height, refresh) = match rest.split_once('@') {
-                    Some((height, refresh)) => (height, Some(refresh)),
-                    None => {
-                        if custom {
-                            return Err("no '@' separator found");
+            let res = ConfiguredMode::from_str(temp_mode.as_str()).and_then(|mode| {
+                if custom {
+                    if mode.refresh.is_none() {
+                        return Err("no refresh rate found");
+                    } else if let Some(refresh) = mode.refresh {
+                        if refresh.partial_cmp(&0.0) != Some(Ordering::Greater) {
+                            return Err("custom mode refresh-rate must be > 0");
                         }
-                        (rest, None)
                     }
-                };
-
-                let width = width.parse().map_err(|_| "error parsing width")?;
-                let height = height.parse().map_err(|_| "error parsing height")?;
-                let refresh = refresh
-                    .map(|refresh| refresh.parse().map_err(|_| "error parsing refresh rate"));
-                let refresh = match refresh {
-                    Some(refresh) => Some(refresh?),
-                    None => None,
-                };
-
-                Ok(ConfiguredMode {
-                    width,
-                    height,
-                    refresh,
-                })
-            };
-            res().map_err(|err_msg| DecodeError::conversion(&mode_str.literal, err_msg))?
+                }
+                Ok(mode)
+            });
+            res.map_err(|err_msg| DecodeError::conversion(&mode_str.literal, err_msg))?
         } else {
             return Err(DecodeError::missing(node, "argument `mode` is required"));
         };
@@ -141,9 +121,9 @@ impl<S: ErrorSpan> Decode<S> for Modeline {
             ));
         }
 
-        for (span, _prop) in &node.properties {
+        for span in node.properties.keys() {
             ctx.emit_error(DecodeError::unexpected(
-                &span,
+                span,
                 "node",
                 format!("unexpected node `{}`", span.escape_default()),
             ));
@@ -151,79 +131,43 @@ impl<S: ErrorSpan> Decode<S> for Modeline {
 
         let mut arguments = node.arguments.iter();
 
-        let clock_value = arguments
-            .next()
-            .ok_or_else(|| DecodeError::missing(node, "missing clock_value argument"))?;
-        let clock = knuffel::traits::DecodeScalar::decode(clock_value, ctx)?;
-        let hdisplay_value = arguments
-            .next()
-            .ok_or_else(|| DecodeError::missing(node, "missing hdisplay argument"))?;
-        let hdisplay = knuffel::traits::DecodeScalar::decode(hdisplay_value, ctx)?;
-        let hsync_start_value = arguments
-            .next()
-            .ok_or_else(|| DecodeError::missing(node, "missing hsync_start argument"))?;
-        let hsync_start = knuffel::traits::DecodeScalar::decode(hsync_start_value, ctx)?;
-        let hsync_end_value = arguments
-            .next()
-            .ok_or_else(|| DecodeError::missing(node, "missing hsync_end argument"))?;
-        let hsync_end = knuffel::traits::DecodeScalar::decode(hsync_end_value, ctx)?;
-        let htotal_value = arguments
-            .next()
-            .ok_or_else(|| DecodeError::missing(node, "missing htotal argument"))?;
-        let htotal = knuffel::traits::DecodeScalar::decode(htotal_value, ctx)?;
-        let vdisplay_value = arguments
-            .next()
-            .ok_or_else(|| DecodeError::missing(node, "missing vdisplay argument"))?;
-        let vdisplay = knuffel::traits::DecodeScalar::decode(vdisplay_value, ctx)?;
-        let vsync_start_value = arguments
-            .next()
-            .ok_or_else(|| DecodeError::missing(node, "missing vsync_start argument"))?;
-        let vsync_start = knuffel::traits::DecodeScalar::decode(vsync_start_value, ctx)?;
-
-        let vsync_end_value = arguments
-            .next()
-            .ok_or_else(|| DecodeError::missing(node, "missing vsync_end argument"))?;
-        let vsync_end = knuffel::traits::DecodeScalar::decode(vsync_end_value, ctx)?;
-
-        let vtotal_value = arguments
-            .next()
-            .ok_or_else(|| DecodeError::missing(node, "missing vtotal argument"))?;
-        let vtotal = knuffel::traits::DecodeScalar::decode(vtotal_value, ctx)?;
-
-        let hsync_polarity_value = arguments
-            .next()
-            .ok_or_else(|| DecodeError::missing(node, "missing hsync_polarity argument"))?;
-        let hsync_polarity: String =
-            knuffel::traits::DecodeScalar::decode(hsync_polarity_value, ctx)?;
-        let hsync_polarity = HSyncPolarity::from_str(hsync_polarity.as_str()).map_err(|msg| {
-            DecodeError::Conversion {
-                span: hsync_polarity_value.literal.span().clone(),
-                source: msg.into(),
-            }
-        })?;
-
-        let vsync_polarity_value = arguments
-            .next()
-            .ok_or_else(|| DecodeError::missing(node, "missing vsync_polarity argument"))?;
-        let vsync_polarity: String =
-            knuffel::traits::DecodeScalar::decode(vsync_polarity_value, ctx)?;
-        let vsync_polarity = VSyncPolarity::from_str(vsync_polarity.as_str()).map_err(|msg| {
-            DecodeError::Conversion {
-                span: vsync_polarity_value.literal.span().clone(),
-                source: msg.into(),
-            }
-        })?;
-
-        if !(hdisplay < hsync_start) {
-            ctx.emit_error(DecodeError::Conversion {
-                source: format!(
-                    "hdisplay {} must be < hsync_start {}",
-                    hdisplay, hsync_start
-                )
-                .into(),
-                span: hdisplay_value.literal.span().clone(),
-            });
+        macro_rules! m_required {
+            // This could be one identifier if macro_metavar_expr_concat stabilizes
+            ($field:ident, $value_field:ident) => {
+                let $value_field = arguments.next().ok_or_else(|| {
+                    DecodeError::missing(node, format!("missing {} argument", stringify!($value)))
+                })?;
+                let $field = knuffel::traits::DecodeScalar::decode($value_field, ctx)?;
+            };
         }
+
+        m_required!(clock, clock_value);
+        m_required!(hdisplay, hdisplay_value);
+        m_required!(hsync_start, hsync_start_value);
+        m_required!(hsync_end, hsync_end_value);
+        m_required!(htotal, htotal_value);
+        m_required!(vdisplay, vdisplay_value);
+        m_required!(vsync_start, vsync_start_value);
+        m_required!(vsync_end, vsync_end_value);
+        m_required!(vtotal, vtotal_value);
+        m_required!(hsync_polarity, hsync_polarity_value);
+        let hsync_polarity =
+            HSyncPolarity::from_str(String::as_str(&hsync_polarity)).map_err(|msg| {
+                DecodeError::Conversion {
+                    span: hsync_polarity_value.literal.span().clone(),
+                    source: msg.into(),
+                }
+            })?;
+
+        m_required!(vsync_polarity, vsync_polarity_value);
+        let vsync_polarity =
+            VSyncPolarity::from_str(String::as_str(&vsync_polarity)).map_err(|msg| {
+                DecodeError::Conversion {
+                    span: vsync_polarity_value.literal.span().clone(),
+                    source: msg.into(),
+                }
+            })?;
+
         ensure!(
             hdisplay < hsync_start,
             ctx,
@@ -248,7 +192,13 @@ impl<S: ErrorSpan> Decode<S> for Modeline {
             hsync_end,
             htotal,
         );
-        ensure!(0u16 < htotal, ctx, htotal_value, "htotal {} > 0", htotal);
+        ensure!(
+            0u16 < htotal,
+            ctx,
+            htotal_value,
+            "htotal {} must be > 0",
+            htotal
+        );
         ensure!(
             vdisplay < vsync_start,
             ctx,
@@ -273,7 +223,13 @@ impl<S: ErrorSpan> Decode<S> for Modeline {
             vsync_end,
             vtotal,
         );
-        ensure!(0u16 < vtotal, ctx, vtotal_value, "vtotal {} > 0", vtotal);
+        ensure!(
+            0u16 < vtotal,
+            ctx,
+            vtotal_value,
+            "vtotal {} must be > 0",
+            vtotal
+        );
 
         if let Some(extra) = arguments.next() {
             ctx.emit_error(DecodeError::unexpected(
