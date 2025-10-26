@@ -481,6 +481,15 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                         };
                         println!("Config loaded {status}");
                     }
+                    Event::ScreenshotCaptured { path } => {
+                        let mut parts = vec![];
+                        parts.push("copied to clipboard".to_string());
+                        if let Some(path) = &path {
+                            parts.push(format!("saved to {path}"));
+                        }
+                        let description = parts.join(" and ");
+                        println!("Screenshot captured: {description}");
+                    }
                 }
             }
         }
