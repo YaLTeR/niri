@@ -483,12 +483,12 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     }
                     Event::ScreenshotCaptured { path } => {
                         let mut parts = vec![];
+                        parts.push("copied to clipboard".to_string());
                         if let Some(path) = &path {
                             parts.push(format!("saved to {path}"));
                         }
-                        parts.push("copied to clipboard".to_string());
                         let description = parts.join(" and ");
-                        println!("Screenshot taken: {description}");
+                        println!("Screenshot captured: {description}");
                     }
                 }
             }

@@ -5696,11 +5696,11 @@ impl Niri {
             }
 
             #[cfg(feature = "dbus")]
-            if let Err(err) = crate::utils::show_screenshot_notification(image_path.as_ref()) {
+            if let Err(err) = crate::utils::show_screenshot_notification(image_path.as_deref()) {
                 warn!("error showing screenshot notification: {err:?}");
             }
 
-            // Send screenshot completion event
+            // Send screenshot completion event.
             let path_string = image_path
                 .as_ref()
                 .and_then(|p| p.to_str())

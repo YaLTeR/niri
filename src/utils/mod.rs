@@ -461,7 +461,7 @@ pub fn baba_is_float_offset(now: Duration, view_height: f64) -> f64 {
 }
 
 #[cfg(feature = "dbus")]
-pub fn show_screenshot_notification(image_path: Option<&PathBuf>) -> anyhow::Result<()> {
+pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result<()> {
     use std::collections::HashMap;
 
     use zbus::zvariant;
