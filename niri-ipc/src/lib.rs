@@ -52,6 +52,7 @@
 //! - `clap`: derives the clap CLI parsing traits for some types. Used internally by niri itself.
 #![warn(missing_docs)]
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -1080,34 +1081,34 @@ impl OutputAction {
                     hsync_start < hsync_end,
                     "hsync_start {} must be < hsync_end {}",
                     hsync_start,
-                    hsync_end,
+                    hsync_end
                 );
                 ensure!(
                     hsync_end < htotal,
                     "hsync_end {} must be < htotal {}",
                     hsync_end,
-                    htotal,
+                    htotal
                 );
-                ensure!(0u16 < *htotal, "htotal {} > 0", htotal,);
+                ensure!(0u16 < *htotal, "htotal {} > 0", htotal);
                 ensure!(
                     vdisplay < vsync_start,
                     "vdisplay {} must be < vsync_start {}",
                     vdisplay,
-                    vsync_start,
+                    vsync_start
                 );
                 ensure!(
                     vsync_start < vsync_end,
                     "vsync_start {} must be < vsync_end {}",
                     vsync_start,
-                    vsync_end,
+                    vsync_end
                 );
                 ensure!(
                     vsync_end < vtotal,
                     "vsync_end {} must be < vtotal {}",
                     vsync_end,
-                    vtotal,
+                    vtotal
                 );
-                ensure!(0u16 < *vtotal, "vtotal {} > 0", vtotal,);
+                ensure!(0u16 < *vtotal, "vtotal {} > 0", vtotal);
                 Ok(())
             }
             OutputAction::CustomMode {
@@ -1115,6 +1116,11 @@ impl OutputAction {
             } => {
                 if refresh.is_none() {
                     return Err("Refresh rate is required for custom modes.".to_string());
+                }
+                if let Some(refresh) = refresh {
+                    if refresh.partial_cmp(&0.0) != Some(Ordering::Greater) {
+                        return Err(format!("Refresh rate {refresh} must be > 0."));
+                    }
                 }
                 Ok(())
             }
