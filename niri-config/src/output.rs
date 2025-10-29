@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::str::FromStr;
 
 use knuffel::ast::SpannedNode;
@@ -305,10 +304,10 @@ impl<S: ErrorSpan> knuffel::Decode<S> for Mode {
             let res = ConfiguredMode::from_str(temp_mode.as_str()).and_then(|mode| {
                 if custom {
                     if mode.refresh.is_none() {
-                        return Err("no refresh rate found");
+                        return Err("no refresh rate found; required for custom mode");
                     } else if let Some(refresh) = mode.refresh {
-                        if refresh.partial_cmp(&0.0) != Some(Ordering::Greater) {
-                            return Err("custom mode refresh-rate must be > 0");
+                        if refresh <= 0. {
+                            return Err("custom mode refresh rate must be > 0");
                         }
                     }
                 }
@@ -330,11 +329,12 @@ impl<S: ErrorSpan> knuffel::Decode<S> for Mode {
         Ok(Mode { custom, mode })
     }
 }
+
 macro_rules! ensure {
-    ($cond:expr, $ctx:expr, $span:expr, $($key:ident = $value:expr,)* $fmt:literal $($arg:tt)* ) => {
+    ($cond:expr, $ctx:expr, $span:expr, $fmt:literal $($arg:tt)* ) => {
         if !$cond {
             $ctx.emit_error(DecodeError::Conversion {
-                source: format!($($key = $value,)* $fmt $($arg)*).into(),
+                source: format!($fmt $($arg)*).into(),
                 span: $span.literal.span().clone()
             });
         }

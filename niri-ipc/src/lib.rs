@@ -52,7 +52,6 @@
 //! - `clap`: derives the clap CLI parsing traits for some types. Used internally by niri itself.
 #![warn(missing_docs)]
 
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -1048,87 +1047,6 @@ pub enum OutputAction {
     },
 }
 
-macro_rules! ensure {
-    ($cond:expr, $fmt:literal $($arg:tt)* ) => {
-        if !$cond {
-            return Err(format!($fmt $($arg)*));
-        }
-    };
-}
-
-impl OutputAction {
-    /// Validates some required constraints on the modeline and custom mode.
-    pub fn validate(&self) -> Result<(), String> {
-        match self {
-            OutputAction::Modeline {
-                hdisplay,
-                hsync_start,
-                hsync_end,
-                htotal,
-                vdisplay,
-                vsync_start,
-                vsync_end,
-                vtotal,
-                ..
-            } => {
-                ensure!(
-                    hdisplay < hsync_start,
-                    "hdisplay {} must be < hsync_start {}",
-                    hdisplay,
-                    hsync_start
-                );
-                ensure!(
-                    hsync_start < hsync_end,
-                    "hsync_start {} must be < hsync_end {}",
-                    hsync_start,
-                    hsync_end
-                );
-                ensure!(
-                    hsync_end < htotal,
-                    "hsync_end {} must be < htotal {}",
-                    hsync_end,
-                    htotal
-                );
-                ensure!(0u16 < *htotal, "htotal {} > 0", htotal);
-                ensure!(
-                    vdisplay < vsync_start,
-                    "vdisplay {} must be < vsync_start {}",
-                    vdisplay,
-                    vsync_start
-                );
-                ensure!(
-                    vsync_start < vsync_end,
-                    "vsync_start {} must be < vsync_end {}",
-                    vsync_start,
-                    vsync_end
-                );
-                ensure!(
-                    vsync_end < vtotal,
-                    "vsync_end {} must be < vtotal {}",
-                    vsync_end,
-                    vtotal
-                );
-                ensure!(0u16 < *vtotal, "vtotal {} > 0", vtotal);
-                Ok(())
-            }
-            OutputAction::CustomMode {
-                mode: ConfiguredMode { refresh, .. },
-            } => {
-                if refresh.is_none() {
-                    return Err("Refresh rate is required for custom modes.".to_string());
-                }
-                if let Some(refresh) = refresh {
-                    if refresh.partial_cmp(&0.0) != Some(Ordering::Greater) {
-                        return Err(format!("Refresh rate {refresh} must be > 0."));
-                    }
-                }
-                Ok(())
-            }
-            _ => Ok(()),
-        }
-    }
-}
-
 /// Output mode to set.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1831,6 +1749,87 @@ impl FromStr for ScaleToSet {
 
         let scale = s.parse().map_err(|_| "error parsing scale")?;
         Ok(Self::Specific(scale))
+    }
+}
+
+macro_rules! ensure {
+    ($cond:expr, $fmt:literal $($arg:tt)* ) => {
+        if !$cond {
+            return Err(format!($fmt $($arg)*));
+        }
+    };
+}
+
+impl OutputAction {
+    /// Validates some required constraints on the modeline and custom mode.
+    pub fn validate(&self) -> Result<(), String> {
+        match self {
+            OutputAction::Modeline {
+                hdisplay,
+                hsync_start,
+                hsync_end,
+                htotal,
+                vdisplay,
+                vsync_start,
+                vsync_end,
+                vtotal,
+                ..
+            } => {
+                ensure!(
+                    hdisplay < hsync_start,
+                    "hdisplay {} must be < hsync_start {}",
+                    hdisplay,
+                    hsync_start
+                );
+                ensure!(
+                    hsync_start < hsync_end,
+                    "hsync_start {} must be < hsync_end {}",
+                    hsync_start,
+                    hsync_end
+                );
+                ensure!(
+                    hsync_end < htotal,
+                    "hsync_end {} must be < htotal {}",
+                    hsync_end,
+                    htotal
+                );
+                ensure!(0 < *htotal, "htotal {} must be > 0", htotal);
+                ensure!(
+                    vdisplay < vsync_start,
+                    "vdisplay {} must be < vsync_start {}",
+                    vdisplay,
+                    vsync_start
+                );
+                ensure!(
+                    vsync_start < vsync_end,
+                    "vsync_start {} must be < vsync_end {}",
+                    vsync_start,
+                    vsync_end
+                );
+                ensure!(
+                    vsync_end < vtotal,
+                    "vsync_end {} must be < vtotal {}",
+                    vsync_end,
+                    vtotal
+                );
+                ensure!(0 < *vtotal, "vtotal {} must be > 0", vtotal);
+                Ok(())
+            }
+            OutputAction::CustomMode {
+                mode: ConfiguredMode { refresh, .. },
+            } => {
+                if refresh.is_none() {
+                    return Err("refresh rate is required for custom modes".to_string());
+                }
+                if let Some(refresh) = refresh {
+                    if *refresh <= 0. {
+                        return Err(format!("custom mode refresh rate {refresh} must be > 0"));
+                    }
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 }
 

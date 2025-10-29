@@ -110,14 +110,14 @@ impl OutputManagementManagerState {
                     }
                 }
 
-                // TTY outputs can't change modes I think, however, winit and virtual outputs can.
-                // Custom modes can add and remove a mode on the TTY.
+                // Winit and virtual outputs can change modes; on a TTY custom modes can add/remove
+                // a mode.
                 let modes_changed = old.modes != conf.modes;
                 if modes_changed {
                     changed = true;
                     for client in self.clients.values_mut() {
                         if let Some((head, modes)) = client.heads.get_mut(output) {
-                            // ends on the shortest iterator
+                            // Ends on the shortest iterator.
                             let zwlr_modes_with_modes = zip(modes.iter(), &conf.modes);
                             let least_modes_len = zwlr_modes_with_modes.len();
 
@@ -130,8 +130,8 @@ impl OutputManagementManagerState {
 
                             if let Some(client) = client.manager.client() {
                                 if conf.modes.len() > least_modes_len {
-                                    for mode in conf.modes[least_modes_len..].iter() {
-                                        // One or more modes were added
+                                    for mode in &conf.modes[least_modes_len..] {
+                                        // One or more modes were added.
                                         let new_mode = client
                                             .create_resource::<ZwlrOutputModeV1, _, State>(
                                                 &self.display,
@@ -148,9 +148,8 @@ impl OutputManagementManagerState {
                                         modes.push(new_mode);
                                     }
                                 } else if modes.len() > least_modes_len {
-                                    // One or more modes were removed
+                                    // One or more modes were removed.
                                     for mode in modes.drain(least_modes_len..) {
-                                        // One or more modes were added
                                         mode.finished();
                                     }
                                 }
