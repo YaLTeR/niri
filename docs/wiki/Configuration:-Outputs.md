@@ -27,6 +27,10 @@ output "eDP-1" {
     layout {
         // ...layout settings for eDP-1...
     }
+
+    // Custom modes. Caution: may damage your display.
+    // mode custom=true "1920x1080@100"
+    // modeline 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "-hsync" "+vsync"
 }
 
 output "HDMI-A-1" {
@@ -86,7 +90,11 @@ output "eDP-1" {
 }
 ```
 
-<sup>Since: next release</sup> You can configure a custom mode (not offered by the monitor) by setting `custom=true`.
+#### `mode custom=true`
+
+<sup>Since: next release</sup>
+
+You can configure a custom mode (not offered by the monitor) by setting `custom=true`.
 In this case, the refresh rate is mandatory.
 
 > [!CAUTION]
