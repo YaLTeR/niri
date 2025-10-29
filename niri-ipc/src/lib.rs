@@ -1000,6 +1000,51 @@ pub enum OutputAction {
         #[cfg_attr(feature = "clap", arg())]
         mode: ModeToSet,
     },
+    /// Set a custom output mode.
+    CustomMode {
+        /// Custom mode to set.
+        #[cfg_attr(feature = "clap", arg())]
+        mode: ConfiguredMode,
+    },
+    /// Set a custom VESA CVT modeline.
+    #[cfg_attr(feature = "clap", arg())]
+    Modeline {
+        /// The rate at which pixels are drawn in MHz.
+        #[cfg_attr(feature = "clap", arg())]
+        clock: f64,
+        /// Horizontal active pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        hdisplay: u16,
+        /// Horizontal sync pulse start position in pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        hsync_start: u16,
+        /// Horizontal sync pulse end position in pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        hsync_end: u16,
+        /// Total horizontal number of pixels before resetting the horizontal drawing position to
+        /// zero.
+        #[cfg_attr(feature = "clap", arg())]
+        htotal: u16,
+
+        /// Vertical active pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        vdisplay: u16,
+        /// Vertical sync pulse start position in pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        vsync_start: u16,
+        /// Vertical sync pulse end position in pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        vsync_end: u16,
+        /// Total vertical number of pixels before resetting the vertical drawing position to zero.
+        #[cfg_attr(feature = "clap", arg())]
+        vtotal: u16,
+        /// Horizontal sync polarity: "+hsync" or "-hsync".
+        #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
+        hsync_polarity: HSyncPolarity,
+        /// Vertical sync polarity: "+vsync" or "-vsync".
+        #[cfg_attr(feature = "clap", arg(allow_hyphen_values = true))]
+        vsync_polarity: VSyncPolarity,
+    },
     /// Set the output scale.
     Scale {
         /// Scale factor to set, or "auto" for automatic selection.
@@ -1046,6 +1091,26 @@ pub struct ConfiguredMode {
     pub height: u16,
     /// Refresh rate.
     pub refresh: Option<f64>,
+}
+
+/// Modeline horizontal syncing polarity.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum HSyncPolarity {
+    /// Positive polarity.
+    PHSync,
+    /// Negative polarity.
+    NHSync,
+}
+
+/// Modeline vertical syncing polarity.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum VSyncPolarity {
+    /// Positive polarity.
+    PVSync,
+    /// Negative polarity.
+    NVSync,
 }
 
 /// Output scale to set.
@@ -1125,6 +1190,8 @@ pub struct Output {
     ///
     /// `None` if the output is disabled.
     pub current_mode: Option<usize>,
+    /// Whether the current_mode is a custom mode.
+    pub is_custom_mode: bool,
     /// Whether the output supports variable refresh rate.
     pub vrr_supported: bool,
     /// Whether variable refresh rate is enabled on the output.
@@ -1680,6 +1747,30 @@ impl FromStr for ConfiguredMode {
     }
 }
 
+impl FromStr for HSyncPolarity {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "+hsync" => Ok(Self::PHSync),
+            "-hsync" => Ok(Self::NHSync),
+            _ => Err(r#"invalid horizontal sync polarity, can be "+hsync" or "-hsync"#),
+        }
+    }
+}
+
+impl FromStr for VSyncPolarity {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "+vsync" => Ok(Self::PVSync),
+            "-vsync" => Ok(Self::NVSync),
+            _ => Err(r#"invalid vertical sync polarity, can be "+vsync" or "-vsync"#),
+        }
+    }
+}
+
 impl FromStr for ScaleToSet {
     type Err = &'static str;
 
@@ -1690,6 +1781,87 @@ impl FromStr for ScaleToSet {
 
         let scale = s.parse().map_err(|_| "error parsing scale")?;
         Ok(Self::Specific(scale))
+    }
+}
+
+macro_rules! ensure {
+    ($cond:expr, $fmt:literal $($arg:tt)* ) => {
+        if !$cond {
+            return Err(format!($fmt $($arg)*));
+        }
+    };
+}
+
+impl OutputAction {
+    /// Validates some required constraints on the modeline and custom mode.
+    pub fn validate(&self) -> Result<(), String> {
+        match self {
+            OutputAction::Modeline {
+                hdisplay,
+                hsync_start,
+                hsync_end,
+                htotal,
+                vdisplay,
+                vsync_start,
+                vsync_end,
+                vtotal,
+                ..
+            } => {
+                ensure!(
+                    hdisplay < hsync_start,
+                    "hdisplay {} must be < hsync_start {}",
+                    hdisplay,
+                    hsync_start
+                );
+                ensure!(
+                    hsync_start < hsync_end,
+                    "hsync_start {} must be < hsync_end {}",
+                    hsync_start,
+                    hsync_end
+                );
+                ensure!(
+                    hsync_end < htotal,
+                    "hsync_end {} must be < htotal {}",
+                    hsync_end,
+                    htotal
+                );
+                ensure!(0 < *htotal, "htotal {} must be > 0", htotal);
+                ensure!(
+                    vdisplay < vsync_start,
+                    "vdisplay {} must be < vsync_start {}",
+                    vdisplay,
+                    vsync_start
+                );
+                ensure!(
+                    vsync_start < vsync_end,
+                    "vsync_start {} must be < vsync_end {}",
+                    vsync_start,
+                    vsync_end
+                );
+                ensure!(
+                    vsync_end < vtotal,
+                    "vsync_end {} must be < vtotal {}",
+                    vsync_end,
+                    vtotal
+                );
+                ensure!(0 < *vtotal, "vtotal {} must be > 0", vtotal);
+                Ok(())
+            }
+            OutputAction::CustomMode {
+                mode: ConfiguredMode { refresh, .. },
+            } => {
+                if refresh.is_none() {
+                    return Err("refresh rate is required for custom modes".to_string());
+                }
+                if let Some(refresh) = refresh {
+                    if *refresh <= 0. {
+                        return Err(format!("custom mode refresh rate {refresh} must be > 0"));
+                    }
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 }
 
