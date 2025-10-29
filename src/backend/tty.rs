@@ -2723,7 +2723,8 @@ fn modeinfo_name_slice_from_string(mode_name: &str) -> [core::ffi::c_char; 32] {
     let mut name: [core::ffi::c_char; 32] = [0; 32];
 
     for (a, b) in zip(&mut name[..31], mode_name.as_bytes()) {
-        *a = *b as i8;
+        // Can be u8 on aarch64 and i8 on x86_64.
+        *a = *b as _;
     }
 
     name
