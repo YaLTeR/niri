@@ -13,6 +13,7 @@
 * [Nvidia](./Nvidia.md)
 * [Xwayland](./Xwayland.md)
 * [Gestures](./Gestures.md)
+* [Fullscreen and Maximize](./Fullscreen-and-Maximize.md)
 * [Packaging niri](./Packaging-niri.md)
 * [Integrating niri](./Integrating-niri.md)
 * [Accessibility](./Accessibility.md)

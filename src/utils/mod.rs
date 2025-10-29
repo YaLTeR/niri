@@ -25,7 +25,7 @@ use smithay::utils::{Coordinate, Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{send_surface_state, with_states, SurfaceData};
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::shell::xdg::{
-    ToplevelCachedState, ToplevelState, ToplevelSurface, XdgToplevelSurfaceData,
+    ToplevelCachedState, ToplevelConfigure, ToplevelState, ToplevelSurface, XdgToplevelSurfaceData,
     XdgToplevelSurfaceRoleAttributes,
 };
 use wayland_backend::server::Credentials;
@@ -299,6 +299,41 @@ pub fn with_toplevel_role_and_current<T>(
     })
 }
 
+pub fn with_toplevel_last_uncommitted_configure<T>(
+    toplevel: &ToplevelSurface,
+    f: impl FnOnce(Option<&ToplevelConfigure>) -> T,
+) -> T {
+    with_states(toplevel.wl_surface(), |states| {
+        let role = states
+            .data_map
+            .get::<XdgToplevelSurfaceData>()
+            .unwrap()
+            .lock()
+            .unwrap();
+
+        let mut guard = states.cached_state.get::<ToplevelCachedState>();
+
+        if let Some(last_pending) = role.pending_configures().last() {
+            // Configure not yet acked by the client.
+            f(Some(last_pending))
+        } else if let Some(last_acked) = &role.last_acked {
+            let mut configure = Some(last_acked);
+
+            if let Some(committed) = &guard.current().last_acked {
+                if committed.serial.is_no_older_than(&last_acked.serial) {
+                    // Already committed to this configure.
+                    configure = None;
+                }
+            }
+
+            f(configure)
+        } else {
+            // Surface hadn't been configured yet.
+            f(None)
+        }
+    })
+}
+
 pub fn update_tiled_state(
     toplevel: &ToplevelSurface,
     prefer_no_csd: bool,
@@ -426,7 +461,7 @@ pub fn baba_is_float_offset(now: Duration, view_height: f64) -> f64 {
 }
 
 #[cfg(feature = "dbus")]
-pub fn show_screenshot_notification(image_path: Option<PathBuf>) -> anyhow::Result<()> {
+pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result<()> {
     use std::collections::HashMap;
 
     use zbus::zvariant;

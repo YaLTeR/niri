@@ -33,9 +33,9 @@ struct TestWindowInner {
     forced_size: Cell<Option<Size<i32, Logical>>>,
     min_size: Size<i32, Logical>,
     max_size: Size<i32, Logical>,
-    pending_fullscreen: Cell<bool>,
+    pending_sizing_mode: Cell<SizingMode>,
     pending_activated: Cell<bool>,
-    is_fullscreen: Cell<bool>,
+    sizing_mode: Cell<SizingMode>,
     is_windowed_fullscreen: Cell<bool>,
     is_pending_windowed_fullscreen: Cell<bool>,
     animate_next_configure: Cell<bool>,
@@ -81,9 +81,9 @@ impl TestWindow {
             forced_size: Cell::new(None),
             min_size: params.min_max_size.0,
             max_size: params.min_max_size.1,
-            pending_fullscreen: Cell::new(false),
+            pending_sizing_mode: Cell::new(SizingMode::Normal),
             pending_activated: Cell::new(false),
-            is_fullscreen: Cell::new(false),
+            sizing_mode: Cell::new(SizingMode::Normal),
             is_windowed_fullscreen: Cell::new(false),
             is_pending_windowed_fullscreen: Cell::new(false),
             animate_next_configure: Cell::new(false),
@@ -126,8 +126,8 @@ impl TestWindow {
 
         self.0.animate_next_configure.set(false);
 
-        if self.0.is_fullscreen.get() != self.0.pending_fullscreen.get() {
-            self.0.is_fullscreen.set(self.0.pending_fullscreen.get());
+        if self.0.sizing_mode.get() != self.0.pending_sizing_mode.get() {
+            self.0.sizing_mode.set(self.0.pending_sizing_mode.get());
             changed = true;
         }
 
@@ -175,7 +175,7 @@ impl LayoutElement for TestWindow {
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
-        is_fullscreen: bool,
+        mode: SizingMode,
         _animate: bool,
         _transaction: Option<Transaction>,
     ) {
@@ -184,9 +184,9 @@ impl LayoutElement for TestWindow {
             self.0.animate_next_configure.set(true);
         }
 
-        self.0.pending_fullscreen.set(is_fullscreen);
+        self.0.pending_sizing_mode.set(mode);
 
-        if is_fullscreen {
+        if mode.is_fullscreen() {
             self.0.is_pending_windowed_fullscreen.set(false);
         }
     }
@@ -235,20 +235,12 @@ impl LayoutElement for TestWindow {
 
     fn set_floating(&mut self, _floating: bool) {}
 
-    fn is_fullscreen(&self) -> bool {
-        if self.0.is_windowed_fullscreen.get() {
-            return false;
-        }
-
-        self.0.is_fullscreen.get()
+    fn sizing_mode(&self) -> SizingMode {
+        self.0.sizing_mode.get()
     }
 
-    fn is_pending_fullscreen(&self) -> bool {
-        if self.0.is_pending_windowed_fullscreen.get() {
-            return false;
-        }
-
-        self.0.pending_fullscreen.get()
+    fn pending_sizing_mode(&self) -> SizingMode {
+        self.0.pending_sizing_mode.get()
     }
 
     fn requested_size(&self) -> Option<Size<i32, Logical>> {
@@ -319,7 +311,9 @@ fn arbitrary_size_change() -> impl Strategy<Value = SizeChange> {
 fn arbitrary_position_change() -> impl Strategy<Value = PositionChange> {
     prop_oneof![
         (-1000f64..1000f64).prop_map(PositionChange::SetFixed),
+        any::<f64>().prop_map(PositionChange::SetProportion),
         (-1000f64..1000f64).prop_map(PositionChange::AdjustFixed),
+        any::<f64>().prop_map(PositionChange::AdjustProportion),
         any::<f64>().prop_map(PositionChange::SetFixed),
         any::<f64>().prop_map(PositionChange::AdjustFixed),
     ]
@@ -585,6 +579,10 @@ enum Op {
         id: Option<usize>,
     },
     MaximizeColumn,
+    MaximizeWindowToEdges {
+        #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+        id: Option<usize>,
+    },
     SetColumnWidth(#[proptest(strategy = "arbitrary_size_change()")] SizeChange),
     SetWindowWidth {
         #[proptest(strategy = "proptest::option::of(1..=5usize)")]
@@ -1310,6 +1308,16 @@ impl Op {
                 layout.toggle_window_height(id.as_ref(), false);
             }
             Op::MaximizeColumn => layout.toggle_full_width(),
+            Op::MaximizeWindowToEdges { id } => {
+                let id = id.or_else(|| layout.focus().map(|win| *win.id()));
+                let Some(id) = id else {
+                    return;
+                };
+                if !layout.has_window(&id) {
+                    return;
+                }
+                layout.toggle_maximized(&id);
+            }
             Op::SetColumnWidth(change) => layout.set_column_width(change),
             Op::SetWindowWidth { id, change } => {
                 let id = id.filter(|id| layout.has_window(id));
@@ -1674,6 +1682,9 @@ fn operations_dont_panic() {
         Op::FullscreenWindow(1),
         Op::FullscreenWindow(2),
         Op::FullscreenWindow(3),
+        Op::MaximizeWindowToEdges { id: Some(1) },
+        Op::MaximizeWindowToEdges { id: Some(2) },
+        Op::MaximizeWindowToEdges { id: Some(3) },
         Op::FocusColumnLeft,
         Op::FocusColumnRight,
         Op::FocusColumnRightOrFirst,
@@ -1829,6 +1840,9 @@ fn operations_from_starting_state_dont_panic() {
         Op::FullscreenWindow(1),
         Op::FullscreenWindow(2),
         Op::FullscreenWindow(3),
+        Op::MaximizeWindowToEdges { id: Some(1) },
+        Op::MaximizeWindowToEdges { id: Some(2) },
+        Op::MaximizeWindowToEdges { id: Some(3) },
         Op::SetFullscreenWindow {
             window: 1,
             is_fullscreen: false,
@@ -3490,6 +3504,115 @@ fn move_column_to_workspace_focus_false_on_floating_window() {
     };
 
     assert_eq!(monitors[0].active_workspace_idx, 0);
+}
+
+#[test]
+fn restore_to_floating_persists_across_fullscreen_maximize() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::ToggleWindowFloating { id: None },
+        // Maximize then fullscreen.
+        Op::MaximizeWindowToEdges { id: None },
+        Op::FullscreenWindow(1),
+        // Unfullscreen.
+        Op::FullscreenWindow(1),
+    ];
+
+    let mut layout = check_ops(ops);
+
+    // Unfullscreening should return the window to the maximized state.
+    let scrolling = layout.active_workspace().unwrap().scrolling();
+    assert!(scrolling.tiles().next().is_some());
+
+    let ops = [
+        // Unmaximize.
+        Op::MaximizeWindowToEdges { id: None },
+    ];
+    check_ops_on_layout(&mut layout, ops);
+
+    // Unmaximize should return the window back to floating.
+    let scrolling = layout.active_workspace().unwrap().scrolling();
+    assert!(scrolling.tiles().next().is_none());
+}
+
+#[test]
+fn unmaximize_during_fullscreen_does_not_float() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::ToggleWindowFloating { id: None },
+        // Maximize then fullscreen.
+        Op::MaximizeWindowToEdges { id: None },
+        Op::FullscreenWindow(1),
+        // Unmaximize.
+        Op::MaximizeWindowToEdges { id: None },
+    ];
+
+    let mut layout = check_ops(ops);
+
+    // Unmaximize shouldn't have changed the window state since it's fullscreen.
+    let scrolling = layout.active_workspace().unwrap().scrolling();
+    assert!(scrolling.tiles().next().is_some());
+
+    let ops = [
+        // Unfullscreen.
+        Op::FullscreenWindow(1),
+    ];
+    check_ops_on_layout(&mut layout, ops);
+
+    // Unfullscreen should return the window back to floating.
+    let scrolling = layout.active_workspace().unwrap().scrolling();
+    assert!(scrolling.tiles().next().is_none());
+}
+
+#[test]
+fn move_column_to_workspace_maximize_and_fullscreen() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::MaximizeWindowToEdges { id: None },
+        Op::FullscreenWindow(1),
+        Op::MoveColumnToWorkspaceDown(true),
+        Op::FullscreenWindow(1),
+    ];
+
+    let layout = check_ops(ops);
+    let (_, win) = layout.windows().next().unwrap();
+
+    // Unfullscreening should return to maximized because the window was maximized before.
+    assert_eq!(win.pending_sizing_mode(), SizingMode::Maximized);
+}
+
+#[test]
+fn move_window_to_workspace_maximize_and_fullscreen() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::MaximizeWindowToEdges { id: None },
+        Op::FullscreenWindow(1),
+        Op::MoveWindowToWorkspaceDown(true),
+        Op::FullscreenWindow(1),
+    ];
+
+    let layout = check_ops(ops);
+    let (_, win) = layout.windows().next().unwrap();
+
+    // Unfullscreening should return to maximized because the window was maximized before.
+    //
+    // FIXME: it currently doesn't because windows themselves can only be either fullscreen or
+    // maximized. So when a window is fullscreen, whether it is also maximized or not is stored in
+    // the column. MoveWindowToWorkspace removes the window from the column and this information is
+    // forgotten.
+    assert_eq!(win.pending_sizing_mode(), SizingMode::Normal);
 }
 
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {

@@ -5,7 +5,7 @@ use niri_config::Config;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::*;
-use crate::layout::LayoutElement;
+use crate::layout::LayoutElement as _;
 use crate::utils::with_toplevel_role;
 
 #[test]
@@ -100,6 +100,28 @@ impl fmt::Display for WantFullscreen {
             WantFullscreen::UnsetAfterInitial => write!(f, "AU")?,
             WantFullscreen::BeforeInitial(m) => write!(f, "B{}", m.unwrap_or("N"))?,
             WantFullscreen::AfterInitial(m) => write!(f, "A{}", m.unwrap_or("N"))?,
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+enum WantMaximized {
+    No,
+    UnsetBeforeInitial,
+    BeforeInitial,
+    UnsetAfterInitial,
+    AfterInitial,
+}
+
+impl fmt::Display for WantMaximized {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WantMaximized::No => write!(f, "U")?,
+            WantMaximized::UnsetBeforeInitial => write!(f, "BU")?,
+            WantMaximized::UnsetAfterInitial => write!(f, "AU")?,
+            WantMaximized::BeforeInitial => write!(f, "B")?,
+            WantMaximized::AfterInitial => write!(f, "A")?,
         }
         Ok(())
     }
@@ -369,7 +391,7 @@ window-rule {{
             })
         })
         .unwrap();
-    let is_fullscreen = mapped.is_fullscreen();
+    let is_fullscreen = mapped.sizing_mode().is_fullscreen();
     let win = mapped.window.clone();
     let mon = mon.unwrap().output_name().clone();
     let ws = ws.name().cloned().unwrap_or(String::from("unnamed"));
@@ -629,7 +651,7 @@ layout {
     // If the window ended up fullscreen, unfullscreen it and output the configure.
     let mut post_unfullscreen = String::new();
     let mapped = f.niri().layout.windows().next().unwrap().1;
-    let is_fullscreen = mapped.is_fullscreen();
+    let is_fullscreen = mapped.sizing_mode().is_fullscreen();
     let win = mapped.window.clone();
     if is_fullscreen {
         f.niri().layout.set_fullscreen(&win, false);
@@ -649,6 +671,211 @@ initial configure:
 
 post-map configures:
 {post_map}{post_unfullscreen}",
+    );
+
+    let mut settings = insta::Settings::clone_current();
+    settings.set_snapshot_suffix(snapshot_suffix.join("-"));
+    settings.set_description(snapshot_desc.join("\n"));
+    let _guard = settings.bind_to_scope();
+    assert_snapshot!(snapshot);
+}
+
+#[test]
+fn fullscreen_maximize() {
+    let open_fullscreen = [None, Some("false"), Some("true")];
+    let want_fullscreen = [
+        WantFullscreen::No,
+        WantFullscreen::UnsetBeforeInitial, // GTK 4
+        WantFullscreen::BeforeInitial(None),
+        WantFullscreen::UnsetAfterInitial,
+        // mpv, osu!
+        WantFullscreen::AfterInitial(None),
+    ];
+    let open_maximized = [None, Some("false"), Some("true")];
+    let want_maximized = [
+        WantMaximized::No,
+        WantMaximized::UnsetBeforeInitial,
+        WantMaximized::BeforeInitial,
+        WantMaximized::UnsetAfterInitial,
+        WantMaximized::AfterInitial,
+    ];
+
+    let mut powerset = Vec::new();
+    for fs in open_fullscreen {
+        for wfs in want_fullscreen {
+            for tm in open_maximized {
+                for wm in want_maximized {
+                    powerset.push((fs, wfs, tm, wm));
+                }
+            }
+        }
+    }
+
+    powerset.into_par_iter().for_each(|(fs, wfs, tm, wm)| {
+        check_fullscreen_maximize(fs, wfs, tm, wm);
+    });
+}
+
+fn check_fullscreen_maximize(
+    open_fullscreen: Option<&str>,
+    want_fullscreen: WantFullscreen,
+    open_maximized: Option<&str>,
+    want_maximized: WantMaximized,
+) {
+    let mut snapshot_desc = Vec::new();
+    let mut snapshot_suffix = Vec::new();
+
+    let mut config = String::from(
+        r##"
+window-rule {
+"##,
+    );
+
+    if let Some(x) = open_fullscreen {
+        writeln!(config, "    open-fullscreen {x}").unwrap();
+
+        let x = if x == "true" { "T" } else { "F" };
+        snapshot_suffix.push(format!("fs{x}"));
+    }
+
+    if let Some(x) = open_maximized {
+        writeln!(config, "    open-maximized-to-edges {x}").unwrap();
+
+        let x = if x == "true" { "T" } else { "F" };
+        snapshot_suffix.push(format!("tm{x}"));
+    }
+
+    config.push('}');
+
+    match &want_fullscreen {
+        WantFullscreen::No => (),
+        x => {
+            snapshot_desc.push(format!("want fullscreen: {x}"));
+            snapshot_suffix.push(format!("wfs{x}"));
+        }
+    }
+
+    match &want_maximized {
+        WantMaximized::No => (),
+        x => {
+            snapshot_desc.push(format!("want maximized: {x}"));
+            snapshot_suffix.push(format!("wm{x}"));
+        }
+    }
+
+    snapshot_desc.push(format!("config:{config}"));
+
+    let config = Config::parse_mem(&config).unwrap();
+
+    let mut f = Fixture::with_config(config);
+    f.add_output(1, (1280, 720));
+    f.add_output(2, (1920, 1080));
+
+    let id = f.add_client();
+
+    // To get output names.
+    f.roundtrip(id);
+
+    let client = f.client(id);
+    let window = client.create_window();
+    let surface = window.surface.clone();
+
+    if let WantMaximized::UnsetBeforeInitial = want_maximized {
+        client.window(&surface).unset_maximized();
+    } else if let WantMaximized::BeforeInitial = want_maximized {
+        client.window(&surface).set_maximized();
+    }
+
+    if let WantFullscreen::UnsetBeforeInitial = want_fullscreen {
+        client.window(&surface).unset_fullscreen();
+    } else if let WantFullscreen::BeforeInitial(mon) = want_fullscreen {
+        let output = mon.map(|mon| client.output(&format!("headless-{mon}")));
+        client.window(&surface).set_fullscreen(output.as_ref());
+    }
+
+    client.window(&surface).commit();
+    f.roundtrip(id);
+
+    let client = f.client(id);
+    let initial = client.window(&surface).format_recent_configures();
+
+    if let WantMaximized::UnsetAfterInitial = want_maximized {
+        client.window(&surface).unset_maximized();
+    } else if let WantMaximized::AfterInitial = want_maximized {
+        client.window(&surface).set_maximized();
+    }
+
+    if let WantFullscreen::UnsetAfterInitial = want_fullscreen {
+        client.window(&surface).unset_fullscreen();
+    } else if let WantFullscreen::AfterInitial(mon) = want_fullscreen {
+        let output = mon.map(|mon| client.output(&format!("headless-{mon}")));
+        client.window(&surface).set_fullscreen(output.as_ref());
+    }
+
+    let window = client.window(&surface);
+    window.attach_new_buffer();
+    let serial = window.configures_received.last().unwrap().0;
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+
+    // Commit to the post-initial configures.
+    let window = f.client(id).window(&surface);
+    let new_serial = window.configures_received.last().unwrap().0;
+    if new_serial != serial {
+        window.ack_last_and_commit();
+        f.double_roundtrip(id);
+    }
+
+    let window = f.client(id).window(&surface);
+    let post_map = window.format_recent_configures();
+
+    // If the window ended up fullscreen, unfullscreen it and output the configure.
+    let mut post_unfullscreen = String::new();
+    let mapped = f.niri().layout.windows().next().unwrap().1;
+    let is_fullscreen = mapped.sizing_mode().is_fullscreen();
+    let win = mapped.window.clone();
+    if is_fullscreen {
+        f.niri().layout.set_fullscreen(&win, false);
+        f.double_roundtrip(id);
+
+        let window = f.client(id).window(&surface);
+        window.ack_last_and_commit();
+        f.double_roundtrip(id);
+
+        let window = f.client(id).window(&surface);
+        post_unfullscreen = format!(
+            "\n\nunfullscreen configure:\n{}",
+            window.format_recent_configures()
+        );
+    }
+
+    // If the window ended up maximized, unmaximize it and output the configure.
+    let mut post_unmaximize = String::new();
+    let mapped = f.niri().layout.windows().next().unwrap().1;
+    let is_maximized = mapped.sizing_mode().is_maximized();
+    let win = mapped.window.clone();
+    if is_maximized {
+        f.niri().layout.set_maximized(&win, false);
+        f.double_roundtrip(id);
+
+        let window = f.client(id).window(&surface);
+        window.ack_last_and_commit();
+        f.double_roundtrip(id);
+
+        let window = f.client(id).window(&surface);
+        post_unmaximize = format!(
+            "\n\nunmaximize configure:\n{}",
+            window.format_recent_configures()
+        );
+    }
+
+    let snapshot = format!(
+        "\
+initial configure:
+{initial}
+
+post-map configures:
+{post_map}{post_unfullscreen}{post_unmaximize}",
     );
 
     let mut settings = insta::Settings::clone_current();
