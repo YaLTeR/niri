@@ -944,7 +944,7 @@ impl Tty {
         if let Ok(props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
             match reset_hdr(&props) {
                 Ok(()) => (),
-                Err(err) => debug!("error resetting HDR properties: {err:?}"),
+                Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
             }
 
             if !niri.config.borrow().debug.keep_max_bpc_unchanged {
@@ -952,7 +952,7 @@ impl Tty {
                 // run.
                 match set_max_bpc(&props, 8) {
                     Ok(_bpc) => (),
-                    Err(err) => debug!("error setting max bpc: {err:?}"),
+                    Err(err) => debug!("couldn't set max bpc: {err:?}"),
                 }
             }
         } else {
@@ -960,7 +960,7 @@ impl Tty {
         };
 
         let mut gamma_props = GammaProps::new(&device.drm, crtc)
-            .map_err(|err| debug!("error getting gamma properties: {err:?}"))
+            .map_err(|err| debug!("couldn't get gamma properties: {err:?}"))
             .ok();
 
         // Reset gamma in case it was set before.
@@ -970,7 +970,7 @@ impl Tty {
             set_gamma_for_crtc(&device.drm, crtc, None)
         };
         if let Err(err) = res {
-            debug!("error resetting gamma: {err:?}");
+            debug!("couldn't reset gamma: {err:?}");
         }
 
         let surface = device
@@ -1981,7 +1981,7 @@ impl Tty {
                     match reset_hdr(&props) {
                         Ok(()) => (),
                         Err(err) => debug!(
-                            "output {:?} HDR: error resetting HDR properties: {err:?}",
+                            "output {:?}: couldn't reset HDR properties: {err:?}",
                             surface.name.connector
                         ),
                     }
