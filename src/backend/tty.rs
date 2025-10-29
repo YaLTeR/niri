@@ -466,6 +466,17 @@ impl Tty {
                     // Apply pending gamma changes and restore our existing gamma.
                     let device = self.devices.get_mut(&node).unwrap();
                     for (crtc, surface) in device.surfaces.iter_mut() {
+                        if let Ok(props) =
+                            ConnectorProperties::try_new(&device.drm, surface.connector)
+                        {
+                            match reset_hdr(&props) {
+                                Ok(()) => (),
+                                Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
+                            }
+                        } else {
+                            warn!("failed to get connector properties");
+                        };
+
                         if let Some(ramp) = surface.pending_gamma_change.take() {
                             let ramp = ramp.as_deref();
                             let res = if let Some(gamma_props) = &mut surface.gamma_props {
@@ -1976,18 +1987,6 @@ impl Tty {
                     to_disconnect.push((node, crtc));
                     continue;
                 }
-
-                if let Ok(props) = ConnectorProperties::try_new(&device.drm, surface.connector) {
-                    match reset_hdr(&props) {
-                        Ok(()) => (),
-                        Err(err) => debug!(
-                            "output {:?}: couldn't reset HDR properties: {err:?}",
-                            surface.name.connector
-                        ),
-                    }
-                } else {
-                    warn!("failed to get connector properties");
-                };
 
                 // Check if we need to change the mode.
                 let Some(connector) = device.drm_scanner.connectors().get(&surface.connector)
