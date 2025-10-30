@@ -1024,6 +1024,7 @@ mod tests {
                 mod_key_nested: Some(
                     Super,
                 ),
+                disable_mouse_warps: false,
             },
             outputs: Outputs(
                 [

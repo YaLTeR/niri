@@ -1042,6 +1042,10 @@ impl State {
     }
 
     pub fn move_cursor_to_output(&mut self, output: &Output) {
+        if self.niri.config.borrow().input.disable_mouse_warps {
+            return;
+        }
+
         let geo = self.niri.global_space.output_geometry(output).unwrap();
         self.move_cursor(center(geo).to_f64());
     }
