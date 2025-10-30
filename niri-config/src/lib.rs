@@ -663,6 +663,14 @@ mod tests {
                 }
             }
 
+            output "eDP-2" {
+                mode custom=true "1920x1080@144"
+            }
+
+            output "eDP-3" {
+                modeline 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "-hsync" "+vsync"
+            }
+
             layout {
                 focus-ring {
                     width 5
@@ -1035,14 +1043,18 @@ mod tests {
                             },
                         ),
                         mode: Some(
-                            ConfiguredMode {
-                                width: 1920,
-                                height: 1080,
-                                refresh: Some(
-                                    144.0,
-                                ),
+                            Mode {
+                                custom: false,
+                                mode: ConfiguredMode {
+                                    width: 1920,
+                                    height: 1080,
+                                    refresh: Some(
+                                        144.0,
+                                    ),
+                                },
                             },
                         ),
+                        modeline: None,
                         variable_refresh_rate: Some(
                             Vrr {
                                 on_demand: true,
@@ -1067,6 +1079,61 @@ mod tests {
                                 bottom_right: true,
                             },
                         ),
+                        layout: None,
+                    },
+                    Output {
+                        off: false,
+                        name: "eDP-2",
+                        scale: None,
+                        transform: Normal,
+                        position: None,
+                        mode: Some(
+                            Mode {
+                                custom: true,
+                                mode: ConfiguredMode {
+                                    width: 1920,
+                                    height: 1080,
+                                    refresh: Some(
+                                        144.0,
+                                    ),
+                                },
+                            },
+                        ),
+                        modeline: None,
+                        variable_refresh_rate: None,
+                        focus_at_startup: false,
+                        background_color: None,
+                        backdrop_color: None,
+                        hot_corners: None,
+                        layout: None,
+                    },
+                    Output {
+                        off: false,
+                        name: "eDP-3",
+                        scale: None,
+                        transform: Normal,
+                        position: None,
+                        mode: None,
+                        modeline: Some(
+                            Modeline {
+                                clock: 173.0,
+                                hdisplay: 1920,
+                                hsync_start: 2048,
+                                hsync_end: 2248,
+                                htotal: 2576,
+                                vdisplay: 1080,
+                                vsync_start: 1083,
+                                vsync_end: 1088,
+                                vtotal: 1120,
+                                hsync_polarity: NHSync,
+                                vsync_polarity: PVSync,
+                            },
+                        ),
+                        variable_refresh_rate: None,
+                        focus_at_startup: false,
+                        background_color: None,
+                        backdrop_color: None,
+                        hot_corners: None,
                         layout: None,
                     },
                 ],

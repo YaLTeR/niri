@@ -1792,8 +1792,44 @@ impl State {
             niri_ipc::OutputAction::Mode { mode } => {
                 config.mode = match mode {
                     niri_ipc::ModeToSet::Automatic => None,
-                    niri_ipc::ModeToSet::Specific(mode) => Some(mode),
-                }
+                    niri_ipc::ModeToSet::Specific(mode) => Some(niri_config::output::Mode {
+                        custom: false,
+                        mode,
+                    }),
+                };
+                config.modeline = None;
+            }
+            niri_ipc::OutputAction::CustomMode { mode } => {
+                config.mode = Some(niri_config::output::Mode { custom: true, mode });
+                config.modeline = None;
+            }
+            niri_ipc::OutputAction::Modeline {
+                clock,
+                hdisplay,
+                hsync_start,
+                hsync_end,
+                htotal,
+                vdisplay,
+                vsync_start,
+                vsync_end,
+                vtotal,
+                hsync_polarity,
+                vsync_polarity,
+            } => {
+                // Do not reset config.mode to None since it's used as a fallback.
+                config.modeline = Some(niri_config::output::Modeline {
+                    clock,
+                    hdisplay,
+                    hsync_start,
+                    hsync_end,
+                    htotal,
+                    vdisplay,
+                    vsync_start,
+                    vsync_end,
+                    vtotal,
+                    hsync_polarity,
+                    vsync_polarity,
+                })
             }
             niri_ipc::OutputAction::Scale { scale } => {
                 config.scale = match scale {
@@ -2793,8 +2829,6 @@ impl Niri {
 
     #[cfg(feature = "dbus")]
     pub fn inhibit_power_key(&mut self) -> anyhow::Result<()> {
-        use std::os::fd::{AsRawFd, BorrowedFd};
-
         use smithay::reexports::rustix::io::{fcntl_setfd, FdFlags};
 
         let conn = zbus::blocking::Connection::system()?;
@@ -2810,8 +2844,7 @@ impl Niri {
         let fd: zbus::zvariant::OwnedFd = message.body().deserialize()?;
 
         // Don't leak the fd to child processes.
-        let borrowed = unsafe { BorrowedFd::borrow_raw(fd.as_raw_fd()) };
-        if let Err(err) = fcntl_setfd(borrowed, FdFlags::CLOEXEC) {
+        if let Err(err) = fcntl_setfd(&fd, FdFlags::CLOEXEC) {
             warn!("error setting CLOEXEC on inhibit fd: {err:?}");
         };
 
@@ -5797,6 +5830,17 @@ impl Niri {
             })
             .unwrap();
 
+        // Prepare to send screenshot completion event back to main thread.
+        let (event_tx, event_rx) = calloop::channel::sync_channel::<Option<String>>(1);
+        self.event_loop
+            .insert_source(event_rx, move |event, _, state| match event {
+                calloop::channel::Event::Msg(path) => {
+                    state.ipc_screenshot_taken(path);
+                }
+                calloop::channel::Event::Closed => (),
+            })
+            .unwrap();
+
         // Encode and save the image in a thread as it's slow.
         thread::spawn(move || {
             let mut buf = vec![];
@@ -5819,7 +5863,7 @@ impl Niri {
                     if let Some(parent) = path.parent() {
                         // Relative paths with one component, i.e. "test.png", have Some("") parent.
                         if !parent.as_os_str().is_empty() {
-                            if let Err(err) = std::fs::create_dir(parent) {
+                            if let Err(err) = std::fs::create_dir_all(parent) {
                                 if err.kind() != std::io::ErrorKind::AlreadyExists {
                                     warn!("error creating screenshot directory: {err:?}");
                                 }
@@ -5839,11 +5883,16 @@ impl Niri {
             }
 
             #[cfg(feature = "dbus")]
-            if let Err(err) = crate::utils::show_screenshot_notification(image_path) {
+            if let Err(err) = crate::utils::show_screenshot_notification(image_path.as_deref()) {
                 warn!("error showing screenshot notification: {err:?}");
             }
-            #[cfg(not(feature = "dbus"))]
-            drop(image_path);
+
+            // Send screenshot completion event.
+            let path_string = image_path
+                .as_ref()
+                .and_then(|p| p.to_str())
+                .map(|s| s.to_owned());
+            let _ = event_tx.send(path_string);
         });
 
         Ok(())

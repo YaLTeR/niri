@@ -399,6 +399,8 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::Handled
         }
         Request::Output { output, action } => {
+            action.validate()?;
+
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap();
             let found = ipc_outputs
                 .values()
@@ -789,6 +791,17 @@ impl State {
         let mut state = server.event_stream_state.borrow_mut();
 
         let event = Event::ConfigLoaded { failed };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
+
+    pub fn ipc_screenshot_taken(&mut self, path: Option<String>) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let mut state = server.event_stream_state.borrow_mut();
+
+        let event = Event::ScreenshotCaptured { path };
         state.apply(event.clone());
         server.send_event(event);
     }
