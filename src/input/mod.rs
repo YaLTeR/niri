@@ -36,7 +36,6 @@ use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
-use touch_move_grab::TouchMoveGrab;
 use touch_overview_grab::TouchOverviewGrab;
 
 use self::move_grab::MoveGrab;
@@ -59,7 +58,6 @@ pub mod scroll_swipe_gesture;
 pub mod scroll_tracker;
 pub mod spatial_movement_grab;
 pub mod swipe_tracker;
-pub mod touch_move_grab;
 pub mod touch_overview_grab;
 pub mod touch_resize_grab;
 
@@ -83,6 +81,28 @@ impl<D: SeatHandler> PointerOrTouchStartData<D> {
             PointerOrTouchStartData::Pointer(x) => x.location,
             PointerOrTouchStartData::Touch(x) => x.location,
         }
+    }
+
+    pub fn unwrap_pointer(&self) -> &PointerGrabStartData<D> {
+        match self {
+            PointerOrTouchStartData::Pointer(x) => x,
+            PointerOrTouchStartData::Touch(_) => panic!("start_data is not Pointer"),
+        }
+    }
+
+    pub fn unwrap_touch(&self) -> &TouchGrabStartData<D> {
+        match self {
+            PointerOrTouchStartData::Pointer(_) => panic!("start_data is not Touch"),
+            PointerOrTouchStartData::Touch(x) => x,
+        }
+    }
+
+    pub fn is_pointer(&self) -> bool {
+        matches!(self, Self::Pointer(_))
+    }
+
+    pub fn is_touch(&self) -> bool {
+        matches!(self, Self::Touch(_))
     }
 }
 
@@ -2773,31 +2793,19 @@ impl State {
                     let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                     if is_overview_open || mod_down {
                         let location = pointer.current_location();
-                        let (output, pos_within_output) = self.niri.output_under(location).unwrap();
-                        let output = output.clone();
 
                         if !is_overview_open {
                             self.niri.layout.activate_window(&window);
                         }
 
-                        if self.niri.layout.interactive_move_begin(
-                            window.clone(),
-                            &output,
-                            pos_within_output,
-                        ) {
-                            let start_data = PointerGrabStartData {
-                                focus: None,
-                                button: button_code,
-                                location,
-                            };
-                            let grab = MoveGrab::new(start_data, window.clone(), is_overview_open);
+                        let start_data = PointerGrabStartData {
+                            focus: None,
+                            button: button_code,
+                            location,
+                        };
+                        let start_data = PointerOrTouchStartData::Pointer(start_data);
+                        if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), false) {
                             pointer.set_grab(self, grab, serial, Focus::Clear);
-
-                            if !is_overview_open {
-                                self.niri
-                                    .cursor_manager
-                                    .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
-                            }
                         }
                     }
                 }
@@ -4037,22 +4045,15 @@ impl State {
             } else if let Some((window, _)) = under.window {
                 self.niri.layout.activate_window(&window);
 
-                // Check if we need to start an interactive move.
+                // Check if we need to start a touch move grab.
                 if mod_down {
-                    let (output, pos_within_output) = self.niri.output_under(pos).unwrap();
-                    let output = output.clone();
-
-                    if self.niri.layout.interactive_move_begin(
-                        window.clone(),
-                        &output,
-                        pos_within_output,
-                    ) {
-                        let start_data = TouchGrabStartData {
-                            focus: None,
-                            slot,
-                            location: pos,
-                        };
-                        let grab = TouchMoveGrab::new(start_data, window.clone());
+                    let start_data = TouchGrabStartData {
+                        focus: None,
+                        slot,
+                        location: pos,
+                    };
+                    let start_data = PointerOrTouchStartData::Touch(start_data);
+                    if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true) {
                         handle.set_grab(self, grab, serial);
                     }
                 }
@@ -4908,11 +4909,17 @@ fn grab_allows_hot_corner(grab: &(dyn PointerGrab<State> + 'static)) -> bool {
     //
     // Some notable grabs not mentioned here:
     // - DnDGrab allows hot corner to DnD across workspaces.
-    // - MoveGrab allows hot corner to DnD across workspaces.
     // - ClickGrab keeps pointer focus on the window, so the hot corner doesn't trigger.
     // - Touch grabs: touch doesn't trigger the hot corner.
     if grab.is::<ResizeGrab>() || grab.is::<SpatialMovementGrab>() {
         return false;
+    }
+
+    if let Some(grab) = grab.downcast_ref::<MoveGrab>() {
+        // Window move allows hot corner to DnD across workspaces.
+        if !grab.is_move() {
+            return false;
+        }
     }
 
     true
