@@ -22,7 +22,7 @@ use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
     GestureHoldEndEvent, GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
     GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent,
-    GrabStartData as PointerGrabStartData, MotionEvent, RelativeMotionEvent,
+    GrabStartData as PointerGrabStartData, MotionEvent, PointerGrab, RelativeMotionEvent,
 };
 use smithay::input::touch::{
     DownEvent, GrabStartData as TouchGrabStartData, MotionEvent as TouchMotionEvent, UpEvent,
@@ -2366,7 +2366,11 @@ impl State {
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
         if under.hot_corner && pointer.current_focus().is_none() {
-            if !was_inside_hot_corner {
+            if !was_inside_hot_corner
+                && pointer
+                    .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                    .unwrap_or(true)
+            {
                 self.niri.layout.toggle_overview();
             }
             self.niri.pointer_inside_hot_corner = true;
@@ -2448,7 +2452,11 @@ impl State {
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
         if under.hot_corner && pointer.current_focus().is_none() {
-            if !was_inside_hot_corner {
+            if !was_inside_hot_corner
+                && pointer
+                    .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                    .unwrap_or(true)
+            {
                 self.niri.layout.toggle_overview();
             }
             self.niri.pointer_inside_hot_corner = true;
@@ -4667,6 +4675,25 @@ pub fn mods_with_finger_scroll_binds(mod_key: ModKey, binds: &Binds) -> HashSet<
             Trigger::TouchpadScrollRight,
         ],
     )
+}
+
+fn grab_allows_hot_corner(grab: &(dyn PointerGrab<State> + 'static)) -> bool {
+    let grab = grab.as_any();
+
+    // We lean on the blocklist approach here since it's not a terribly big deal if hot corner
+    // works where it shouldn't, but it could prevent some workflows if the hot corner doesn't work
+    // when it should.
+    //
+    // Some notable grabs not mentioned here:
+    // - DnDGrab allows hot corner to DnD across workspaces.
+    // - MoveGrab allows hot corner to DnD across workspaces.
+    // - ClickGrab keeps pointer focus on the window, so the hot corner doesn't trigger.
+    // - Touch grabs: touch doesn't trigger the hot corner.
+    if grab.is::<ResizeGrab>() || grab.is::<SpatialMovementGrab>() {
+        return false;
+    }
+
+    true
 }
 
 #[cfg(test)]
