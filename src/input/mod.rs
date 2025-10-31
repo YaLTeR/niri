@@ -2378,7 +2378,7 @@ impl State {
         // Inform the layout of an ongoing DnD operation.
         let mut is_dnd_grab = false;
         pointer.with_grab(|_, grab| {
-            is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+            is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
         });
         if is_dnd_grab {
             if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
@@ -2465,7 +2465,7 @@ impl State {
         // Inform the layout of an ongoing DnD operation.
         let mut is_dnd_grab = false;
         pointer.with_grab(|_, grab| {
-            is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+            is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
         });
         if is_dnd_grab {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
@@ -3915,7 +3915,7 @@ impl State {
         // Inform the layout of an ongoing DnD operation.
         let mut is_dnd_grab = false;
         handle.with_grab(|_, grab| {
-            is_dnd_grab = grab.as_any().downcast_ref::<DnDGrab<Self>>().is_some();
+            is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
         });
         if is_dnd_grab {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
