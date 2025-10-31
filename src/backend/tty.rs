@@ -503,7 +503,7 @@ impl Tty {
                 }
 
                 if self.update_output_config_on_resume {
-                    self.on_output_config_changed(niri);
+                    self.on_output_config_changed(niri, true);
                 }
 
                 self.refresh_ipc_outputs(niri);
@@ -782,7 +782,7 @@ impl Tty {
         //
         // It will also call refresh_ipc_outputs(), which will catch the disconnected connectors
         // above.
-        self.on_output_config_changed(niri);
+        self.on_output_config_changed(niri, false);
     }
 
     fn device_removed(&mut self, device_id: dev_t, niri: &mut Niri) {
@@ -1901,7 +1901,7 @@ impl Tty {
         }
     }
 
-    pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
+    pub fn on_output_config_changed(&mut self, niri: &mut Niri, update_ignored_nodes: bool) {
         let _span = tracy_client::span!("Tty::on_output_config_changed");
 
         // If we're inactive, we can't do anything, so just set a flag for later.
@@ -1911,44 +1911,47 @@ impl Tty {
         }
         self.update_output_config_on_resume = false;
 
-        // Update ignored nodes.
-        let mut ignored_nodes = ignored_nodes_from_config(&self.config.borrow());
-        if ignored_nodes.remove(&self.primary_node)
-            || ignored_nodes.remove(&self.primary_render_node)
-        {
-            warn!("ignoring the primary node or render node is not allowed");
-        }
-        if ignored_nodes != self.ignored_nodes {
-            self.ignored_nodes = ignored_nodes;
-
-            let mut device_list = self
-                .udev_dispatcher
-                .as_source_ref()
-                .device_list()
-                .map(|(device_id, path)| (device_id, path.to_owned()))
-                .collect::<HashMap<_, _>>();
-
-            let removed_devices = self
-                .devices
-                .keys()
-                .filter(|node| {
-                    self.ignored_nodes.contains(node) || !device_list.contains_key(&node.dev_id())
-                })
-                .copied()
-                .collect::<Vec<_>>();
-
-            for node in removed_devices {
-                device_list.remove(&node.dev_id());
-                self.device_removed(node.dev_id(), niri);
+        if update_ignored_nodes {
+            // Update ignored nodes.
+            let mut ignored_nodes = ignored_nodes_from_config(&self.config.borrow());
+            if ignored_nodes.remove(&self.primary_node)
+                || ignored_nodes.remove(&self.primary_render_node)
+            {
+                warn!("ignoring the primary node or render node is not allowed");
             }
+            if ignored_nodes != self.ignored_nodes {
+                self.ignored_nodes = ignored_nodes;
 
-            for node in self.devices.keys() {
-                device_list.remove(&node.dev_id());
-            }
+                let mut device_list = self
+                    .udev_dispatcher
+                    .as_source_ref()
+                    .device_list()
+                    .map(|(device_id, path)| (device_id, path.to_owned()))
+                    .collect::<HashMap<_, _>>();
 
-            for (device_id, path) in device_list {
-                if let Err(err) = self.device_added(device_id, &path, niri) {
-                    warn!("error adding device {path:?}: {err:?}");
+                let removed_devices = self
+                    .devices
+                    .keys()
+                    .filter(|node| {
+                        self.ignored_nodes.contains(node)
+                            || !device_list.contains_key(&node.dev_id())
+                    })
+                    .copied()
+                    .collect::<Vec<_>>();
+
+                for node in removed_devices {
+                    device_list.remove(&node.dev_id());
+                    self.device_removed(node.dev_id(), niri);
+                }
+
+                for node in self.devices.keys() {
+                    device_list.remove(&node.dev_id());
+                }
+
+                for (device_id, path) in device_list {
+                    if let Err(err) = self.device_added(device_id, &path, niri) {
+                        warn!("error adding device {path:?}: {err:?}");
+                    }
                 }
             }
         }
