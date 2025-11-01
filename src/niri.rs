@@ -1047,7 +1047,7 @@ impl State {
     }
 
     pub fn maybe_warp_cursor_to_output(&mut self, output: &Output) -> bool {
-        if self.niri.config.borrow().input.disable_mouse_warps {
+        if self.niri.config.borrow().input.disable_mouse_warp_to_focused_output {
             return false;
         }
 

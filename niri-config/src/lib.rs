@@ -1024,7 +1024,7 @@ mod tests {
                 mod_key_nested: Some(
                     Super,
                 ),
-                disable_mouse_warps: false,
+                disable_mouse_warp_to_focused_output: false,
             },
             outputs: Outputs(
                 [

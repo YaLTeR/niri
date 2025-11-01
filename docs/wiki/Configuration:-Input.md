@@ -103,7 +103,7 @@ input {
     // warp-mouse-to-focus
     // focus-follows-mouse max-scroll-amount="0%"
     // workspace-auto-back-and-forth
-    // disable-mouse-warps
+    // disable-mouse-warp-to-focused-output
 
     // mod-key "Super"
     // mod-key-nested "Alt"
@@ -365,15 +365,15 @@ input {
 }
 ```
 
-#### `disable-mouse-warps`
+#### `disable-mouse-warp-to-focused-output`
 
 <sup>Since: next release</sup>
 
-Disables moving the cursor to a different monitor when switching monitors.
+Prevents warping the cursor to a different output when switching monitors.
 
 ```kdl
 input {
-    disable-mouse-warps
+    disable-mouse-warp-to-focused-output
 }
 ```
 
