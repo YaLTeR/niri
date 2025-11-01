@@ -367,7 +367,7 @@ input {
 
 #### `disable-mouse-warps`
 
-<sup>Since: 25.??</sup>
+<sup>Since: next release</sup>
 
 Disables moving the cursor to a different monitor when switching monitors.
 
@@ -376,7 +376,6 @@ input {
     disable-mouse-warps
 }
 ```
-
 
 #### `mod-key`, `mod-key-nested`
 
