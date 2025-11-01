@@ -929,7 +929,7 @@ impl State {
         #[allow(clippy::collapsible_if)]
         if new_active != active_output {
             if !self.maybe_warp_cursor_to_focus_centered() {
-                self.move_cursor_to_output(&new_active.unwrap());
+                self.maybe_warp_cursor_to_output(&new_active.unwrap());
             }
         } else {
             self.maybe_warp_cursor_to_focus();
@@ -1042,12 +1042,17 @@ impl State {
     }
 
     pub fn move_cursor_to_output(&mut self, output: &Output) {
-        if self.niri.config.borrow().input.disable_mouse_warps {
-            return;
-        }
-
         let geo = self.niri.global_space.output_geometry(output).unwrap();
         self.move_cursor(center(geo).to_f64());
+    }
+
+    pub fn maybe_warp_cursor_to_output(&mut self, output: &Output) -> bool {
+        if self.niri.config.borrow().input.disable_mouse_warps {
+            return false;
+        }
+
+        self.move_cursor_to_output(output);
+        true
     }
 
     pub fn refresh_popup_grab(&mut self) {
