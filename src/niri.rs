@@ -4993,85 +4993,80 @@ impl Niri {
 
         // Collect delayed surfaces
         let delayed_surfaces = RefCell::new(HashMap::new());
-        // Temporary storage for surfaces that need to be delayed due to fps limit
-        let interval = Cell::new(Duration::default());
-        // Check if the surface should be forced to render
-        let should_force_render = |surface: &WlSurface, states: &SurfaceData| {
-            let interval = interval.get();
-
-            // Check if the surface is on the primary output.
-            let mut on_primary = true;
-            let current_primary_output = surface_primary_scanout_output(surface, states);
-            if current_primary_output.as_ref() != Some(output) {
-                on_primary = false;
-            }
-
-            let mut force_render_state_borrow = self.force_render_state.borrow_mut();
-
-            if !on_primary && !interval.is_zero() {
-                //fps limited branch
-                let force_render_state = force_render_state_borrow
-                    .entry(surface.id().protocol_id())
-                    .or_default();
-
-                if !force_render_state.is_delay {
-                    // Time diff since last frame callback
-                    let time_diff: Duration =
-                        frame_callback_time.saturating_sub(force_render_state.last_time);
-
-                    // Calculate next frame callback time and push needed data to delayed_surfaces
-                    let delay_time = interval.saturating_sub(time_diff);
-                    let mut delayed = delayed_surfaces.borrow_mut();
-                    delayed
-                        .entry(surface.id())
-                        .or_insert((surface.clone(), delay_time));
-
-                    // Set force render state
-                    force_render_state.is_delay = true;
-                }
-                return None;
-            } else {
-                // Remove force render state if not on primary output
-                if on_primary {
-                    force_render_state_borrow.remove(&surface.id().protocol_id());
-                }
-                //fps unlimited branch
-                let frame_throttling_state = states
-                    .data_map
-                    .get_or_insert(SurfaceFrameThrottlingState::default);
-
-                // Next, check the throttling status.
-                let mut last_sent_at = frame_throttling_state.last_sent_at.borrow_mut();
-                let mut send = true;
-
-                // If we already sent a frame callback to this surface this output refresh
-                // cycle, don't send one again to prevent empty-damage commit busy loops.
-                if let Some((last_output, last_sequence)) = &*last_sent_at {
-                    if last_output == output && *last_sequence == sequence {
-                        send = false;
-                    }
-                }
-
-                if send {
-                    *last_sent_at = Some((output.clone(), sequence));
-                    Some(output.clone())
-                } else {
-                    None
-                }
-            }
-        };
 
         for mapped in self.layout.windows_for_output_mut(output) {
             // Check if the surface should be forced to render
             if mapped.rules().force_render == Some(true) || mapped.is_window_cast_target() {
                 // Calculate delay time
-                if let Some(force_render_fps) = mapped.rules().force_render_fps {
-                    let fps_limit = force_render_fps as f64;
-                    let interval_secs = 1.0 / fps_limit as f64;
-                    interval.set(Duration::from_secs_f64(interval_secs));
+                let interval = if let Some(force_render_fps) = mapped.rules().force_render_fps {
+                    Duration::from_secs_f64(1.0 / force_render_fps as f64)
                 } else {
-                    interval.set(Duration::ZERO);
-                }
+                    Duration::ZERO
+                };
+
+                // Check if the surface should be forced to render
+                let should_force_render = |surface: &WlSurface, states: &SurfaceData| {
+                    // Check if the surface is on the primary output.
+                    let mut on_primary = true;
+                    let current_primary_output = surface_primary_scanout_output(surface, states);
+                    if current_primary_output.as_ref() != Some(output) {
+                        on_primary = false;
+                    }
+
+                    let mut force_render_state_borrow = self.force_render_state.borrow_mut();
+
+                    if !on_primary && !interval.is_zero() {
+                        //fps limited branch
+                        let force_render_state = force_render_state_borrow
+                            .entry(surface.id().protocol_id())
+                            .or_default();
+
+                        if !force_render_state.is_delay {
+                            // Time diff since last frame callback
+                            let time_diff: Duration =
+                                frame_callback_time.saturating_sub(force_render_state.last_time);
+
+                            // Calculate next frame callback time and push needed data to delayed_surfaces
+                            let delay_time = interval.saturating_sub(time_diff);
+                            let mut delayed = delayed_surfaces.borrow_mut();
+                            delayed
+                                .entry(surface.id())
+                                .or_insert((surface.clone(), delay_time));
+
+                            // Set force render state
+                            force_render_state.is_delay = true;
+                        }
+                        return None;
+                    } else {
+                        // Remove force render state if not on primary output
+                        if on_primary {
+                            force_render_state_borrow.remove(&surface.id().protocol_id());
+                        }
+                        //fps unlimited branch
+                        let frame_throttling_state = states
+                            .data_map
+                            .get_or_insert(SurfaceFrameThrottlingState::default);
+
+                        // Next, check the throttling status.
+                        let mut last_sent_at = frame_throttling_state.last_sent_at.borrow_mut();
+                        let mut send = true;
+
+                        // If we already sent a frame callback to this surface this output refresh
+                        // cycle, don't send one again to prevent empty-damage commit busy loops.
+                        if let Some((last_output, last_sequence)) = &*last_sent_at {
+                            if last_output == output && *last_sequence == sequence {
+                                send = false;
+                            }
+                        }
+
+                        if send {
+                            *last_sent_at = Some((output.clone(), sequence));
+                            Some(output.clone())
+                        } else {
+                            None
+                        }
+                    }
+                };
 
                 mapped.send_frame(
                     output,
