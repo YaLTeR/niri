@@ -64,6 +64,103 @@ impl Default for ScreenshotPath {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Screenshot {
+    pub clipboard_compression: PngCompression,
+    pub clipboard_resize_width: Option<u32>,
+    pub clipboard_resize_height: Option<u32>,
+    pub file_format: ImageFormat,
+    pub file_quality: u8,
+    pub resize_width: Option<u32>,
+    pub resize_height: Option<u32>,
+}
+
+impl Default for Screenshot {
+    fn default() -> Self {
+        Self {
+            clipboard_compression: PngCompression::Default,
+            clipboard_resize_width: None,
+            clipboard_resize_height: None,
+            file_format: ImageFormat::Png(PngCompression::Default),
+            file_quality: 95,
+            resize_width: None,
+            resize_height: None,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct ScreenshotPart {
+    #[knuffel(child, unwrap(argument, str))]
+    pub clipboard_compression: Option<String>,
+    #[knuffel(child, unwrap(argument))]
+    pub clipboard_resize_width: Option<u32>,
+    #[knuffel(child, unwrap(argument))]
+    pub clipboard_resize_height: Option<u32>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub file_format: Option<String>,
+    #[knuffel(child, unwrap(argument))]
+    pub file_quality: Option<u8>,
+    #[knuffel(child, unwrap(argument))]
+    pub resize_width: Option<u32>,
+    #[knuffel(child, unwrap(argument))]
+    pub resize_height: Option<u32>,
+}
+
+impl MergeWith<ScreenshotPart> for Screenshot {
+    fn merge_with(&mut self, part: &ScreenshotPart) {
+        if let Some(ref compression) = part.clipboard_compression {
+            self.clipboard_compression = PngCompression::from_str(compression);
+        }
+        merge_clone_opt!(
+            (self, part),
+            clipboard_resize_width,
+            clipboard_resize_height
+        );
+        if let Some(ref format) = part.file_format {
+            self.file_format = ImageFormat::from_str(format);
+        }
+        if let Some(quality) = part.file_quality {
+            self.file_quality = quality;
+        }
+        merge_clone_opt!((self, part), resize_width, resize_height);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PngCompression {
+    Fast,
+    Default,
+    Best,
+}
+
+impl PngCompression {
+    fn from_str(s: &str) -> Self {
+        match s {
+            "fast" => Self::Fast,
+            "best" => Self::Best,
+            _ => Self::Default,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageFormat {
+    Png(PngCompression),
+    Jpeg,
+}
+
+impl ImageFormat {
+    fn from_str(s: &str) -> Self {
+        match s {
+            "jpeg" | "jpg" => Self::Jpeg,
+            "png-fast" => Self::Png(PngCompression::Fast),
+            "png-best" => Self::Png(PngCompression::Best),
+            _ => Self::Png(PngCompression::Default),
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct HotkeyOverlay {
     pub skip_at_startup: bool,

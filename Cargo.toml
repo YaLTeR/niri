@@ -84,6 +84,7 @@ pango = { version = "0.20.12", features = ["v1_44"] }
 pangocairo = "0.20.10"
 pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", optional = true, features = ["v0_3_33"] }
 png = "0.18.0"
+jpeg-encoder = "0.6.0"
 portable-atomic = { version = "1.11.1", default-features = false, features = ["float"] }
 profiling = "1.0.17"
 sd-notify = "0.4.5"

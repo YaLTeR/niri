@@ -11,6 +11,14 @@ prefer-no-csd
 
 screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 
+screenshot {
+    clipboard-compression "best"
+    clipboard-resize-width 1920
+    file-format "jpeg"
+    file-quality 90
+    resize-width 1920
+}
+
 environment {
     QT_QPA_PLATFORM "wayland"
     DISPLAY null
@@ -126,6 +134,159 @@ You can also set this option to `null` to disable saving screenshots to disk.
 ```kdl
 screenshot-path null
 ```
+
+### `screenshot`
+
+<sup>Since: 25.09</sup>
+
+Configure screenshot image encoding options.
+
+Screenshots are always saved to the clipboard as PNG.
+You can configure the PNG compression level for clipboard, and separately configure the file format and quality for screenshots saved to disk.
+
+```kdl
+screenshot {
+    // PNG compression for clipboard: "fast", "default", or "best"
+    // Higher compression = smaller files but slower encoding
+    // Default: "default"
+    clipboard-compression "best"
+
+    // Optionally resize screenshots for clipboard (reduces PNG size)
+    // If only width or height is set, the other is calculated to maintain aspect ratio
+    // Images are only downscaled, never upscaled
+    // Default: no resizing
+    clipboard-resize-width 1920
+    // clipboard-resize-height 1080
+
+    // Image format for files saved to disk
+    // Options: "png", "png-fast", "png-best", "jpeg", "jpg"
+    // Default: "png" (same as "default" compression)
+    file-format "jpeg"
+
+    // JPEG quality (1-100, only applies when file-format is jpeg)
+    // Higher = better quality but larger files
+    // Default: 95
+    file-quality 90
+
+    // Optionally resize screenshots before saving to disk
+    // If only width or height is set, the other is calculated to maintain aspect ratio
+    // Images are only downscaled, never upscaled
+    // Default: no resizing
+    resize-width 1920
+    // resize-height 1080
+}
+```
+
+#### `clipboard-compression`
+
+Set the PNG compression level for screenshots copied to the clipboard.
+
+Options:
+- `"fast"` - Fastest encoding, larger files
+- `"default"` - Balanced speed and file size (default)
+- `"best"` - Smallest files, slower encoding
+
+```kdl
+screenshot {
+    clipboard-compression "best"
+}
+```
+
+#### `clipboard-resize-width` and `clipboard-resize-height`
+
+Optionally resize screenshots before copying to the clipboard.
+This is the **most effective way to reduce clipboard PNG file sizes** while maintaining PNG format compatibility with applications like Firefox.
+
+- If both width and height are set, the screenshot is resized to that exact size
+- If only one dimension is set, the other is calculated automatically to maintain the aspect ratio
+- Screenshots are only downscaled, never upscaled
+- Combined with `clipboard-compression "best"`, this can reduce 4K clipboard PNG sizes from ~15MB to ~2-3MB
+
+```kdl
+screenshot {
+    clipboard-compression "best"
+    // Resize clipboard to 1920px wide (most effective for size reduction)
+    clipboard-resize-width 1920
+}
+```
+
+#### `file-format`
+
+Set the image format for screenshots saved to disk.
+
+Options:
+- `"png"` or `"png-default"` - PNG with default compression (default)
+- `"png-fast"` - PNG with fast compression
+- `"png-best"` - PNG with best compression
+- `"jpeg"` or `"jpg"` - JPEG format
+
+```kdl
+screenshot {
+    file-format "jpeg"
+}
+```
+
+#### `file-quality`
+
+Set the JPEG quality when using JPEG format (1-100).
+Higher values produce better quality but larger files.
+This setting only applies when `file-format` is set to `"jpeg"` or `"jpg"`.
+
+Default: 95
+
+```kdl
+screenshot {
+    file-format "jpeg"
+    file-quality 85
+}
+```
+
+#### `resize-width` and `resize-height`
+
+Optionally resize screenshots before saving to disk.
+This can significantly reduce file sizes for high-resolution displays.
+
+- If both `resize-width` and `resize-height` are set, the screenshot is resized to that exact size
+- If only one dimension is set, the other is calculated automatically to maintain the aspect ratio
+- Screenshots are only downscaled, never upscaled
+- Resizing only applies to files saved to disk, not to clipboard
+
+```kdl
+screenshot {
+    // Resize to 1920px wide, height calculated automatically
+    resize-width 1920
+}
+
+screenshot {
+    // Resize to exactly 1920x1080
+    resize-width 1920
+    resize-height 1080
+}
+```
+
+> [!TIP]
+> **For maximum clipboard PNG size reduction** (Firefox compatibility):
+>
+> ```kdl
+> screenshot {
+>     clipboard-compression "best"
+>     clipboard-resize-width 1920
+> }
+> ```
+>
+> This reduces 4K clipboard PNGs from ~15MB to ~2-3MB while maintaining full PNG compatibility.
+>
+> **For maximum disk file size reduction**:
+>
+> ```kdl
+> screenshot {
+>     file-format "jpeg"
+>     file-quality 85
+>     resize-width 1920
+> }
+> ```
+>
+> This can reduce 4K screenshot files from ~15MB (PNG) to under 500KB.
 
 ### `environment`
 
