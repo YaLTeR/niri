@@ -211,7 +211,20 @@ mod systemd {
     use super::*;
 
     pub fn do_spawn(command: &OsStr, mut process: Command) -> Option<Child> {
+        #[cfg(target_env = "gnu")]
         use libc::close_range;
+
+        #[cfg(not(target_env = "gnu"))] // musl
+        pub fn close_range(first: libc::c_uint, last: libc::c_uint, flags: libc::c_uint) -> i64 {
+            unsafe {
+                libc::syscall(
+                    libc::SYS_close_range,
+                    first as usize,
+                    last as usize,
+                    flags as usize,
+                )
+            }
+        }
 
         // When running as a systemd session, we want to put children into their own transient
         // scopes in order to separate them from the niri process. This is helpful for

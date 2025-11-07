@@ -27,6 +27,10 @@ output "eDP-1" {
     layout {
         // ...layout settings for eDP-1...
     }
+
+    // Custom modes. Caution: may damage your display.
+    // mode custom=true "1920x1080@100"
+    // modeline 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "-hsync" "+vsync"
 }
 
 output "HDMI-A-1" {
@@ -83,6 +87,42 @@ output "HDMI-A-1" {
 // (for example, for testing purposes).
 output "eDP-1" {
     mode "1280x720"
+}
+```
+
+#### `mode custom=true`
+
+<sup>Since: next release</sup>
+
+You can configure a custom mode (not offered by the monitor) by setting `custom=true`.
+In this case, the refresh rate is mandatory.
+
+> [!CAUTION]
+> Custom modes may damage your monitor, especially if it's a CRT.
+> Follow the maximum supported limits in your monitor's instructions.
+
+```kdl
+// Use a custom mode for this display.
+output "HDMI-A-1" {
+    mode custom=true "2560x1440@143.912"
+}
+```
+
+### `modeline`
+
+<sup>Since: next release</sup>
+
+Directly configures the monitor's mode via a modeline, overriding any configured `mode`.
+The modeline can be calculated via utilities such as [cvt](https://man.archlinux.org/man/cvt.1.en) or [gtf](https://man.archlinux.org/man/gtf.1.en).
+
+> [!CAUTION]
+> Out of spec modelines may damage your monitor, especially if it's a CRT.
+> Follow the maximum supported limits in your monitor's instructions.
+
+```kdl
+// Use a modeline for this display.
+output "eDP-3" {
+    modeline 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "-hsync" "+vsync"
 }
 ```
 

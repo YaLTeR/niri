@@ -399,6 +399,8 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::Handled
         }
         Request::Output { output, action } => {
+            action.validate()?;
+
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap();
             let found = ipc_outputs
                 .values()
