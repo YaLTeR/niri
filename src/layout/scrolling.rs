@@ -3934,12 +3934,28 @@ impl<W: LayoutElement> Column<W> {
             .default_column_display
             .unwrap_or(options.layout.default_column_display);
 
+        // Try to match width to a preset width. Consider the following case: a terminal (foot)
+        // sizes itself to the terminal grid. We open it with default-column-width 0.5. It shrinks
+        // by a few pixels to evenly match the terminal grid. Then we press
+        // switch-preset-column-width intending to go to proportion 0.667, but the preset width
+        // matching code picks the proportion 0.5 preset because it's the next smallest width after
+        // the current foot's window width. Effectively, this makes the first
+        // switch-preset-column-width press ignored.
+        //
+        // However, here, we do know that width = proportion 0.5 (regardless of what the window
+        // opened with), and we can match it to a preset right away, if one exists.
+        let preset_width_idx = options
+            .layout
+            .preset_column_widths
+            .iter()
+            .position(|preset| width == ColumnWidth::from(*preset));
+
         let mut rv = Self {
             tiles: vec![],
             data: vec![],
             active_tile_idx: 0,
             width,
-            preset_width_idx: None,
+            preset_width_idx,
             is_full_width,
             is_pending_maximized: false,
             is_pending_fullscreen: false,
