@@ -19,6 +19,9 @@ systemctl --user add-wants niri.service dms
 After running these commands, log out, choose Niri in your display manager, and log back in.
 Or, if not using a display manager, run `niri-session` on a TTY.
 
+The default niri config will run Waybar, so you might get two bars on screen.
+To fix this, stop Waybar with `pkill waybar` command, then open `~/.config/niri/config.kdl` and delete the `spawn-at-startup "waybar"` line.
+
 ## Slower and more considered start
 
 The easiest way to get niri is to install one of the distribution packages.
