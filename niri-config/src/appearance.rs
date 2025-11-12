@@ -6,7 +6,7 @@ use miette::{miette, IntoDiagnostic as _};
 use smithay::backend::renderer::Color32F;
 
 use crate::utils::{Flag, MergeWith};
-use crate::FloatOrInt;
+use crate::{FloatOrInt, Struts};
 
 pub const DEFAULT_BACKGROUND_COLOR: Color = Color::from_array_unpremul([0.25, 0.25, 0.25, 1.]);
 pub const DEFAULT_BACKDROP_COLOR: Color = Color::from_array_unpremul([0.15, 0.15, 0.15, 1.]);
@@ -341,6 +341,7 @@ pub struct Shadow {
     pub draw_behind_window: bool,
     pub color: Color,
     pub inactive_color: Option<Color>,
+    pub struts: Struts,
 }
 
 impl Default for Shadow {
@@ -356,6 +357,7 @@ impl Default for Shadow {
             draw_behind_window: false,
             color: Color::from_rgba8_unpremul(0, 0, 0, 0x77),
             inactive_color: None,
+            struts: Struts::default(),
         }
     }
 }
@@ -369,7 +371,7 @@ impl MergeWith<ShadowRule> for Shadow {
 
         merge!((self, part), softness, spread);
 
-        merge_clone!((self, part), offset, draw_behind_window, color);
+        merge_clone!((self, part), offset, struts, draw_behind_window, color);
 
         merge_clone_opt!((self, part), inactive_color);
     }
@@ -390,6 +392,7 @@ pub struct WorkspaceShadow {
     pub softness: f64,
     pub spread: f64,
     pub color: Color,
+    pub struts: Struts,
 }
 
 impl Default for WorkspaceShadow {
@@ -403,6 +406,7 @@ impl Default for WorkspaceShadow {
             softness: 40.,
             spread: 10.,
             color: Color::from_rgba8_unpremul(0, 0, 0, 0x50),
+            struts: Struts::default(),
         }
     }
 }
@@ -414,8 +418,9 @@ impl From<WorkspaceShadow> for Shadow {
             offset: value.offset,
             softness: value.softness,
             spread: value.spread,
-            draw_behind_window: false,
             color: value.color,
+            struts: value.struts,
+            draw_behind_window: false,
             inactive_color: None,
         }
     }
@@ -429,6 +434,8 @@ pub struct WorkspaceShadowPart {
     pub on: bool,
     #[knuffel(child)]
     pub offset: Option<ShadowOffset>,
+    #[knuffel(child)]
+    pub struts: Option<Struts>,
     #[knuffel(child, unwrap(argument))]
     pub softness: Option<FloatOrInt<0, 1024>>,
     #[knuffel(child, unwrap(argument))]
@@ -444,7 +451,7 @@ impl MergeWith<WorkspaceShadowPart> for WorkspaceShadow {
             self.off = false;
         }
 
-        merge_clone!((self, part), offset, color);
+        merge_clone!((self, part), offset, struts, color);
         merge!((self, part), softness, spread);
     }
 }
@@ -646,6 +653,8 @@ pub struct ShadowRule {
     pub on: bool,
     #[knuffel(child)]
     pub offset: Option<ShadowOffset>,
+    #[knuffel(child)]
+    pub struts: Option<Struts>,
     #[knuffel(child, unwrap(argument))]
     pub softness: Option<FloatOrInt<0, 1024>>,
     #[knuffel(child, unwrap(argument))]
@@ -696,6 +705,7 @@ impl MergeWith<Self> for ShadowRule {
         merge_clone_opt!(
             (self, part),
             offset,
+            struts,
             softness,
             spread,
             draw_behind_window,

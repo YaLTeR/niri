@@ -11,7 +11,9 @@ layout {
     always-center-single-column
     empty-workspace-above-first
     default-column-display "tabbed"
+    
     background-color "#003300"
+    // background-in-working-area-only
 
     preset-column-widths {
         proportion 0.33333
@@ -60,6 +62,13 @@ layout {
         draw-behind-window true
         color "#00000070"
         // inactive-color "#00000054"
+        
+        struts {
+            // left 8
+            // right 8
+            // top -8
+            // bottom -8
+        }
     }
 
     tab-indicator {
@@ -407,6 +416,8 @@ These will also remove client-side shadows if the window draws any.
 
 `inactive-color` lets you override the shadow color for inactive windows; by default, a more transparent `color` is used.
 
+`struts` adjust the size and position of the shadow relative to the window. See [the documentation for struts in layout](#struts).
+
 Shadow drawing will follow the window corner radius set with the [`geometry-corner-radius` window rule](./Configuration:-Window-Rules.md#geometry-corner-radius).
 
 > [!NOTE]
@@ -559,3 +570,25 @@ layout {
 ```
 
 You can also set the color per-output [in the output config](./Configuration:-Outputs.md#layout-config-overrides).
+
+### `background-in-working-area-only`
+
+Set to `true` to ensure the [background color](#background-color) is only painted in the working area,
+and [workspace shadows](./Configuration:-Miscellaneous.md#workspace-shadow) are cropped to this region.
+
+This flag is most useful in combination with either edge-to-edge layer surfaces,
+or both a transparent background color and a custom wallpaper layer (e.g. swaybg)
+using [the `place-within-backdrop` layer rule](./Configuration:-Layer-Rules.md#place-within-backdrop).
+
+```kdl
+layout {
+    background-color "transparent"
+    background-in-working-area-only
+}
+
+layer-rule {
+    match namespace="^wallpaper$"
+
+    place-within-backdrop true
+}
+```

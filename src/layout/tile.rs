@@ -487,7 +487,7 @@ impl<W: LayoutElement> Tile<W> {
                 .scaled_by(1. - expanded_progress as f32)
         };
         self.shadow.update_render_elements(
-            animated_tile_size,
+            Rectangle::new(Point::new(0., 0.), animated_tile_size),
             is_active,
             radius,
             self.scale,

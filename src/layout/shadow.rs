@@ -1,7 +1,7 @@
 use std::iter::zip;
 
 use niri_config::CornerRadius;
-use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::utils::{Coordinate, Logical, Point, Rectangle, Size};
 
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
@@ -34,7 +34,7 @@ impl Shadow {
 
     pub fn update_render_elements(
         &mut self,
-        win_size: Size<f64, Logical>,
+        content_geometry: Rectangle<f64, Logical>,
         is_active: bool,
         radius: CornerRadius,
         scale: f64,
@@ -48,14 +48,18 @@ impl Shadow {
         // * We do not divide anything, only add, subtract and multiply by integers.
         // * At rendering time, tile positions are rounded to physical pixels.
 
+        let win_size = content_geometry.size;
+        let content = content_geometry.loc;
+
         let width = self.config.softness;
         // Like in CSS box-shadow.
         let sigma = width / 2.;
         // Adjust width to draw all necessary pixels.
         let width = ceil(sigma * 3.);
 
-        let offset = self.config.offset;
-        let offset = Point::from((ceil(offset.x.0), ceil(offset.y.0)));
+        let offset_x = ceil(content.x + self.config.offset.x.0 + self.config.struts.left.0);
+        let offset_y = ceil(content.y + self.config.offset.y.0 + self.config.struts.top.0);
+        let offset = Point::from((offset_x, offset_y));
 
         let spread = self.config.spread;
         let spread = ceil(spread.abs()).copysign(spread);
@@ -63,15 +67,25 @@ impl Shadow {
 
         let win_radius = radius.fit_to(win_size.w as f32, win_size.h as f32);
 
+        let box_size = Size::new(
+            win_size
+                .w
+                .saturating_sub(ceil(self.config.struts.right.0 + self.config.struts.left.0))
+                .max(0.),
+            win_size
+                .h
+                .saturating_sub(ceil(self.config.struts.bottom.0 + self.config.struts.top.0))
+                .max(0.),
+        );
         let box_size = if spread >= 0. {
-            win_size + Size::from((spread, spread)).upscale(2.)
+            box_size + Size::new(spread, spread).upscale(2.)
         } else {
             // This is a saturating sub.
-            win_size - Size::from((-spread, -spread)).upscale(2.)
+            box_size - Size::new(-spread, -spread).upscale(2.)
         };
         let radius = win_radius.expanded_by(spread as f32);
 
-        let shader_size = box_size + Size::from((width, width)).upscale(2.);
+        let shader_size = box_size + Size::new(width, width).upscale(2.);
 
         let color = if is_active {
             self.config.color
@@ -85,7 +99,7 @@ impl Shadow {
         let shader_geo = Rectangle::new(Point::from((-width, -width)), shader_size);
 
         // This is actually offset relative to shader_geo, this is handled below.
-        let window_geo = Rectangle::new(Point::from((0., 0.)), win_size);
+        let window_geo = Rectangle::new(content, win_size);
 
         if !self.config.draw_behind_window {
             let top_left = ceil(f64::from(win_radius.top_left));
