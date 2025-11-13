@@ -252,8 +252,6 @@ impl<W: LayoutElement> Workspace<W> {
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
 
-        let background_color = options.layout.background_color.to_array_unpremul();
-
         Self {
             scrolling,
             floating,
@@ -264,7 +262,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
-            background_buffer: SolidColorBuffer::new(view_size, background_color),
+            background_buffer: SolidColorBuffer::new(view_size, options.layout.background_color),
             output: Some(output),
             clock,
             base_options,
@@ -318,8 +316,6 @@ impl<W: LayoutElement> Workspace<W> {
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
 
-        let background_color = options.layout.background_color.to_array_unpremul();
-
         Self {
             scrolling,
             floating,
@@ -331,7 +327,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
-            background_buffer: SolidColorBuffer::new(view_size, background_color),
+            background_buffer: SolidColorBuffer::new(view_size, options.layout.background_color),
             clock,
             base_options,
             options,
@@ -421,8 +417,8 @@ impl<W: LayoutElement> Workspace<W> {
             compute_workspace_shadow_config(options.overview.workspace_shadow, self.view_size);
         self.shadow.update_config(shadow_config);
 
-        let background_color = options.layout.background_color.to_array_unpremul();
-        self.background_buffer.set_color(background_color);
+        self.background_buffer
+            .set_color(options.layout.background_color);
 
         self.base_options = base_options;
         self.options = options;

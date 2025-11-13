@@ -77,7 +77,7 @@ impl FocusRing {
         };
 
         for buf in &mut self.buffers {
-            buf.set_color(color.to_array_premul());
+            buf.set_color(color);
         }
 
         let radius = radius.fit_to(self.full_size.w as f32, self.full_size.h as f32);
