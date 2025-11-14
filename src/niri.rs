@@ -146,6 +146,7 @@ use crate::niri_render_elements;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
+use crate::protocols::kde_appmenu::KDEAppMenuState;
 use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
@@ -305,6 +306,7 @@ pub struct Niri {
     pub gamma_control_manager_state: GammaControlManagerState,
     pub activation_state: XdgActivationState,
     pub mutter_x11_interop_state: MutterX11InteropManagerState,
+    pub kde_appmenu_state: KDEAppMenuState,
 
     // This will not work as is outside of tests, so it is gated with #[cfg(test)] for now. In
     // particular, shaders will need to learn about the single pixel buffer. Also, it must be
@@ -2514,6 +2516,8 @@ impl Niri {
         #[cfg(test)]
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
 
+        let kde_appmenu_state = KDEAppMenuState::new::<State>(&display_handle);
+
         let mut seat: Seat<State> = seat_state.new_wl_seat(&display_handle, backend.seat_name());
         let keyboard = match seat.add_keyboard(
             config_.input.keyboard.xkb.to_xkb_config(),
@@ -2713,6 +2717,7 @@ impl Niri {
             mutter_x11_interop_state,
             #[cfg(test)]
             single_pixel_buffer_state,
+            kde_appmenu_state,
 
             seat,
             keyboard_focus: KeyboardFocus::Layout { surface: None },
