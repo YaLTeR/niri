@@ -20,6 +20,7 @@ pub struct FocusRing {
     is_border: bool,
     use_border_shader: bool,
     config: niri_config::FocusRing,
+    thicken_corners: bool,
 }
 
 niri_render_elements! {
@@ -40,6 +41,7 @@ impl FocusRing {
             is_border: false,
             use_border_shader: false,
             config,
+            thicken_corners: true,
         }
     }
 
@@ -104,7 +106,8 @@ impl FocusRing {
         let rounded_corner_border_width = if self.is_border {
             // HACK: increase the border width used for the inner rounded corners a tiny bit to
             // reduce background bleed.
-            width as f32 + 0.5
+            let extra = if self.thicken_corners { 0.5 } else { 0. };
+            width as f32 + extra
         } else {
             0.
         };
@@ -266,6 +269,10 @@ impl FocusRing {
 
     pub fn is_off(&self) -> bool {
         self.config.off
+    }
+
+    pub fn set_thicken_corners(&mut self, value: bool) {
+        self.thicken_corners = value;
     }
 
     pub fn config(&self) -> &niri_config::FocusRing {
