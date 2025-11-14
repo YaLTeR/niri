@@ -69,6 +69,7 @@ impl FocusRing {
     ) {
         let width = self.config.width;
         self.full_size = win_size + Size::from((width, width)).upscale(2.);
+        self.is_border = is_border;
 
         let color = if is_urgent {
             self.config.urgent_color
@@ -103,7 +104,7 @@ impl FocusRing {
             GradientRelativeTo::WorkspaceView => view_rect,
         };
 
-        let rounded_corner_border_width = if self.is_border {
+        let rounded_corner_border_width = if is_border {
             // HACK: increase the border width used for the inner rounded corners a tiny bit to
             // reduce background bleed.
             let extra = if self.thicken_corners { 0.5 } else { 0. };
@@ -213,8 +214,6 @@ impl FocusRing {
                 alpha,
             );
         }
-
-        self.is_border = is_border;
     }
 
     pub fn render(
