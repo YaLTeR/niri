@@ -77,6 +77,9 @@ pub struct Tile<W: LayoutElement> {
     /// Currently selected preset height index when this tile is floating.
     pub(super) floating_preset_height_idx: Option<usize>,
 
+    /// Whether this window is marked as a scratchpad window.
+    pub(super) is_scratchpad: bool,
+
     /// The animation upon opening a window.
     open_animation: Option<OpenAnimation>,
 
@@ -195,6 +198,7 @@ impl<W: LayoutElement> Tile<W> {
             floating_pos: None,
             floating_preset_width_idx: None,
             floating_preset_height_idx: None,
+            is_scratchpad: false,
             open_animation: None,
             resize_animation: None,
             move_x_animation: None,

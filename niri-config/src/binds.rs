@@ -339,6 +339,12 @@ pub enum Action {
     FocusFloating,
     FocusTiling,
     SwitchFocusBetweenFloatingAndTiling,
+    MoveScratchpad,
+    #[knuffel(skip)]
+    MoveScratchpadById(u64),
+    ScratchpadShow,
+    #[knuffel(skip)]
+    ScratchpadShowById(u64),
     #[knuffel(skip)]
     MoveFloatingWindowById {
         id: Option<u64>,
@@ -649,6 +655,10 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::SwitchFocusBetweenFloatingAndTiling {} => {
                 Self::SwitchFocusBetweenFloatingAndTiling
             }
+            niri_ipc::Action::MoveScratchpad { id: None } => Self::MoveScratchpad,
+            niri_ipc::Action::MoveScratchpad { id: Some(id) } => Self::MoveScratchpadById(id),
+            niri_ipc::Action::ScratchpadShow { id: None } => Self::ScratchpadShow,
+            niri_ipc::Action::ScratchpadShow { id: Some(id) } => Self::ScratchpadShowById(id),
             niri_ipc::Action::MoveFloatingWindow { id, x, y } => {
                 Self::MoveFloatingWindowById { id, x, y }
             }

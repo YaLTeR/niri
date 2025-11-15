@@ -825,6 +825,26 @@ pub enum Action {
     FocusTiling {},
     /// Toggles the focus between the floating and the tiling layout.
     SwitchFocusBetweenFloatingAndTiling {},
+    /// Move the focused window to the scratchpad.
+    MoveScratchpad {
+        /// Id of the window to move.
+        ///
+        /// If `None`, uses the focused window.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
+    /// Show a scratchpad window.
+    ///
+    /// If `id` is provided, shows the scratchpad with that window ID.
+    /// Otherwise, shows the most recently hidden scratchpad.
+    /// If a scratchpad window is already visible and focused, hide it.
+    ScratchpadShow {
+        /// Id of the specific scratchpad window to show.
+        ///
+        /// If `None`, shows the most recently hidden scratchpad.
+        #[cfg_attr(feature = "clap", arg(long))]
+        id: Option<u64>,
+    },
     /// Move a floating window on screen.
     #[cfg_attr(feature = "clap", clap(about = "Move the floating window on screen"))]
     MoveFloatingWindow {

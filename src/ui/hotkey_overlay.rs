@@ -257,6 +257,8 @@ fn collect_actions(config: &Config) -> Vec<&Action> {
         &Action::ConsumeOrExpelWindowRight,
         &Action::ToggleWindowFloating,
         &Action::SwitchFocusBetweenFloatingAndTiling,
+        &Action::MoveScratchpad,
+        &Action::ScratchpadShow,
         &Action::ToggleOverview,
     ]);
 
@@ -478,6 +480,10 @@ fn action_name(action: &Action) -> String {
         Action::SwitchFocusBetweenFloatingAndTiling => {
             String::from("Switch Focus Between Floating and Tiling")
         }
+        Action::MoveScratchpad => String::from("Move Window to Scratchpad"),
+        Action::MoveScratchpadById(_) => String::from("Move Window to Scratchpad"),
+        Action::ScratchpadShow => String::from("Toggle Scratchpad Window"),
+        Action::ScratchpadShowById(_) => String::from("Show Specific Scratchpad Window"),
         Action::ToggleOverview => String::from("Open the Overview"),
         Action::Screenshot(_, _) => String::from("Take a Screenshot"),
         Action::Spawn(args) => format!(

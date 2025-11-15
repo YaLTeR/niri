@@ -3205,6 +3205,78 @@ impl<W: LayoutElement> Layout<W> {
         workspace.move_floating_window(id, x, y, animate);
     }
 
+    pub fn move_scratchpad(&mut self, window: Option<&W::Id>) {
+        let workspace = if let Some(window) = window {
+            Some(
+                self.workspaces_mut()
+                    .find(|ws| ws.has_window(window))
+                    .unwrap(),
+            )
+        } else {
+            self.active_workspace_mut()
+        };
+
+        let Some(workspace) = workspace else {
+            return;
+        };
+        workspace.move_scratchpad(window);
+    }
+
+    pub fn scratchpad_show(&mut self, window: Option<&W::Id>) {
+        // If a specific window ID is provided, find which workspace has it and toggle it there.
+        if let Some(target_id) = window {
+            // First check if it's visible somewhere.
+            for workspace in self.workspaces_mut() {
+                let is_visible_scratchpad = workspace
+                    .tiles_with_render_positions()
+                    .any(|(tile, _, _)| *tile.window().id() == *target_id && tile.is_scratchpad);
+
+                if is_visible_scratchpad {
+                    workspace.scratchpad_show(Some(target_id));
+                    return;
+                }
+            }
+
+            // Otherwise, check if it's hidden somewhere.
+            for workspace in self.workspaces_mut() {
+                let has_hidden_scratchpad = workspace
+                    .hidden_scratchpad
+                    .iter()
+                    .any(|tile| *tile.window().id() == *target_id);
+
+                if has_hidden_scratchpad {
+                    workspace.scratchpad_show(Some(target_id));
+                    return;
+                }
+            }
+
+            // Window not found, do nothing.
+            return;
+        }
+
+        // No specific ID provided - use default behavior on active workspace.
+        // First, check if the currently focused window is a scratchpad.
+        // If so, hide it using the current workspace's method.
+        if let Some(workspace) = self.active_workspace_mut() {
+            if let Some(window) = workspace.active_window() {
+                let tiles: Vec<_> = workspace.tiles_with_render_positions().collect();
+                if tiles
+                    .iter()
+                    .any(|(tile, _, _)| *tile.window().id() == *window.id() && tile.is_scratchpad)
+                {
+                    // Current window is a scratchpad - hide it.
+                    workspace.scratchpad_show(None);
+                    return;
+                }
+            }
+        }
+
+        // Otherwise, show the first hidden scratchpad on the current workspace.
+        if let Some(workspace) = self.active_workspace_mut() {
+            workspace.scratchpad_show(None);
+        }
+    }
+
     pub fn focus_output(&mut self, output: &Output) {
         if let MonitorSet::Normal {
             monitors,

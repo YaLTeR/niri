@@ -64,7 +64,7 @@ Here are some points you may have questions about:
 - **Multi-monitor**: yes, a core part of the design from the very start. Mixed DPI works.
 - **Fractional scaling**: yes, plus all niri UI stays pixel-perfect.
 - **NVIDIA**: seems to work fine.
-- **Floating windows**: yes, starting from niri 25.01.
+- **Floating windows**: yes, starting from niri 25.01. Includes [scratchpad](https://yalter.github.io/niri/Floating-Windows.html#scratchpad) support (25.09).
 - **Input devices**: niri supports tablets, touchpads, and touchscreens.
 You can map the tablet to a specific monitor, or use [OpenTabletDriver].
 We have touchpad gestures, but no touchscreen gestures yet.

@@ -622,6 +622,14 @@ enum Op {
         y: PositionChange,
         animate: bool,
     },
+    MoveScratchpad {
+        #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+        id: Option<usize>,
+    },
+    ScratchpadShow {
+        #[proptest(strategy = "proptest::option::of(1..=5usize)")]
+        id: Option<usize>,
+    },
     SetParent {
         #[proptest(strategy = "1..=5usize")]
         id: usize,
@@ -1353,6 +1361,14 @@ impl Op {
                 let id = id.filter(|id| layout.has_window(id));
                 layout.move_floating_window(id.as_ref(), x, y, animate);
             }
+            Op::MoveScratchpad { id } => {
+                let id = id.filter(|id| layout.has_window(id));
+                layout.move_scratchpad(id.as_ref());
+            }
+            Op::ScratchpadShow { id } => {
+                let id = id.filter(|id| layout.has_window(id));
+                layout.scratchpad_show(id.as_ref());
+            }
             Op::SetParent {
                 id,
                 mut new_parent_id,
@@ -1734,6 +1750,10 @@ fn operations_dont_panic() {
         Op::ConsumeOrExpelWindowRight { id: None },
         Op::MoveWorkspaceToOutput(1),
         Op::ToggleColumnTabbedDisplay,
+        Op::MoveScratchpad { id: None },
+        Op::MoveScratchpad { id: Some(1) },
+        Op::ScratchpadShow { id: None },
+        Op::ScratchpadShow { id: Some(1) },
     ];
 
     for third in &every_op {
@@ -3613,6 +3633,155 @@ fn move_window_to_workspace_maximize_and_fullscreen() {
     // the column. MoveWindowToWorkspace removes the window from the column and this information is
     // forgotten.
     assert_eq!(win.pending_sizing_mode(), SizingMode::Normal);
+}
+
+#[test]
+fn scratchpad_basic_toggle() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::MoveScratchpad { id: None },
+        Op::ScratchpadShow { id: None },
+        Op::ScratchpadShow { id: None },
+        Op::ScratchpadShow { id: None },
+    ];
+
+    let layout = check_ops(ops);
+    layout.verify_invariants();
+
+    // After moving to scratchpad and toggling twice (hide, show), should have one window visible
+    assert_eq!(layout.windows().count(), 1);
+}
+
+#[test]
+fn scratchpad_multiple_windows() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::MoveScratchpad { id: Some(1) },
+        Op::MoveScratchpad { id: Some(2) },
+        Op::ScratchpadShow { id: None }, // Shows window 2 (most recent)
+    ];
+
+    let layout = check_ops(ops);
+    layout.verify_invariants();
+
+    // Should have one window visible (the most recently hidden scratchpad)
+    assert_eq!(layout.windows().count(), 1);
+}
+
+#[test]
+fn scratchpad_per_workspace() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::MoveScratchpad { id: None },
+        Op::FocusWorkspaceDown,
+        Op::ScratchpadShow { id: None }, // Try to show scratchpad on different workspace
+    ];
+
+    let layout = check_ops(ops);
+    layout.verify_invariants();
+
+    // Scratchpads are per-workspace, so scratchpad won't show on different workspace
+    // (it's still hidden on the original workspace)
+    assert_eq!(layout.windows().count(), 0);
+}
+
+#[test]
+fn scratchpad_stays_on_workspace() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::MoveScratchpad { id: None },
+        Op::FocusWorkspaceDown,
+        Op::FocusWorkspaceUp, // Return to original workspace
+        Op::ScratchpadShow { id: None },   // Now scratchpad should show
+    ];
+
+    let layout = check_ops(ops);
+    layout.verify_invariants();
+
+    // Scratchpad should be visible when we return to its workspace
+    assert_eq!(layout.windows().count(), 1);
+}
+
+#[test]
+fn scratchpad_with_floating() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::ToggleWindowFloating { id: None },
+        Op::MoveScratchpad { id: None },
+        Op::ScratchpadShow { id: None },
+    ];
+
+    let layout = check_ops(ops);
+    layout.verify_invariants();
+
+    // Scratchpad should work with floating windows
+    assert_eq!(layout.windows().count(), 1);
+}
+
+#[test]
+fn scratchpad_show_by_id() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::MoveScratchpad { id: Some(1) },
+        Op::MoveScratchpad { id: Some(2) },
+        Op::MoveScratchpad { id: Some(3) },
+        Op::ScratchpadShow { id: Some(2) }, // Show window 2 specifically
+    ];
+
+    let layout = check_ops(ops);
+    layout.verify_invariants();
+
+    // Should have only window 2 visible (windows 1 and 3 are hidden scratchpads)
+    assert_eq!(layout.windows().count(), 1);
+}
+
+#[test]
+fn scratchpad_hide_by_id() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::MoveScratchpad { id: Some(1) },
+        Op::ScratchpadShow { id: Some(1) }, // Show window 1
+        Op::ScratchpadShow { id: Some(1) }, // Hide window 1 again by id
+    ];
+
+    let layout = check_ops(ops);
+    layout.verify_invariants();
+
+    // Window 1 should be hidden, only window 2 visible
+    assert_eq!(layout.windows().count(), 1);
 }
 
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {

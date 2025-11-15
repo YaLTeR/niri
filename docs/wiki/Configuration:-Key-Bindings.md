@@ -405,3 +405,52 @@ binds {
     Super+Alt+L allow-inhibiting=false { spawn "swaylock"; }
 }
 ```
+
+#### `move-scratchpad`, `scratchpad-show`
+
+<sup>Since: 25.09</sup>
+
+Scratchpad actions allow you to quickly hide and show windows, similar to i3's scratchpad feature.
+
+`move-scratchpad` moves the focused window (or a window by ID) to the scratchpad, hiding it from view.
+`scratchpad-show` toggles the visibility of scratchpad windows.
+
+```kdl
+binds {
+    // Hide the focused window in scratchpad
+    Mod+Shift+Minus { move-scratchpad; }
+
+    // Toggle scratchpad visibility
+    Mod+Minus { scratchpad-show; }
+}
+```
+
+When you show a scratchpad window with `scratchpad-show`, it will appear centered on your current workspace as a floating window.
+If you call `scratchpad-show` again while a scratchpad window is focused, it will hide that window again.
+
+**Behavior:**
+- Scratchpad windows are always **floating** when visible
+- Scratchpads are **per-workspace**: hidden windows stay on the workspace where they were hidden
+- Multiple scratchpad windows are shown in **LIFO order** (last hidden, first shown)
+- Works with both tiling and floating windows
+
+**IPC usage:**
+
+```bash
+# Move focused window to scratchpad
+niri msg action move-scratchpad
+
+# Move specific window to scratchpad
+niri msg action move-scratchpad --id 12345
+
+# Toggle most recently hidden scratchpad visibility
+niri msg action scratchpad-show
+
+# Toggle specific scratchpad window by ID
+niri msg action scratchpad-show --id 12345
+```
+
+You can use `niri msg windows` to get window IDs, then show/hide specific scratchpad windows by ID.
+This is useful when you have multiple scratchpad windows and want to control which one appears.
+
+See the [Floating Windows](./Floating-Windows.md#scratchpad) page for more details.

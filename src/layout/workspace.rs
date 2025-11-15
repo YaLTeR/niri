@@ -49,6 +49,9 @@ pub struct Workspace<W: LayoutElement> {
     /// The floating layout.
     floating: FloatingSpace<W>,
 
+    /// Hidden scratchpad windows.
+    pub(super) hidden_scratchpad: Vec<Tile<W>>,
+
     /// Whether the floating layout is active instead of the scrolling layout.
     floating_is_active: FloatingActive,
 
@@ -255,6 +258,7 @@ impl<W: LayoutElement> Workspace<W> {
         Self {
             scrolling,
             floating,
+            hidden_scratchpad: Vec::new(),
             floating_is_active: FloatingActive::No,
             original_output,
             scale,
@@ -319,6 +323,7 @@ impl<W: LayoutElement> Workspace<W> {
         Self {
             scrolling,
             floating,
+            hidden_scratchpad: Vec::new(),
             floating_is_active: FloatingActive::No,
             output: None,
             scale,
@@ -1562,6 +1567,117 @@ impl<W: LayoutElement> Workspace<W> {
 
             let pos = self.floating.logical_to_size_frac(pos);
             tile.floating_pos = Some(pos);
+        }
+    }
+
+    pub fn move_scratchpad(&mut self, id: Option<&W::Id>) {
+        let active_id = self.active_window().map(|win| win.id().clone());
+        let Some(id) = id.cloned().or(active_id) else {
+            return;
+        };
+
+        // Find the window and remove it from its current layout.
+        let mut tile = if self.floating.has_window(&id) {
+            let removed = self.floating.remove_tile(&id);
+            removed.tile
+        } else {
+            let removed = self.scrolling.remove_tile(&id, Transaction::new());
+            removed.tile
+        };
+
+        // Mark as scratchpad.
+        tile.is_scratchpad = true;
+
+        // Ensure it has a floating position (centered by default).
+        if tile.floating_pos.is_none() {
+            let size = tile.tile_size();
+            let working_area = self.floating.working_area();
+            let center_x = working_area.loc.x + (working_area.size.w - size.w) / 2.;
+            let center_y = working_area.loc.y + (working_area.size.h - size.h) / 2.;
+            let pos = Point::from((center_x, center_y));
+            let pos = self.floating.logical_to_size_frac(pos);
+            tile.floating_pos = Some(pos);
+        }
+
+        // Add to hidden scratchpad.
+        self.hidden_scratchpad.push(tile);
+
+        // Adjust focus if needed.
+        if self.floating_is_active.get() && self.floating.is_empty() {
+            self.floating_is_active = FloatingActive::No;
+        }
+    }
+
+    pub fn scratchpad_show(&mut self, id: Option<&W::Id>) {
+        // If an ID is specified, try to show that specific scratchpad.
+        if let Some(target_id) = id {
+            // Check if the target window is visible and a scratchpad - hide it if so.
+            let is_visible_scratchpad = self
+                .tiles_with_render_positions()
+                .any(|(tile, _, _)| *tile.window().id() == *target_id && tile.is_scratchpad);
+
+            if is_visible_scratchpad {
+                // Hide this specific scratchpad.
+                let tile = if self.floating.has_window(target_id) {
+                    self.floating.remove_tile(target_id).tile
+                } else {
+                    self.scrolling.remove_tile(target_id, Transaction::new()).tile
+                };
+
+                self.hidden_scratchpad.push(tile);
+
+                // Adjust focus.
+                if self.floating_is_active.get() && self.floating.is_empty() {
+                    self.floating_is_active = FloatingActive::No;
+                }
+                return;
+            }
+
+            // Otherwise, try to show this specific hidden scratchpad.
+            let position = self
+                .hidden_scratchpad
+                .iter()
+                .position(|tile| *tile.window().id() == *target_id);
+
+            if let Some(pos) = position {
+                let tile = self.hidden_scratchpad.remove(pos);
+                self.floating.add_tile(tile, true);
+                self.floating_is_active = FloatingActive::Yes;
+            }
+            return;
+        }
+
+        // No ID specified - use default behavior.
+        // Check if the currently focused window is a scratchpad, hide it if so.
+        let focused_id_and_is_scratchpad = self.active_window().map(|window| {
+            let id = window.id().clone();
+            let is_scratchpad = self
+                .tiles_with_render_positions()
+                .any(|(tile, _, _)| *tile.window().id() == id && tile.is_scratchpad);
+            (id, is_scratchpad)
+        });
+
+        if let Some((id, true)) = focused_id_and_is_scratchpad {
+            // Window is a visible scratchpad - hide it.
+            let tile = if self.floating.has_window(&id) {
+                self.floating.remove_tile(&id).tile
+            } else {
+                self.scrolling.remove_tile(&id, Transaction::new()).tile
+            };
+
+            self.hidden_scratchpad.push(tile);
+
+            // Adjust focus.
+            if self.floating_is_active.get() && self.floating.is_empty() {
+                self.floating_is_active = FloatingActive::No;
+            }
+            return;
+        }
+
+        // Otherwise, show the most recently hidden scratchpad window.
+        if let Some(tile) = self.hidden_scratchpad.pop() {
+            self.floating.add_tile(tile, true);
+            self.floating_is_active = FloatingActive::Yes;
         }
     }
 
