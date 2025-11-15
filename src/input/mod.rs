@@ -779,7 +779,19 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::FocusWindowPrevious => {
-                if let Some(window) = self.niri.previously_focused_window.clone() {
+                let current = self.niri.layout.focus().map(|win| win.id());
+                if let Some(window) = self
+                    .niri
+                    .layout
+                    .windows()
+                    .map(|(_, win)| win)
+                    .filter(|win| Some(win.id()) != current)
+                    .max_by_key(|win| win.get_focus_timestamp())
+                    .map(|win| win.window.clone())
+                {
+                    // Commit current focus so repeated focus-window-previous works as expected.
+                    self.niri.mru_apply_keyboard_commit();
+
                     self.focus_window(&window);
                 }
             }
