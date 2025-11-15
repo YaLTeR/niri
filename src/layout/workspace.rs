@@ -455,13 +455,15 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn tiles(&self) -> impl Iterator<Item = &Tile<W>> + '_ {
         let scrolling = self.scrolling.tiles();
         let floating = self.floating.tiles();
-        scrolling.chain(floating)
+        let scratchpad = self.hidden_scratchpad.iter();
+        scrolling.chain(floating).chain(scratchpad)
     }
 
     pub fn tiles_mut(&mut self) -> impl Iterator<Item = &mut Tile<W>> + '_ {
         let scrolling = self.scrolling.tiles_mut();
         let floating = self.floating.tiles_mut();
-        scrolling.chain(floating)
+        let scratchpad = self.hidden_scratchpad.iter_mut();
+        scrolling.chain(floating).chain(scratchpad)
     }
 
     pub fn is_floating(&self, id: &W::Id) -> bool {
@@ -1570,6 +1572,14 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
+    /// Add a scratchpad tile that was removed from another workspace.
+    /// This is used when showing a scratchpad window on a different workspace than where it was hidden.
+    pub fn add_scratchpad_tile(&mut self, mut tile: Tile<W>) {
+        tile.is_scratchpad = false;
+        self.floating.add_tile(tile, true);
+        self.floating_is_active = FloatingActive::Yes;
+    }
+
     pub fn move_scratchpad(&mut self, id: Option<&W::Id>) {
         let active_id = self.active_window().map(|win| win.id().clone());
         let Some(id) = id.cloned().or(active_id) else {
@@ -1640,7 +1650,8 @@ impl<W: LayoutElement> Workspace<W> {
                 .position(|tile| *tile.window().id() == *target_id);
 
             if let Some(pos) = position {
-                let tile = self.hidden_scratchpad.remove(pos);
+                let mut tile = self.hidden_scratchpad.remove(pos);
+                tile.is_scratchpad = false;
                 self.floating.add_tile(tile, true);
                 self.floating_is_active = FloatingActive::Yes;
             }
@@ -1675,7 +1686,8 @@ impl<W: LayoutElement> Workspace<W> {
         }
 
         // Otherwise, show the most recently hidden scratchpad window.
-        if let Some(tile) = self.hidden_scratchpad.pop() {
+        if let Some(mut tile) = self.hidden_scratchpad.pop() {
+            tile.is_scratchpad = false;
             self.floating.add_tile(tile, true);
             self.floating_is_active = FloatingActive::Yes;
         }
@@ -1721,7 +1733,11 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
         let scrolling = self.scrolling.tiles_with_ipc_layouts();
         let floating = self.floating.tiles_with_ipc_layouts();
-        floating.chain(scrolling)
+        let scratchpad = self.hidden_scratchpad.iter().map(|tile| {
+            let layout = tile.ipc_layout_template();
+            (tile, layout)
+        });
+        floating.chain(scrolling).chain(scratchpad)
     }
 
     pub fn active_tile_visual_rectangle(&self) -> Option<Rectangle<f64, Logical>> {
@@ -1902,7 +1918,15 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
         if !self.floating.update_window(window, serial) {
-            self.scrolling.update_window(window, serial);
+            // Check if the window is in the scratchpad before trying scrolling layout.
+            let in_scratchpad = self
+                .hidden_scratchpad
+                .iter()
+                .any(|tile| tile.window().id() == window);
+
+            if !in_scratchpad {
+                self.scrolling.update_window(window, serial);
+            }
         }
     }
 

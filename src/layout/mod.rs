@@ -1621,12 +1621,12 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn with_windows(
         &self,
-        mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>, WindowLayout),
+        mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>, WindowLayout, bool),
     ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             // We don't fill any positions for interactively moved windows.
             let layout = move_.tile.ipc_layout_template();
-            f(move_.tile.window(), Some(&move_.output), None, layout);
+            f(move_.tile.window(), Some(&move_.output), None, layout, move_.tile.is_scratchpad);
         }
 
         match &self.monitor_set {
@@ -1634,7 +1634,7 @@ impl<W: LayoutElement> Layout<W> {
                 for mon in monitors {
                     for ws in &mon.workspaces {
                         for (tile, layout) in ws.tiles_with_ipc_layouts() {
-                            f(tile.window(), Some(&mon.output), Some(ws.id()), layout);
+                            f(tile.window(), Some(&mon.output), Some(ws.id()), layout, tile.is_scratchpad);
                         }
                     }
                 }
@@ -1642,7 +1642,7 @@ impl<W: LayoutElement> Layout<W> {
             MonitorSet::NoOutputs { workspaces } => {
                 for ws in workspaces {
                     for (tile, layout) in ws.tiles_with_ipc_layouts() {
-                        f(tile.window(), None, Some(ws.id()), layout);
+                        f(tile.window(), None, Some(ws.id()), layout, tile.is_scratchpad);
                     }
                 }
             }
@@ -3238,19 +3238,28 @@ impl<W: LayoutElement> Layout<W> {
             }
 
             // Otherwise, check if it's hidden somewhere.
+            // We need to find it, remove it, and show it on the active workspace.
+            let mut found_tile = None;
             for workspace in self.workspaces_mut() {
-                let has_hidden_scratchpad = workspace
+                if let Some(pos) = workspace
                     .hidden_scratchpad
                     .iter()
-                    .any(|tile| *tile.window().id() == *target_id);
-
-                if has_hidden_scratchpad {
-                    workspace.scratchpad_show(Some(target_id));
-                    return;
+                    .position(|tile| *tile.window().id() == *target_id)
+                {
+                    let mut tile = workspace.hidden_scratchpad.remove(pos);
+                    tile.is_scratchpad = false;
+                    found_tile = Some(tile);
+                    break;
                 }
             }
 
-            // Window not found, do nothing.
+            if let Some(tile) = found_tile {
+                // Show it on the active workspace.
+                if let Some(workspace) = self.active_workspace_mut() {
+                    workspace.add_scratchpad_tile(tile);
+                }
+            }
+
             return;
         }
 

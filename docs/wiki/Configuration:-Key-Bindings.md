@@ -430,7 +430,7 @@ If you call `scratchpad-show` again while a scratchpad window is focused, it wil
 
 **Behavior:**
 - Scratchpad windows are always **floating** when visible
-- Scratchpads are **per-workspace**: hidden windows stay on the workspace where they were hidden
+- Scratchpad windows **follow you** across workspaces: when you show a scratchpad, it appears on your current workspace
 - Multiple scratchpad windows are shown in **LIFO order** (last hidden, first shown)
 - Works with both tiling and floating windows
 
