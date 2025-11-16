@@ -419,7 +419,7 @@ impl State {
                 let bindings = &this.niri.config.borrow().binds;
                 let res = should_intercept_key(
                     &mut this.niri.suppressed_keys,
-                    bindings,
+                    &bindings.0,
                     mod_key,
                     key_code,
                     modified,
@@ -2520,7 +2520,7 @@ impl State {
                 }
                 .and_then(|trigger| {
                     let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
+                    let bindings = &config.binds.0;
                     find_configured_bind(bindings, mod_key, trigger, mods)
                 }) {
                     self.niri.suppressed_buttons.insert(button_code);
@@ -2866,7 +2866,7 @@ impl State {
                         (bind_left, bind_right)
                     } else {
                         let config = self.niri.config.borrow();
-                        let bindings = &config.binds;
+                        let bindings = &config.binds.0;
                         let bind_left =
                             find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, mods);
                         let bind_right = find_configured_bind(
@@ -2948,7 +2948,7 @@ impl State {
                         (bind_up, bind_down)
                     } else {
                         let config = self.niri.config.borrow();
-                        let bindings = &config.binds;
+                        let bindings = &config.binds.0;
                         let bind_up =
                             find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, mods);
                         let bind_down =
@@ -3088,7 +3088,7 @@ impl State {
                     .accumulate(horizontal);
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
+                    let bindings = &config.binds.0;
                     let bind_left =
                         find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollLeft, mods);
                     let bind_right =
@@ -3113,7 +3113,7 @@ impl State {
                     .accumulate(vertical);
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
+                    let bindings = &config.binds.0;
                     let bind_up =
                         find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollUp, mods);
                     let bind_down =
@@ -3971,9 +3971,9 @@ impl State {
 /// pressed keys as `suppressed`, thus preventing `releases` corresponding
 /// to them from being delivered.
 #[allow(clippy::too_many_arguments)]
-fn should_intercept_key(
+fn should_intercept_key<'a>(
     suppressed_keys: &mut HashSet<Keycode>,
-    bindings: &Binds,
+    bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
     key_code: Keycode,
     modified: Keysym,
@@ -4055,8 +4055,8 @@ fn should_intercept_key(
     }
 }
 
-fn find_bind(
-    bindings: &Binds,
+fn find_bind<'a>(
+    bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
     modified: Keysym,
     raw: Option<Keysym>,
@@ -4101,8 +4101,8 @@ fn find_bind(
     find_configured_bind(bindings, mod_key, trigger, mods)
 }
 
-fn find_configured_bind(
-    bindings: &Binds,
+fn find_configured_bind<'a>(
+    bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
     trigger: Trigger,
     mods: ModifiersState,
@@ -4115,7 +4115,7 @@ fn find_configured_bind(
         modifiers |= Modifiers::COMPOSITOR;
     }
 
-    for bind in &bindings.0 {
+    for bind in bindings {
         if bind.key.trigger != trigger {
             continue;
         }
@@ -4733,7 +4733,7 @@ mod tests {
         let close_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
             should_intercept_key(
                 suppr,
-                &bindings,
+                &bindings.0,
                 comp_mod,
                 close_key_code,
                 close_keysym,
@@ -4750,7 +4750,7 @@ mod tests {
         let none_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
             should_intercept_key(
                 suppr,
-                &bindings,
+                &bindings.0,
                 comp_mod,
                 Keycode::from(Keysym::l.raw() + 8),
                 Keysym::l,
@@ -4956,7 +4956,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::q),
                 ModifiersState {
@@ -4969,7 +4969,7 @@ mod tests {
         );
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::q),
                 ModifiersState::default(),
@@ -4979,7 +4979,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::h),
                 ModifiersState {
@@ -4992,7 +4992,7 @@ mod tests {
         );
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::h),
                 ModifiersState::default(),
@@ -5002,7 +5002,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::j),
                 ModifiersState {
@@ -5014,7 +5014,7 @@ mod tests {
         );
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::j),
                 ModifiersState::default(),
@@ -5025,7 +5025,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::k),
                 ModifiersState {
@@ -5038,7 +5038,7 @@ mod tests {
         );
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::k),
                 ModifiersState::default(),
@@ -5048,7 +5048,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::l),
                 ModifiersState {
@@ -5062,7 +5062,7 @@ mod tests {
         );
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::l),
                 ModifiersState {
