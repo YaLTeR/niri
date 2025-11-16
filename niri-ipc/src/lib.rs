@@ -54,6 +54,7 @@
 
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -1298,6 +1299,24 @@ pub struct Window {
     pub is_urgent: bool,
     /// Position- and size-related properties of the window.
     pub layout: WindowLayout,
+    /// Timestamp when the window was most recently focused.
+    ///
+    /// This timestamp is intended for most-recently-used window switchers, i.e. Alt-Tab. It only
+    /// updates after some debounce time so that quick window switching doesn't mark intermediate
+    /// windows as recently focused.
+    ///
+    /// The timestamp comes from the monotonic clock.
+    pub focus_timestamp: Option<Timestamp>,
+}
+
+/// A moment in time.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Timestamp {
+    /// Number of whole seconds.
+    pub secs: u64,
+    /// Fractional part of the timestamp in nanoseconds (10<sup>-9</sup> seconds).
+    pub nanos: u32,
 }
 
 /// Position- and size-related properties of a [`Window`].
@@ -1513,6 +1532,17 @@ pub enum Event {
         /// Id of the newly focused window, or `None` if no window is now focused.
         id: Option<u64>,
     },
+    /// Window focus timestamp changed.
+    ///
+    /// This event is separate from [`Event::WindowFocusChanged`] because the focus timestamp only
+    /// updates after some debounce time so that quick window switching doesn't mark intermediate
+    /// windows as recently focused.
+    WindowFocusTimestampChanged {
+        /// Id of the window.
+        id: u64,
+        /// The new focus timestamp.
+        focus_timestamp: Option<Timestamp>,
+    },
     /// Window urgency changed.
     WindowUrgencyChanged {
         /// Id of the window.
@@ -1558,6 +1588,21 @@ pub enum Event {
         /// be converted to a `String` (e.g. contained invalid UTF-8 bytes).
         path: Option<String>,
     },
+}
+
+impl From<Duration> for Timestamp {
+    fn from(value: Duration) -> Self {
+        Timestamp {
+            secs: value.as_secs(),
+            nanos: value.subsec_nanos(),
+        }
+    }
+}
+
+impl From<Timestamp> for Duration {
+    fn from(value: Timestamp) -> Self {
+        Duration::new(value.secs, value.nanos)
+    }
 }
 
 impl FromStr for WorkspaceReferenceArg {
