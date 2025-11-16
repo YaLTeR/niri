@@ -37,7 +37,6 @@
           rustPlatform,
           systemd,
           wayland,
-          gtk4,
           installShellFiles,
           withDbus ? true,
           withSystemd ? true,
@@ -94,7 +93,6 @@
               libgbm
               pango
               wayland
-              gtk4
             ]
             ++ lib.optional (withDbus || withScreencastSupport || withSystemd) dbus
             ++ lib.optional withScreencastSupport pipewire
