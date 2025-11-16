@@ -3,12 +3,11 @@ use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New,
 };
 use wayland_backend::server::GlobalId;
-
-use super::raw::kde_appmenu::v2::server::org_kde_kwin_appmenu_manager::{
-    OrgKdeKwinAppmenuManager, Request as ManagerRequest,
-};
-use crate::protocols::raw::kde_appmenu::v2::server::org_kde_kwin_appmenu::{
+use wayland_protocols_plasma::appmenu::server::org_kde_kwin_appmenu::{
     OrgKdeKwinAppmenu, Request as AppmenuRequest,
+};
+use wayland_protocols_plasma::appmenu::server::org_kde_kwin_appmenu_manager::{
+    OrgKdeKwinAppmenuManager, Request as ManagerRequest,
 };
 
 const APPMENU_VERSION: u32 = 2;
@@ -103,6 +102,7 @@ where
             ManagerRequest::Release => {
                 // Auto-handled by smithay with Drop
             }
+            _ => unreachable!(),
         }
     }
 }
@@ -129,6 +129,7 @@ where
                 object_path,
             } => state.new_appmenu(surface, service_name, object_path),
             AppmenuRequest::Release => state.remove_appmenu(surface),
+            _ => unreachable!(),
         }
     }
 }
@@ -137,15 +138,15 @@ where
 macro_rules! delegate_kde_appmenu {
     ($(@<$( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+>)? $ty: ty) => {
         smithay::reexports::wayland_server::delegate_global_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::protocols::raw::kde_appmenu::v2::server::org_kde_kwin_appmenu_manager::OrgKdeKwinAppmenuManager: ()
+            wayland_protocols_plasma::appmenu::server::org_kde_kwin_appmenu_manager::OrgKdeKwinAppmenuManager: ()
         ] => $crate::protocols::kde_appmenu::KDEAppMenuState);
 
         smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::protocols::raw::kde_appmenu::v2::server::org_kde_kwin_appmenu_manager::OrgKdeKwinAppmenuManager: ()
+            wayland_protocols_plasma::appmenu::server::org_kde_kwin_appmenu_manager::OrgKdeKwinAppmenuManager: ()
         ] => $crate::protocols::kde_appmenu::KDEAppMenuState);
 
         smithay::reexports::wayland_server::delegate_dispatch!($(@< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $ty: [
-            $crate::protocols::raw::kde_appmenu::v2::server::org_kde_kwin_appmenu::OrgKdeKwinAppmenu:
+            wayland_protocols_plasma::appmenu::server::org_kde_kwin_appmenu::OrgKdeKwinAppmenu:
                 smithay::reexports::wayland_server::protocol::wl_surface::WlSurface
         ] => $crate::protocols::kde_appmenu::KDEAppMenuState);
     };
