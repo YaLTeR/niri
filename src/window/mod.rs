@@ -3,7 +3,7 @@ use std::cmp::{max, min};
 use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, WindowRule};
 use niri_config::{
-    BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize, ShadowRule,
+    BlockOutFrom, BlurRule, BorderRule, CornerRadius, FloatingPosition, PresetSize, ShadowRule,
     TabIndicatorRule,
 };
 use niri_ipc::ColumnDisplay;
@@ -88,6 +88,8 @@ pub struct ResolvedWindowRules {
     pub border: BorderRule,
     /// Shadow overrides.
     pub shadow: ShadowRule,
+    /// Blur overrides.
+    pub blur: BlurRule,
     /// Tab indicator overrides.
     pub tab_indicator: TabIndicatorRule,
 
@@ -223,6 +225,13 @@ impl ResolvedWindowRules {
                 color: None,
                 inactive_color: None,
             },
+            blur: BlurRule {
+                off: false,
+                on: false,
+                passes: None,
+                radius: None,
+                noise: None,
+            },
             tab_indicator: TabIndicatorRule {
                 active_color: None,
                 inactive_color: None,
@@ -336,6 +345,7 @@ impl ResolvedWindowRules {
                 resolved.focus_ring.merge_with(&rule.focus_ring);
                 resolved.border.merge_with(&rule.border);
                 resolved.shadow.merge_with(&rule.shadow);
+                resolved.blur.merge_with(&rule.blur);
                 resolved.tab_indicator.merge_with(&rule.tab_indicator);
 
                 if let Some(x) = rule.draw_border_with_background {
