@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use knuffel::errors::DecodeError;
 use niri_ipc::{ColumnDisplay, SizeChange};
 
@@ -173,6 +175,25 @@ pub enum CenterFocusedColumn {
     /// Focusing a column will center it if it doesn't fit on the screen together with the
     /// previously focused column.
     OnOverflow,
+}
+
+#[derive(knuffel::DecodeScalar, Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub enum LayoutDirection {
+    #[default]
+    Ltr,
+    Rtl,
+}
+
+impl FromStr for LayoutDirection {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "ltr" | "LTR" => Ok(Self::Ltr),
+            "rtl" | "RTL" => Ok(Self::Rtl),
+            _ => Err("layout direction must be \"ltr\" or \"rtl\""),
+        }
+    }
 }
 
 impl<S> knuffel::Decode<S> for DefaultPresetSize
