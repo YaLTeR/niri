@@ -285,6 +285,12 @@ jobs:
   nix:
     runs-on: ubuntu-24.04
     steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          dotnet: false
+          large-packages: false
+        
       - uses: actions/checkout@v4
         with:
           show-progress: false
