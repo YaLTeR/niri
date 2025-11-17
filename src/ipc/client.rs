@@ -458,6 +458,12 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowFocusChanged { id } => {
                         println!("Window focus changed: {id:?}");
                     }
+                    Event::WindowFullscreenStateChanged {
+                        id,
+                        fullscreen_state,
+                    } => {
+                        println!("Window {id}: fullscreen state changed to {fullscreen_state}");
+                    }
                     Event::WindowFocusTimestampChanged {
                         id,
                         focus_timestamp,
