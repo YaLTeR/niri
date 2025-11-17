@@ -2299,18 +2299,30 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
     // borrowing. Note that this method's return value does not borrow the entire &Self!
     fn column_xs(&self, data: impl Iterator<Item = ColumnData>) -> impl Iterator<Item = f64> {
+        let data: Vec<_> = data.collect();
         let gaps = self.options.layout.gaps;
-        let mut x = 0.;
+        let mut positions = vec![0.; data.len() + 1];
 
-        // Chain with a dummy value to be able to get one past all columns' X.
-        let dummy = ColumnData { width: 0. };
-        let data = data.chain(iter::once(dummy));
+        match self.dir() {
+            LayoutDirection::Ltr => {
+                let mut x = 0.;
+                for (idx, column) in data.iter().enumerate() {
+                    positions[idx] = x;
+                    x += column.width + gaps;
+                }
+                positions[data.len()] = x;
+            }
+            LayoutDirection::Rtl => {
+                let mut x = 0.;
+                for idx in (0..data.len()).rev() {
+                    positions[idx] = x;
+                    x += data[idx].width + gaps;
+                }
+                positions[data.len()] = x;
+            }
+        }
 
-        data.map(move |data| {
-            let rv = x;
-            x += data.width + gaps;
-            rv
-        })
+        positions.into_iter()
     }
 
     fn column_x(&self, column_idx: usize) -> f64 {
