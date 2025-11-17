@@ -2303,8 +2303,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.column_x(self.active_column_idx) + self.view_offset.target()
     }
 
-    // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
-    // borrowing. Note that this method's return value does not borrow the entire &Self!
+    // HACK: collect self.data first so we can iterate without borrowing all of Self. This keeps the
+    // non-lexical borrow workaround while allowing direction-aware math below.
     fn column_xs(&self, data: impl Iterator<Item = ColumnData>) -> impl Iterator<Item = f64> {
         let data: Vec<_> = data.collect();
         let gaps = self.options.layout.gaps;
