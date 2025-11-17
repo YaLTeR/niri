@@ -152,6 +152,11 @@ impl<T: Texture> TextureRenderElement<T> {
             .or_else(|| self.src.map(|src| src.size))
             .unwrap_or_else(|| self.buffer.logical_size())
     }
+
+    pub fn logical_src(&self) -> Rectangle<f64, Logical> {
+        self.src
+            .unwrap_or_else(|| Rectangle::from_size(self.logical_size()))
+    }
 }
 
 impl<T: Texture> Element for TextureRenderElement<T> {

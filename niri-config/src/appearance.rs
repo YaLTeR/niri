@@ -77,6 +77,12 @@ impl MulAssign<f32> for Color {
     }
 }
 
+impl From<Color> for Color32F {
+    fn from(value: Color) -> Self {
+        Color32F::from(value.to_array_premul())
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
 pub struct Gradient {
     #[knuffel(property, str)]
