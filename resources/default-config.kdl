@@ -110,6 +110,9 @@ input {
 // Find more information on the wiki:
 // https://yalter.github.io/niri/Configuration:-Layout
 layout {
+    // Arrange scrolling columns left-to-right (default) or right-to-left. Accepts "ltr" or "rtl".
+    direction "ltr"
+
     // Set gaps around windows in logical pixels.
     gaps 16
 

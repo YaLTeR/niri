@@ -24,6 +24,7 @@ pub struct Layout {
     pub gaps: f64,
     pub struts: Struts,
     pub background_color: Color,
+    pub direction: LayoutDirection,
 }
 
 impl Default for Layout {
@@ -52,6 +53,7 @@ impl Default for Layout {
                 PresetSize::Proportion(2. / 3.),
             ],
             background_color: DEFAULT_BACKGROUND_COLOR,
+            direction: LayoutDirection::Ltr,
         }
     }
 }
@@ -78,6 +80,7 @@ impl MergeWith<LayoutPart> for Layout {
             default_column_display,
             struts,
             background_color,
+            direction,
         );
 
         if let Some(x) = part.default_column_width {
@@ -126,6 +129,8 @@ pub struct LayoutPart {
     pub struts: Option<Struts>,
     #[knuffel(child)]
     pub background_color: Option<Color>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub direction: Option<LayoutDirection>,
 }
 
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
