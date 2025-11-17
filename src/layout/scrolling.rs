@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::utils::MergeWith as _;
-use niri_config::{CenterFocusedColumn, PresetSize, Struts};
+use niri_config::{CenterFocusedColumn, LayoutDirection, PresetSize, Struts};
 use niri_ipc::{ColumnDisplay, SizeChange, WindowLayout};
 use ordered_float::NotNan;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -3702,6 +3702,63 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 win.refresh();
             }
         }
+    }
+
+    // Returns the effective layout direction for this workspace.
+    fn dir(&self) -> LayoutDirection {
+        self.options.layout_direction()
+    }
+
+    // Index of the visually leftmost column, if any.
+    fn left_edge_index(&self) -> Option<usize> {
+        if self.columns.is_empty() {
+            return None;
+        }
+
+        Some(match self.dir() {
+            LayoutDirection::Ltr => 0,
+            LayoutDirection::Rtl => self.columns.len() - 1,
+        })
+    }
+
+    // Index of the visually rightmost column, if any.
+    fn right_edge_index(&self) -> Option<usize> {
+        if self.columns.is_empty() {
+            return None;
+        }
+
+        Some(match self.dir() {
+            LayoutDirection::Ltr => self.columns.len() - 1,
+            LayoutDirection::Rtl => 0,
+        })
+    }
+
+    // Physical neighbor that lies to the left of the given column.
+    fn screen_left_of(&self, idx: usize) -> Option<usize> {
+        match self.dir() {
+            LayoutDirection::Ltr => idx.checked_sub(1),
+            LayoutDirection::Rtl => (idx + 1 < self.columns.len()).then_some(idx + 1),
+        }
+    }
+
+    // Physical neighbor that lies to the right of the given column.
+    fn screen_right_of(&self, idx: usize) -> Option<usize> {
+        match self.dir() {
+            LayoutDirection::Ltr => (idx + 1 < self.columns.len()).then_some(idx + 1),
+            LayoutDirection::Rtl => idx.checked_sub(1),
+        }
+    }
+
+    // Maps a logical LTR index to the underlying storage index in the current direction.
+    fn logical_to_physical_idx(&self, logical_idx: usize) -> Option<usize> {
+        if logical_idx >= self.columns.len() {
+            return None;
+        }
+
+        Some(match self.dir() {
+            LayoutDirection::Ltr => logical_idx,
+            LayoutDirection::Rtl => self.columns.len() - logical_idx - 1,
+        })
     }
 
     #[cfg(test)]
