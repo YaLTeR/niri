@@ -128,7 +128,7 @@ use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
-use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
+use crate::handlers::{configure_lock_surface, ClipboardImageData, XDG_ACTIVATION_TOKEN_TIMEOUT};
 use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
@@ -175,7 +175,7 @@ use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
     logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
-    write_png_rgba8, xwayland,
+    write_bmp_rgba8, write_png_rgba8, xwayland,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -5742,15 +5742,22 @@ impl Niri {
 
         // Prepare to set the encoded image as our clipboard selection. This must be done from the
         // main thread.
-        let (tx, rx) = calloop::channel::sync_channel::<Arc<[u8]>>(1);
+        let (tx, rx) = calloop::channel::sync_channel::<ClipboardImageData>(1);
         self.event_loop
             .insert_source(rx, move |event, _, state| match event {
-                calloop::channel::Event::Msg(buf) => {
+                calloop::channel::Event::Msg(img) => {
                     set_data_device_selection(
                         &state.niri.display_handle,
                         &state.niri.seat,
-                        vec![String::from("image/png")],
-                        buf.clone(),
+                        vec![
+                            String::from("image/png"),
+                            String::from("image/bmp"),
+                            String::from("image/x-bmp"),
+                            String::from("image/x-MS-bmp"),
+                            String::from("image/x-ms-bmp"),
+                            String::from("image/x-win-bitmap"),
+                        ],
+                        img,
                     );
                 }
                 calloop::channel::Event::Closed => (),
@@ -5770,16 +5777,33 @@ impl Niri {
 
         // Encode and save the image in a thread as it's slow.
         thread::spawn(move || {
-            let mut buf = vec![];
+            // Encode PNG
+            let mut png_buf = vec![];
+            {
+                let w = std::io::Cursor::new(&mut png_buf);
+                if let Err(err) = write_png_rgba8(w, size.w as u32, size.h as u32, &pixels) {
+                    warn!("error encoding screenshot image (png): {err:?}");
+                    return;
+                }
+            }
 
-            let w = std::io::Cursor::new(&mut buf);
-            if let Err(err) = write_png_rgba8(w, size.w as u32, size.h as u32, &pixels) {
-                warn!("error encoding screenshot image: {err:?}");
+            // Encode BMP
+            let mut bmp_buf = vec![];
+            if let Err(err) = write_bmp_rgba8(
+                std::io::Cursor::new(&mut bmp_buf),
+                size.w as u32,
+                size.h as u32,
+                &pixels,
+            ) {
+                warn!("error encoding screenshot image (bmp): {err:?}");
                 return;
             }
 
-            let buf: Arc<[u8]> = Arc::from(buf.into_boxed_slice());
-            let _ = tx.send(buf.clone());
+            let payload = ClipboardImageData {
+                png: Arc::from(png_buf.into_boxed_slice()),
+                bmp: Arc::from(bmp_buf.into_boxed_slice()),
+            };
+            let _ = tx.send(payload.clone());
 
             let mut image_path = None;
 
@@ -5799,7 +5823,7 @@ impl Niri {
                     }
                 }
 
-                match std::fs::write(&path, buf) {
+                match std::fs::write(&path, &payload.png) {
                     Ok(()) => image_path = Some(path),
                     Err(err) => {
                         warn!("error saving screenshot image: {err:?}");

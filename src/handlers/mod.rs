@@ -282,8 +282,28 @@ delegate_input_method_manager!(State);
 delegate_keyboard_shortcuts_inhibit!(State);
 delegate_virtual_keyboard_manager!(State);
 
+/// Clipboard payload supporting multiple MIME encodings for the same image.
+#[derive(Clone)]
+pub struct ClipboardImageData {
+    pub png: Arc<[u8]>,
+    pub bmp: Arc<[u8]>,
+}
+
+impl ClipboardImageData {
+    fn select_bytes_for_mime(&self, mime_type: &str) -> Arc<[u8]> {
+        match mime_type {
+            // Common BMP MIME types seen in the wild
+            "image/bmp" | "image/x-bmp" | "image/x-MS-bmp" | "image/x-ms-bmp" | "image/x-win-bitmap" => {
+                self.bmp.clone()
+            }
+            // Default to PNG for anything else we advertised
+            _ => self.png.clone(),
+        }
+    }
+}
+
 impl SelectionHandler for State {
-    type SelectionUserData = Arc<[u8]>;
+    type SelectionUserData = ClipboardImageData;
 
     fn send_selection(
         &mut self,
@@ -295,13 +315,14 @@ impl SelectionHandler for State {
     ) {
         let _span = tracy_client::span!("send_selection");
 
-        let buf = user_data.clone();
+        // Choose encoding based on requested MIME type.
+        let bytes = user_data.select_bytes_for_mime(&_mime_type);
         thread::spawn(move || {
             // Clear O_NONBLOCK, otherwise File::write_all() will stop halfway.
             if let Err(err) = fcntl_setfl(&fd, OFlags::empty()) {
                 warn!("error clearing flags on selection target fd: {err:?}");
             }
-            if let Err(err) = File::from(fd).write_all(&buf) {
+            if let Err(err) = File::from(fd).write_all(&bytes) {
                 warn!("error writing selection: {err:?}");
             }
         });
