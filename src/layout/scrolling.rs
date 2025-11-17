@@ -954,7 +954,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .iter()
             .position(|col| col.contains(right_of))
             .unwrap();
-        let col_idx = right_of_idx + 1;
+        let col_idx = self
+            .insert_index_screen_right_of(right_of_idx)
+            .min(self.columns.len());
 
         self.add_tile(Some(col_idx), tile, activate, width, is_full_width, None);
     }
@@ -972,7 +974,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             if was_empty {
                 0
             } else {
-                self.active_column_idx + 1
+                self.insert_index_screen_right_of(self.active_column_idx)
+                    .min(self.columns.len())
             }
         });
 
@@ -1546,32 +1549,33 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn focus_left(&mut self) -> bool {
-        if self.active_column_idx == 0 {
+        let Some(next_idx) = self.screen_left_of(self.active_column_idx) else {
             return false;
-        }
-        self.activate_column(self.active_column_idx - 1);
+        };
+
+        self.activate_column(next_idx);
         true
     }
 
     pub fn focus_right(&mut self) -> bool {
-        if self.active_column_idx + 1 >= self.columns.len() {
+        let Some(next_idx) = self.screen_right_of(self.active_column_idx) else {
             return false;
-        }
+        };
 
-        self.activate_column(self.active_column_idx + 1);
+        self.activate_column(next_idx);
         true
     }
 
     pub fn focus_column_first(&mut self) {
-        self.activate_column(0);
+        if let Some(idx) = self.left_edge_index() {
+            self.activate_column(idx);
+        }
     }
 
     pub fn focus_column_last(&mut self) {
-        if self.columns.is_empty() {
-            return;
+        if let Some(idx) = self.right_edge_index() {
+            self.activate_column(idx);
         }
-
-        self.activate_column(self.columns.len() - 1);
     }
 
     pub fn focus_column(&mut self, index: usize) {
@@ -1579,7 +1583,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        self.activate_column(index.saturating_sub(1).min(self.columns.len() - 1));
+        let len = self.columns.len();
+        let logical_idx = index.saturating_sub(1).min(len - 1);
+        if let Some(idx) = self.logical_to_physical_idx(logical_idx) {
+            self.activate_column(idx);
+        }
     }
 
     pub fn focus_window_in_column(&mut self, index: u8) {
@@ -1671,7 +1679,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        self.move_column_to(index.saturating_sub(1).min(self.columns.len() - 1));
+        let len = self.columns.len();
+        let logical_idx = index.saturating_sub(1).min(len - 1);
+        if let Some(idx) = self.logical_to_physical_idx(logical_idx) {
+            self.move_column_to(idx);
+        }
     }
 
     fn move_column_to(&mut self, new_idx: usize) {
@@ -1712,35 +1724,33 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn move_left(&mut self) -> bool {
-        if self.active_column_idx == 0 {
+        let Some(target_idx) = self.screen_left_of(self.active_column_idx) else {
             return false;
-        }
+        };
 
-        self.move_column_to(self.active_column_idx - 1);
+        self.move_column_to(target_idx);
         true
     }
 
     pub fn move_right(&mut self) -> bool {
-        let new_idx = self.active_column_idx + 1;
-        if new_idx >= self.columns.len() {
+        let Some(target_idx) = self.screen_right_of(self.active_column_idx) else {
             return false;
-        }
+        };
 
-        self.move_column_to(new_idx);
+        self.move_column_to(target_idx);
         true
     }
 
     pub fn move_column_to_first(&mut self) {
-        self.move_column_to(0);
+        if let Some(idx) = self.left_edge_index() {
+            self.move_column_to(idx);
+        }
     }
 
     pub fn move_column_to_last(&mut self) {
-        if self.columns.is_empty() {
-            return;
+        if let Some(idx) = self.right_edge_index() {
+            self.move_column_to(idx);
         }
-
-        let new_idx = self.columns.len() - 1;
-        self.move_column_to(new_idx);
     }
 
     pub fn move_down(&mut self) -> bool {
@@ -1788,12 +1798,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             && source_column.active_tile_idx == source_tile_idx;
 
         if source_column.tiles.len() == 1 {
-            if source_col_idx == 0 {
+            let Some(target_column_idx) = self.screen_left_of(source_col_idx) else {
                 return;
-            }
-
-            // Move into adjacent column.
-            let target_column_idx = source_col_idx - 1;
+            };
 
             let offset = if self.active_column_idx <= source_col_idx {
                 // Tiles to the right animate from the following column.
@@ -1839,8 +1846,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let removed =
                 self.remove_tile_by_idx(source_col_idx, source_tile_idx, Transaction::new(), None);
 
-            // We're inserting into the source column position.
-            let target_column_idx = source_col_idx;
+            let target_column_idx = self
+                .insert_index_screen_left_of(source_col_idx)
+                .min(self.columns.len());
 
             self.add_tile(
                 Some(target_column_idx),
@@ -1856,7 +1864,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 self.activate_prev_column_on_removal = None;
             }
 
-            if target_column_idx < self.active_column_idx {
+            if self.is_screen_left_of(target_column_idx, self.active_column_idx) {
                 // Tiles to the left animate from the following column.
                 offset.x += self.column_x(target_column_idx + 1) - self.column_x(target_column_idx);
             }
@@ -1899,15 +1907,20 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             && source_column.active_tile_idx == source_tile_idx;
 
         if source_column.tiles.len() == 1 {
-            if source_col_idx + 1 == self.columns.len() {
+            let Some(adjacent_idx) = self.screen_right_of(source_col_idx) else {
                 return;
-            }
+            };
 
             // Move into adjacent column.
-            let target_column_idx = source_col_idx;
+            let target_column_idx = adjacent_idx;
 
-            offset.x += cur_x - self.column_x(source_col_idx + 1);
-            offset.x -= self.columns[source_col_idx + 1].render_offset().x;
+            offset.x += if self.is_screen_right_of(self.active_column_idx, source_col_idx) {
+                // Tiles to the right animate from the following column.
+                self.column_x(source_col_idx) - self.column_x(target_column_idx)
+            } else {
+                cur_x - self.column_x(target_column_idx)
+            };
+            offset.x -= self.columns[target_column_idx].render_offset().x;
 
             if source_tile_was_active {
                 // Make sure the target column gets activated.
@@ -1934,7 +1947,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let removed =
                 self.remove_tile_by_idx(source_col_idx, source_tile_idx, Transaction::new(), None);
 
-            let target_column_idx = source_col_idx + 1;
+            let target_column_idx = self
+                .insert_index_screen_right_of(source_col_idx)
+                .min(self.columns.len());
 
             self.add_tile(
                 Some(target_column_idx),
@@ -1945,7 +1960,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 Some(self.options.animations.window_movement.0),
             );
 
-            offset.x += if self.active_column_idx <= target_column_idx {
+            offset.x += if self.is_screen_right_of(self.active_column_idx, target_column_idx) {
                 // Tiles to the right animate to the following column.
                 cur_x - self.column_x(target_column_idx)
             } else {
@@ -1964,12 +1979,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        if self.active_column_idx == self.columns.len() - 1 {
+        let Some(source_column_idx) = self.screen_right_of(self.active_column_idx) else {
             return;
-        }
+        };
 
         let target_column_idx = self.active_column_idx;
-        let source_column_idx = self.active_column_idx + 1;
 
         let offset = self.column_x(source_column_idx)
             + self.columns[source_column_idx].render_offset().x
@@ -1994,7 +2008,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let source_col_idx = self.active_column_idx;
-        let target_col_idx = self.active_column_idx + 1;
+        let target_col_idx = self
+            .insert_index_screen_right_of(self.active_column_idx)
+            .min(self.columns.len());
         let cur_x = self.column_x(source_col_idx);
 
         let source_column = &self.columns[self.active_column_idx];
@@ -2033,24 +2049,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // if this is the first (resp. last column), then this operation is equivalent
         // to an `consume_or_expel_window_left` (resp. `consume_or_expel_window_right`)
-        match direction {
-            ScrollDirection::Left => {
-                if self.active_column_idx == 0 {
-                    return;
-                }
-            }
-            ScrollDirection::Right => {
-                if self.active_column_idx == self.columns.len() - 1 {
-                    return;
-                }
-            }
-        }
-
         let source_column_idx = self.active_column_idx;
-        let target_column_idx = self.active_column_idx.wrapping_add_signed(match direction {
-            ScrollDirection::Left => -1,
-            ScrollDirection::Right => 1,
-        });
+        let target_column_idx = match direction {
+            ScrollDirection::Left => self.screen_left_of(source_column_idx),
+            ScrollDirection::Right => self.screen_right_of(source_column_idx),
+        };
+        let Some(target_column_idx) = target_column_idx else {
+            return;
+        };
 
         // if both source and target columns contain a single tile, then the operation is equivalent
         // to a simple column move
@@ -2088,12 +2094,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         {
             // special case when the source column disappears after removing its last tile
-            let adjusted_target_column_idx =
-                if direction == ScrollDirection::Right && source_column_drained {
-                    target_column_idx - 1
-                } else {
-                    target_column_idx
-                };
+            let adjusted_target_column_idx = if source_column_drained
+                && target_column_idx > source_column_idx
+            {
+                target_column_idx - 1
+            } else {
+                target_column_idx
+            };
 
             self.add_tile_to_column(
                 adjusted_target_column_idx,
@@ -3771,6 +3778,35 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             LayoutDirection::Ltr => logical_idx,
             LayoutDirection::Rtl => self.columns.len() - logical_idx - 1,
         })
+    }
+
+    // Index where a new column should be inserted to appear to the visual right of `idx`.
+    fn insert_index_screen_right_of(&self, idx: usize) -> usize {
+        match self.dir() {
+            LayoutDirection::Ltr => idx + 1,
+            LayoutDirection::Rtl => idx,
+        }
+    }
+
+    // Index where a new column should be inserted to appear to the visual left of `idx`.
+    fn insert_index_screen_left_of(&self, idx: usize) -> usize {
+        match self.dir() {
+            LayoutDirection::Ltr => idx,
+            LayoutDirection::Rtl => idx + 1,
+        }
+    }
+
+    // Whether column `lhs` is visually left of `rhs`.
+    fn is_screen_left_of(&self, lhs: usize, rhs: usize) -> bool {
+        match self.dir() {
+            LayoutDirection::Ltr => lhs < rhs,
+            LayoutDirection::Rtl => lhs > rhs,
+        }
+    }
+
+    // Whether column `lhs` is visually right of `rhs`.
+    fn is_screen_right_of(&self, lhs: usize, rhs: usize) -> bool {
+        self.is_screen_left_of(rhs, lhs)
     }
 
     #[cfg(test)]
