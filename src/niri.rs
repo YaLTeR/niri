@@ -1476,6 +1476,9 @@ impl State {
             libinput_config_changed = true;
         }
 
+        let ignored_nodes_changed =
+            config.debug.ignored_drm_devices != old_config.debug.ignored_drm_devices;
+
         if config.outputs != self.niri.config_file_output_config {
             output_config_changed = true;
             self.niri
@@ -1609,6 +1612,10 @@ impl State {
             for mut device in self.niri.devices.iter().cloned() {
                 apply_libinput_settings(&config.input, &mut device);
             }
+        }
+
+        if ignored_nodes_changed {
+            self.backend.update_ignored_nodes_config(&mut self.niri);
         }
 
         if output_config_changed {

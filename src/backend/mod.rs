@@ -184,6 +184,14 @@ impl Backend {
         }
     }
 
+    pub fn update_ignored_nodes_config(&mut self, niri: &mut Niri) {
+        match self {
+            Backend::Tty(tty) => tty.update_ignored_nodes_config(niri),
+            Backend::Winit(_) => (),
+            Backend::Headless(_) => (),
+        }
+    }
+
     pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
         match self {
             Backend::Tty(tty) => tty.on_output_config_changed(niri),

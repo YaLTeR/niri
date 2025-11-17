@@ -95,6 +95,9 @@ pub struct Tty {
     dmabuf_global: Option<DmabufGlobal>,
     // The output config had changed, but the session is paused, so we need to update it on resume.
     update_output_config_on_resume: bool,
+    // The ignored nodes have changed, but the session is paused, so we need to update it on
+    // resume.
+    update_ignored_nodes_on_resume: bool,
     // Whether the debug tinting is enabled.
     debug_tint: bool,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
@@ -350,6 +353,7 @@ impl Tty {
             devices: HashMap::new(),
             dmabuf_global: None,
             update_output_config_on_resume: false,
+            update_ignored_nodes_on_resume: false,
             debug_tint: false,
             ipc_outputs: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -420,6 +424,17 @@ impl Tty {
                     warn!("error resuming libinput");
                 }
 
+                if self.update_ignored_nodes_on_resume {
+                    self.update_ignored_nodes_on_resume = false;
+                    let mut ignored_nodes = ignored_nodes_from_config(&self.config.borrow());
+                    if ignored_nodes.remove(&self.primary_node)
+                        || ignored_nodes.remove(&self.primary_render_node)
+                    {
+                        warn!("ignoring the primary node or render node is not allowed");
+                    }
+                    self.ignored_nodes = ignored_nodes;
+                }
+
                 let mut device_list = self
                     .udev_dispatcher
                     .as_source_ref()
@@ -430,14 +445,20 @@ impl Tty {
                 let removed_devices = self
                     .devices
                     .keys()
-                    .filter(|node| !device_list.contains_key(&node.dev_id()))
+                    .filter(|node| {
+                        !device_list.contains_key(&node.dev_id())
+                            || self.ignored_nodes.contains(node)
+                    })
                     .copied()
                     .collect::<Vec<_>>();
 
                 let remained_devices = self
                     .devices
                     .keys()
-                    .filter(|node| device_list.contains_key(&node.dev_id()))
+                    .filter(|node| {
+                        device_list.contains_key(&node.dev_id())
+                            && !self.ignored_nodes.contains(node)
+                    })
                     .copied()
                     .collect::<Vec<_>>();
 
@@ -1901,6 +1922,59 @@ impl Tty {
         }
     }
 
+    pub fn update_ignored_nodes_config(&mut self, niri: &mut Niri) {
+        let _span = tracy_client::span!("Tty::update_ignored_nodes_config");
+
+        // If we're inactive, we can't do anything, so just set a flag for later.
+        if !self.session.is_active() {
+            self.update_ignored_nodes_on_resume = true;
+            return;
+        }
+
+        let mut ignored_nodes = ignored_nodes_from_config(&self.config.borrow());
+        if ignored_nodes.remove(&self.primary_node)
+            || ignored_nodes.remove(&self.primary_render_node)
+        {
+            warn!("ignoring the primary node or render node is not allowed");
+        }
+
+        if ignored_nodes == self.ignored_nodes {
+            return;
+        }
+        self.ignored_nodes = ignored_nodes;
+
+        let mut device_list = self
+            .udev_dispatcher
+            .as_source_ref()
+            .device_list()
+            .map(|(device_id, path)| (device_id, path.to_owned()))
+            .collect::<HashMap<_, _>>();
+
+        let removed_devices = self
+            .devices
+            .keys()
+            .filter(|node| {
+                self.ignored_nodes.contains(node) || !device_list.contains_key(&node.dev_id())
+            })
+            .copied()
+            .collect::<Vec<_>>();
+
+        for node in removed_devices {
+            device_list.remove(&node.dev_id());
+            self.device_removed(node.dev_id(), niri);
+        }
+
+        for node in self.devices.keys() {
+            device_list.remove(&node.dev_id());
+        }
+
+        for (device_id, path) in device_list {
+            if let Err(err) = self.device_added(device_id, &path, niri) {
+                warn!("error adding device {path:?}: {err:?}");
+            }
+        }
+    }
+
     pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
         let _span = tracy_client::span!("Tty::on_output_config_changed");
 
@@ -1910,48 +1984,6 @@ impl Tty {
             return;
         }
         self.update_output_config_on_resume = false;
-
-        // Update ignored nodes.
-        let mut ignored_nodes = ignored_nodes_from_config(&self.config.borrow());
-        if ignored_nodes.remove(&self.primary_node)
-            || ignored_nodes.remove(&self.primary_render_node)
-        {
-            warn!("ignoring the primary node or render node is not allowed");
-        }
-        if ignored_nodes != self.ignored_nodes {
-            self.ignored_nodes = ignored_nodes;
-
-            let mut device_list = self
-                .udev_dispatcher
-                .as_source_ref()
-                .device_list()
-                .map(|(device_id, path)| (device_id, path.to_owned()))
-                .collect::<HashMap<_, _>>();
-
-            let removed_devices = self
-                .devices
-                .keys()
-                .filter(|node| {
-                    self.ignored_nodes.contains(node) || !device_list.contains_key(&node.dev_id())
-                })
-                .copied()
-                .collect::<Vec<_>>();
-
-            for node in removed_devices {
-                device_list.remove(&node.dev_id());
-                self.device_removed(node.dev_id(), niri);
-            }
-
-            for node in self.devices.keys() {
-                device_list.remove(&node.dev_id());
-            }
-
-            for (device_id, path) in device_list {
-                if let Err(err) = self.device_added(device_id, &path, niri) {
-                    warn!("error adding device {path:?}: {err:?}");
-                }
-            }
-        }
 
         // Figure out if we should disable laptop panels.
         let mut disable_laptop_panels = false;
