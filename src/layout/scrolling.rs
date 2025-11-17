@@ -1880,13 +1880,36 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
+        let (source_col_idx, source_tile_idx) = if let Some(window) = window {
+            self.columns
+                .iter_mut()
+                .enumerate()
+                .find_map(|(col_idx, col)| {
+                    col.tiles
+                        .iter()
+                        .position(|tile| tile.window().id() == window)
+                        .map(|tile_idx| (col_idx, tile_idx))
+                })
+                .unwrap()
+        } else {
+            let source_col_idx = self.active_column_idx;
+            let source_tile_idx = self.columns[self.active_column_idx].active_tile_idx;
+            (source_col_idx, source_tile_idx)
+        };
+
+        let cur_x = self.column_x(source_col_idx);
+
+        let source_column = &self.columns[source_col_idx];
+        let mut offset = Point::from((source_column.render_offset().x, 0.));
+        let prev_off = source_column.tile_offset(source_tile_idx);
+
+        let source_tile_was_active = self.active_column_idx == source_col_idx
+            && source_column.active_tile_idx == source_tile_idx;
+
         if source_column.tiles.len() == 1 {
-            let Some(adjacent_idx) = self.screen_right_of(source_col_idx) else {
+            let Some(target_column_idx) = self.screen_right_of(source_col_idx) else {
                 return;
             };
-
-            // Move into adjacent column.
-            let target_column_idx = adjacent_idx;
 
             offset.x += if self.is_screen_right_of(self.active_column_idx, source_col_idx) {
                 // Tiles to the right animate from the following column.
@@ -1907,9 +1930,16 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 Transaction::new(),
                 Some(self.options.animations.window_movement.0),
             );
-            self.add_tile_to_column(target_column_idx, None, tile, source_tile_was_active);
 
-            let target_column = &mut self.columns[target_column_idx];
+            let adjusted_target_idx = if target_column_idx > source_col_idx {
+                target_column_idx - 1
+            } else {
+                target_column_idx
+            };
+
+            self.add_tile_to_column(adjusted_target_idx, None, tile, source_tile_was_active);
+
+            let target_column = &mut self.columns[adjusted_target_idx];
             offset += prev_off - target_column.tile_offset(target_column.tiles.len() - 1);
 
             let new_tile = target_column.tiles.last_mut().unwrap();
