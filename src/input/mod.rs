@@ -19,6 +19,7 @@ use smithay::backend::input::{
     TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
+use smithay::input::dnd::DnDGrab;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
@@ -31,10 +32,11 @@ use smithay::input::touch::{
 };
 use smithay::input::SeatHandler;
 use smithay::output::Output;
+use smithay::reexports::wayland_server::protocol::wl_data_source::WlDataSource;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Transform, SERIAL_COUNTER};
 use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
-use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 use touch_overview_grab::TouchOverviewGrab;
 
@@ -2585,7 +2587,7 @@ impl State {
         // Inform the layout of an ongoing DnD operation.
         let mut is_dnd_grab = false;
         pointer.with_grab(|_, grab| {
-            is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
+            is_dnd_grab = grab.as_any().is::<DnDGrab<Self, WlDataSource, WlSurface>>();
         });
         if is_dnd_grab {
             if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
@@ -2684,7 +2686,7 @@ impl State {
         // Inform the layout of an ongoing DnD operation.
         let mut is_dnd_grab = false;
         pointer.with_grab(|_, grab| {
-            is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
+            is_dnd_grab = grab.as_any().is::<DnDGrab<Self, WlDataSource, WlSurface>>();
         });
         if is_dnd_grab {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
@@ -4199,7 +4201,7 @@ impl State {
         // Inform the layout of an ongoing DnD operation.
         let mut is_dnd_grab = false;
         handle.with_grab(|_, grab| {
-            is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
+            is_dnd_grab = grab.as_any().is::<DnDGrab<Self, WlDataSource, WlSurface>>();
         });
         if is_dnd_grab {
             if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
