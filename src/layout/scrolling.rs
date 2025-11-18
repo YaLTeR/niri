@@ -648,11 +648,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     return self.compute_new_view_offset_for_column_fit(target_x, idx);
                 }
 
-                // Always take the left or right neighbor of the target as the source.
-                let source_idx = if prev_idx > idx {
-                    min(idx + 1, self.columns.len() - 1)
+                // Always take the left or right neighbor of the target as the source, in screen
+                // space, so that this logic stays correct in both LTR and RTL.
+                let source_idx = if self.is_screen_left_of(prev_idx, idx) {
+                    self.screen_left_of(idx).unwrap_or(idx)
+                } else if self.is_screen_right_of(prev_idx, idx) {
+                    self.screen_right_of(idx).unwrap_or(idx)
                 } else {
-                    idx.saturating_sub(1)
+                    prev_idx
                 };
 
                 let source_col_x = self.column_x(source_idx);
