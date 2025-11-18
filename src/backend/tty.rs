@@ -269,6 +269,8 @@ impl Tty {
         config: Rc<RefCell<Config>>,
         event_loop: LoopHandle<'static, State>,
     ) -> anyhow::Result<Self> {
+        let _span = tracy_client::span!("Tty::new");
+
         let (session, notifier) = LibSeatSession::new().context(
             "Error creating a session. This might mean that you're trying to run niri on a TTY \
              that is already busy, for example if you're running this inside tmux that had been \
@@ -558,6 +560,8 @@ impl Tty {
             debug!("node is ignored, skipping");
             return Ok(());
         }
+
+        let _span = tracy_client::span!("Tty::device_added");
 
         let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
         let fd = self.session.open(path, open_flags)?;
