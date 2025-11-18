@@ -858,7 +858,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // Find the closest gap between tiles inside the containing column.
         let col = &self.columns[col_idx];
 
-        let (closest_tile_idx, tile_y) = if col.display_mode == ColumnDisplay::Tabbed {
+        let (closest_tile_idx, _) = if col.display_mode == ColumnDisplay::Tabbed {
             // In tabbed mode, there's only one tile visible, and we want to check its top and
             // bottom.
             let top = col.tile_offsets().nth(col.active_tile_idx).unwrap().y;

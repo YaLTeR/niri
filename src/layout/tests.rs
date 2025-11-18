@@ -3636,15 +3636,13 @@ fn preset_column_width_pins_left_edge_in_ltr() {
     let tiles_base: Vec<_> = ws_base.tiles_with_render_positions().collect();
     assert_eq!(tiles_base.len(), 3);
 
-    let find_tile = |tiles: &[_], id: usize| {
-        tiles
+    let (tile_mid_base, pos_mid_base) = {
+        let (tile, pos, _) = tiles_base
             .iter()
-            .find(|(tile, _, _)| tile.window().id() == &id)
-            .map(|(tile, pos, _)| (*tile, *pos))
-            .unwrap()
+            .find(|(tile, _, _)| tile.window().id() == &2)
+            .unwrap();
+        (*tile, *pos)
     };
-
-    let (tile_mid_base, pos_mid_base) = find_tile(&tiles_base, 2);
     let size_mid_base = tile_mid_base.animated_tile_size();
 
     // After toggle: same setup, but switch preset column width once.
@@ -3677,7 +3675,13 @@ fn preset_column_width_pins_left_edge_in_ltr() {
     let ws_toggled = layout_toggled.active_workspace().unwrap();
     let tiles_toggled: Vec<_> = ws_toggled.tiles_with_render_positions().collect();
     assert_eq!(tiles_toggled.len(), 3);
-    let (tile_mid_toggled, pos_mid_toggled) = find_tile(&tiles_toggled, 2);
+    let (tile_mid_toggled, pos_mid_toggled) = {
+        let (tile, pos, _) = tiles_toggled
+            .iter()
+            .find(|(tile, _, _)| tile.window().id() == &2)
+            .unwrap();
+        (*tile, *pos)
+    };
     let size_mid_toggled = tile_mid_toggled.animated_tile_size();
 
     // Middle column width must actually change.
@@ -3724,15 +3728,13 @@ fn preset_column_width_pins_right_edge_in_rtl() {
     let tiles_base: Vec<_> = ws_base.tiles_with_render_positions().collect();
     assert_eq!(tiles_base.len(), 3);
 
-    let find_tile = |tiles: &[_], id: usize| {
-        tiles
+    let (tile_mid_base, pos_mid_base) = {
+        let (tile, pos, _) = tiles_base
             .iter()
-            .find(|(tile, _, _)| tile.window().id() == &id)
-            .map(|(tile, pos, _)| (*tile, *pos))
-            .unwrap()
+            .find(|(tile, _, _)| tile.window().id() == &2)
+            .unwrap();
+        (*tile, *pos)
     };
-
-    let (tile_mid_base, pos_mid_base) = find_tile(&tiles_base, 2);
     let size_mid_base = tile_mid_base.animated_tile_size();
     let right_edge_base = pos_mid_base.x + size_mid_base.w;
 
@@ -3765,7 +3767,13 @@ fn preset_column_width_pins_right_edge_in_rtl() {
     let ws_toggled = layout_toggled.active_workspace().unwrap();
     let tiles_toggled: Vec<_> = ws_toggled.tiles_with_render_positions().collect();
     assert_eq!(tiles_toggled.len(), 3);
-    let (tile_mid_toggled, pos_mid_toggled) = find_tile(&tiles_toggled, 2);
+    let (tile_mid_toggled, pos_mid_toggled) = {
+        let (tile, pos, _) = tiles_toggled
+            .iter()
+            .find(|(tile, _, _)| tile.window().id() == &2)
+            .unwrap();
+        (*tile, *pos)
+    };
     let size_mid_toggled = tile_mid_toggled.animated_tile_size();
     let right_edge_toggled = pos_mid_toggled.x + size_mid_toggled.w;
 
