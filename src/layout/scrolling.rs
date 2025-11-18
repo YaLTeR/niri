@@ -547,7 +547,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         col_x: f64,
         width: f64,
         mode: SizingMode,
-        prefer_right: bool,
     ) -> f64 {
         if mode.is_fullscreen() {
             return 0.;
@@ -560,6 +559,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         };
 
         let target_x = target_x.unwrap_or_else(|| self.target_view_pos());
+
+        let prefer_right = self.dir() == LayoutDirection::Rtl && self.columns.len() == 1;
 
         let new_offset = compute_new_view_offset(
             target_x + area.loc.x,
@@ -582,8 +583,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         mode: SizingMode,
     ) -> f64 {
         if mode.is_fullscreen() {
-            let prefer_right = self.dir() == LayoutDirection::Rtl;
-            return self.compute_new_view_offset_fit(target_x, col_x, width, mode, prefer_right);
+            return self.compute_new_view_offset_fit(target_x, col_x, width, mode);
         }
 
         let area = if mode.is_maximized() {
@@ -594,8 +594,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Columns wider than the view are left-aligned (the fit code can deal with that).
         if area.size.w <= width {
-            let prefer_right = self.dir() == LayoutDirection::Rtl;
-            return self.compute_new_view_offset_fit(target_x, col_x, width, mode, prefer_right);
+            return self.compute_new_view_offset_fit(target_x, col_x, width, mode);
         }
 
         -(area.size.w - width) / 2. - area.loc.x
@@ -603,13 +602,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     fn compute_new_view_offset_for_column_fit(&self, target_x: Option<f64>, idx: usize) -> f64 {
         let col = &self.columns[idx];
-        let prefer_right = self.dir() == LayoutDirection::Rtl;
         self.compute_new_view_offset_fit(
             target_x,
             self.column_x(idx),
             col.width(),
             col.sizing_mode(),
-            prefer_right,
         )
     }
 
@@ -985,8 +982,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             if was_empty {
                 0
             } else {
-                self.insert_index_screen_right_of(self.active_column_idx)
-                    .min(self.columns.len())
+                let insert_idx = match self.dir() {
+                    LayoutDirection::Ltr => {
+                        self.insert_index_screen_right_of(self.active_column_idx)
+                    }
+                    LayoutDirection::Rtl => {
+                        self.insert_index_screen_left_of(self.active_column_idx)
+                    }
+                };
+                insert_idx.min(self.columns.len())
             }
         });
 
@@ -2561,13 +2565,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     SizingMode::Normal,
                 )
             } else {
-                let prefer_right = self.dir() == LayoutDirection::Rtl;
                 self.compute_new_view_offset_fit(
                     Some(0.),
                     0.,
                     hint_area.size.w,
                     SizingMode::Normal,
-                    prefer_right,
                 )
             };
             hint_area.loc.x -= view_offset;
