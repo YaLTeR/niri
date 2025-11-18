@@ -2649,10 +2649,38 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        let col = &mut self.columns[self.active_column_idx];
-        col.toggle_width(None, forwards);
+        let active_idx = self.active_column_idx;
 
-        cancel_resize_for_column(&mut self.interactive_resize, col);
+        if self.dir() == LayoutDirection::Rtl {
+            // In RTL, keep the right edge of the active column visually pinned when toggling
+            // preset width. This mirrors LTR behavior (where the left edge is effectively
+            // pinned) in a behavioral sense.
+
+            // Measure the current apparent width of the active column.
+            let old_width = self.columns[active_idx].width();
+
+            // Apply the preset toggle, which updates the column's internal width and tile sizes.
+            self.columns[active_idx].toggle_width(None, forwards);
+
+            // Measure the new apparent width and compute how much it changed.
+            let new_width = self.columns[active_idx].width();
+            let delta = new_width - old_width;
+
+            // Adjust the view offset so that the active column's right edge stays at the same
+            // screen X position. Using ViewOffset::offset ensures ongoing animations/gestures
+            // are translated consistently instead of being reset.
+            if delta != 0. {
+                self.view_offset.offset(delta);
+            }
+
+            let col = &mut self.columns[active_idx];
+            cancel_resize_for_column(&mut self.interactive_resize, col);
+        } else {
+            let col = &mut self.columns[active_idx];
+            col.toggle_width(None, forwards);
+
+            cancel_resize_for_column(&mut self.interactive_resize, col);
+        }
     }
 
     pub fn toggle_full_width(&mut self) {
