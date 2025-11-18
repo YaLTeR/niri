@@ -3597,6 +3597,186 @@ fn preset_column_width_reset_after_set_width() {
 }
 
 #[test]
+fn preset_column_width_pins_left_edge_in_ltr() {
+    // Use three proportional presets so that the middle column visibly changes width
+    // when toggling once.
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Ltr;
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+    options.layout.preset_column_widths = vec![
+        PresetSize::Proportion(1. / 3.),
+        PresetSize::Proportion(0.5),
+        PresetSize::Proportion(2. / 3.),
+    ];
+
+    // Baseline: three columns, middle focused, no preset toggle.
+    let ops_base = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+        Op::FocusColumn(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout_base = check_ops_with_options(options.clone(), ops_base);
+    let ws_base = layout_base.active_workspace().unwrap();
+    let tiles_base: Vec<_> = ws_base.tiles_with_render_positions().collect();
+    assert_eq!(tiles_base.len(), 3);
+
+    let find_tile = |tiles: &[_], id: usize| {
+        tiles
+            .iter()
+            .find(|(tile, _, _)| tile.window().id() == &id)
+            .map(|(tile, pos, _)| (*tile, *pos))
+            .unwrap()
+    };
+
+    let (tile_mid_base, pos_mid_base) = find_tile(&tiles_base, 2);
+    let size_mid_base = tile_mid_base.animated_tile_size();
+
+    // After toggle: same setup, but switch preset column width once.
+    let ops_toggled = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+        Op::FocusColumn(2),
+        Op::SwitchPresetColumnWidth,
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+
+    let layout_toggled = check_ops_with_options(options, ops_toggled);
+    let ws_toggled = layout_toggled.active_workspace().unwrap();
+    let tiles_toggled: Vec<_> = ws_toggled.tiles_with_render_positions().collect();
+    assert_eq!(tiles_toggled.len(), 3);
+    let (tile_mid_toggled, pos_mid_toggled) = find_tile(&tiles_toggled, 2);
+    let size_mid_toggled = tile_mid_toggled.animated_tile_size();
+
+    // Middle column width must actually change.
+    assert!((size_mid_toggled.w - size_mid_base.w).abs() > 1.0);
+
+    // In LTR, the left edge of the focused column should remain pinned.
+    assert!((pos_mid_toggled.x - pos_mid_base.x).abs() < 1.0);
+}
+
+#[test]
+fn preset_column_width_pins_right_edge_in_rtl() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+    options.layout.preset_column_widths = vec![
+        PresetSize::Proportion(1. / 3.),
+        PresetSize::Proportion(0.5),
+        PresetSize::Proportion(2. / 3.),
+    ];
+
+    let ops_base = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+        Op::FocusColumn(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout_base = check_ops_with_options(options.clone(), ops_base);
+    let ws_base = layout_base.active_workspace().unwrap();
+    let tiles_base: Vec<_> = ws_base.tiles_with_render_positions().collect();
+    assert_eq!(tiles_base.len(), 3);
+
+    let find_tile = |tiles: &[_], id: usize| {
+        tiles
+            .iter()
+            .find(|(tile, _, _)| tile.window().id() == &id)
+            .map(|(tile, pos, _)| (*tile, *pos))
+            .unwrap()
+    };
+
+    let (tile_mid_base, pos_mid_base) = find_tile(&tiles_base, 2);
+    let size_mid_base = tile_mid_base.animated_tile_size();
+    let right_edge_base = pos_mid_base.x + size_mid_base.w;
+
+    let ops_toggled = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+        Op::FocusColumn(2),
+        Op::SwitchPresetColumnWidth,
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+
+    let layout_toggled = check_ops_with_options(options, ops_toggled);
+    let ws_toggled = layout_toggled.active_workspace().unwrap();
+    let tiles_toggled: Vec<_> = ws_toggled.tiles_with_render_positions().collect();
+    assert_eq!(tiles_toggled.len(), 3);
+    let (tile_mid_toggled, pos_mid_toggled) = find_tile(&tiles_toggled, 2);
+    let size_mid_toggled = tile_mid_toggled.animated_tile_size();
+    let right_edge_toggled = pos_mid_toggled.x + size_mid_toggled.w;
+
+    // Middle column width must actually change.
+    assert!((size_mid_toggled.w - size_mid_base.w).abs() > 1.0);
+
+    // In RTL, the right edge of the focused column should remain pinned.
+    assert!((right_edge_toggled - right_edge_base).abs() < 1.0);
+}
+
+#[test]
 fn move_column_to_workspace_unfocused_with_multiple_monitors() {
     let ops = [
         Op::AddOutput(1),
