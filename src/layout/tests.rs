@@ -11,6 +11,7 @@ use proptest_derive::Arbitrary;
 use smithay::output::{Mode, PhysicalProperties, Subpixel};
 use smithay::utils::Rectangle;
 
+use super::monitor::InsertPosition;
 use super::*;
 
 mod animations;
@@ -98,6 +99,60 @@ fn rtl_second_window_inserts_on_left() {
     // The older column should still reach the right edge so both windows remain visible.
     let view_width = scrolling.view_size().w;
     assert!(old_pos.x + old_width > view_width - gaps - 0.5);
+}
+
+#[test]
+fn rtl_scrolling_insert_position_hits_correct_column() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.default_column_width = Some(PresetSize::Proportion(0.5));
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+    let layouts: Vec<_> = scrolling.tiles_with_ipc_layouts().collect();
+
+    for (tile, pos, _visible) in tiles {
+        let id = *tile.window().id();
+
+        let (_, layout) = layouts
+            .iter()
+            .find(|(t, _)| *t.window().id() == id)
+            .unwrap();
+
+        let (expected_col_idx, _expected_tile_idx) = layout.pos_in_scrolling_layout.unwrap();
+        let expected_col_idx = usize::from(expected_col_idx) - 1;
+
+        let size = tile.animated_tile_size();
+        let pointer_pos = smithay::utils::Point::from((
+            pos.x + size.w / 2.,
+            pos.y + size.h / 2.,
+        ));
+
+        let insert_pos = ws.scrolling_insert_position(pointer_pos);
+
+        match insert_pos {
+            InsertPosition::InColumn(col_idx, _) => assert_eq!(col_idx, expected_col_idx),
+            InsertPosition::NewColumn(col_idx) => assert_eq!(col_idx, expected_col_idx),
+            InsertPosition::Floating => panic!("unexpected floating insert position"),
+        }
+    }
 }
 
 #[derive(Debug)]

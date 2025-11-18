@@ -821,6 +821,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return InsertPosition::NewColumn(0);
         }
 
+        let gap = self.options.layout.gaps;
+
         // Find the closest gap between columns.
         let (closest_col_idx, col_x) = self
             .column_xs(self.data.iter().copied())
@@ -828,13 +830,22 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .min_by_key(|(_, col_x)| NotNan::new((col_x - x).abs()).unwrap())
             .unwrap();
 
-        // Find the column containing the position.
-        let (col_idx, _) = self
+        // Find the column containing the position, if any, by checking X ranges.
+        let mut col_idx = self.columns.len();
+        for (idx, col_x_for_col) in self
             .column_xs(self.data.iter().copied())
+            .take(self.columns.len())
             .enumerate()
-            .take_while(|(_, col_x)| *col_x <= x)
-            .last()
-            .unwrap_or((0, 0.));
+        {
+            let width = self.data[idx].width;
+            let left = col_x_for_col;
+            let right = col_x_for_col + width + gap;
+
+            if x >= left && x < right {
+                col_idx = idx;
+                break;
+            }
+        }
 
         // Insert position is past the last column.
         if col_idx == self.columns.len() {
@@ -2272,24 +2283,30 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Count all columns that are fully visible inside the working area.
         let mut width_taken = 0.;
-        let mut leftmost_col_x = None;
+        let mut leftmost_col_x: Option<f64> = None;
         let mut active_col_x = None;
 
         let gap = self.options.layout.gaps;
+        let left_bound = view_x + working_x + gap;
+        let right_bound = view_x + working_x + working_w;
         let col_xs = self.column_xs(self.data.iter().copied());
         for (idx, col_x) in col_xs.take(self.columns.len()).enumerate() {
-            if col_x < view_x + working_x + gap {
+            let width = self.data[idx].width;
+
+            if col_x < left_bound {
                 // Column goes off-screen to the left.
                 continue;
             }
 
-            leftmost_col_x.get_or_insert(col_x);
-
-            let width = self.data[idx].width;
-            if view_x + working_x + working_w < col_x + width + gap {
-                // Column goes off-screen to the right. We can stop here.
-                break;
+            if right_bound < col_x + width + gap {
+                // Column goes off-screen to the right.
+                continue;
             }
+
+            leftmost_col_x = Some(match leftmost_col_x {
+                Some(existing) => existing.min(col_x),
+                None => col_x,
+            });
 
             if idx == self.active_column_idx {
                 active_col_x = Some(col_x);
@@ -2796,25 +2813,31 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Count all columns that are fully visible inside the working area.
         let mut width_taken = 0.;
-        let mut leftmost_col_x = None;
+        let mut leftmost_col_x: Option<f64> = None;
         let mut active_col_x = None;
         let mut counted_non_active_column = false;
 
         let gap = self.options.layout.gaps;
+        let left_bound = view_x + working_x + gap;
+        let right_bound = view_x + working_x + working_w;
         let col_xs = self.column_xs(self.data.iter().copied());
         for (idx, col_x) in col_xs.take(self.columns.len()).enumerate() {
-            if col_x < view_x + working_x + gap {
+            let width = self.data[idx].width;
+
+            if col_x < left_bound {
                 // Column goes off-screen to the left.
                 continue;
             }
 
-            leftmost_col_x.get_or_insert(col_x);
-
-            let width = self.data[idx].width;
-            if view_x + working_x + working_w < col_x + width + gap {
-                // Column goes off-screen to the right. We can stop here.
-                break;
+            if right_bound < col_x + width + gap {
+                // Column goes off-screen to the right.
+                continue;
             }
+
+            leftmost_col_x = Some(match leftmost_col_x {
+                Some(existing) => existing.min(col_x),
+                None => col_x,
+            });
 
             if idx == self.active_column_idx {
                 active_col_x = Some(col_x);
