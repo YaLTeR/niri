@@ -4937,8 +4937,8 @@ fn make_binds_iter<'a>(
     let mru_open_binds = mru.is_open().then(|| mru.opened_bindings(mods));
     let mru_open_binds = mru_open_binds.into_iter().flatten();
 
-    // MRU binds take precedence over general ones.
-    mru_binds.chain(mru_open_binds).chain(general_binds)
+    // General binds take precedence over the MRU binds.
+    general_binds.chain(mru_binds).chain(mru_open_binds)
 }
 
 #[cfg(test)]
