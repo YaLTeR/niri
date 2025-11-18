@@ -293,6 +293,28 @@ screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
 // You can also set this to null to disable saving screenshots to disk.
 // screenshot-path null
 
+// Configure screenshot image encoding and file size options.
+// Separate settings for clipboard (always PNG) and disk files.
+// screenshot {
+//     // PNG compression for clipboard: "fast", "default", or "best"
+//     clipboard-compression "best"
+//
+//     // Optionally resize clipboard screenshots (most effective for reducing PNG size)
+//     // Great for Firefox on Wayland which requires PNG format
+//     clipboard-resize-width 1920
+//
+//     // Image format for disk: "png", "png-fast", "png-best", "jpeg", or "jpg"
+//     file-format "jpeg"
+//
+//     // JPEG quality (1-100, only applies when file-format is jpeg)
+//     file-quality 90
+//
+//     // Optionally resize screenshots before saving to disk.
+//     // Reduces file sizes for high-DPI displays. Only downscales, never upscales.
+//     resize-width 1920
+//     // resize-height 1080
+// }
+
 // Animation settings.
 // The wiki explains how to configure individual animations:
 // https://yalter.github.io/niri/Configuration:-Animations

@@ -174,8 +174,8 @@ use crate::utils::watcher::Watcher;
 use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
-    logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
-    write_png_rgba8, xwayland,
+    logical_output, make_screenshot_path, output_matches_name, output_size, resize_image_rgba8,
+    send_scale_transform, write_jpeg_rgba8, write_png_rgba8, xwayland,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -5768,18 +5768,45 @@ impl Niri {
             })
             .unwrap();
 
+        // Get screenshot config
+        let screenshot_config = self.config.borrow().screenshot.clone();
+
         // Encode and save the image in a thread as it's slow.
         thread::spawn(move || {
-            let mut buf = vec![];
+            // Resize for clipboard if configured
+            let (clipboard_pixels, clipboard_width, clipboard_height) =
+                if let Some((resized, w, h)) = resize_image_rgba8(
+                    &pixels,
+                    size.w as u32,
+                    size.h as u32,
+                    screenshot_config.clipboard_resize_width,
+                    screenshot_config.clipboard_resize_height,
+                ) {
+                    debug!(
+                        "resized clipboard screenshot from {}x{} to {}x{}",
+                        size.w, size.h, w, h
+                    );
+                    (resized, w, h)
+                } else {
+                    (pixels.clone(), size.w as u32, size.h as u32)
+                };
 
-            let w = std::io::Cursor::new(&mut buf);
-            if let Err(err) = write_png_rgba8(w, size.w as u32, size.h as u32, &pixels) {
-                warn!("error encoding screenshot image: {err:?}");
+            // Always encode to PNG for clipboard with configured compression
+            let mut clipboard_buf = vec![];
+            let w = std::io::Cursor::new(&mut clipboard_buf);
+            if let Err(err) = write_png_rgba8(
+                w,
+                clipboard_width,
+                clipboard_height,
+                &clipboard_pixels,
+                screenshot_config.clipboard_compression,
+            ) {
+                warn!("error encoding screenshot for clipboard: {err:?}");
                 return;
             }
 
-            let buf: Arc<[u8]> = Arc::from(buf.into_boxed_slice());
-            let _ = tx.send(buf.clone());
+            let clipboard_buf: Arc<[u8]> = Arc::from(clipboard_buf.into_boxed_slice());
+            let _ = tx.send(clipboard_buf);
 
             let mut image_path = None;
 
@@ -5799,10 +5826,53 @@ impl Niri {
                     }
                 }
 
-                match std::fs::write(&path, buf) {
-                    Ok(()) => image_path = Some(path),
+                // Apply resize if configured
+                let (final_pixels, final_width, final_height) = if let Some((resized, w, h)) =
+                    resize_image_rgba8(
+                        &pixels,
+                        size.w as u32,
+                        size.h as u32,
+                        screenshot_config.resize_width,
+                        screenshot_config.resize_height,
+                    ) {
+                    debug!(
+                        "resized screenshot from {}x{} to {}x{}",
+                        size.w, size.h, w, h
+                    );
+                    (resized, w, h)
+                } else {
+                    (pixels.clone(), size.w as u32, size.h as u32)
+                };
+
+                // Encode to disk with configured format and quality
+                let mut file_buf = vec![];
+                let encode_result = match screenshot_config.file_format {
+                    niri_config::ImageFormat::Png(compression) => {
+                        let w = std::io::Cursor::new(&mut file_buf);
+                        write_png_rgba8(w, final_width, final_height, &final_pixels, compression)
+                            .map_err(|e| anyhow::anyhow!("{e:?}"))
+                    }
+                    niri_config::ImageFormat::Jpeg => {
+                        let w = std::io::Cursor::new(&mut file_buf);
+                        write_jpeg_rgba8(
+                            w,
+                            final_width,
+                            final_height,
+                            &final_pixels,
+                            screenshot_config.file_quality,
+                        )
+                    }
+                };
+
+                match encode_result {
+                    Ok(()) => match std::fs::write(&path, &file_buf) {
+                        Ok(()) => image_path = Some(path),
+                        Err(err) => {
+                            warn!("error saving screenshot to disk: {err:?}");
+                        }
+                    },
                     Err(err) => {
-                        warn!("error saving screenshot image: {err:?}");
+                        warn!("error encoding screenshot for disk: {err:?}");
                     }
                 }
             } else {
@@ -5877,18 +5947,51 @@ impl Niri {
             });
         debug!("saving screenshot to {path:?}");
 
+        // Get screenshot config for file format
+        let screenshot_config = self.config.borrow().screenshot.clone();
+
         thread::spawn(move || {
-            let file = match std::fs::File::create(&path) {
-                Ok(file) => file,
-                Err(err) => {
-                    warn!("error creating file: {err:?}");
-                    return;
+            // Apply resize if configured
+            let (final_pixels, final_width, final_height) = if let Some((resized, w, h)) =
+                resize_image_rgba8(
+                    &pixels,
+                    size.w as u32,
+                    size.h as u32,
+                    screenshot_config.resize_width,
+                    screenshot_config.resize_height,
+                ) {
+                (resized, w, h)
+            } else {
+                (pixels, size.w as u32, size.h as u32)
+            };
+
+            // Encode to disk with configured format
+            let mut buf = vec![];
+            let encode_result = match screenshot_config.file_format {
+                niri_config::ImageFormat::Png(compression) => {
+                    let w = std::io::Cursor::new(&mut buf);
+                    write_png_rgba8(w, final_width, final_height, &final_pixels, compression)
+                        .map_err(|e| anyhow::anyhow!("{e:?}"))
+                }
+                niri_config::ImageFormat::Jpeg => {
+                    let w = std::io::Cursor::new(&mut buf);
+                    write_jpeg_rgba8(
+                        w,
+                        final_width,
+                        final_height,
+                        &final_pixels,
+                        screenshot_config.file_quality,
+                    )
                 }
             };
 
-            let w = std::io::BufWriter::new(file);
-            if let Err(err) = write_png_rgba8(w, size.w as u32, size.h as u32, &pixels) {
+            if let Err(err) = encode_result {
                 warn!("error encoding screenshot image: {err:?}");
+                return;
+            }
+
+            if let Err(err) = std::fs::write(&path, &buf) {
+                warn!("error saving screenshot to file: {err:?}");
                 return;
             }
 

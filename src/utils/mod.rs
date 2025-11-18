@@ -246,13 +246,102 @@ pub fn write_png_rgba8(
     width: u32,
     height: u32,
     pixels: &[u8],
+    compression: niri_config::PngCompression,
 ) -> Result<(), png::EncodingError> {
     let mut encoder = png::Encoder::new(w, width, height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
 
+    // Set compression level based on config
+    let compression_level = match compression {
+        niri_config::PngCompression::Fast => png::Compression::Fast,
+        niri_config::PngCompression::Default => png::Compression::Balanced,
+        niri_config::PngCompression::Best => png::Compression::High,
+    };
+    encoder.set_compression(compression_level);
+
+    // The default Filter::Adaptive is already optimal, so no need to set it explicitly
+
     let mut writer = encoder.write_header()?;
     writer.write_image_data(pixels)
+}
+
+pub fn write_jpeg_rgba8(
+    w: impl Write,
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    quality: u8,
+) -> anyhow::Result<()> {
+    // Convert RGBA to RGB (JPEG doesn't support alpha channel)
+    let mut rgb_pixels = Vec::with_capacity((width * height * 3) as usize);
+    for chunk in pixels.chunks_exact(4) {
+        rgb_pixels.push(chunk[0]); // R
+        rgb_pixels.push(chunk[1]); // G
+        rgb_pixels.push(chunk[2]); // B
+                                   // Skip alpha channel (chunk[3])
+    }
+
+    let encoder = jpeg_encoder::Encoder::new(w, quality);
+    encoder
+        .encode(
+            &rgb_pixels,
+            width as u16,
+            height as u16,
+            jpeg_encoder::ColorType::Rgb,
+        )
+        .context("error encoding JPEG")?;
+
+    Ok(())
+}
+
+/// Resize an RGBA8 image using nearest neighbor sampling (fast).
+/// If only one dimension is specified, the other is calculated to maintain aspect ratio.
+pub fn resize_image_rgba8(
+    pixels: &[u8],
+    src_width: u32,
+    src_height: u32,
+    dst_width: Option<u32>,
+    dst_height: Option<u32>,
+) -> Option<(Vec<u8>, u32, u32)> {
+    // Calculate dimensions maintaining aspect ratio if needed
+    let (dst_width, dst_height) = match (dst_width, dst_height) {
+        (Some(w), Some(h)) => (w, h),
+        (Some(w), None) => {
+            let aspect_ratio = src_height as f64 / src_width as f64;
+            (w, (w as f64 * aspect_ratio).round() as u32)
+        }
+        (None, Some(h)) => {
+            let aspect_ratio = src_width as f64 / src_height as f64;
+            ((h as f64 * aspect_ratio).round() as u32, h)
+        }
+        (None, None) => return None,
+    };
+
+    // Don't upscale, only downscale
+    if dst_width >= src_width && dst_height >= src_height {
+        return None;
+    }
+
+    let mut resized = vec![0u8; (dst_width * dst_height * 4) as usize];
+
+    let x_ratio = src_width as f64 / dst_width as f64;
+    let y_ratio = src_height as f64 / dst_height as f64;
+
+    for y in 0..dst_height {
+        for x in 0..dst_width {
+            let src_x = (x as f64 * x_ratio) as u32;
+            let src_y = (y as f64 * y_ratio) as u32;
+
+            let src_idx = ((src_y * src_width + src_x) * 4) as usize;
+            let dst_idx = ((y * dst_width + x) * 4) as usize;
+
+            // Copy RGBA pixel
+            resized[dst_idx..dst_idx + 4].copy_from_slice(&pixels[src_idx..src_idx + 4]);
+        }
+    }
+
+    Some((resized, dst_width, dst_height))
 }
 
 pub fn output_matches_name(output: &Output, target: &str) -> bool {
