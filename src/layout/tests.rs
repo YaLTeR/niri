@@ -3,8 +3,8 @@ use std::cell::{Cell, OnceCell, RefCell};
 use niri_config::utils::{Flag, MergeWith as _};
 use niri_config::workspace::WorkspaceName;
 use niri_config::{
-    CenterFocusedColumn, FloatOrInt, OutputName, Struts, TabIndicatorLength, TabIndicatorPosition,
-    WorkspaceReference,
+    CenterFocusedColumn, FloatOrInt, LayoutDirection, OutputName, PresetSize, Struts,
+    TabIndicatorLength, TabIndicatorPosition, WorkspaceReference,
 };
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
@@ -20,6 +20,84 @@ impl<W: LayoutElement> Default for Layout<W> {
     fn default() -> Self {
         Self::with_options(Clock::with_time(Duration::ZERO), Default::default())
     }
+}
+
+#[test]
+fn rtl_first_window_spawns_on_right_edge() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+    assert_eq!(tiles.len(), 1);
+    let (tile, pos, _) = tiles[0];
+    let tile_width = tile.animated_tile_size().w;
+
+    // Window should hug the right edge, leaving at most the configured gap.
+    assert!(pos.x + tile_width > view_width - gaps - 0.5);
+}
+
+#[test]
+fn rtl_second_window_inserts_on_left() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.default_column_width = Some(PresetSize::Proportion(0.8));
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+    let gaps = scrolling.options().layout.gaps;
+
+    let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+    assert_eq!(tiles.len(), 2);
+
+    let find_tile = |id: usize| {
+        tiles
+            .iter()
+            .find(|(tile, _, _)| tile.window().id() == &id)
+            .map(|(tile, pos, _)| (*tile, *pos))
+            .unwrap()
+    };
+
+    let (new_tile, new_pos) = find_tile(2);
+    let (old_tile, old_pos) = find_tile(1);
+    let new_width = new_tile.animated_tile_size().w;
+    let old_width = old_tile.animated_tile_size().w;
+
+    // Newly opened column must be visually left of the previously active column.
+    assert!(new_pos.x + new_width <= old_pos.x + gaps + 0.5);
+
+    // The older column should still reach the right edge so both windows remain visible.
+    let view_width = scrolling.view_size().w;
+    assert!(old_pos.x + old_width > view_width - gaps - 0.5);
 }
 
 #[derive(Debug)]
