@@ -269,6 +269,8 @@ impl Tty {
         config: Rc<RefCell<Config>>,
         event_loop: LoopHandle<'static, State>,
     ) -> anyhow::Result<Self> {
+        let _span = tracy_client::span!("Tty::new");
+
         let (session, notifier) = LibSeatSession::new().context(
             "Error creating a session. This might mean that you're trying to run niri on a TTY \
              that is already busy, for example if you're running this inside tmux that had been \
@@ -286,9 +288,11 @@ impl Tty {
             .unwrap();
 
         let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
-        libinput
-            .udev_assign_seat(&seat_name)
-            .map_err(|()| anyhow!("error assigning the seat to libinput"))?;
+        {
+            let _span = tracy_client::span!("Libinput::udev_assign_seat");
+            libinput.udev_assign_seat(&seat_name)
+        }
+        .map_err(|()| anyhow!("error assigning the seat to libinput"))?;
 
         let input_backend = LibinputInputBackend::new(libinput.clone());
         event_loop
@@ -559,12 +563,20 @@ impl Tty {
             return Ok(());
         }
 
+        let _span = tracy_client::span!("Tty::device_added");
+
         let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
         let fd = self.session.open(path, open_flags)?;
         let device_fd = DrmDeviceFd::new(DeviceFd::from(fd));
 
-        let (drm, drm_notifier) = DrmDevice::new(device_fd.clone(), true)?;
-        let gbm = GbmDevice::new(device_fd)?;
+        let (drm, drm_notifier) = {
+            let _span = tracy_client::span!("DrmDevice::new");
+            DrmDevice::new(device_fd.clone(), true)
+        }?;
+        let gbm = {
+            let _span = tracy_client::span!("GbmDevice::new");
+            GbmDevice::new(device_fd)
+        }?;
 
         let display = unsafe { EGLDisplay::new(gbm.clone())? };
         let egl_device = EGLDevice::device_for_display(&display)?;
