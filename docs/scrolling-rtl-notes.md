@@ -93,3 +93,118 @@ Implement per-output (or per-workspace) layout direction so the scrolling tiling
    - Run existing suites to ensure LTR snapshots remain unchanged.
 
 After completing the above, reassess doc vs implementation to guarantee adherence to existing architecture and style.
+
+---
+
+# RTL Branch Quality Checklist
+
+## Config / Options
+
+- [ ] **Unify `LayoutDirection` decoding style**  
+  Decide between:
+  - Using `#[derive(knuffel::DecodeScalar]` + `#[knuffel(child, unwrap(argument))]`,  
+  or
+  - Using `FromStr` + `#[knuffel(child, unwrap(argument, str))]`.  
+  Remove the redundant pattern so it matches how other enums in [layout.rs](cci:7://file:///home/vince/Projects/niri/niri-config/src/layout.rs:0:0-0:0) are handled.
+
+- [ ] **Decide on IPC exposure of direction**  
+  If external tools should see layout direction:
+  - Add `LayoutDirection` (or equivalent) to `niri-ipc` in a backward-compatible way (optional field).
+  - Wire it from [niri_config::Layout](cci:2://file:///home/vince/Projects/niri/src/layout/mod.rs:288:0-321:1) through to IPC responses.
+
+---
+
+## Scrolling layout – geometry & indices
+
+- [ ] **Define a clear coordinate convention for [column_x](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2353:4-2357:5)/[column_xs](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2324:4-2351:5) in RTL (must-fix)**  
+  - Decide if [column_xs](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2324:4-2351:5) should always produce positions that increase with **visual left→right** (monotonic) regardless of direction, or if it’s allowed to reverse.  
+  - Once decided, ensure [column_xs](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2324:4-2351:5) and [column_x](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2353:4-2357:5) implement that convention consistently for both LTR and RTL.
+
+- [ ] **Fix callers that assume monotonic [column_xs](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2324:4-2351:5) (must-fix)**  
+  Audit and adjust places that rely on [column_xs](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2324:4-2351:5) being monotonic in index (currently broken by the RTL branch), especially:
+  - [insert_position](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:807:4-872:5) (uses `.take_while(|(_, col_x)| *col_x <= x)`),
+  - Any other code that walks [column_xs](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2324:4-2351:5) and assumes “later index => larger X”.
+  Add RTL tests for these.
+
+- [ ] **Replace ad-hoc `col_x` accumulation with [column_x](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2353:4-2357:5) / direction-aware helpers**  
+  - In [dnd_scroll_gesture_scroll](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:3128:4-3200:5), compute `leftmost` / `rightmost` using [column_x](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2353:4-2357:5) / [column_xs](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2324:4-2351:5) and [left_edge_index](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:3754:4-3764:5) / [right_edge_index](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:3766:4-3776:5) instead of manual `fold` over [self.columns](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2372:4-2374:5).
+  - In [view_offset_gesture_end](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:3202:4-3528:5):
+    - Use [column_x(idx)](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2353:4-2357:5) for `col_x` instead of building it by hand.
+    - Use direction-aware neighbor logic when considering “previous” and “next” columns.
+
+- [ ] **Make `compute_new_view_offset_*` fully direction-aware**  
+  - Currently only [compute_new_view_offset_fit](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:543:4-575:5) passes `prefer_right` ([dir() == Rtl && self.columns.len() == 1](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:3749:4-3752:5)).  
+  - Decide the desired behaviour:
+    - Should “edge-hugging” depend on **visual** left/right and direction, not just “single column”?  
+  - Refactor so one helper decides “prefer left/right edge” based on direction and column index, and use it consistently.
+
+- [ ] **Update `CenterFocusedColumn::OnOverflow` logic to use direction helpers**  
+  - In [compute_new_view_offset_for_column](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:626:4-684:5), the `OnOverflow` branch uses `prev_idx > idx` and `idx ± 1` to pick neighbors.  
+  - Replace this with:
+    - [screen_left_of](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:3778:4-3784:5) / [screen_right_of](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:3786:4-3792:5) (or similar) to define source/target columns in screen space,
+    - [left_edge_index](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:3754:4-3764:5) / [right_edge_index](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:3766:4-3776:5) for edge cases.
+
+---
+
+## RTL semantics across operations
+
+- [ ] **Audit all uses of `ScrollDirection` and gesture deltas for direction-awareness**  
+  - Ensure that operations such as `focus_left/right`, `move_left/right`, [swap_window_in_direction](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2063:4-2180:5), and gestures:
+    - Use [dir()](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:3749:4-3752:5) to map “logical left/right” to actual neighbor indices, and
+    - Flip or not flip deltas so physical gestures feel correct in RTL (e.g. swiping fingers “to the right” should still move the view in the intuitive direction).
+
+- [ ] **Confirm insert/drag semantics in RTL**  
+  - [add_tile_right_of](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:951:4-969:5), [add_tile](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:874:4-894:5), `consume_or_expel_window_left/right`, etc. now use `insert_index_screen_left_of/right_of` and `is_screen_left/right_of`.  
+  - Add a small mental model and tests to confirm the following under RTL:
+    - “Right of” a column corresponds to the correct visual side,
+    - Columns and animations line up correctly when inserting/moving/consuming/expelling windows at visual edges.
+
+- [ ] **Re-check [insert_hint_area](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2470:4-2580:5) and hit-testing under RTL**  
+  - [insert_hint_area](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2470:4-2580:5) still has logic like `if column_index == 0 || column_index == self.columns.len()` and special-casing when `column_index == 0`.  
+  - Verify that:
+    - The gap rectangles are rendered at the correct physical edges in RTL.
+    - Hit-testing over these hints matches [insert_position](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:807:4-872:5)’s interpretation.
+
+---
+
+## Tests
+
+- [ ] **Extend tests beyond the two current RTL cases (high priority)**  
+  Add targeted tests that exercise the new helpers and semantics:
+
+  - **Focus/navigation:**
+    - `focus_column_first/last` in LTR & RTL.
+    - `focus_left/right` (including at visual edges).
+  - **Column reordering:**
+    - `move_column_left/right`,
+    - `move_column_to_first/last` under RTL (with 3+ columns).
+  - **Column insertion / consumption:**
+    - `consume_or_expel_window_left/right`,
+    - [swap_window_in_direction](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2063:4-2180:5),
+    - insert “right of X” in RTL and verify visual order.
+  - **Insert position / hints:**
+    - Small synthetic layout where you probe a handful of X positions in RTL and assert [insert_position](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:807:4-872:5) returns expected `InsertPosition`.
+  - **Gestures / view offset:**
+    - A helper-level test for [compute_new_view_offset](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:5567:0-5608:1) (with `prefer_right`) in LTR vs RTL.
+    - If feasible, a simplified test around [view_offset_gesture_end](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:3202:4-3528:5) snapping in RTL.
+
+- [ ] **Guard LTR behaviour with non-regression tests**  
+  - Ensure LTR code paths (focus, move, insert, gestures) behave exactly as on `main`.  
+  - At minimum, add one or two explicit tests that assert the same column/window sequence before/after navigation in LTR; plus run the full suite to catch unintended changes.
+
+---
+
+## Documentation / design notes
+
+- [ ] **Sync [docs/scrolling-rtl-notes.md](cci:7://file:///home/vince/Projects/niri/docs/scrolling-rtl-notes.md:0:0-0:0) with actual implementation status**  
+  - Mark which planned bullets are now implemented.
+  - Adjust or add items for:
+    - Chosen [column_xs](cci:1://file:///home/vince/Projects/niri/src/layout/scrolling.rs:2324:4-2351:5) convention,
+    - Gesture sign/direction decisions,
+    - Any deviations from the original strategy (e.g. if you keep LTR internal geometry and only flip indices).
+
+- [ ] **Document `layout.direction` user semantics**  
+  - Clarify in docs (wiki snippets / config comments) that:
+    - Direction can be set globally and overridden per-output/per-workspace.
+    - What “right-to-left” affects (scrolling layout only vs other layouts).
+    - Any current limitations (e.g. floating layout not affected).

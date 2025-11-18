@@ -659,6 +659,10 @@ impl State {
                         is_active: mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx),
                         is_focused: Some(id) == focused_ws_id,
                         active_window_id: ws.active_window().map(|win| win.id().get()),
+                        layout_direction: Some(match ws.layout_direction() {
+                            niri_config::LayoutDirection::Ltr => niri_ipc::LayoutDirection::Ltr,
+                            niri_config::LayoutDirection::Rtl => niri_ipc::LayoutDirection::Rtl,
+                        }),
                     }
                 })
                 .collect();

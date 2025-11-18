@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use knuffel::errors::DecodeError;
 use niri_ipc::{ColumnDisplay, SizeChange};
 
@@ -131,7 +129,7 @@ pub struct LayoutPart {
     pub struts: Option<Struts>,
     #[knuffel(child)]
     pub background_color: Option<Color>,
-    #[knuffel(child, unwrap(argument, str))]
+    #[knuffel(child, unwrap(argument))]
     pub direction: Option<LayoutDirection>,
 }
 
@@ -182,18 +180,6 @@ pub enum LayoutDirection {
     #[default]
     Ltr,
     Rtl,
-}
-
-impl FromStr for LayoutDirection {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "ltr" | "LTR" => Ok(Self::Ltr),
-            "rtl" | "RTL" => Ok(Self::Rtl),
-            _ => Err("layout direction must be \"ltr\" or \"rtl\""),
-        }
-    }
 }
 
 impl<S> knuffel::Decode<S> for DefaultPresetSize

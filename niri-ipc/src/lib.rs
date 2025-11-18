@@ -980,6 +980,16 @@ pub enum ColumnDisplay {
     Tabbed,
 }
 
+/// Layout direction for a workspace's scrolling layout.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum LayoutDirection {
+    /// Left-to-right layout.
+    Ltr,
+    /// Right-to-left layout.
+    Rtl,
+}
+
 /// Output actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most thigs from
 // niri-config should be present here.
@@ -1414,6 +1424,8 @@ pub struct Workspace {
     pub is_focused: bool,
     /// Id of the active window on this workspace, if any.
     pub active_window_id: Option<u64>,
+    /// Layout direction for this workspace's scrolling layout, if known.
+    pub layout_direction: Option<LayoutDirection>,
 }
 
 /// Configured keyboard layouts.
