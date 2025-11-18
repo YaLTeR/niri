@@ -49,7 +49,7 @@ use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_protocols;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::DeviceFd;
+use smithay::utils::{DeviceFd, Transform};
 use smithay::wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal};
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
@@ -66,7 +66,7 @@ use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
-use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output};
+use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
 
 const SUPPORTED_COLOR_FORMATS: [Fourcc; 4] = [
     Fourcc::Xrgb8888,
@@ -973,6 +973,7 @@ impl Tty {
 
         debug!("picking mode: {mode:?}");
 
+        let mut orientation = None;
         if let Ok(props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
             match reset_hdr(&props) {
                 Ok(()) => (),
@@ -985,6 +986,13 @@ impl Tty {
                 match set_max_bpc(&props, 8) {
                     Ok(_bpc) => (),
                     Err(err) => debug!("couldn't set max bpc: {err:?}"),
+                }
+            }
+
+            match get_panel_orientation(&props) {
+                Ok(x) => orientation = Some(x),
+                Err(err) => {
+                    trace!("couldn't get panel orientation: {err:?}");
                 }
             }
         } else {
@@ -1064,6 +1072,9 @@ impl Tty {
             .user_data()
             .insert_if_missing(|| TtyOutputState { node, crtc });
         output.user_data().insert_if_missing(|| output_name.clone());
+        if let Some(x) = orientation {
+            output.user_data().insert_if_missing(|| PanelOrientation(x));
+        }
 
         let renderer = self.gpu_manager.single_renderer(&device.render_node)?;
         let egl_context = renderer.as_ref().egl_context();
@@ -2946,6 +2957,24 @@ fn set_max_bpc(props: &ConnectorProperties, bpc: u64) -> anyhow::Result<u64> {
 fn is_vrr_capable(device: &DrmDevice, connector: connector::Handle) -> Option<bool> {
     let (_, info, value) = find_drm_property(device, connector, "vrr_capable")?;
     info.value_type().convert_value(value).as_boolean()
+}
+
+fn get_panel_orientation(props: &ConnectorProperties) -> anyhow::Result<Transform> {
+    let (info, value) = props.find(c"panel orientation")?;
+    match info.value_type().convert_value(*value) {
+        property::Value::Enum(Some(val)) => match val.value() {
+            // "Normal"
+            0 => Ok(Transform::Normal),
+            // "Upside Down"
+            1 => Ok(Transform::_180),
+            // "Left Side Up"
+            2 => Ok(Transform::_90),
+            // "Right Side Up"
+            3 => Ok(Transform::_270),
+            _ => bail!("panel orientation has invalid value: {:?}", val),
+        },
+        _ => bail!("panel orientation has wrong value type"),
+    }
 }
 
 pub fn set_gamma_for_crtc(
