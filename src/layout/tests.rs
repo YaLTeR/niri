@@ -126,18 +126,17 @@ fn rtl_scrolling_insert_position_hits_correct_column() {
     let scrolling = ws.scrolling();
 
     let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
-    let layouts: Vec<_> = scrolling.tiles_with_ipc_layouts().collect();
 
     for (tile, pos, _visible) in tiles {
         let id = *tile.window().id();
 
-        let (_, layout) = layouts
-            .iter()
-            .find(|(t, _)| *t.window().id() == id)
+        // Determine the column index in the internal storage order.
+        let expected_col_idx = scrolling
+            .columns()
+            .enumerate()
+            .find(|(_, col)| col.contains(&id))
+            .map(|(idx, _)| idx)
             .unwrap();
-
-        let (expected_col_idx, _expected_tile_idx) = layout.pos_in_scrolling_layout.unwrap();
-        let expected_col_idx = usize::from(expected_col_idx) - 1;
 
         let size = tile.animated_tile_size();
         let pointer_pos = smithay::utils::Point::from((
@@ -148,11 +147,78 @@ fn rtl_scrolling_insert_position_hits_correct_column() {
         let insert_pos = ws.scrolling_insert_position(pointer_pos);
 
         match insert_pos {
-            InsertPosition::InColumn(col_idx, _) => assert_eq!(col_idx, expected_col_idx),
-            InsertPosition::NewColumn(col_idx) => assert_eq!(col_idx, expected_col_idx),
-            InsertPosition::Floating => panic!("unexpected floating insert position"),
+            InsertPosition::InColumn(col_idx, _) => {
+                assert_eq!(col_idx, expected_col_idx, "tile {id}: InColumn col_idx={col_idx}, expected={expected_col_idx}")
+            }
+            InsertPosition::NewColumn(col_idx) => {
+                assert_eq!(col_idx, expected_col_idx, "tile {id}: NewColumn col_idx={col_idx}, expected={expected_col_idx}")
+            }
+            InsertPosition::Floating => panic!("unexpected floating insert position for tile {id}"),
         }
     }
+}
+
+#[test]
+fn view_offset_gesture_snaps_symmetrically_in_rtl_and_ltr() {
+    fn run(dir: LayoutDirection) -> (usize, usize) {
+        let mut options = Options::default();
+        options.layout.direction = dir;
+        options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::CompleteAnimations,
+            Op::ViewOffsetGestureBegin {
+                output_idx: 1,
+                workspace_idx: None,
+                is_touchpad: true,
+            },
+            Op::ViewOffsetGestureUpdate {
+                delta: 400.0,
+                timestamp: std::time::Duration::from_millis(16),
+                is_touchpad: true,
+            },
+            Op::ViewOffsetGestureEnd {
+                is_touchpad: Some(true),
+            },
+        ];
+
+        let layout = check_ops_with_options(options, ops);
+        let ws = layout.active_workspace().unwrap();
+        let scrolling = ws.scrolling();
+
+        let active_idx = scrolling.active_column_idx();
+        let col_count = scrolling.columns().count();
+
+        (active_idx, col_count)
+    }
+
+    let (ltr_idx, ltr_count) = run(LayoutDirection::Ltr);
+    let (rtl_idx, rtl_count) = run(LayoutDirection::Rtl);
+
+    assert_eq!(ltr_count, rtl_count);
+    assert!(ltr_count >= 1);
+    let last = ltr_count - 1;
+
+    // Map storage indices to logical "visual left-to-right" indices.
+    let ltr_logical = ltr_idx;
+    let rtl_logical = rtl_count - rtl_idx - 1;
+
+    assert!(ltr_logical <= last);
+    assert!(rtl_logical <= last);
+    assert_eq!(rtl_logical, last - ltr_logical);
 }
 
 #[derive(Debug)]

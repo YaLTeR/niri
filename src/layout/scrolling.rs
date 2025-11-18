@@ -824,7 +824,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let gap = self.options.layout.gaps;
 
         // Find the closest gap between columns.
-        let (closest_col_idx, col_x) = self
+        let (closest_col_idx, _closest_gap_x) = self
             .column_xs(self.data.iter().copied())
             .enumerate()
             .min_by_key(|(_, col_x)| NotNan::new((col_x - x).abs()).unwrap())
@@ -852,7 +852,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return InsertPosition::NewColumn(closest_col_idx);
         }
 
-        // Find the closest gap between tiles.
+        // Find the closest gap between tiles inside the containing column.
         let col = &self.columns[col_idx];
 
         let (closest_tile_idx, tile_y) = if col.display_mode == ColumnDisplay::Tabbed {
@@ -873,14 +873,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 .unwrap()
         };
 
-        // Return the closest among the vertical and the horizontal gap.
-        let vert_dist = (col_x - x).abs();
-        let hor_dist = (tile_y - y).abs();
-        if vert_dist <= hor_dist {
-            InsertPosition::NewColumn(closest_col_idx)
-        } else {
-            InsertPosition::InColumn(col_idx, closest_tile_idx)
-        }
+        InsertPosition::InColumn(col_idx, closest_tile_idx)
     }
 
     pub fn add_tile(
@@ -2470,14 +2463,23 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
+        let len = self.columns.len();
+        let dir = self.dir();
+
         self.columns
             .iter()
             .enumerate()
             .flat_map(move |(col_idx, col)| {
+                let logical_col_idx = match dir {
+                    LayoutDirection::Ltr => col_idx,
+                    LayoutDirection::Rtl => len - col_idx - 1,
+                };
+
                 col.tiles().enumerate().map(move |(tile_idx, (tile, _))| {
                     let layout = WindowLayout {
-                        // Our indices are 1-based, consistent with the actions.
-                        pos_in_scrolling_layout: Some((col_idx + 1, tile_idx + 1)),
+                        // Our indices are 1-based, consistent with the actions: index 1 is the
+                        // visually leftmost column in both LTR and RTL.
+                        pos_in_scrolling_layout: Some((logical_col_idx + 1, tile_idx + 1)),
                         ..tile.ipc_layout_template()
                     };
                     (tile, layout)
@@ -3150,67 +3152,72 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn dnd_scroll_gesture_scroll(&mut self, delta: f64) -> bool {
-        let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
-            return false;
+        // First, update the gesture state and compute the unclamped view offset in a limited
+        // scope so that the mutable borrow of self.view_offset does not overlap with any
+        // immutable borrows of self used for geometry.
+        let view_offset = {
+            let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
+                return false;
+            };
+
+            let Some(last_time) = gesture.dnd_last_event_time else {
+                // Not a DnD scroll.
+                return false;
+            };
+
+            let config = &self.options.gestures.dnd_edge_view_scroll;
+
+            let now = self.clock.now_unadjusted();
+            gesture.dnd_last_event_time = Some(now);
+
+            if delta == 0. {
+                // We're outside the scrolling zone.
+                gesture.dnd_nonzero_start_time = None;
+                return false;
+            }
+
+            let nonzero_start = *gesture.dnd_nonzero_start_time.get_or_insert(now);
+
+            // Delay starting the gesture a bit to avoid unwanted movement when dragging across
+            // monitors.
+            let delay = Duration::from_millis(u64::from(config.delay_ms));
+            if now.saturating_sub(nonzero_start) < delay {
+                return true;
+            }
+
+            let time_delta = now.saturating_sub(last_time).as_secs_f64();
+
+            let delta = delta * time_delta * config.max_speed;
+
+            gesture.tracker.push(delta, now);
+
+            gesture.tracker.pos() + gesture.delta_from_tracker
         };
 
-        let Some(last_time) = gesture.dnd_last_event_time else {
-            // Not a DnD scroll.
-            return false;
-        };
-
-        let config = &self.options.gestures.dnd_edge_view_scroll;
-
-        let now = self.clock.now_unadjusted();
-        gesture.dnd_last_event_time = Some(now);
-
-        if delta == 0. {
-            // We're outside the scrolling zone.
-            gesture.dnd_nonzero_start_time = None;
-            return false;
-        }
-
-        let nonzero_start = *gesture.dnd_nonzero_start_time.get_or_insert(now);
-
-        // Delay starting the gesture a bit to avoid unwanted movement when dragging across
-        // monitors.
-        let delay = Duration::from_millis(u64::from(config.delay_ms));
-        if now.saturating_sub(nonzero_start) < delay {
-            return true;
-        }
-
-        let time_delta = now.saturating_sub(last_time).as_secs_f64();
-
-        let delta = delta * time_delta * config.max_speed;
-
-        gesture.tracker.push(delta, now);
-
-        let view_offset = gesture.tracker.pos() + gesture.delta_from_tracker;
-
-        // Clamp it so that it doesn't go too much out of bounds.
+        // Clamp it so that it doesn't go too much out of bounds. This only needs immutable
+        // access to self, so it can safely happen outside of the mutable borrow of view_offset
+        // above.
         let (leftmost, rightmost) = if self.columns.is_empty() {
             (0., 0.)
         } else {
-            let gaps = self.options.layout.gaps;
+            let left_idx = self.left_edge_index().unwrap();
+            let right_idx = self.right_edge_index().unwrap();
 
-            let mut leftmost = -self.working_area.size.w;
+            // Allow scrolling up to one working-area width past the visually leftmost column.
+            let left_view_pos = self.column_x(left_idx) - self.working_area.size.w;
 
-            let last_col_idx = self.columns.len() - 1;
-            let last_col_x = self
-                .columns
-                .iter()
-                .take(last_col_idx)
-                .fold(0., |col_x, col| col_x + col.width() + gaps);
-            let last_col_width = self.data[last_col_idx].width;
-            let mut rightmost = last_col_x + last_col_width - self.working_area.loc.x;
+            // Do not scroll further than the right edge of the visually rightmost column.
+            let right_view_pos = {
+                let col_x = self.column_x(right_idx);
+                let col_w = self.data[right_idx].width;
+                col_x + col_w - self.working_area.loc.x
+            };
 
-            let active_col_x = self
-                .columns
-                .iter()
-                .take(self.active_column_idx)
-                .fold(0., |col_x, col| col_x + col.width() + gaps);
-            leftmost -= active_col_x;
-            rightmost -= active_col_x;
+            // Convert view position bounds into offsets relative to the active column.
+            let active_col_x = self.column_x(self.active_column_idx);
+
+            let leftmost = left_view_pos - active_col_x;
+            let rightmost = right_view_pos - active_col_x;
 
             (leftmost, rightmost)
         };
@@ -3218,9 +3225,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let max_offset = f64::max(leftmost, rightmost);
         let clamped_offset = view_offset.clamp(min_offset, max_offset);
 
-        gesture.delta_from_tracker += clamped_offset - view_offset;
-        gesture.current_view_offset = clamped_offset;
-        true
+        if let ViewOffset::Gesture(gesture) = &mut self.view_offset {
+            gesture.delta_from_tracker += clamped_offset - view_offset;
+            gesture.current_view_offset = clamped_offset;
+            true
+        } else {
+            // If the gesture was reset between the two borrows, treat this as a no-op.
+            false
+        }
     }
 
     pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
@@ -3271,7 +3283,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let mut snapping_points = Vec::new();
 
         if self.is_centering_focused_column() {
-            let mut col_x = 0.;
             for (col_idx, col) in self.columns.iter().enumerate() {
                 let col_w = col.width();
                 let mode = col.sizing_mode();
@@ -3284,6 +3295,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
                 let left_strut = area.loc.x;
 
+                let col_x = self.column_x(col_idx);
+
                 let view_pos = if mode.is_fullscreen() {
                     col_x
                 } else if area.size.w <= col_w {
@@ -3292,8 +3305,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     col_x - (area.size.w - col_w) / 2. - left_strut
                 };
                 snapping_points.push(Snap { view_pos, col_idx });
-
-                col_x += col_w + self.options.layout.gaps;
             }
         } else {
             let center_on_overflow = matches!(
@@ -3377,36 +3388,33 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             //
             // This isn't actually a big problem because it's very much an obscure edge case. Just
             // need to make sure the code doesn't panic when that happens.
-            let leftmost_snap = snap_points(
-                0.,
-                &self.columns[0],
-                None,
-                self.columns.get(1).map(|c| c.width()),
-            )
-            .0;
-            let last_col_idx = self.columns.len() - 1;
-            let last_col_x = self
-                .columns
-                .iter()
-                .take(last_col_idx)
-                .fold(0., |col_x, col| col_x + col.width() + gaps);
-            let rightmost_snap = snap_points(
-                last_col_x,
-                &self.columns[last_col_idx],
-                last_col_idx
-                    .checked_sub(1)
-                    .and_then(|idx| self.columns.get(idx).map(|c| c.width())),
-                None,
-            )
-            .1 - view_width;
+            let left_idx = self.left_edge_index().unwrap();
+            let right_idx = self.right_edge_index().unwrap();
+
+            let leftmost_snap = {
+                let col_x = self.column_x(left_idx);
+                let next_col_w = self
+                    .screen_right_of(left_idx)
+                    .and_then(|idx| self.columns.get(idx).map(|c| c.width()));
+                snap_points(col_x, &self.columns[left_idx], None, next_col_w).0
+            };
+
+            let rightmost_snap = {
+                let col_x = self.column_x(right_idx);
+                let prev_col_w = self
+                    .screen_left_of(right_idx)
+                    .and_then(|idx| self.columns.get(idx).map(|c| c.width()));
+                let (_, right) = snap_points(col_x, &self.columns[right_idx], prev_col_w, None);
+                right - view_width
+            };
 
             snapping_points.push(Snap {
                 view_pos: leftmost_snap,
-                col_idx: 0,
+                col_idx: left_idx,
             });
             snapping_points.push(Snap {
                 view_pos: rightmost_snap,
-                col_idx: last_col_idx,
+                col_idx: right_idx,
             });
 
             let mut push = |col_idx, left, right| {
@@ -3426,19 +3434,19 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 }
             };
 
-            let mut col_x = 0.;
             for (col_idx, col) in self.columns.iter().enumerate() {
+                let col_x = self.column_x(col_idx);
                 let (left, right) = snap_points(
                     col_x,
                     col,
-                    col_idx
-                        .checked_sub(1)
+                    self
+                        .screen_left_of(col_idx)
                         .and_then(|idx| self.columns.get(idx).map(|c| c.width())),
-                    self.columns.get(col_idx + 1).map(|c| c.width()),
+                    self
+                        .screen_right_of(col_idx)
+                        .and_then(|idx| self.columns.get(idx).map(|c| c.width())),
                 );
                 push(col_idx, left, right);
-
-                col_x += col.width() + gaps;
             }
         }
 
