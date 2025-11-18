@@ -665,6 +665,8 @@ fn print_window(window: &Window) {
         if window.is_floating { "yes" } else { "no" }
     );
 
+    println!("  Fullscreen state: {}", window.fullscreen_state);
+
     if let Some(pid) = window.pid {
         println!("  PID: {pid}");
     } else {
