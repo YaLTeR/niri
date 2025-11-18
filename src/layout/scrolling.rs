@@ -547,6 +547,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         col_x: f64,
         width: f64,
         mode: SizingMode,
+        prefer_right: bool,
     ) -> f64 {
         if mode.is_fullscreen() {
             return 0.;
@@ -560,8 +561,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let target_x = target_x.unwrap_or_else(|| self.target_view_pos());
 
-        let new_offset =
-            compute_new_view_offset(target_x + area.loc.x, area.size.w, col_x, width, padding);
+        let new_offset = compute_new_view_offset(
+            target_x + area.loc.x,
+            area.size.w,
+            col_x,
+            width,
+            padding,
+            prefer_right,
+        );
 
         // Non-fullscreen windows are always offset at least by the working area position.
         new_offset - area.loc.x
@@ -575,7 +582,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         mode: SizingMode,
     ) -> f64 {
         if mode.is_fullscreen() {
-            return self.compute_new_view_offset_fit(target_x, col_x, width, mode);
+            let prefer_right = self.dir() == LayoutDirection::Rtl;
+            return self.compute_new_view_offset_fit(target_x, col_x, width, mode, prefer_right);
         }
 
         let area = if mode.is_maximized() {
@@ -586,7 +594,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Columns wider than the view are left-aligned (the fit code can deal with that).
         if area.size.w <= width {
-            return self.compute_new_view_offset_fit(target_x, col_x, width, mode);
+            let prefer_right = self.dir() == LayoutDirection::Rtl;
+            return self.compute_new_view_offset_fit(target_x, col_x, width, mode, prefer_right);
         }
 
         -(area.size.w - width) / 2. - area.loc.x
@@ -594,11 +603,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     fn compute_new_view_offset_for_column_fit(&self, target_x: Option<f64>, idx: usize) -> f64 {
         let col = &self.columns[idx];
+        let prefer_right = self.dir() == LayoutDirection::Rtl;
         self.compute_new_view_offset_fit(
             target_x,
             self.column_x(idx),
             col.width(),
             col.sizing_mode(),
+            prefer_right,
         )
     }
 
@@ -2550,7 +2561,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     SizingMode::Normal,
                 )
             } else {
-                self.compute_new_view_offset_fit(Some(0.), 0., hint_area.size.w, SizingMode::Normal)
+                let prefer_right = self.dir() == LayoutDirection::Rtl;
+                self.compute_new_view_offset_fit(
+                    Some(0.),
+                    0.,
+                    hint_area.size.w,
+                    SizingMode::Normal,
+                    prefer_right,
+                )
             };
             hint_area.loc.x -= view_offset;
         } else {
@@ -5551,6 +5569,7 @@ fn compute_new_view_offset(
     new_col_x: f64,
     new_col_width: f64,
     gaps: f64,
+    prefer_right: bool,
 ) -> f64 {
     // If the column is wider than the view, always left-align it.
     if view_width <= new_col_width {
@@ -5564,18 +5583,26 @@ fn compute_new_view_offset(
     let new_x = new_col_x - padding;
     let new_right_x = new_col_x + new_col_width + padding;
 
-    // If the column is already fully visible, leave the view as is.
+    // If the column is already fully visible, keep it near the preferred edge.
     if cur_x <= new_x && new_right_x <= cur_x + view_width {
-        return -(new_col_x - cur_x);
+        return if prefer_right {
+            -(view_width - padding - new_col_width)
+        } else {
+            -(new_col_x - cur_x)
+        };
     }
 
-    // Otherwise, prefer the alignment that results in less motion from the current position.
-    let dist_to_left = (cur_x - new_x).abs();
-    let dist_to_right = ((cur_x + view_width) - new_right_x).abs();
-    if dist_to_left <= dist_to_right {
-        -padding
-    } else {
+    // Otherwise, bias towards the preferred alignment when possible.
+    if prefer_right {
         -(view_width - padding - new_col_width)
+    } else {
+        let dist_to_left = (cur_x - new_x).abs();
+        let dist_to_right = ((cur_x + view_width) - new_right_x).abs();
+        if dist_to_left <= dist_to_right {
+            -padding
+        } else {
+            -(view_width - padding - new_col_width)
+        }
     }
 }
 
