@@ -2656,14 +2656,37 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // preset width. This mirrors LTR behavior (where the left edge is effectively
             // pinned) in a behavioral sense.
 
-            // Measure the current apparent width of the active column.
-            let old_width = self.columns[active_idx].width();
+            // Measure the current *resolved* column width in logical pixels, using the same
+            // ColumnWidth + resolve_column_width logic that update_tile_sizes() uses, but without
+            // waiting for client commits.
+            let old_width = {
+                let col = &self.columns[active_idx];
+                let current = if col.is_full_width || col.is_pending_maximized {
+                    ColumnWidth::Proportion(1.)
+                } else {
+                    col.width
+                };
+                col.resolve_column_width(current)
+            };
 
-            // Apply the preset toggle, which updates the column's internal width and tile sizes.
-            self.columns[active_idx].toggle_width(None, forwards);
+            // Apply the preset toggle, which updates the column's desired width and schedules
+            // tile size changes.
+            {
+                let col = &mut self.columns[active_idx];
+                col.toggle_width(None, forwards);
+            }
 
-            // Measure the new apparent width and compute how much it changed.
-            let new_width = self.columns[active_idx].width();
+            // Measure the new resolved width and compute how much it changed.
+            let new_width = {
+                let col = &self.columns[active_idx];
+                let current = if col.is_full_width || col.is_pending_maximized {
+                    ColumnWidth::Proportion(1.)
+                } else {
+                    col.width
+                };
+                col.resolve_column_width(current)
+            };
+
             let delta = new_width - old_width;
 
             // Adjust the view offset so that the active column's right edge stays at the same
