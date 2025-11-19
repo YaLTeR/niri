@@ -1268,21 +1268,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
-        // If we're in the middle of an interactive resize for this window from the RIGHT edge
-        // (non-centering layouts), we want to preserve the physical right edge position across
-        // commits. The target right edge is recorded in InteractiveResize::original_right_edge at
-        // the start of the gesture.
-        let mut original_right_edge = None;
-        if let Some(active) = &self.interactive_resize {
-            if active.window == *window
-                && !self.is_centering_focused_column()
-                && active.data.edges.contains(ResizeEdge::RIGHT)
-                && !active.data.edges.contains(ResizeEdge::LEFT)
-            {
-                original_right_edge = active.original_right_edge;
-            }
-        }
-
         let (col_idx, column) = self
             .columns
             .iter_mut()
@@ -1451,24 +1436,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 // FIXME: we will want to skip the animation in some cases here to make continuously
                 // resizing windows not look janky.
                 self.animate_view_offset_to_column_with_config(None, col_idx, None, config);
-            }
-        }
-
-        // After applying the commit, if we have a target right edge, compute the new right edge
-        // position in screen coordinates and offset the view so that it matches the original
-        // position. This keeps the physical right edge stationary while allowing the left edge to
-        // move.
-        if let Some(target_right) = original_right_edge {
-            let right_edge_after = self
-                .tiles_with_render_positions()
-                .find(|(tile, _, _)| tile.window().id() == window)
-                .map(|(tile, pos, _)| pos.x + tile.tile_expected_or_current_size().w);
-
-            if let Some(after) = right_edge_after {
-                let delta = after - target_right;
-                if delta != 0. {
-                    self.view_offset.offset(delta);
-                }
             }
         }
     }
@@ -3682,25 +3649,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return false;
         }
 
-        // Measure the original right edge in screen coordinates before we start mutating
-        // geometry, so we can preserve it later during commits.
-        let original_right_edge = self
-            .tiles_with_render_positions()
-            .find(|(tile, _, _)| tile.window().id() == &window)
-            .map(|(tile, pos, _)| pos.x + tile.animated_tile_size().w);
-
-        // Determine which column contains this window and make it the active column for the
-        // duration of the interactive resize. This ensures that view_pos and any subsequent
-        // view_offset adjustments (for pinned-edge semantics) are relative to the resized
-        // column in both LTR and RTL.
-        let col_idx = self
+        let col = self
             .columns
-            .iter()
-            .position(|col| col.contains(&window))
+            .iter_mut()
+            .find(|col| col.contains(&window))
             .unwrap();
-        self.active_column_idx = col_idx;
-
-        let col = &mut self.columns[col_idx];
 
         if !col.pending_sizing_mode().is_normal() {
             return false;
@@ -3718,7 +3671,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             window,
             original_window_size,
             data: InteractiveResizeData { edges },
-            original_right_edge,
         };
         self.interactive_resize = Some(resize);
 
@@ -3799,18 +3751,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             if window != &resize.window {
                 return;
             }
-            let edges = resize.data.edges;
-            let has_horizontal = edges.intersects(ResizeEdge::LEFT_RIGHT);
-            let is_centering = self.is_centering_focused_column();
-
-            // For horizontal interactive resizes in non-centering layouts, we deliberately avoid
-            // re-centering the view here so that the pinned edge semantics (e.g. pinned right
-            // edge) from interactive_resize_update remain intact. For vertical-only resizes or
-            // centering modes, we keep the existing behavior of animating the active window into
-            // view.
-            if (!has_horizontal || is_centering)
-                && self.columns[self.active_column_idx].contains(window)
-            {
+            if self.columns[self.active_column_idx].contains(window) {
                 self.animate_view_offset_to_column(None, self.active_column_idx, None);
             }
         }

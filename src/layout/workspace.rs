@@ -153,10 +153,6 @@ pub(super) struct InteractiveResize<W: LayoutElement> {
     pub window: W::Id,
     pub original_window_size: Size<f64, Logical>,
     pub data: InteractiveResizeData,
-    /// Original right edge position in screen coordinates at the start of an
-    /// interactive resize, if applicable. Used by the scrolling space to
-    /// preserve the physical right edge during RIGHT-edge interactive resizes.
-    pub original_right_edge: Option<f64>,
 }
 
 /// Resolved width or height in logical pixels.
