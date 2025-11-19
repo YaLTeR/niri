@@ -1372,6 +1372,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // If offset == 0, then don't mess with the view or the gesture. Some clients (Firefox,
             // Chromium, Electron) currently don't commit after the ack of a configure that drops
             // the Resizing state, which can trigger this code path for a while.
+            let had_interactive_resize = resize.is_some();
             let resize = if offset != 0. { resize } else { None };
             if let Some(resize) = resize {
                 // Don't bother with the gesture.
@@ -1418,8 +1419,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             };
 
             // We might need to move the view to ensure the resized window is still visible. But
-            // only do it when the view isn't frozen by an interactive resize or a view gesture.
-            if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
+            // only do it when the view isn't frozen by an interactive resize or a view gesture,
+            // and not for commits that still carry interactive-resize state.
+            if !had_interactive_resize
+                && self.interactive_resize.is_none()
+                && !self.view_offset.is_gesture()
+            {
                 // Restore the view offset upon unfullscreening if needed.
                 if let Some(prev_offset) = unfullscreen_offset {
                     self.animate_view_offset(col_idx, prev_offset);
@@ -3728,11 +3733,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             if window != &resize.window {
                 return;
             }
-            if self.columns[self.active_column_idx].contains(window) {
-                self.animate_view_offset_to_column(None, self.active_column_idx, None);
-            }
         }
 
+        // Do not adjust view_offset here; keep whatever the code had (left-pinned, right-pinned,
+        // centered, etc.) so that interactive resizes do not cause unexpected camera movement.
         self.interactive_resize = None;
     }
 
