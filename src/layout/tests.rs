@@ -299,6 +299,86 @@ fn dnd_edge_scroll_moves_view_consistently_in_rtl_and_ltr() {
     assert!(ltr_left_sign != 0 || ltr_right_sign != 0);
 }
 
+#[test]
+fn swap_window_in_direction_is_mirrored_in_rtl_and_ltr() {
+    fn window_order(layout: &Layout<TestWindow>) -> Vec<usize> {
+        let ws = layout.active_workspace().unwrap();
+        let mut tiles: Vec<_> = ws
+            .tiles_with_render_positions()
+            .map(|(tile, pos, _)| (pos.x, *tile.window().id()))
+            .collect();
+        tiles.sort_by(|(x1, _), (x2, _)| x1.partial_cmp(x2).unwrap());
+        tiles.into_iter().map(|(_, id)| id).collect()
+    }
+
+    fn run(dir: LayoutDirection) {
+        let mut options = Options::default();
+        options.layout.direction = dir;
+        options.layout.default_column_width = Some(PresetSize::Proportion(0.8));
+
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::CompleteAnimations,
+        ];
+
+        let mut layout = check_ops_with_options(options, ops);
+
+        let before = window_order(&layout);
+
+        assert!(before.len() >= 2);
+
+        // We will focus window 2 before swapping. Determine its position and physical
+        // right neighbor (if any) in the current visual order.
+        let idx = before.iter().position(|&id| id == 2).unwrap();
+        let right_neighbor = before.get(idx + 1).copied();
+
+        let ops = [
+            Op::FocusWindow(2),
+            Op::SwapWindowInDirection(ScrollDirection::Right),
+            Op::CompleteAnimations,
+        ];
+        check_ops_on_layout(&mut layout, ops);
+
+        let after = window_order(&layout);
+
+        match right_neighbor {
+            Some(neigh) => {
+                // Window 2 had a physical right neighbor; they should have swapped,
+                // and all other windows should remain in place.
+                assert_eq!(before.len(), after.len());
+                assert_eq!(after[idx], neigh);
+                assert_eq!(after[idx + 1], 2);
+
+                for i in 0..before.len() {
+                    if i != idx && i != idx + 1 {
+                        assert_eq!(after[i], before[i]);
+                    }
+                }
+            }
+            None => {
+                // Window 2 was already the rightmost window; swapping to the right
+                // should be a no-op.
+                assert_eq!(before, after);
+            }
+        }
+    }
+
+    run(LayoutDirection::Ltr);
+    run(LayoutDirection::Rtl);
+}
+
 #[derive(Debug)]
 struct TestWindowInner {
     id: usize,
