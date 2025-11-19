@@ -716,7 +716,10 @@ impl Tty {
         let _span = tracy_client::span!("Tty::device_added");
 
         let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
-        let fd = self.session.open(path, open_flags)?;
+        let fd = {
+            let _span = tracy_client::span!("LibSeatSession::open");
+            self.session.open(path, open_flags)
+        }?;
         let device_fd = DrmDeviceFd::new(DeviceFd::from(fd));
 
         let (drm, drm_notifier) = {
