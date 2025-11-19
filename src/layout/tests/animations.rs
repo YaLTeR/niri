@@ -1023,13 +1023,9 @@ fn interactive_width_resize_from_right_keeps_right_edge_fixed_ltr() {
             params: TestWindowParams::new(2),
         },
         Op::FocusColumnLeft,
-        Op::SetForcedSize {
-            id: 1,
-            size: Some(Size::new(400, 200)),
-        },
-        Op::SetForcedSize {
-            id: 2,
-            size: Some(Size::new(400, 200)),
+        Op::SetWindowWidth {
+            id: Some(1),
+            change: SizeChange::SetFixed(400),
         },
         Op::Communicate(1),
         Op::Communicate(2),
@@ -1070,7 +1066,7 @@ fn interactive_width_resize_from_right_keeps_right_edge_fixed_ltr() {
     ];
     check_ops_on_layout(&mut layout, ops);
 
-    // Measure edges again and assert that the right edge stayed fixed while the left edge moved.
+    // Measure edges again and assert that the right edge stayed fixed while the window grew.
     let (final_left, final_right) = {
         let ws = layout.active_workspace().unwrap();
         let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
@@ -1083,10 +1079,19 @@ fn interactive_width_resize_from_right_keeps_right_edge_fixed_ltr() {
     };
 
     let eps = 0.5;
+    let initial_width = initial_right - initial_left;
+    let final_width = final_right - final_left;
+
     // Right edge should remain visually anchored.
-    assert!((final_right - initial_right).abs() < eps);
-    // Left edge should have moved left (be smaller x) if we grew the window.
-    assert!(final_left < initial_left - eps);
+    assert!(
+        (final_right - initial_right).abs() < eps,
+        "LTR: right edge moved: initial_right={initial_right}, final_right={final_right}"
+    );
+    // The window should have grown in width.
+    assert!(
+        final_width > initial_width + eps,
+        "LTR: width did not grow enough: initial_left={initial_left}, initial_right={initial_right}, final_left={final_left}, final_right={final_right}, initial_width={initial_width}, final_width={final_width}"
+    );
 }
 
 #[test]
@@ -1104,13 +1109,9 @@ fn interactive_width_resize_from_right_keeps_right_edge_fixed_rtl() {
             params: TestWindowParams::new(2),
         },
         Op::FocusColumnLeft,
-        Op::SetForcedSize {
-            id: 1,
-            size: Some(Size::new(400, 200)),
-        },
-        Op::SetForcedSize {
-            id: 2,
-            size: Some(Size::new(400, 200)),
+        Op::SetWindowWidth {
+            id: Some(1),
+            change: SizeChange::SetFixed(400),
         },
         Op::Communicate(1),
         Op::Communicate(2),
@@ -1159,8 +1160,17 @@ fn interactive_width_resize_from_right_keeps_right_edge_fixed_rtl() {
     };
 
     let eps = 0.5;
-    assert!((final_right - initial_right).abs() < eps);
-    assert!(final_left < initial_left - eps);
+    let initial_width = initial_right - initial_left;
+    let final_width = final_right - final_left;
+
+    assert!(
+        (final_right - initial_right).abs() < eps,
+        "RTL: right edge moved: initial_right={initial_right}, final_right={final_right}"
+    );
+    assert!(
+        final_width > initial_width + eps,
+        "RTL: width did not grow enough: initial_left={initial_left}, initial_right={initial_right}, final_left={final_left}, final_right={final_right}, initial_width={initial_width}, final_width={final_width}"
+    );
 }
 
 #[test]

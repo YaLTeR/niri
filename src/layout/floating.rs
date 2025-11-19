@@ -1103,6 +1103,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             window,
             original_window_size,
             data: InteractiveResizeData { edges },
+            original_right_edge: None,
         };
         self.interactive_resize = Some(resize);
 
