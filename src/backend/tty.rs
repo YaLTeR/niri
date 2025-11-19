@@ -1998,6 +1998,26 @@ impl Tty {
         }
     }
 
+    fn should_disable_laptop_panels(&self, is_lid_closed: bool) -> bool {
+        if !is_lid_closed {
+            return false;
+        }
+
+        let config = self.config.borrow();
+        if !config.debug.keep_laptop_panel_on_when_lid_is_closed {
+            // Check if any external monitor is connected.
+            for device in self.devices.values() {
+                for (connector, _crtc) in device.drm_scanner.crtcs() {
+                    if !is_laptop_panel(&format_connector_name(connector)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
     pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
         let _span = tracy_client::span!("Tty::on_output_config_changed");
 
@@ -2009,21 +2029,7 @@ impl Tty {
         self.update_output_config_on_resume = false;
 
         // Figure out if we should disable laptop panels.
-        let mut disable_laptop_panels = false;
-        if niri.is_lid_closed {
-            let config = self.config.borrow();
-            if !config.debug.keep_laptop_panel_on_when_lid_is_closed {
-                // Check if any external monitor is connected.
-                'outer: for device in self.devices.values() {
-                    for (connector, _crtc) in device.drm_scanner.crtcs() {
-                        if !is_laptop_panel(&format_connector_name(connector)) {
-                            disable_laptop_panels = true;
-                            break 'outer;
-                        }
-                    }
-                }
-            }
-        }
+        let disable_laptop_panels = self.should_disable_laptop_panels(niri.is_lid_closed);
         let should_disable = |connector: &str| disable_laptop_panels && is_laptop_panel(connector);
 
         let mut to_disconnect = vec![];
