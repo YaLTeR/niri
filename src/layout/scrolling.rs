@@ -2666,20 +2666,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // In RTL, keep the right edge of the active column visually pinned when toggling
             // preset width. This mirrors LTR behavior (where the left edge is effectively
             // pinned) in a behavioral sense.
-
-            // Measure the current *resolved* column width in logical pixels, using the same
-            // ColumnWidth + resolve_column_width logic that update_tile_sizes() uses, but without
-            // waiting for client commits.
-            let old_width = {
-                let col = &self.columns[active_idx];
-                let current = if col.is_full_width || col.is_pending_maximized {
-                    ColumnWidth::Proportion(1.)
-                } else {
-                    col.width
-                };
-                col.resolve_column_width(current)
-            };
-
             // Apply the preset toggle, which updates the column's desired width and schedules
             // tile size changes.
             {
@@ -2687,25 +2673,16 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 col.toggle_width(None, forwards);
             }
 
-            // Measure the new resolved width and compute how much it changed.
-            let new_width = {
-                let col = &self.columns[active_idx];
-                let current = if col.is_full_width || col.is_pending_maximized {
-                    ColumnWidth::Proportion(1.)
-                } else {
-                    col.width
-                };
-                col.resolve_column_width(current)
-            };
-
-            let delta = new_width - old_width;
-
-            // Adjust the view offset so that the active column's right edge stays at the same
-            // screen X position. Using ViewOffset::offset ensures ongoing animations/gestures
-            // are translated consistently instead of being reset.
-            if delta != 0. {
-                self.view_offset.offset(delta);
-            }
+            // Recompute the view offset based on the new column width using the standard
+            // view-offset fitting logic. For single-column RTL workspaces this will prefer
+            // right alignment via the `prefer_right` parameter in compute_new_view_offset().
+            let new_view_offset =
+                self.compute_new_view_offset_for_column(None, active_idx, Some(active_idx));
+            self.animate_view_offset_with_config(
+                active_idx,
+                new_view_offset,
+                self.options.animations.horizontal_view_movement.0,
+            );
 
             let col = &mut self.columns[active_idx];
             cancel_resize_for_column(&mut self.interactive_resize, col);
