@@ -4033,6 +4033,65 @@ fn preset_column_width_pins_right_edge_in_rtl() {
 }
 
 #[test]
+fn single_column_preset_width_keeps_right_edge_in_rtl() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+    options.layout.preset_column_widths = vec![
+        PresetSize::Proportion(1. / 3.),
+        PresetSize::Proportion(0.5),
+        PresetSize::Proportion(2. / 3.),
+    ];
+
+    // Baseline: single column, no preset toggle.
+    let ops_base = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    let layout_base = check_ops_with_options(options.clone(), ops_base);
+    let ws_base = layout_base.active_workspace().unwrap();
+    let tiles_base: Vec<_> = ws_base.tiles_with_render_positions().collect();
+    assert_eq!(tiles_base.len(), 1);
+
+    let (tile_base, pos_base, _) = tiles_base[0];
+    let size_base = tile_base.animated_tile_size();
+    let right_edge_base = pos_base.x + size_base.w;
+
+    // After toggle: same setup, but switch preset column width once.
+    let ops_toggled = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::SwitchPresetColumnWidth,
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    let layout_toggled = check_ops_with_options(options, ops_toggled);
+    let ws_toggled = layout_toggled.active_workspace().unwrap();
+    let tiles_toggled: Vec<_> = ws_toggled.tiles_with_render_positions().collect();
+    assert_eq!(tiles_toggled.len(), 1);
+
+    let (tile_toggled, pos_toggled, _) = tiles_toggled[0];
+    let size_toggled = tile_toggled.animated_tile_size();
+    let right_edge_toggled = pos_toggled.x + size_toggled.w;
+
+    // Column width must actually change.
+    assert!((size_toggled.w - size_base.w).abs() > 1.0);
+
+    // In single-column RTL, the right edge of the column should remain pinned.
+    assert!((right_edge_toggled - right_edge_base).abs() < 1.0);
+}
+
+#[test]
 fn move_column_to_workspace_unfocused_with_multiple_monitors() {
     let ops = [
         Op::AddOutput(1),

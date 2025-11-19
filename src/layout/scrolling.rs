@@ -560,7 +560,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let target_x = target_x.unwrap_or_else(|| self.target_view_pos());
 
-        let prefer_right = self.dir() == LayoutDirection::Rtl && self.columns.len() == 1;
+        // In RTL, prefer right alignment for the active column when it is fully visible, so that
+        // its right edge appears pinned in screen space.
+        let prefer_right = self.dir() == LayoutDirection::Rtl;
 
         let new_offset = compute_new_view_offset(
             target_x + area.loc.x,
@@ -1403,6 +1405,46 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 self.view_offset_to_restore = Some(self.view_offset.stationary());
             }
 
+            // For single-column RTL workspaces, non-interactive width changes (such as preset
+            // column width toggles) should keep the active column's right edge pinned. Do this by
+            // adjusting the view offset so that the screen-space right edge remains constant.
+            if !had_interactive_resize
+                && self.columns.len() == 1
+                && matches!(self.dir(), LayoutDirection::Rtl)
+                && was_normal
+                && is_normal
+            {
+                let new_width = self.data[col_idx].width;
+                let col_x = self.column_x(col_idx);
+                let view_pos_before = self.view_pos();
+                let vo_before = self.view_offset.current();
+                let screen_left_before = col_x - view_pos_before;
+                let screen_right_before = screen_left_before + new_width;
+
+                eprintln!(
+                    "[rtl1][pre-pin] prev_width={prev_width} new_width={new_width} col_x={col_x} \
+view_pos_before={view_pos_before} vo_before={vo_before} screen_left_before={screen_left_before} screen_right_before={screen_right_before}",
+                );
+
+                let width_delta = prev_width - new_width;
+                if width_delta != 0. {
+                    // Keep the right edge constant in screen space.
+                    // Using the invariant: right = col_x - view_pos + width.
+                    // We adjust the underlying view offset so that `right_after == right_before`.
+                    self.view_offset.offset(-width_delta);
+                }
+
+                let view_pos_after = self.view_pos();
+                let vo_after = self.view_offset.current();
+                let screen_left_after = col_x - view_pos_after;
+                let screen_right_after = screen_left_after + new_width;
+
+                eprintln!(
+                    "[rtl1][post-pin] view_pos_after={view_pos_after} vo_after={vo_after} \
+screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
+                );
+            }
+
             // Upon unfullscreening, restore the view offset.
             //
             // In tabbed display mode, there can be multiple tiles in a fullscreen column. They
@@ -1421,26 +1463,35 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // We might need to move the view to ensure the resized window is still visible. But
             // only do it when the view isn't frozen by an interactive resize or a view gesture,
             // and not for commits that still carry interactive-resize state.
-            if !had_interactive_resize
+            let should_move_view = !had_interactive_resize
                 && self.interactive_resize.is_none()
-                && !self.view_offset.is_gesture()
-            {
+                && !self.view_offset.is_gesture();
+
+            if should_move_view {
                 // Restore the view offset upon unfullscreening if needed.
                 if let Some(prev_offset) = unfullscreen_offset {
                     self.animate_view_offset(col_idx, prev_offset);
                 }
 
-                // Synchronize the horizontal view movement with the resize so that it looks nice.
-                // This is especially important for always-centered view.
-                let config = if ongoing_resize_anim {
-                    self.options.animations.window_resize.anim
-                } else {
-                    self.options.animations.horizontal_view_movement.0
-                };
+                // Skip automatic refit only for plain width changes in single-column normal
+                // mode. For fullscreen/maximized transitions we still want to refit even with a
+                // single column so that gaps are applied/removed correctly.
+                let is_plain_width_change_in_single_normal =
+                    self.columns.len() == 1 && was_normal && is_normal;
 
-                // FIXME: we will want to skip the animation in some cases here to make continuously
-                // resizing windows not look janky.
-                self.animate_view_offset_to_column_with_config(None, col_idx, None, config);
+                if !is_plain_width_change_in_single_normal {
+                    // Synchronize the horizontal view movement with the resize so that it looks
+                    // nice. This is especially important for always-centered view.
+                    let config = if ongoing_resize_anim {
+                        self.options.animations.window_resize.anim
+                    } else {
+                        self.options.animations.horizontal_view_movement.0
+                    };
+
+                    // FIXME: we will want to skip the animation in some cases here to make
+                    // continuously resizing windows not look janky.
+                    self.animate_view_offset_to_column_with_config(None, col_idx, None, config);
+                }
             }
         }
     }
@@ -2666,8 +2717,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let active_idx = self.active_column_idx;
+        let column_count = self.columns.len();
 
         if self.dir() == LayoutDirection::Rtl {
+            let debug_single = column_count == 1;
+            if debug_single {
+                let col_x = self.column_x(active_idx);
+                let width = self.columns[active_idx].width();
+                let view_pos = self.view_pos();
+                let vo_cur = self.view_offset.current();
+                let vo_tgt = self.view_offset.target();
+                let screen_left = col_x - view_pos;
+                let screen_right = screen_left + width;
+                eprintln!(
+                    "[rtl1][toggle_width pre] idx={active_idx} width={width} col_x={col_x} \
+view_pos={view_pos} vo_cur={vo_cur} vo_tgt={vo_tgt} screen_left={screen_left} screen_right={screen_right}",
+                );
+            }
+
             // In RTL, keep the right edge of the active column visually pinned when toggling
             // preset width. This mirrors LTR behavior (where the left edge is effectively
             // pinned) in a behavioral sense.
@@ -2678,16 +2745,33 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 col.toggle_width(None, forwards);
             }
 
-            // Recompute the view offset based on the new column width using the standard
-            // view-offset fitting logic. For single-column RTL workspaces this will prefer
-            // right alignment via the `prefer_right` parameter in compute_new_view_offset().
-            let new_view_offset =
-                self.compute_new_view_offset_for_column(None, active_idx, Some(active_idx));
-            self.animate_view_offset_with_config(
-                active_idx,
-                new_view_offset,
-                self.options.animations.horizontal_view_movement.0,
-            );
+            if debug_single {
+                let col_x = self.column_x(active_idx);
+                let width = self.columns[active_idx].width();
+                let view_pos = self.view_pos();
+                let vo_cur = self.view_offset.current();
+                let vo_tgt = self.view_offset.target();
+                let screen_left = col_x - view_pos;
+                let screen_right = screen_left + width;
+                eprintln!(
+                    "[rtl1][toggle_width post-col] idx={active_idx} width={width} col_x={col_x} \
+view_pos={view_pos} vo_cur={vo_cur} vo_tgt={vo_tgt} screen_left={screen_left} screen_right={screen_right}",
+                );
+            }
+
+            // For multi-column RTL layouts, recompute the view offset based on the new column
+            // width so that the active column remains correctly pinned.
+            //
+            // For single-column workspaces, keep the camera static: do not refit the view here.
+            if column_count > 1 {
+                let new_view_offset =
+                    self.compute_new_view_offset_for_column(None, active_idx, Some(active_idx));
+                self.animate_view_offset_with_config(
+                    active_idx,
+                    new_view_offset,
+                    self.options.animations.horizontal_view_movement.0,
+                );
+            }
 
             let col = &mut self.columns[active_idx];
             cancel_resize_for_column(&mut self.interactive_resize, col);
