@@ -379,6 +379,96 @@ fn swap_window_in_direction_is_mirrored_in_rtl_and_ltr() {
     run(LayoutDirection::Rtl);
 }
 
+#[test]
+fn move_column_right_is_physical_in_rtl_and_ltr() {
+    fn column_indices(layout: &Layout<TestWindow>) -> [usize; 4] {
+        let ws = layout.active_workspace().unwrap();
+        let scrolling = ws.scrolling();
+
+        let mut cols = [0; 4];
+        for (tile, layout) in scrolling.tiles_with_ipc_layouts() {
+            let id = *tile.window().id();
+            if id <= 3 {
+                if let Some((col, _row)) = layout.pos_in_scrolling_layout {
+                    cols[id] = col as usize;
+                }
+            }
+        }
+
+        cols
+    }
+
+    fn run(dir: LayoutDirection) {
+        let mut options = Options::default();
+        options.layout.direction = dir;
+        options.layout.default_column_width = Some(PresetSize::Proportion(0.8));
+
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::CompleteAnimations,
+        ];
+
+        let mut layout = check_ops_with_options(options, ops);
+
+        let before = column_indices(&layout);
+
+        let src_col = before[2];
+        assert_ne!(src_col, 0);
+
+        let mut right_col: Option<usize> = None;
+        for id in 1..=3 {
+            let col = before[id];
+            if col > src_col {
+                right_col = Some(match right_col {
+                    Some(rc) => rc.min(col),
+                    None => col,
+                });
+            }
+        }
+
+        let ops = [
+            Op::FocusWindow(2),
+            Op::MoveColumnRight,
+            Op::CompleteAnimations,
+        ];
+        check_ops_on_layout(&mut layout, ops);
+
+        let after = column_indices(&layout);
+
+        match right_col {
+            Some(rc) => {
+                for id in 1..=3 {
+                    match before[id] {
+                        c if c == src_col => assert_eq!(after[id], rc),
+                        c if c == rc => assert_eq!(after[id], src_col),
+                        c => assert_eq!(after[id], c),
+                    }
+                }
+            }
+            None => {
+                for id in 1..=3 {
+                    assert_eq!(after[id], before[id]);
+                }
+            }
+        }
+    }
+
+    run(LayoutDirection::Ltr);
+    run(LayoutDirection::Rtl);
+}
+
 #[derive(Debug)]
 struct TestWindowInner {
     id: usize,
