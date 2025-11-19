@@ -40,9 +40,11 @@ use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
+use smithay::reexports::drm::control::atomic::AtomicModeReq;
+use smithay::reexports::drm::control::dumbbuffer::DumbBuffer;
 use smithay::reexports::drm::control::{
-    self, connector, crtc, property, Device, Mode as DrmMode, ModeFlags, ModeTypeFlags,
-    ResourceHandle,
+    self, connector, crtc, plane, property, AtomicCommitFlags, Device, Mode as DrmMode, ModeFlags,
+    ModeTypeFlags, PlaneType, ResourceHandle,
 };
 use smithay::reexports::gbm::Modifier;
 use smithay::reexports::input::Libinput;
@@ -218,6 +220,154 @@ impl OutputDevice {
             };
         };
         info.name.clone()
+    }
+
+    fn cleanup_disconnected_resources(
+        &self,
+        should_be_off: &dyn Fn(crtc::Handle, &connector::Info) -> bool,
+    ) -> anyhow::Result<()> {
+        let _span = tracy_client::span!("OutputDevice::cleanup_disconnected_resources");
+
+        let mut req = AtomicModeReq::new();
+        let plane_handles = self
+            .drm
+            .plane_handles()
+            .context("error getting plane handles")?;
+
+        let mut cleanup = HashSet::new();
+        let mut should_be_off_conn = HashSet::new();
+
+        for (conn, info) in self.drm_scanner.connectors() {
+            let Some(enc) = info.current_encoder() else {
+                // Not enabled.
+                continue;
+            };
+
+            let enc = match self.drm.get_encoder(enc) {
+                Ok(x) => x,
+                Err(err) => {
+                    debug!("couldn't get encoder: {err:?}");
+                    continue;
+                }
+            };
+
+            let Some(crtc) = enc.crtc() else {
+                // Encoder has no CRTC?
+                continue;
+            };
+
+            // All Connected connectors are returned by the DrmScanner and will be attempted for
+            // connection.
+            if info.state() == connector::State::Connected {
+                // But we also need to clear the connectors that should be off according to our
+                // config, since those ones will not be cleared elsewhere.
+                if !should_be_off(crtc, info) {
+                    continue;
+                }
+                should_be_off_conn.insert(conn);
+            }
+
+            cleanup.insert(crtc);
+
+            // Clear the connector.
+            let Some((crtc_id, _, _)) = find_drm_property(&self.drm, *conn, "CRTC_ID") else {
+                debug!("couldn't find connector CRTC_ID property");
+                continue;
+            };
+
+            req.add_property(*conn, crtc_id, property::Value::CRTC(None));
+        }
+
+        // Don't cleanup CRTCs that also correspond to some connected connectors.
+        for (conn, crtc) in self.drm_scanner.crtcs() {
+            // If the connector is enabled, but we're about to disable it, then it will be present
+            // in the DrmScanner; keep it in the cleanup list.
+            if should_be_off_conn.contains(&conn.handle()) {
+                continue;
+            }
+
+            cleanup.remove(&crtc);
+        }
+
+        // Legacy fallback.
+        if !self.drm.is_atomic() {
+            if let Ok(res_handles) = self.drm.resource_handles() {
+                for crtc in res_handles.crtcs() {
+                    #[allow(deprecated)]
+                    let _ = self.drm.set_cursor(*crtc, Option::<&DumbBuffer>::None);
+                }
+            }
+            for crtc in cleanup {
+                let _ = self.drm.set_crtc(crtc, None, (0, 0), &[], None);
+            }
+            return Ok(());
+        }
+
+        // Disable non-primary planes, and planes belonging to disabled CRTCs.
+        let is_primary = |plane: plane::Handle| {
+            if let Some((_, info, value)) = find_drm_property(&self.drm, plane, "type") {
+                match info.value_type().convert_value(value) {
+                    property::Value::Enum(Some(val)) => val.value() == PlaneType::Primary as u64,
+                    _ => false,
+                }
+            } else {
+                debug!("couldn't find plane type property");
+                false
+            }
+        };
+
+        for plane in plane_handles {
+            let info = match self.drm.get_plane(plane) {
+                Ok(x) => x,
+                Err(err) => {
+                    debug!("error getting plane: {err:?}");
+                    continue;
+                }
+            };
+
+            let Some(crtc) = info.crtc() else {
+                continue;
+            };
+
+            if !cleanup.contains(&crtc) && is_primary(plane) {
+                continue;
+            }
+
+            let Some((crtc_id, _, _)) = find_drm_property(&self.drm, plane, "CRTC_ID") else {
+                debug!("couldn't find plane CRTC_ID property");
+                continue;
+            };
+
+            let Some((fb_id, _, _)) = find_drm_property(&self.drm, plane, "FB_ID") else {
+                debug!("couldn't find plane FB_ID property");
+                continue;
+            };
+
+            req.add_property(plane, crtc_id, property::Value::CRTC(None));
+            req.add_property(plane, fb_id, property::Value::Framebuffer(None));
+        }
+
+        // Disable the CRTCs.
+        for crtc in cleanup {
+            let Some((mode_id, _, _)) = find_drm_property(&self.drm, crtc, "MODE_ID") else {
+                debug!("couldn't find CRTC MODE_ID property");
+                continue;
+            };
+
+            let Some((active, _, _)) = find_drm_property(&self.drm, crtc, "ACTIVE") else {
+                debug!("couldn't find CRTC ACTIVE property");
+                continue;
+            };
+
+            req.add_property(crtc, mode_id, property::Value::Unknown(0));
+            req.add_property(crtc, active, property::Value::Boolean(false));
+        }
+
+        self.drm
+            .atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req)
+            .context("error doing atomic commit")?;
+
+        Ok(())
     }
 }
 
@@ -566,12 +716,15 @@ impl Tty {
         let _span = tracy_client::span!("Tty::device_added");
 
         let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
-        let fd = self.session.open(path, open_flags)?;
+        let fd = {
+            let _span = tracy_client::span!("LibSeatSession::open");
+            self.session.open(path, open_flags)
+        }?;
         let device_fd = DrmDeviceFd::new(DeviceFd::from(fd));
 
         let (drm, drm_notifier) = {
             let _span = tracy_client::span!("DrmDevice::new");
-            DrmDevice::new(device_fd.clone(), true)
+            DrmDevice::new(device_fd.clone(), false)
         }?;
         let gbm = {
             let _span = tracy_client::span!("GbmDevice::new");
@@ -727,6 +880,11 @@ impl Tty {
             return;
         };
 
+        // If the DrmScanner connectors is empty here, then this will be the very first scan after
+        // the device had just been added.
+        let just_created = device.drm_scanner.connectors().is_empty();
+
+        // DrmScanner will preserve any existing connector-CRTC mapping.
         let scan_result = match device.drm_scanner.scan_connectors(&device.drm) {
             Ok(x) => x,
             Err(err) => {
@@ -808,6 +966,34 @@ impl Tty {
             // Insert it right away so next added connector will check against this one too.
             let device = self.devices.get_mut(&node).unwrap();
             device.known_crtcs.insert(crtc, info);
+        }
+
+        // If the device was just added, we need to cleanup any disconnected connectors and planes.
+        if just_created {
+            let device = self.devices.get(&node).unwrap();
+
+            // Follow the logic in on_output_config_changed().
+            let disable_laptop_panels = self.should_disable_laptop_panels(niri.is_lid_closed);
+            let should_disable = |conn: &str| disable_laptop_panels && is_laptop_panel(conn);
+
+            let config = self.config.borrow();
+            let disable_monitor_names = config.debug.disable_monitor_names;
+
+            let should_be_off = |crtc, conn: &connector::Info| {
+                let output_name = device.known_crtc_name(&crtc, conn, disable_monitor_names);
+
+                let config = config
+                    .outputs
+                    .find(&output_name)
+                    .cloned()
+                    .unwrap_or_default();
+
+                config.off || should_disable(&output_name.connector)
+            };
+
+            if let Err(err) = device.cleanup_disconnected_resources(&should_be_off) {
+                warn!("error cleaning up connectors: {err:?}");
+            }
         }
 
         // This will connect any new connectors if needed, and apply other changes, such as
@@ -1998,6 +2184,26 @@ impl Tty {
         }
     }
 
+    fn should_disable_laptop_panels(&self, is_lid_closed: bool) -> bool {
+        if !is_lid_closed {
+            return false;
+        }
+
+        let config = self.config.borrow();
+        if !config.debug.keep_laptop_panel_on_when_lid_is_closed {
+            // Check if any external monitor is connected.
+            for device in self.devices.values() {
+                for (connector, _crtc) in device.drm_scanner.crtcs() {
+                    if !is_laptop_panel(&format_connector_name(connector)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
     pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
         let _span = tracy_client::span!("Tty::on_output_config_changed");
 
@@ -2009,21 +2215,7 @@ impl Tty {
         self.update_output_config_on_resume = false;
 
         // Figure out if we should disable laptop panels.
-        let mut disable_laptop_panels = false;
-        if niri.is_lid_closed {
-            let config = self.config.borrow();
-            if !config.debug.keep_laptop_panel_on_when_lid_is_closed {
-                // Check if any external monitor is connected.
-                'outer: for device in self.devices.values() {
-                    for (connector, _crtc) in device.drm_scanner.crtcs() {
-                        if !is_laptop_panel(&format_connector_name(connector)) {
-                            disable_laptop_panels = true;
-                            break 'outer;
-                        }
-                    }
-                }
-            }
-        }
+        let disable_laptop_panels = self.should_disable_laptop_panels(niri.is_lid_closed);
         let should_disable = |connector: &str| disable_laptop_panels && is_laptop_panel(connector);
 
         let mut to_disconnect = vec![];
