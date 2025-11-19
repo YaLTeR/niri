@@ -228,46 +228,30 @@ impl OutputDevice {
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("OutputDevice::cleanup_disconnected_resources");
 
-        let mut req = AtomicModeReq::new();
+        let res_handles = self
+            .drm
+            .resource_handles()
+            .context("error getting plane handles")?;
         let plane_handles = self
             .drm
             .plane_handles()
             .context("error getting plane handles")?;
 
-        let mut cleanup = HashSet::new();
-        let mut should_be_off_conn = HashSet::new();
+        let mut req = AtomicModeReq::new();
+
+        // We want to disable all CRTCs that do not correspond to a connector we're using.
+        let mut cleanup = HashSet::<crtc::Handle>::new();
+        cleanup.extend(res_handles.crtcs());
 
         for (conn, info) in self.drm_scanner.connectors() {
-            let Some(enc) = info.current_encoder() else {
-                // Not enabled.
-                continue;
-            };
-
-            let enc = match self.drm.get_encoder(enc) {
-                Ok(x) => x,
-                Err(err) => {
-                    debug!("couldn't get encoder: {err:?}");
-                    continue;
-                }
-            };
-
-            let Some(crtc) = enc.crtc() else {
-                // Encoder has no CRTC?
-                continue;
-            };
-
-            // All Connected connectors are returned by the DrmScanner and will be attempted for
-            // connection.
-            if info.state() == connector::State::Connected {
-                // But we also need to clear the connectors that should be off according to our
-                // config, since those ones will not be cleared elsewhere.
+            // We only keep the connector if it has a CRTC and the output isn't off in niri.
+            if let Some(crtc) = self.drm_scanner.crtc_for_connector(conn) {
                 if !should_be_off(crtc, info) {
+                    // Keep the corresponding CRTC.
+                    cleanup.remove(&crtc);
                     continue;
                 }
-                should_be_off_conn.insert(conn);
             }
-
-            cleanup.insert(crtc);
 
             // Clear the connector.
             let Some((crtc_id, _, _)) = find_drm_property(&self.drm, *conn, "CRTC_ID") else {
@@ -278,24 +262,11 @@ impl OutputDevice {
             req.add_property(*conn, crtc_id, property::Value::CRTC(None));
         }
 
-        // Don't cleanup CRTCs that also correspond to some connected connectors.
-        for (conn, crtc) in self.drm_scanner.crtcs() {
-            // If the connector is enabled, but we're about to disable it, then it will be present
-            // in the DrmScanner; keep it in the cleanup list.
-            if should_be_off_conn.contains(&conn.handle()) {
-                continue;
-            }
-
-            cleanup.remove(&crtc);
-        }
-
         // Legacy fallback.
         if !self.drm.is_atomic() {
-            if let Ok(res_handles) = self.drm.resource_handles() {
-                for crtc in res_handles.crtcs() {
-                    #[allow(deprecated)]
-                    let _ = self.drm.set_cursor(*crtc, Option::<&DumbBuffer>::None);
-                }
+            for crtc in res_handles.crtcs() {
+                #[allow(deprecated)]
+                let _ = self.drm.set_cursor(*crtc, Option::<&DumbBuffer>::None);
             }
             for crtc in cleanup {
                 let _ = self.drm.set_crtc(crtc, None, (0, 0), &[], None);
