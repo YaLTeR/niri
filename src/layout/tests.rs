@@ -221,6 +221,84 @@ fn view_offset_gesture_snaps_symmetrically_in_rtl_and_ltr() {
     assert_eq!(rtl_logical, last - ltr_logical);
 }
 
+#[test]
+fn dnd_edge_scroll_moves_view_consistently_in_rtl_and_ltr() {
+    fn run(dir: LayoutDirection, px: f64) -> f64 {
+        let mut options = Options::default();
+        options.layout.direction = dir;
+        options.layout.default_column_width = Some(PresetSize::Proportion(0.5));
+        options.gestures.dnd_edge_view_scroll.delay_ms = 0;
+
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::CompleteAnimations,
+        ];
+
+        let mut layout = check_ops_with_options(options, ops);
+
+        let ws = layout.active_workspace().unwrap();
+        let before = ws.scrolling().view_pos();
+
+        let ops = [
+            Op::DndUpdate {
+                output_idx: 1,
+                px,
+                py: 100.0,
+            },
+            Op::AdvanceAnimations { msec_delta: 0 },
+            Op::AdvanceAnimations { msec_delta: 1000 },
+        ];
+        check_ops_on_layout(&mut layout, ops);
+
+        let ws = layout.active_workspace().unwrap();
+        let after = ws.scrolling().view_pos();
+
+        after - before
+    }
+
+    let view_width = 1280.0;
+    let left_edge = 0.0;
+    let right_edge = view_width;
+
+    let ltr_left = run(LayoutDirection::Ltr, left_edge);
+    let ltr_right = run(LayoutDirection::Ltr, right_edge);
+    let rtl_left = run(LayoutDirection::Rtl, left_edge);
+    let rtl_right = run(LayoutDirection::Rtl, right_edge);
+
+    let eps = 0.01;
+
+    let sign = |x: f64| {
+        if x > eps {
+            1
+        } else if x < -eps {
+            -1
+        } else {
+            0
+        }
+    };
+
+    let ltr_left_sign = sign(ltr_left);
+    let rtl_left_sign = sign(rtl_left);
+    let ltr_right_sign = sign(ltr_right);
+    let rtl_right_sign = sign(rtl_right);
+
+    assert_eq!(ltr_left_sign, rtl_left_sign);
+    assert_eq!(ltr_right_sign, rtl_right_sign);
+    assert!(ltr_left_sign != 0 || ltr_right_sign != 0);
+}
+
 #[derive(Debug)]
 struct TestWindowInner {
     id: usize,
