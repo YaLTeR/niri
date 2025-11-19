@@ -1009,6 +1009,161 @@ fn width_resize_and_cancel() {
 }
 
 #[test]
+fn interactive_width_resize_from_right_keeps_right_edge_fixed_ltr() {
+    // Set up a simple LTR layout: two windows in one row, with the left window focused.
+    let mut options = make_options();
+    options.layout.direction = niri_config::LayoutDirection::Ltr;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::FocusColumnLeft,
+        Op::SetForcedSize {
+            id: 1,
+            size: Some(Size::new(400, 200)),
+        },
+        Op::SetForcedSize {
+            id: 2,
+            size: Some(Size::new(400, 200)),
+        },
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+    let mut layout = check_ops_with_options(options, ops);
+
+    // Measure initial left/right edges of window 1.
+    let (initial_left, initial_right) = {
+        let ws = layout.active_workspace().unwrap();
+        let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+        let (tile, pos, _visible) = tiles
+            .into_iter()
+            .find(|(tile, _, _)| tile.window().id() == &1)
+            .unwrap();
+        let size = tile.animated_tile_size();
+        (pos.x, pos.x + size.w)
+    };
+
+    // Begin an interactive resize from the physical right edge, then update it to grow.
+    let ops = [
+        Op::InteractiveResizeBegin {
+            window: 1,
+            edges: ResizeEdge::RIGHT,
+        },
+        // Grow the window: positive dx at the right edge should move only the left edge.
+        Op::InteractiveResizeUpdate {
+            window: 1,
+            dx: 100.0,
+            dy: 0.0,
+        },
+        Op::Communicate(1),
+        Op::Communicate(2),
+        // Let the animation progress a bit.
+        Op::AdvanceAnimations { msec_delta: 200 },
+        Op::InteractiveResizeEnd { window: 1 },
+        Op::AdvanceAnimations { msec_delta: 800 },
+    ];
+    check_ops_on_layout(&mut layout, ops);
+
+    // Measure edges again and assert that the right edge stayed fixed while the left edge moved.
+    let (final_left, final_right) = {
+        let ws = layout.active_workspace().unwrap();
+        let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+        let (tile, pos, _visible) = tiles
+            .into_iter()
+            .find(|(tile, _, _)| tile.window().id() == &1)
+            .unwrap();
+        let size = tile.animated_tile_size();
+        (pos.x, pos.x + size.w)
+    };
+
+    let eps = 0.5;
+    // Right edge should remain visually anchored.
+    assert!((final_right - initial_right).abs() < eps);
+    // Left edge should have moved left (be smaller x) if we grew the window.
+    assert!(final_left < initial_left - eps);
+}
+
+#[test]
+fn interactive_width_resize_from_right_keeps_right_edge_fixed_rtl() {
+    // Same as the LTR test, but in an RTL layout. Physical right edge should still stay fixed.
+    let mut options = make_options();
+    options.layout.direction = niri_config::LayoutDirection::Rtl;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::FocusColumnLeft,
+        Op::SetForcedSize {
+            id: 1,
+            size: Some(Size::new(400, 200)),
+        },
+        Op::SetForcedSize {
+            id: 2,
+            size: Some(Size::new(400, 200)),
+        },
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+    let mut layout = check_ops_with_options(options, ops);
+
+    let (initial_left, initial_right) = {
+        let ws = layout.active_workspace().unwrap();
+        let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+        let (tile, pos, _visible) = tiles
+            .into_iter()
+            .find(|(tile, _, _)| tile.window().id() == &1)
+            .unwrap();
+        let size = tile.animated_tile_size();
+        (pos.x, pos.x + size.w)
+    };
+
+    let ops = [
+        Op::InteractiveResizeBegin {
+            window: 1,
+            edges: ResizeEdge::RIGHT,
+        },
+        Op::InteractiveResizeUpdate {
+            window: 1,
+            dx: 100.0,
+            dy: 0.0,
+        },
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::AdvanceAnimations { msec_delta: 200 },
+        Op::InteractiveResizeEnd { window: 1 },
+        Op::AdvanceAnimations { msec_delta: 800 },
+    ];
+    check_ops_on_layout(&mut layout, ops);
+
+    let (final_left, final_right) = {
+        let ws = layout.active_workspace().unwrap();
+        let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+        let (tile, pos, _visible) = tiles
+            .into_iter()
+            .find(|(tile, _, _)| tile.window().id() == &1)
+            .unwrap();
+        let size = tile.animated_tile_size();
+        (pos.x, pos.x + size.w)
+    };
+
+    let eps = 0.5;
+    assert!((final_right - initial_right).abs() < eps);
+    assert!(final_left < initial_left - eps);
+}
+
+#[test]
 fn width_resize_and_cancel_of_column_to_the_left() {
     let ops = [
         Op::AddOutput(1),
