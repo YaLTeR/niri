@@ -138,7 +138,8 @@ recent-windows {
 }
 ```
 
-The recent windows binds have a precedence over the [normal binds](./Configuration:-Key-Bindings.md), meaning that if you have <kbd>Alt</kbd><kbd>Tab</kbd> bound to something else in the normal binds, the `recent-windows` bind will override it.
+The recent windows binds have lower precedence than the [normal binds](./Configuration:-Key-Bindings.md), meaning that if you have <kbd>Alt</kbd><kbd>Tab</kbd> bound to something else in the normal binds, the `recent-windows` bind won't work.
+In this case, you can remove the conflicting normal bind.
 
 All binds in this section must have a modifier key like <kbd>Alt</kbd> or <kbd>Mod</kbd> because the recent windows switcher remains open only while you hold any modifier key.
 
