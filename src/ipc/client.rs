@@ -458,6 +458,12 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowFocusChanged { id } => {
                         println!("Window focus changed: {id:?}");
                     }
+                    Event::WindowFocusTimestampChanged {
+                        id,
+                        focus_timestamp,
+                    } => {
+                        println!("Window {id}: focus timestamp changed to {focus_timestamp:?}");
+                    }
                     Event::WindowUrgencyChanged { id, urgent } => {
                         println!("Window {id}: urgency changed to {urgent}");
                     }

@@ -16,7 +16,7 @@ use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
-    WorkspaceReference, Xkb,
+    WorkspaceReference, Xkb, DEFAULT_MRU_COMMIT_MS,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -166,6 +166,7 @@ use crate::render_helpers::{
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::{ExitConfirmDialog, ExitConfirmDialogRenderElement};
 use crate::ui::hotkey_overlay::HotkeyOverlay;
+use crate::ui::mru::{MruCloseRequest, WindowMruUi, WindowMruUiRenderElement};
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
@@ -174,8 +175,8 @@ use crate::utils::watcher::Watcher;
 use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
-    logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
-    write_png_rgba8, xwayland,
+    logical_output, make_screenshot_path, output_matches_name, output_size, panel_orientation,
+    send_scale_transform, write_png_rgba8, xwayland,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -326,7 +327,6 @@ pub struct Niri {
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
     pub layer_shell_on_demand_focus: Option<LayerSurface>,
-    pub previously_focused_window: Option<Window>,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
     pub keyboard_shortcuts_inhibiting_surfaces: HashMap<WlSurface, KeyboardShortcutsInhibitor>,
@@ -385,6 +385,9 @@ pub struct Niri {
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: ExitConfirmDialog,
+
+    pub window_mru_ui: WindowMruUi,
+    pub pending_mru_commit: Option<PendingMruCommit>,
 
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
     pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
@@ -522,6 +525,7 @@ pub enum KeyboardFocus {
     ScreenshotUi,
     ExitConfirmDialog,
     Overview,
+    Mru,
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -584,6 +588,14 @@ pub enum CastTarget {
     Window { id: u64 },
 }
 
+/// Pending update to a window's focus timestamp.
+#[derive(Debug)]
+pub struct PendingMruCommit {
+    id: MappedId,
+    token: RegistrationToken,
+    stamp: Duration,
+}
+
 impl RedrawState {
     fn queue_redraw(self) -> Self {
         match self {
@@ -622,6 +634,7 @@ impl KeyboardFocus {
             KeyboardFocus::ScreenshotUi => None,
             KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
+            KeyboardFocus::Mru => None,
         }
     }
 
@@ -633,6 +646,7 @@ impl KeyboardFocus {
             KeyboardFocus::ScreenshotUi => None,
             KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
+            KeyboardFocus::Mru => None,
         }
     }
 
@@ -941,6 +955,12 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    pub fn confirm_mru(&mut self) {
+        if let Some(window) = self.niri.close_mru(MruCloseRequest::Confirm) {
+            self.focus_window(&window);
+        }
+    }
+
     pub fn maybe_warp_cursor_to_focus(&mut self) -> bool {
         let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
             None => return false,
@@ -1101,6 +1121,8 @@ impl State {
             }
         } else if self.niri.screenshot_ui.is_open() {
             KeyboardFocus::ScreenshotUi
+        } else if self.niri.window_mru_ui.is_open() {
+            KeyboardFocus::Mru
         } else if let Some(output) = self.niri.layout.active_output() {
             let mon = self.niri.layout.monitor_for_output(output).unwrap();
             let layers = layer_map_for_output(output);
@@ -1211,14 +1233,12 @@ impl State {
             );
 
             // Tell the windows their new focus state for window rule purposes.
-            let mut previous_focus = None;
             if let KeyboardFocus::Layout {
                 surface: Some(surface),
             } = &self.niri.keyboard_focus
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(false);
-                    previous_focus = Some(mapped.window.clone());
                 }
             }
             if let KeyboardFocus::Layout {
@@ -1227,32 +1247,39 @@ impl State {
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(true);
-                }
-            }
 
-            // Update the previous focus but only when staying focused on the layout.
-            //
-            // Case 1: opening and closing exclusive-keyboard layer-shell (e.g. app launcher). This
-            // involves going from Layout to LayerShell, then from LayerShell to Layout. The
-            // previously focused window should stay unchanged.
-            //
-            //     Case 1.5: opening layer-shell, in the background switching layout focus, closing
-            //     layer-shell. With the current logic, this won't update the previously focused
-            //     window, which is incorrect. But this case should be rare.
-            //
-            // Case 2: switching to an empty workspace, then hitting FocusWindowPrevious. The focus
-            // should go to the window that was just focused. The keyboard focus goes from Layout
-            // (with Some surface) to Layout (with None surface), so we update the previously
-            // focused window.
-            //
-            // FIXME: Ideally this should happen inside Layout itself, then there wouldn't be any
-            // problems with layer-shell, etc. Or a similar problem now with the Overview where we
-            // don't update the previously focused window because the keyboard focus is on the
-            // Overview rather than on the Layout.
-            if matches!(self.niri.keyboard_focus, KeyboardFocus::Layout { .. })
-                && matches!(focus, KeyboardFocus::Layout { .. })
-            {
-                self.niri.previously_focused_window = previous_focus;
+                    // If `mapped` does not have a focus timestamp, then the window is newly
+                    // created/mapped and a timestamp is unconditionally created.
+                    //
+                    // If `mapped` already has a timestamp only update it after the focus lock-in
+                    // period has gone by without the focus having elsewhere.
+                    let stamp = get_monotonic_time();
+
+                    if mapped.get_focus_timestamp().is_none() {
+                        mapped.set_focus_timestamp(stamp);
+                    } else {
+                        let timer =
+                            Timer::from_duration(Duration::from_millis(DEFAULT_MRU_COMMIT_MS));
+
+                        let focus_token = self
+                            .niri
+                            .event_loop
+                            .insert_source(timer, move |_, _, state| {
+                                state.niri.mru_apply_keyboard_commit();
+                                TimeoutAction::Drop
+                            })
+                            .unwrap();
+                        if let Some(PendingMruCommit { token, .. }) =
+                            self.niri.pending_mru_commit.replace(PendingMruCommit {
+                                id: mapped.id(),
+                                token: focus_token,
+                                stamp,
+                            })
+                        {
+                            self.niri.event_loop.remove(token);
+                        }
+                    }
+                }
             }
 
             if let Some(grab) = self.niri.popup_grab.as_mut() {
@@ -1413,6 +1440,7 @@ impl State {
         let mut layer_rules_changed = false;
         let mut shaders_changed = false;
         let mut cursor_inactivity_timeout_changed = false;
+        let mut recent_windows_changed = false;
         let mut xwls_changed = false;
         let mut old_config = self.niri.config.borrow_mut();
 
@@ -1450,6 +1478,9 @@ impl State {
             libinput_config_changed = true;
         }
 
+        let ignored_nodes_changed =
+            config.debug.ignored_drm_devices != old_config.debug.ignored_drm_devices;
+
         if config.outputs != self.niri.config_file_output_config {
             output_config_changed = true;
             self.niri
@@ -1461,8 +1492,9 @@ impl State {
             preserved_output_config = Some(mem::take(&mut old_config.outputs));
         }
 
+        let binds_changed = config.binds != old_config.binds;
         let new_mod_key = self.backend.mod_key(&config);
-        if new_mod_key != self.backend.mod_key(&old_config) || config.binds != old_config.binds {
+        if new_mod_key != self.backend.mod_key(&old_config) || binds_changed {
             self.niri
                 .hotkey_overlay
                 .on_hotkey_config_updated(new_mod_key);
@@ -1532,6 +1564,10 @@ impl State {
             output_config_changed = true;
         }
 
+        if config.recent_windows != old_config.recent_windows {
+            recent_windows_changed = true;
+        }
+
         if config.xwayland_satellite != old_config.xwayland_satellite {
             xwls_changed = true;
         }
@@ -1580,6 +1616,10 @@ impl State {
             }
         }
 
+        if ignored_nodes_changed {
+            self.backend.update_ignored_nodes_config(&mut self.niri);
+        }
+
         if output_config_changed {
             self.reload_output_config();
         }
@@ -1600,6 +1640,14 @@ impl State {
             // Force reset due to timeout change.
             self.niri.pointer_inactivity_timer_got_reset = false;
             self.niri.reset_pointer_inactivity_timer();
+        }
+
+        if binds_changed {
+            self.niri.window_mru_ui.update_binds();
+        }
+
+        if recent_windows_changed {
+            self.niri.window_mru_ui.update_config();
         }
 
         if xwls_changed {
@@ -1653,9 +1701,10 @@ impl State {
                 });
             let scale = closest_representable_scale(scale.clamp(0.1, 10.));
 
-            let mut transform = config
-                .map(|c| ipc_transform_to_smithay(c.transform))
-                .unwrap_or(Transform::Normal);
+            let mut transform = panel_orientation(output)
+                + config
+                    .map(|c| ipc_transform_to_smithay(c.transform))
+                    .unwrap_or(Transform::Normal);
             // FIXME: fix winit damage on other transforms.
             if name.connector == "winit" {
                 transform = Transform::Flipped180;
@@ -2556,6 +2605,7 @@ impl Niri {
         let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
+        let window_mru_ui = WindowMruUi::new(config.clone());
         let config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
 
@@ -2722,7 +2772,6 @@ impl Niri {
             seat,
             keyboard_focus: KeyboardFocus::Layout { surface: None },
             layer_shell_on_demand_focus: None,
-            previously_focused_window: None,
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
@@ -2757,6 +2806,9 @@ impl Niri {
             config_error_notification,
             hotkey_overlay,
             exit_confirm_dialog,
+
+            window_mru_ui,
+            pending_mru_commit: None,
 
             pick_window: None,
             pick_color: None,
@@ -2980,9 +3032,9 @@ impl Niri {
         });
         let scale = closest_representable_scale(scale.clamp(0.1, 10.));
 
-        let mut transform = c
-            .map(|c| ipc_transform_to_smithay(c.transform))
-            .unwrap_or(Transform::Normal);
+        let mut transform = panel_orientation(&output)
+            + c.map(|c| ipc_transform_to_smithay(c.transform))
+                .unwrap_or(Transform::Normal);
 
         let mut backdrop_color = c
             .and_then(|c| c.backdrop_color)
@@ -3113,6 +3165,10 @@ impl Niri {
             self.cursor_manager
                 .set_cursor_image(CursorImageStatus::default_named());
             self.queue_redraw_all();
+        }
+
+        if self.window_mru_ui.output() == Some(output) {
+            self.cancel_mru();
         }
     }
 
@@ -3381,7 +3437,11 @@ impl Niri {
     /// The cursor may be inside the window's activation region, but not within the window's input
     /// region.
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Mapped> {
-        if self.exit_confirm_dialog.is_open() || self.is_locked() || self.screenshot_ui.is_open() {
+        if self.exit_confirm_dialog.is_open()
+            || self.is_locked()
+            || self.screenshot_ui.is_open()
+            || self.window_mru_ui.is_open()
+        {
             return None;
         }
 
@@ -3460,7 +3520,7 @@ impl Niri {
             return rv;
         }
 
-        if self.screenshot_ui.is_open() {
+        if self.screenshot_ui.is_open() || self.window_mru_ui.is_open() {
             return rv;
         }
 
@@ -3735,6 +3795,13 @@ impl Niri {
 
         let target_output = target_workspace.current_output();
         Some((target_output.cloned(), target_workspace_index))
+    }
+
+    pub fn find_window_by_id(&self, id: MappedId) -> Option<Window> {
+        self.layout
+            .windows()
+            .find(|(_, m)| m.id() == id)
+            .map(|(_, m)| m.window.clone())
     }
 
     pub fn output_for_tablet(&self) -> Option<&Output> {
@@ -4064,6 +4131,7 @@ impl Niri {
             KeyboardFocus::ScreenshotUi => true,
             KeyboardFocus::ExitConfirmDialog => true,
             KeyboardFocus::Overview => true,
+            KeyboardFocus::Mru => true,
         };
 
         self.layout.refresh(layout_is_active);
@@ -4195,6 +4263,7 @@ impl Niri {
         self.config_error_notification.advance_animations();
         self.exit_confirm_dialog.advance_animations();
         self.screenshot_ui.advance_animations();
+        self.window_mru_ui.advance_animations();
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
@@ -4350,6 +4419,15 @@ impl Niri {
         if let Some(element) = self.hotkey_overlay.render(renderer, output) {
             elements.push(element.into());
         }
+
+        // Then, the Alt-Tab switcher.
+        let mru_elements = self
+            .window_mru_ui
+            .render_output(self, output, renderer, target)
+            .into_iter()
+            .flatten()
+            .map(OutputRenderElements::from);
+        elements.extend(mru_elements);
 
         // Don't draw the focus ring on the workspaces while interactively moving above those
         // workspaces, since the interactively-moved window already has a focus ring.
@@ -4542,6 +4620,7 @@ impl Niri {
                 self.config_error_notification.are_animations_ongoing();
             state.unfinished_animations_remain |= self.exit_confirm_dialog.are_animations_ongoing();
             state.unfinished_animations_remain |= self.screenshot_ui.are_animations_ongoing();
+            state.unfinished_animations_remain |= self.window_mru_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= state.screen_transition.is_some();
 
             // Also keep redrawing if the current cursor is animated.
@@ -5928,6 +6007,7 @@ impl Niri {
                 self.screenshot_ui.close();
                 self.cursor_manager
                     .set_cursor_image(CursorImageStatus::default_named());
+                self.cancel_mru();
 
                 if self.output_state.is_empty() {
                     // There are no outputs, lock the session right away.
@@ -6186,6 +6266,10 @@ impl Niri {
             return;
         }
 
+        if self.window_mru_ui.is_open() {
+            return;
+        }
+
         // Recompute the current pointer focus because we don't update it during animations.
         let current_focus = self.contents_under(pointer.current_location());
 
@@ -6412,6 +6496,46 @@ impl Niri {
 
         self.notified_activity_this_iteration = true;
     }
+
+    pub fn close_mru(&mut self, close_request: MruCloseRequest) -> Option<Window> {
+        if !self.window_mru_ui.is_open() {
+            return None;
+        }
+        self.queue_redraw_all();
+
+        let id = self.window_mru_ui.close(close_request)?;
+        self.find_window_by_id(id)
+    }
+
+    pub fn cancel_mru(&mut self) {
+        self.close_mru(MruCloseRequest::Cancel);
+    }
+
+    /// Apply a pending MRU commit immediately.
+    ///
+    /// Called for example on keyboard events that reach the active window, which immediately adds
+    /// it to the MRU.
+    pub fn mru_apply_keyboard_commit(&mut self) {
+        let Some(pending) = self.pending_mru_commit.take() else {
+            return;
+        };
+        self.event_loop.remove(pending.token);
+
+        if let Some(window) = self
+            .layout
+            .workspaces_mut()
+            .flat_map(|ws| ws.windows_mut())
+            .find(|w| w.id() == pending.id)
+        {
+            window.set_focus_timestamp(pending.stamp);
+        }
+    }
+
+    pub fn queue_redraw_mru_output(&mut self) {
+        if let Some(output) = self.window_mru_ui.output().cloned() {
+            self.queue_redraw(&output);
+        }
+    }
 }
 
 pub struct NewClient {
@@ -6459,6 +6583,7 @@ niri_render_elements! {
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         ScreenshotUi = ScreenshotUiRenderElement,
+        WindowMruUi = WindowMruUiRenderElement<R>,
         ExitConfirmDialog = ExitConfirmDialogRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.

@@ -354,7 +354,7 @@ binds {
 Actions for taking screenshots.
 
 - `screenshot`: opens the built-in interactive screenshot UI.
-- `screenshot-screen`, `screenshow-window`: takes a screenshot of the focused screen or window respectively.
+- `screenshot-screen`, `screenshot-window`: takes a screenshot of the focused screen or window respectively.
 
 The screenshot is both stored to the clipboard and saved to disk, according to the [`screenshot-path` option](./Configuration:-Miscellaneous.md#screenshot-path).
 

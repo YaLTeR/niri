@@ -173,6 +173,15 @@ pub fn logical_output(output: &Output) -> niri_ipc::LogicalOutput {
     }
 }
 
+pub struct PanelOrientation(pub Transform);
+pub fn panel_orientation(output: &Output) -> Transform {
+    output
+        .user_data()
+        .get::<PanelOrientation>()
+        .map(|x| x.0)
+        .unwrap_or(Transform::Normal)
+}
+
 pub fn ipc_transform_to_smithay(transform: niri_ipc::Transform) -> Transform {
     match transform {
         niri_ipc::Transform::Normal => Transform::Normal,
