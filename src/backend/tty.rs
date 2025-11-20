@@ -716,6 +716,10 @@ impl Tty {
 
         let node = DrmNode::from_dev_id(device_id)?;
 
+        if node == self.primary_node {
+            debug!("this is the primary node");
+        }
+
         // Only consider primary node on udev event
         // https://gitlab.freedesktop.org/wlroots/wlroots/-/commit/768fbaad54027f8dd027e7e015e8eeb93cb38c52
         if node.ty() != NodeType::Primary {
@@ -757,13 +761,8 @@ impl Tty {
             .add_node(render_node, gbm.clone())
             .context("error adding render node to GPU manager")?;
 
-        if node == self.primary_node || render_node == self.primary_render_node {
-            if node == self.primary_node {
-                debug!("this is the primary node");
-            }
-            if render_node == self.primary_render_node {
-                debug!("this is the primary render node");
-            }
+        if render_node == self.primary_render_node {
+            debug!("this is the primary render node");
 
             let mut renderer = self
                 .gpu_manager
@@ -1061,7 +1060,7 @@ impl Tty {
             lease_state.disable_global::<State>();
         }
 
-        if node == self.primary_node || device.render_node == self.primary_render_node {
+        if device.render_node == self.primary_render_node {
             match self.gpu_manager.single_renderer(&device.render_node) {
                 Ok(mut renderer) => renderer.unbind_wl_display(),
                 Err(err) => {
