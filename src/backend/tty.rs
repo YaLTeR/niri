@@ -1625,6 +1625,14 @@ impl Tty {
             return;
         };
 
+        let refresh_interval = output_state.frame_clock.refresh_interval();
+
+        let time = if presentation_time.is_zero() {
+            now
+        } else {
+            presentation_time
+        };
+
         let redraw_needed = match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
             RedrawState::WaitingForVBlank { redraw_needed } => redraw_needed,
             state @ (RedrawState::Idle
@@ -1647,7 +1655,7 @@ impl Tty {
         // Mark the last frame as submitted.
         match surface.compositor.frame_submitted() {
             Ok(Some((mut feedback, target_presentation_time))) => {
-                let refresh = match output_state.frame_clock.refresh_interval() {
+                let refresh = match refresh_interval {
                     Some(refresh) => {
                         if output_state.frame_clock.vrr() {
                             Refresh::Variable(refresh)
@@ -1663,12 +1671,9 @@ impl Tty {
                 let mut flags = wp_presentation_feedback::Kind::Vsync
                     | wp_presentation_feedback::Kind::HwCompletion;
 
-                let time = if presentation_time.is_zero() {
-                    now
-                } else {
+                if !presentation_time.is_zero() {
                     flags.insert(wp_presentation_feedback::Kind::HwClock);
-                    presentation_time
-                };
+                }
 
                 feedback.presented::<_, smithay::utils::Monotonic>(time, refresh, seq, flags);
 
