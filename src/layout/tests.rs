@@ -4092,6 +4092,157 @@ fn single_column_preset_width_keeps_right_edge_in_rtl() {
 }
 
 #[test]
+fn preset_column_width_with_pre_panned_camera_keeps_view_pos_in_ltr_and_rtl() {
+    fn run(dir: LayoutDirection) -> f64 {
+        let mut options = Options::default();
+        options.layout.direction = dir;
+        options.layout.center_focused_column = CenterFocusedColumn::Never;
+        options.layout.preset_column_widths = vec![
+            PresetSize::Proportion(1. / 3.),
+            PresetSize::Proportion(0.5),
+            PresetSize::Proportion(2. / 3.),
+        ];
+
+        let ops_initial = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::CompleteAnimations,
+        ];
+
+        let mut layout = check_ops_with_options(options, ops_initial);
+
+        // Pre-pan the camera using a DnD edge scroll so that view_pos becomes non-zero.
+        let ws = layout.active_workspace().unwrap();
+        let view_width = ws.scrolling().view_size().w;
+
+        let ops_pan = [
+            Op::DndUpdate {
+                output_idx: 1,
+                px: view_width,
+                py: 100.0,
+            },
+            Op::AdvanceAnimations { msec_delta: 0 },
+            Op::AdvanceAnimations { msec_delta: 1000 },
+        ];
+        check_ops_on_layout(&mut layout, ops_pan);
+
+        let ws = layout.active_workspace().unwrap();
+        let before = ws.scrolling().view_pos();
+
+        let ops_toggle = [
+            Op::SwitchPresetColumnWidth,
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::CompleteAnimations,
+        ];
+        check_ops_on_layout(&mut layout, ops_toggle);
+
+        let ws = layout.active_workspace().unwrap();
+        let after = ws.scrolling().view_pos();
+
+        after - before
+    }
+
+    let delta_ltr = run(LayoutDirection::Ltr);
+    let delta_rtl = run(LayoutDirection::Rtl);
+
+    let eps = 0.01;
+    assert!(delta_ltr.abs() < eps, "LTR view_pos changed by {delta_ltr}");
+    assert!(delta_rtl.abs() < eps, "RTL view_pos changed by {delta_rtl}");
+}
+
+#[test]
+fn interactive_resize_pins_leading_edge_in_ltr_and_rtl() {
+    fn run(dir: LayoutDirection) -> (f64, f64) {
+        let mut options = Options::default();
+        options.layout.direction = dir;
+        options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::Communicate(1),
+            Op::CompleteAnimations,
+        ];
+
+        let mut layout = check_ops_with_options(options, ops);
+
+        let ws = layout.active_workspace().unwrap();
+        let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+        assert_eq!(tiles.len(), 1);
+        let (tile_before, pos_before, _) = tiles[0];
+        let size_before = tile_before.animated_tile_size();
+
+        // Leading edge in screen space: left in LTR, right in RTL.
+        let leading_before = match dir {
+            LayoutDirection::Ltr => pos_before.x,
+            LayoutDirection::Rtl => pos_before.x + size_before.w,
+        };
+
+        let edges = match dir {
+            LayoutDirection::Ltr => ResizeEdge::LEFT,
+            LayoutDirection::Rtl => ResizeEdge::RIGHT,
+        };
+
+        let dx = match dir {
+            // Move the grabbed edge visibly so width changes.
+            LayoutDirection::Ltr => 200.0,
+            LayoutDirection::Rtl => -200.0,
+        };
+
+        let ops_resize = [
+            Op::InteractiveResizeBegin { window: 1, edges },
+            Op::InteractiveResizeUpdate {
+                window: 1,
+                dx,
+                dy: 0.0,
+            },
+            Op::Communicate(1),
+            Op::InteractiveResizeEnd { window: 1 },
+            Op::CompleteAnimations,
+        ];
+        check_ops_on_layout(&mut layout, ops_resize);
+
+        let ws = layout.active_workspace().unwrap();
+        let tiles_after: Vec<_> = ws.tiles_with_render_positions().collect();
+        assert_eq!(tiles_after.len(), 1);
+        let (tile_after, pos_after, _) = tiles_after[0];
+        let size_after = tile_after.animated_tile_size();
+
+        // Width must actually change so this is a meaningful resize.
+        assert!((size_after.w - size_before.w).abs() > 1.0);
+
+        let leading_after = match dir {
+            LayoutDirection::Ltr => pos_after.x,
+            LayoutDirection::Rtl => pos_after.x + size_after.w,
+        };
+
+        (leading_before, leading_after)
+    }
+
+    let (ltr_before, ltr_after) = run(LayoutDirection::Ltr);
+    let (rtl_before, rtl_after) = run(LayoutDirection::Rtl);
+
+    let eps = 1.0;
+    assert!((ltr_after - ltr_before).abs() < eps, "LTR leading edge moved: {ltr_before} -> {ltr_after}");
+    assert!((rtl_after - rtl_before).abs() < eps, "RTL leading edge moved: {rtl_before} -> {rtl_after}");
+}
+
+#[test]
 fn move_column_to_workspace_unfocused_with_multiple_monitors() {
     let ops = [
         Op::AddOutput(1),
