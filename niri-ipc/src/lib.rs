@@ -1571,7 +1571,15 @@ impl FromStr for WorkspaceReferenceArg {
                 return Err("workspace index must be between 0 and 255");
             }
         } else {
-            Self::Name(s.to_string())
+            if s.starts_with("id:") {
+                if let Ok(wid) = s[3..].parse::<u64>() {
+                    Self::Id(wid)
+                } else {
+                    return Err("workspace id must be integer");
+                }
+            } else {
+                Self::Name(s.to_string())
+            }
         };
 
         Ok(reference)
