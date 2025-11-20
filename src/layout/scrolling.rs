@@ -548,11 +548,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         width: f64,
         mode: SizingMode,
     ) -> f64 {
-        if mode.is_fullscreen() {
-            return 0.;
-        }
+        let is_fullscreen = mode.is_fullscreen();
 
-        let (area, padding) = if mode.is_maximized() {
+        let (area, padding) = if is_fullscreen || mode.is_maximized() {
+            // Fullscreen and maximized columns should ignore horizontal gaps/struts and use the
+            // full parent area width.
             (self.parent_area, 0.)
         } else {
             (self.working_area, self.options.layout.gaps)
