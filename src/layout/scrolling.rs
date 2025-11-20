@@ -1390,10 +1390,19 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     let new_offset =
                         -(self.working_area.size.w - width) / 2. - self.working_area.loc.x;
                     new_offset - self.view_offset.target()
-                } else if resize.edges.contains(ResizeEdge::LEFT) {
-                    -offset
                 } else {
-                    0.
+                    let resize_left = resize.edges.contains(ResizeEdge::LEFT);
+                    let resize_right = resize.edges.contains(ResizeEdge::RIGHT);
+                    let is_leading_edge_resize = match self.dir() {
+                        LayoutDirection::Ltr => resize_left,
+                        LayoutDirection::Rtl => resize_right,
+                    };
+
+                    if is_leading_edge_resize {
+                        -offset
+                    } else {
+                        0.
+                    }
                 };
 
                 self.view_offset.offset(offset);
@@ -2447,6 +2456,26 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
         self.column_xs(self.data.iter().copied())
             .nth(column_idx)
             .unwrap()
+    }
+
+    fn leading_edge_x(&self, column_idx: usize) -> f64 {
+        let col_x = self.column_x(column_idx);
+        let width = self.data[column_idx].width;
+
+        match self.dir() {
+            LayoutDirection::Ltr => col_x,
+            LayoutDirection::Rtl => col_x + width,
+        }
+    }
+
+    fn trailing_edge_x(&self, column_idx: usize) -> f64 {
+        let col_x = self.column_x(column_idx);
+        let width = self.data[column_idx].width;
+
+        match self.dir() {
+            LayoutDirection::Ltr => col_x + width,
+            LayoutDirection::Rtl => col_x,
+        }
     }
 
     fn column_xs_in_render_order(
