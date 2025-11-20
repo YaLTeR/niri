@@ -140,6 +140,7 @@ pub struct OutputDevice {
     // See https://github.com/Smithay/smithay/issues/1102.
     drm: DrmDevice,
     gbm: GbmDevice<DrmDeviceFd>,
+    allocator: GbmAllocator<DrmDeviceFd>,
 
     pub drm_lease_state: Option<DrmLeaseState>,
     non_desktop_connectors: HashSet<(connector::Handle, crtc::Handle)>,
@@ -825,6 +826,9 @@ impl Tty {
             }
         }
 
+        let gbm_flags = GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT;
+        let allocator = GbmAllocator::new(gbm.clone(), gbm_flags);
+
         let token = niri
             .event_loop
             .insert_source(drm_notifier, move |event, meta, state| {
@@ -848,6 +852,7 @@ impl Tty {
             render_node,
             drm,
             gbm,
+            allocator,
             drm_scanner: DrmScanner::new(),
             surfaces: HashMap::new(),
             known_crtcs: HashMap::new(),
@@ -1261,10 +1266,6 @@ impl Tty {
             }
         }
 
-        // Create GBM allocator.
-        let gbm_flags = GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT;
-        let allocator = GbmAllocator::new(device.gbm.clone(), gbm_flags);
-
         // Update the output mode.
         let (physical_width, physical_height) = connector.size().unwrap_or((0, 0));
 
@@ -1334,7 +1335,7 @@ impl Tty {
             OutputModeSource::Auto(output.clone()),
             surface,
             None,
-            allocator.clone(),
+            device.allocator.clone(),
             GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
             SUPPORTED_COLOR_FORMATS,
             // This is only used to pick a good internal format, so it can use the surface's render
@@ -1364,7 +1365,7 @@ impl Tty {
                     OutputModeSource::Auto(output.clone()),
                     surface,
                     None,
-                    allocator,
+                    device.allocator.clone(),
                     GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
                     SUPPORTED_COLOR_FORMATS,
                     render_formats,
