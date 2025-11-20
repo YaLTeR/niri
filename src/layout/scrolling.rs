@@ -2394,12 +2394,20 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
         self.animate_view_offset_to_column(None, self.active_column_idx, None);
     }
 
-    pub fn view_pos(&self) -> f64 {
+    fn camera_x(&self) -> f64 {
         self.column_x(self.active_column_idx) + self.view_offset.current()
     }
 
-    pub fn target_view_pos(&self) -> f64 {
+    fn target_camera_x(&self) -> f64 {
         self.column_x(self.active_column_idx) + self.view_offset.target()
+    }
+
+    pub fn view_pos(&self) -> f64 {
+        self.camera_x()
+    }
+
+    pub fn target_view_pos(&self) -> f64 {
+        self.target_camera_x()
     }
 
     // HACK: collect self.data first so we can iterate without borrowing all of Self. This keeps the
