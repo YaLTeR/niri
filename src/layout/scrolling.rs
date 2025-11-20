@@ -2427,20 +2427,16 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
         self.animate_view_offset_to_column(None, self.active_column_idx, None);
     }
 
-    fn camera_x(&self) -> f64 {
-        self.column_x(self.active_column_idx) + self.view_offset.current()
-    }
-
-    fn target_camera_x(&self) -> f64 {
-        self.column_x(self.active_column_idx) + self.view_offset.target()
-    }
-
+    // NOTE: Transitional shim: exposes the current camera X from ViewOffset. Callers should
+    // migrate to using ViewOffset directly; this helper can then be removed.
     pub fn view_pos(&self) -> f64 {
-        self.camera_x()
+        self.view_offset.current()
     }
 
+    // NOTE: Transitional shim matching view_pos above; returns the target camera X from
+    // ViewOffset. Consider removing once direct ViewOffset usage is ubiquitous.
     pub fn target_view_pos(&self) -> f64 {
-        self.target_camera_x()
+        self.view_offset.target()
     }
 
     // HACK: collect self.data first so we can iterate without borrowing all of Self. This keeps the
