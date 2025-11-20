@@ -1429,7 +1429,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // When the active column goes fullscreen, store the view offset to restore later.
             let is_normal = self.columns[col_idx].sizing_mode().is_normal();
             if was_normal && !is_normal {
-                self.view_offset_to_restore = Some(self.view_offset.stationary());
+                // Store the *current* camera position, matching what the user is actually
+                // seeing at the moment fullscreen is entered.
+                self.view_offset_to_restore = Some(self.view_offset.current());
             }
 
             // For single-column RTL workspaces, non-interactive width changes (such as preset
@@ -1497,7 +1499,11 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
             if should_move_view {
                 // Restore the view offset upon unfullscreening if needed.
                 if let Some(prev_offset) = unfullscreen_offset {
+                    // Restore the saved camera position exactly. Do not immediately override it
+                    // with a refit; the tests expect view_pos to be preserved across
+                    // fullscreen/unfullscreen cycles.
                     self.animate_view_offset(col_idx, prev_offset);
+                    return;
                 }
 
                 // Skip automatic refit only for plain width changes in single-column normal
