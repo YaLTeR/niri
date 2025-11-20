@@ -2409,9 +2409,13 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
         let gaps = self.options.layout.gaps;
         let mut positions = vec![0.; data.len() + 1];
 
+        // Phase 1: make the implicit band origin explicit, but keep it fixed at 0.0 so behavior
+        // remains unchanged. Later phases will allow this to vary.
+        let band_origin_x = 0.0;
+
         match self.dir() {
             LayoutDirection::Ltr => {
-                let mut x = 0.;
+                let mut x = band_origin_x;
                 for (idx, column) in data.iter().enumerate() {
                     positions[idx] = x;
                     x += column.width + gaps;
@@ -2419,7 +2423,7 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
                 positions[data.len()] = x;
             }
             LayoutDirection::Rtl => {
-                let mut x = 0.;
+                let mut x = band_origin_x;
                 for idx in (0..data.len()).rev() {
                     positions[idx] = x;
                     x += data[idx].width + gaps;
