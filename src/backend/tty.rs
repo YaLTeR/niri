@@ -507,7 +507,29 @@ impl Tty {
     }
 
     pub fn init(&mut self, niri: &mut Niri) {
-        for (device_id, path) in self.udev_dispatcher.clone().as_source_ref().device_list() {
+        let udev = self.udev_dispatcher.clone();
+        let udev = udev.as_source_ref();
+
+        // Initialize the primary node first as later nodes might depend on the primary render node
+        // being available.
+        if let Some((primary_device_id, primary_device_path)) = udev
+            .device_list()
+            .find(|&(device_id, _)| device_id == self.primary_node.dev_id())
+        {
+            if let Err(err) = self.device_added(primary_device_id, primary_device_path, niri) {
+                warn!(
+                    "error adding primary node device, display-only devices may not work: {err:?}"
+                );
+            }
+        } else {
+            warn!("primary node is missing, display-only devices may not work");
+        };
+
+        for (device_id, path) in udev.device_list() {
+            if device_id == self.primary_node.dev_id() {
+                continue;
+            }
+
             if let Err(err) = self.device_added(device_id, path, niri) {
                 warn!("error adding device: {err:?}");
             }
