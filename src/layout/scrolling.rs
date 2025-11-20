@@ -1399,7 +1399,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     };
 
                     if is_leading_edge_resize {
-                        -offset
+                        // For single-column LTR workspaces, the leading edge (left edge) of the
+                        // active column is already fixed in world space at the band origin.
+                        // Changing the column width does not move this edge, so we must not
+                        // adjust the camera, otherwise the leading edge would move in screen
+                        // space. In RTL, or in multi-column layouts, we still rely on the
+                        // existing offset adjustment.
+                        if self.columns.len() == 1 && matches!(self.dir(), LayoutDirection::Ltr) {
+                            0.
+                        } else {
+                            -offset
+                        }
                     } else {
                         0.
                     }
