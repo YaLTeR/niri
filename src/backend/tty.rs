@@ -1311,7 +1311,7 @@ impl Tty {
             .iter()
             .copied()
             .filter(|format| {
-                !matches!(
+                let is_ccs = matches!(
                     format.modifier,
                     Modifier::I915_y_tiled_ccs
                     // I915_FORMAT_MOD_Yf_TILED_CCS
@@ -1326,7 +1326,9 @@ impl Tty {
                     | Modifier::Unrecognized(0x10000000000000b)
                     // I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC
                     | Modifier::Unrecognized(0x10000000000000c)
-                )
+                );
+
+                !is_ccs
             })
             .collect::<FormatSet>();
 
