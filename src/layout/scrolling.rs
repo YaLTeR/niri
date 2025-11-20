@@ -558,24 +558,21 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             (self.working_area, self.options.layout.gaps)
         };
 
-        let target_x = target_x.unwrap_or_else(|| self.target_view_pos());
+        let cur_view_pos = target_x.unwrap_or_else(|| self.target_view_pos());
 
         // Mirror the LTR behavior in RTL by aligning the column's leading edge to the leading
         // side of the viewport (left in LTR, right in RTL) whenever it fits. This keeps the
         // appropriate edge visually pinned in screen space.
 
-        let new_offset = compute_new_view_offset(
-            target_x + area.loc.x,
+        compute_new_view_offset(
+            cur_view_pos,
             area.size.w,
             col_x,
             width,
             padding,
             PinnedViewportEdge::Leading,
             self.dir(),
-        );
-
-        // Non-fullscreen windows are always offset at least by the working area position.
-        new_offset - area.loc.x
+        )
     }
 
     fn compute_new_view_offset_centered(
@@ -600,7 +597,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return self.compute_new_view_offset_fit(target_x, col_x, width, mode);
         }
 
-        -(area.size.w - width) / 2. - area.loc.x
+        // Center the column within the available horizontal viewport.
+        let col_center = col_x + width / 2.;
+        col_center - area.size.w / 2.
     }
 
     fn compute_new_view_offset_for_column_fit(&self, target_x: Option<f64>, idx: usize) -> f64 {
@@ -713,15 +712,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     fn animate_view_offset_with_config(
         &mut self,
-        idx: usize,
+        _idx: usize,
         new_view_offset: f64,
         config: niri_config::Animation,
     ) {
-        let new_col_x = self.column_x(idx);
-        let old_col_x = self.column_x(self.active_column_idx);
-        let offset_delta = old_col_x - new_col_x;
-        self.view_offset.offset(offset_delta);
-
         let pixel = 1. / self.scale;
 
         // If our view offset is already this or animating towards this, we don't need to do
@@ -1823,9 +1817,6 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
         self.data.insert(new_idx, data);
 
         // Preserve the camera position when moving to the left.
-        let view_offset_delta = -self.column_x(self.active_column_idx) + current_col_x;
-        self.view_offset.offset(view_offset_delta);
-
         // The column we just moved is offset by the difference between its new and old position.
         let new_col_x = self.column_x(new_idx);
         self.columns[new_idx].animate_move_from(current_col_x - new_col_x);
@@ -5802,18 +5793,6 @@ fn compute_new_view_offset(
     pinned: PinnedViewportEdge,
     dir: LayoutDirection,
 ) -> f64 {
-    // If the column is wider than the view, always left-align it.
-    if view_width <= new_col_width {
-        return 0.;
-    }
-
-    // Compute the padding in case it needs to be smaller due to large tile width.
-    let padding = ((view_width - new_col_width) / 2.).clamp(0., gaps);
-
-    // Compute the desired new X with padding.
-    let new_x = new_col_x - padding;
-    let new_right_x = new_col_x + new_col_width + padding;
-
     // Map the abstract pinned edge to a concrete side of the viewport.
     let align_trailing = match (pinned, dir) {
         (PinnedViewportEdge::Leading, LayoutDirection::Ltr) => false,
@@ -5822,26 +5801,38 @@ fn compute_new_view_offset(
         (PinnedViewportEdge::Trailing, LayoutDirection::Rtl) => false,
     };
 
-    // If the column is already fully visible, keep it near the preferred edge.
-    if cur_x <= new_x && new_right_x <= cur_x + view_width {
+    // If the column is wider than the view, align it to the preferred edge.
+    if view_width <= new_col_width {
+        let new_right_x = new_col_x + new_col_width;
         return if align_trailing {
-            -(view_width - padding - new_col_width)
+            // Pin the column's right edge to the viewport's right edge.
+            new_right_x - view_width
         } else {
-            -(new_col_x - cur_x)
+            // Pin the column's left edge to the viewport's left edge.
+            new_col_x
         };
     }
 
-    // Otherwise, bias towards the preferred alignment when possible.
+    // Compute the padding in case it needs to be smaller due to large tile width.
+    let padding = ((view_width - new_col_width) / 2.).clamp(0., gaps);
+
+    // The band of X values for which the column (plus padding) is fully visible.
+    let band_left = new_col_x - padding;
+    let band_right = new_col_x + new_col_width + padding;
+
+    // If the column is already fully visible, keep the current camera position to
+    // minimize unexpected motion.
+    if cur_x <= band_left && band_right <= cur_x + view_width {
+        return cur_x;
+    }
+
+    // Otherwise, align the preferred edge while keeping the column fully visible.
     if align_trailing {
-        -(view_width - padding - new_col_width)
+        // Align the padded trailing edge of the column to the viewport's right edge.
+        band_right - view_width
     } else {
-        let dist_to_left = (cur_x - new_x).abs();
-        let dist_to_right = ((cur_x + view_width) - new_right_x).abs();
-        if dist_to_left <= dist_to_right {
-            -padding
-        } else {
-            -(view_width - padding - new_col_width)
-        }
+        // Align the padded leading edge of the column to the viewport's left edge.
+        band_left
     }
 }
 
