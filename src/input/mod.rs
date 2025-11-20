@@ -86,6 +86,61 @@ impl<D: SeatHandler> PointerOrTouchStartData<D> {
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum SwipeDirection {
+    Horizontal,
+    Vertical,
+    Unknown,
+    Undecided,
+}
+
+pub struct SwipeDirectionDecider {
+    cx: f64,
+    cy: f64,
+    decision: SwipeDirection,
+}
+
+impl SwipeDirectionDecider {
+    pub fn decided() -> Self {
+        Self {
+            cx: 0.,
+            cy: 0.,
+            decision: SwipeDirection::Unknown,
+        }
+    }
+
+    fn undecided() -> Self {
+        Self {
+            cx: 0.,
+            cy: 0.,
+            decision: SwipeDirection::Undecided,
+        }
+    }
+
+    fn update_and_maybe_decide(&mut self, delta_x: f64, delta_y: f64) -> Option<SwipeDirection> {
+        if self.decision != SwipeDirection::Undecided {
+            return None;
+        }
+
+        self.cx += delta_x;
+        self.cy += delta_y;
+
+        // Check if the gesture moved far enough to decide. Threshold copied from GNOME Shell.
+        if self.cx * self.cx + self.cy * self.cy >= 16. * 16. {
+            self.decision = if self.cx.abs() > self.cy.abs() {
+                SwipeDirection::Horizontal
+            } else {
+                SwipeDirection::Vertical
+            };
+
+            Some(self.decision)
+        } else {
+            // Undecided, needs more data (movement)
+            None
+        }
+    }
+}
+
 impl State {
     pub fn process_input_event<I: InputBackend + 'static>(&mut self, event: InputEvent<I>)
     where
@@ -2790,7 +2845,8 @@ impl State {
                                 button: button_code,
                                 location,
                             };
-                            let grab = MoveGrab::new(start_data, window.clone(), is_overview_open);
+                            let grab =
+                                MoveGrab::new(start_data, window.clone(), is_overview_open, false);
                             pointer.set_grab(self, grab, serial, Focus::Clear);
 
                             if !is_overview_open {
@@ -3635,13 +3691,12 @@ impl State {
         }
 
         if event.fingers() == 3 {
-            self.niri.gesture_swipe_3f_cumulative = Some((0., 0.));
+            self.niri.gesture_swipe_3f_decider = SwipeDirectionDecider::undecided();
 
             // We handled this event.
             return;
         } else if event.fingers() == 4 {
-            self.niri.layout.overview_gesture_begin();
-            self.niri.queue_redraw_all();
+            self.niri.gesture_swipe_4f_decider = SwipeDirectionDecider::undecided();
 
             // We handled this event.
             return;
@@ -3692,17 +3747,14 @@ impl State {
 
         let is_overview_open = self.niri.layout.is_overview_open();
 
-        if let Some((cx, cy)) = &mut self.niri.gesture_swipe_3f_cumulative {
-            *cx += delta_x;
-            *cy += delta_y;
-
-            // Check if the gesture moved far enough to decide. Threshold copied from GNOME Shell.
-            let (cx, cy) = (*cx, *cy);
-            if cx * cx + cy * cy >= 16. * 16. {
-                self.niri.gesture_swipe_3f_cumulative = None;
-
-                if let Some(output) = self.niri.output_under_cursor() {
-                    if cx.abs() > cy.abs() {
+        if let Some(descision) = self
+            .niri
+            .gesture_swipe_3f_decider
+            .update_and_maybe_decide(delta_x, delta_y)
+        {
+            if let Some(output) = self.niri.output_under_cursor() {
+                match descision {
+                    SwipeDirection::Horizontal => {
                         let output_ws = if is_overview_open {
                             self.niri.workspace_under_cursor(true)
                         } else {
@@ -3720,12 +3772,82 @@ impl State {
                                 .layout
                                 .view_offset_gesture_begin(&output, Some(ws_idx), true);
                         }
-                    } else {
+                    }
+                    SwipeDirection::Vertical => {
                         self.niri
                             .layout
                             .workspace_switch_gesture_begin(&output, true);
                     }
+                    _ => {}
                 }
+            }
+        }
+
+        if let Some(descision) = self
+            .niri
+            .gesture_swipe_4f_decider
+            .update_and_maybe_decide(delta_x, delta_y)
+        {
+            match descision {
+                SwipeDirection::Horizontal => {
+                    if let Some((active_window, pos_within_output)) =
+                        self.niri.layout.active_workspace().and_then(|w| {
+                            Some((w.active_window()?.id(), w.active_tile_visual_rectangle()?))
+                        })
+                    {
+                        let window = {
+                            let mut windows = self.niri.layout.windows();
+                            windows
+                                .find(|(_, m)| m.id() == active_window)
+                                .and_then(|(m, a)| Some((m?, a)))
+                                .map(|(monitor, active_window)| {
+                                    (monitor.output().clone(), active_window.window.clone())
+                                })
+                        };
+                        if let Some((output, active_window)) = window {
+                            let pos_within_global_space = Rectangle::new(
+                                pos_within_output.loc
+                                    + self
+                                        .niri
+                                        .global_space
+                                        .output_geometry(&output)
+                                        .unwrap()
+                                        .loc
+                                        .to_f64(),
+                                pos_within_output.size,
+                            );
+                            let location =
+                                pos_within_global_space.loc + (pos_within_global_space.size / 2.0);
+                            if self.niri.layout.interactive_move_begin(
+                                active_window.clone(),
+                                &output,
+                                location,
+                            ) {
+                                let start_data = PointerGrabStartData {
+                                    focus: None,
+                                    button: 1,
+                                    location,
+                                };
+                                let grab = MoveGrab::new(
+                                    start_data,
+                                    active_window,
+                                    is_overview_open,
+                                    true,
+                                );
+                                self.niri.seat.get_pointer().unwrap().set_grab(
+                                    self,
+                                    grab,
+                                    SERIAL_COUNTER.next_serial(),
+                                    Focus::Clear,
+                                );
+                            }
+                        }
+                    }
+                }
+                SwipeDirection::Vertical => {
+                    self.niri.layout.overview_gesture_begin();
+                }
+                _ => {}
             }
         }
 
@@ -3786,7 +3908,8 @@ impl State {
     }
 
     fn on_gesture_swipe_end<I: InputBackend>(&mut self, event: I::GestureSwipeEndEvent) {
-        self.niri.gesture_swipe_3f_cumulative = None;
+        self.niri.gesture_swipe_3f_decider = SwipeDirectionDecider::decided();
+        self.niri.gesture_swipe_4f_decider = SwipeDirectionDecider::decided();
 
         let mut handled = false;
         let res = self.niri.layout.workspace_switch_gesture_end(Some(true));
@@ -3804,6 +3927,17 @@ impl State {
         let res = self.niri.layout.overview_gesture_end();
         if res {
             self.niri.queue_redraw_all();
+            handled = true;
+        }
+
+        if self.niri.gesture_swipe_3f_decider.decision == SwipeDirection::Horizontal {
+            // Call completed in [`MoveGrab`]
+            //
+            // self.niri
+            //     .seat
+            //     .get_pointer()
+            //     .unwrap()
+            //     .unset_grab(self, serial, event.time_msec());
             handled = true;
         }
 
