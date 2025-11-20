@@ -604,12 +604,19 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     fn compute_new_view_offset_for_column_fit(&self, target_x: Option<f64>, idx: usize) -> f64 {
         let col = &self.columns[idx];
-        self.compute_new_view_offset_fit(
-            target_x,
-            self.column_x(idx),
-            col.width(),
-            col.sizing_mode(),
-        )
+
+        // Derive the physical left edge and width from the leading/trailing edges so the
+        // view-offset computation can stay direction-agnostic.
+        let leading = self.leading_edge_x(idx);
+        let trailing = self.trailing_edge_x(idx);
+        let (left, right) = if leading <= trailing {
+            (leading, trailing)
+        } else {
+            (trailing, leading)
+        };
+        let width = right - left;
+
+        self.compute_new_view_offset_fit(target_x, left, width, col.sizing_mode())
     }
 
     fn compute_new_view_offset_for_column_centered(
@@ -618,12 +625,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         idx: usize,
     ) -> f64 {
         let col = &self.columns[idx];
-        self.compute_new_view_offset_centered(
-            target_x,
-            self.column_x(idx),
-            col.width(),
-            col.sizing_mode(),
-        )
+
+        // Same edge-based derivation as in the fit case above.
+        let leading = self.leading_edge_x(idx);
+        let trailing = self.trailing_edge_x(idx);
+        let (left, right) = if leading <= trailing {
+            (leading, trailing)
+        } else {
+            (trailing, leading)
+        };
+        let width = right - left;
+
+        self.compute_new_view_offset_centered(target_x, left, width, col.sizing_mode())
     }
 
     fn compute_new_view_offset_for_column(
@@ -2470,7 +2483,7 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
 
     fn leading_edge_x(&self, column_idx: usize) -> f64 {
         let col_x = self.column_x(column_idx);
-        let width = self.data[column_idx].width;
+        let width = self.columns[column_idx].width();
 
         match self.dir() {
             LayoutDirection::Ltr => col_x,
@@ -2480,7 +2493,7 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
 
     fn trailing_edge_x(&self, column_idx: usize) -> f64 {
         let col_x = self.column_x(column_idx);
-        let width = self.data[column_idx].width;
+        let width = self.columns[column_idx].width();
 
         match self.dir() {
             LayoutDirection::Ltr => col_x + width,
