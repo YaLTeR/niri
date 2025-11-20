@@ -560,9 +560,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let target_x = target_x.unwrap_or_else(|| self.target_view_pos());
 
-        // In RTL, prefer right alignment for the active column when it is fully visible, so that
-        // its right edge appears pinned in screen space.
-        let prefer_right = self.dir() == LayoutDirection::Rtl;
+        // Mirror the LTR behavior in RTL by aligning the column's leading edge to the leading
+        // side of the viewport (left in LTR, right in RTL) whenever it fits. This keeps the
+        // appropriate edge visually pinned in screen space.
 
         let new_offset = compute_new_view_offset(
             target_x + area.loc.x,
@@ -570,7 +570,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             col_x,
             width,
             padding,
-            prefer_right,
+            PinnedViewportEdge::Leading,
+            self.dir(),
         );
 
         // Non-fullscreen windows are always offset at least by the working area position.
@@ -5790,13 +5791,20 @@ impl<W: LayoutElement> Column<W> {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+enum PinnedViewportEdge {
+    Leading,
+    Trailing,
+}
+
 fn compute_new_view_offset(
     cur_x: f64,
     view_width: f64,
     new_col_x: f64,
     new_col_width: f64,
     gaps: f64,
-    prefer_right: bool,
+    pinned: PinnedViewportEdge,
+    dir: LayoutDirection,
 ) -> f64 {
     // If the column is wider than the view, always left-align it.
     if view_width <= new_col_width {
@@ -5810,9 +5818,17 @@ fn compute_new_view_offset(
     let new_x = new_col_x - padding;
     let new_right_x = new_col_x + new_col_width + padding;
 
+    // Map the abstract pinned edge to a concrete side of the viewport.
+    let align_trailing = match (pinned, dir) {
+        (PinnedViewportEdge::Leading, LayoutDirection::Ltr) => false,
+        (PinnedViewportEdge::Leading, LayoutDirection::Rtl) => true,
+        (PinnedViewportEdge::Trailing, LayoutDirection::Ltr) => true,
+        (PinnedViewportEdge::Trailing, LayoutDirection::Rtl) => false,
+    };
+
     // If the column is already fully visible, keep it near the preferred edge.
     if cur_x <= new_x && new_right_x <= cur_x + view_width {
-        return if prefer_right {
+        return if align_trailing {
             -(view_width - padding - new_col_width)
         } else {
             -(new_col_x - cur_x)
@@ -5820,7 +5836,7 @@ fn compute_new_view_offset(
     }
 
     // Otherwise, bias towards the preferred alignment when possible.
-    if prefer_right {
+    if align_trailing {
         -(view_width - padding - new_col_width)
     } else {
         let dist_to_left = (cur_x - new_x).abs();
