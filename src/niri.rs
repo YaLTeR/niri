@@ -170,6 +170,7 @@ use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
+use crate::utils::vblank_throttle::VBlankThrottle;
 use crate::utils::watcher::Watcher;
 use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
@@ -459,6 +460,7 @@ pub struct OutputState {
     pub unfinished_animations_remain: bool,
     /// Last sequence received in a vblank event.
     pub last_drm_sequence: Option<u32>,
+    pub vblank_throttle: VBlankThrottle,
     /// Sequence for frame callback throttling.
     ///
     /// We want to send frame callbacks for each surface at most once per monitor refresh cycle.
@@ -3076,6 +3078,7 @@ impl Niri {
             unfinished_animations_remain: false,
             frame_clock: FrameClock::new(refresh_interval, vrr),
             last_drm_sequence: None,
+            vblank_throttle: VBlankThrottle::new(self.event_loop.clone(), name.connector.clone()),
             frame_callback_sequence: 0,
             backdrop_buffer: SolidColorBuffer::new(size, backdrop_color),
             lock_render_state,

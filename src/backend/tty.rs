@@ -1633,6 +1633,22 @@ impl Tty {
             presentation_time
         };
 
+        if output_state
+            .vblank_throttle
+            .throttle(refresh_interval, time, move |state| {
+                let meta = DrmEventMetadata {
+                    sequence: meta.sequence,
+                    time: DrmEventTime::Monotonic(Duration::ZERO),
+                };
+
+                let tty = state.backend.tty();
+                tty.on_vblank(&mut state.niri, node, crtc, meta);
+            })
+        {
+            // Throttled.
+            return;
+        }
+
         let redraw_needed = match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
             RedrawState::WaitingForVBlank { redraw_needed } => redraw_needed,
             state @ (RedrawState::Idle
