@@ -564,6 +564,19 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         // side of the viewport (left in LTR, right in RTL) whenever it fits. This keeps the
         // appropriate edge visually pinned in screen space.
 
+        #[cfg(test)]
+        eprintln!(
+            "[scroll][view_fit] dir={:?} mode={:?} is_fullscreen={} cur_view_pos={} col_x={} width={} area_w={} padding={}",
+            self.dir(),
+            mode,
+            is_fullscreen,
+            cur_view_pos,
+            col_x,
+            width,
+            area.size.w,
+            padding,
+        );
+
         compute_new_view_offset(
             cur_view_pos,
             area.size.w,
@@ -599,7 +612,21 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         // Center the column within the available horizontal viewport.
         let col_center = col_x + width / 2.;
-        col_center - area.size.w / 2.
+        let new_view = col_center - area.size.w / 2.;
+
+        #[cfg(test)]
+        eprintln!(
+            "[scroll][view_center] dir={:?} mode={:?} cur_view_pos={} col_x={} width={} area_w={} result={}",
+            self.dir(),
+            mode,
+            target_x.unwrap_or_else(|| self.target_view_pos()),
+            col_x,
+            width,
+            area.size.w,
+            new_view,
+        );
+
+        new_view
     }
 
     fn compute_new_view_offset_for_column_fit(&self, target_x: Option<f64>, idx: usize) -> f64 {
@@ -726,6 +753,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.view_offset.offset(to_diff);
             return;
         }
+
+        #[cfg(test)]
+        eprintln!(
+            "[scroll][animate_view_offset] idx={} from={} to={} cur={} target_before={} kind={:?}",
+            _idx,
+            self.view_offset.current(),
+            new_view_offset,
+            self.view_offset.current(),
+            self.view_offset.target(),
+            config.kind,
+        );
 
         match &mut self.view_offset {
             ViewOffset::Gesture(gesture) if gesture.dnd_last_event_time.is_some() => {
@@ -1278,6 +1316,32 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn update_window(&mut self, window: &W::Id, serial: Option<Serial>) {
+        #[cfg(test)]
+        {
+            let cols_len = self.columns.len();
+            let active_idx = self.active_column_idx;
+            let view_pos = self.view_pos();
+            let target_view_pos = self.target_view_pos();
+
+            eprintln!(
+                "[scroll][update_window enter] window_id={:?} dir={:?} cols={} active_col_idx={} view_pos={} target_view_pos={}",
+                window,
+                self.dir(),
+                cols_len,
+                active_idx,
+                view_pos,
+                target_view_pos,
+            );
+        }
+
+        let prev_view_pos = self.view_pos();
+        let active_idx_before = self.active_column_idx;
+        let active_leading_before = if self.columns.is_empty() {
+            None
+        } else {
+            Some(self.leading_edge_x(active_idx_before) - prev_view_pos)
+        };
+
         let (col_idx, column) = self
             .columns
             .iter_mut()
@@ -1314,35 +1378,40 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let prev_width = self.data[col_idx].width;
 
+        #[cfg(test)]
+        eprintln!(
+            "[scroll][update_window pre] window_id={:?} col_idx={} tile_idx={} active_col_idx={} prev_width={}",
+            window,
+            col_idx,
+            tile_idx,
+            self.active_column_idx,
+            prev_width,
+        );
+
         column.update_window(window);
         self.data[col_idx].update(column);
         column.update_tile_sizes(false);
 
-        let offset = prev_width - self.data[col_idx].width;
+        let new_width = self.data[col_idx].width;
+        let offset = prev_width - new_width;
+
+        #[cfg(test)]
+        eprintln!(
+            "[scroll][update_window width] window_id={:?} col_idx={} tile_idx={} prev_width={} new_width={} offset={} ongoing_resize_anim={}",
+            window,
+            col_idx,
+            tile_idx,
+            prev_width,
+            new_width,
+            offset,
+            column.tiles[tile_idx].resize_animation().is_some(),
+        );
 
         // Move other columns in tandem with resizing.
         let ongoing_resize_anim = column.tiles[tile_idx].resize_animation().is_some();
         if offset != 0. {
             if self.active_column_idx <= col_idx {
                 for col in &mut self.columns[col_idx + 1..] {
-                    // If there's a resize animation on the tile (that may have just started in
-                    // column.update_window()), then the apparent size change is smooth with no
-                    // sudden jumps. This corresponds to adding an X animation to adjacent columns.
-                    //
-                    // There could also be no resize animation with nonzero offset. This could
-                    // happen for example:
-                    // - if the window resized on its own, which we don't animate
-                    // - if the window resized by less than 10 px (the resize threshold)
-                    //
-                    // The latter case could also cancel an ongoing resize animation.
-                    //
-                    // Now, stationary columns shouldn't react to this offset change in any way,
-                    // i.e. their apparent X position should jump together with the resize.
-                    // However, adjacent columns that are already animating an X movement should
-                    // offset their animations to avoid the jump.
-                    //
-                    // Notably, this is necessary to fix the animation jump when resizing width back
-                    // and forth in quick succession (in a way that cancels the resize animation).
                     if ongoing_resize_anim {
                         col.animate_move_from_with_config(
                             offset,
@@ -1393,6 +1462,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let centered = self.is_centering_focused_column();
 
                 let width = self.data[col_idx].width;
+
+                #[cfg(test)]
+                eprintln!(
+                    "[scroll][update_window active_resize] window_id={:?} col_idx={} tile_idx={} centered={} width={} resize_edges={:?}",
+                    window,
+                    col_idx,
+                    tile_idx,
+                    centered,
+                    width,
+                    resize.edges,
+                );
                 let offset = if centered {
                     // FIXME: when view_offset becomes fractional, this can be made additive too.
                     let new_offset =
@@ -1424,6 +1504,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 };
 
                 self.view_offset.offset(offset);
+
+                #[cfg(test)]
+                eprintln!(
+                    "[scroll][update_window active_resize] window_id={:?} col_idx={} applied_view_offset_delta={}",
+                    window,
+                    col_idx,
+                    offset,
+                );
             }
 
             // When the active column goes fullscreen, store the view offset to restore later.
@@ -1524,6 +1612,19 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
                     // FIXME: we will want to skip the animation in some cases here to make
                     // continuously resizing windows not look janky.
                     self.animate_view_offset_to_column_with_config(None, col_idx, None, config);
+                }
+            }
+        }
+
+        if col_idx != self.active_column_idx && offset != 0. {
+            if let Some(active_leading_before) = active_leading_before {
+                let view_pos_now = self.view_pos();
+                let active_world_leading = self.leading_edge_x(self.active_column_idx);
+                let desired_view = active_world_leading - active_leading_before;
+                let delta = desired_view - view_pos_now;
+
+                if delta != 0. {
+                    self.view_offset.offset(delta);
                 }
             }
         }
@@ -2558,10 +2659,26 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
                 let col_render_off = col.render_offset();
                 col.tiles_in_render_order()
                     .map(move |(tile, tile_off, visible)| {
-                        let pos =
+                        let mut pos =
                             view_off + col_off + col_render_off + tile_off + tile.render_offset();
+
+                        #[cfg(test)]
+                        eprintln!(
+                            "[scroll][tiles] view_pos={} col_x={} col_render_x={} tile_off_x={} tile_render_x={} raw_x={}",
+                            -view_off.x,
+                            col_x,
+                            col_render_off.x,
+                            tile_off.x,
+                            tile.render_offset().x,
+                            pos.x,
+                        );
+
                         // Round to physical pixels.
-                        let pos = pos.to_physical_precise_round(scale).to_logical(scale);
+                        pos = pos.to_physical_precise_round(scale).to_logical(scale);
+
+                        #[cfg(test)]
+                        eprintln!("[scroll][tiles] -> rounded_x={} visible={}", pos.x, visible);
+
                         (tile, pos, visible)
                     })
             })
@@ -2856,6 +2973,16 @@ view_pos={view_pos} vo_cur={vo_cur} vo_tgt={vo_tgt} screen_left={screen_left} sc
         if self.columns.is_empty() {
             return;
         }
+
+        #[cfg(test)]
+        eprintln!(
+            "[scroll][set_window_width] window_id={:?} change={:?} active_col_idx={} cols={} dir={:?}",
+            window,
+            change,
+            self.active_column_idx,
+            self.columns.len(),
+            self.dir(),
+        );
 
         let (col, tile_idx) = if let Some(window) = window {
             self.columns
@@ -5807,39 +5934,52 @@ fn compute_new_view_offset(
         (PinnedViewportEdge::Trailing, LayoutDirection::Rtl) => false,
     };
 
-    // If the column is wider than the view, align it to the preferred edge.
-    if view_width <= new_col_width {
+    let result = if view_width <= new_col_width {
+        // If the column is wider than the view, align it to the preferred edge.
         let new_right_x = new_col_x + new_col_width;
-        return if align_trailing {
+        if align_trailing {
             // Pin the column's right edge to the viewport's right edge.
             new_right_x - view_width
         } else {
             // Pin the column's left edge to the viewport's left edge.
             new_col_x
-        };
-    }
-
-    // Compute the padding in case it needs to be smaller due to large tile width.
-    let padding = ((view_width - new_col_width) / 2.).clamp(0., gaps);
-
-    // The band of X values for which the column (plus padding) is fully visible.
-    let band_left = new_col_x - padding;
-    let band_right = new_col_x + new_col_width + padding;
-
-    // If the column is already fully visible, keep the current camera position to
-    // minimize unexpected motion.
-    if cur_x <= band_left && band_right <= cur_x + view_width {
-        return cur_x;
-    }
-
-    // Otherwise, align the preferred edge while keeping the column fully visible.
-    if align_trailing {
-        // Align the padded trailing edge of the column to the viewport's right edge.
-        band_right - view_width
+        }
     } else {
-        // Align the padded leading edge of the column to the viewport's left edge.
-        band_left
-    }
+        // Compute the padding in case it needs to be smaller due to large tile width.
+        let padding = ((view_width - new_col_width) / 2.).clamp(0., gaps);
+
+        // The band of X values for which the column (plus padding) is fully visible.
+        let band_left = new_col_x - padding;
+        let band_right = new_col_x + new_col_width + padding;
+
+        // If the column is already fully visible, keep the current camera position to
+        // minimize unexpected motion.
+        if cur_x <= band_left && band_right <= cur_x + view_width {
+            cur_x
+        } else if align_trailing {
+            // Align the padded trailing edge of the column to the viewport's right edge.
+            band_right - view_width
+        } else {
+            // Align the padded leading edge of the column to the viewport's left edge.
+            band_left
+        }
+    };
+
+    #[cfg(test)]
+    eprintln!(
+        "[scroll][compute_view] pinned={:?} dir={:?} cur_x={} view_w={} col_x={} col_w={} gaps={} align_trailing={} result={}",
+        pinned,
+        dir,
+        cur_x,
+        view_width,
+        new_col_x,
+        new_col_width,
+        gaps,
+        align_trailing,
+        result,
+    );
+
+    result
 }
 
 fn compute_working_area(
