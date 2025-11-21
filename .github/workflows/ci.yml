@@ -289,11 +289,10 @@ jobs:
       contents: read
     steps:
       - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: wimpysworld/nothing-but-nix@10c936d9e46521bf923f75458e0cbd4fa309300d # main
         with:
-          dotnet: false
-          large-packages: false
-        
+          hatchet-protocol: rampage
+
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           show-progress: false
