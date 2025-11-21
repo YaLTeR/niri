@@ -1630,7 +1630,7 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
 
                     // FIXME: we will want to skip the animation in some cases here to make
                     // continuously resizing windows not look janky.
-                    self.animate_view_offset_to_column_with_config(None, col_idx, None, config);
+                    self.ensure_active_column_visible_fit_only_with_config(None, config);
                 }
             }
         }
