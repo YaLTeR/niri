@@ -1237,15 +1237,6 @@ impl Tty {
                 Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
             }
 
-            if !niri.config.borrow().debug.keep_max_bpc_unchanged {
-                // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to
-                // run.
-                match set_max_bpc(&props, 8) {
-                    Ok(_bpc) => (),
-                    Err(err) => debug!("couldn't set max bpc: {err:?}"),
-                }
-            }
-
             match get_panel_orientation(&props) {
                 Ok(x) => orientation = Some(x),
                 Err(err) => {
@@ -3222,30 +3213,6 @@ fn reset_hdr(props: &ConnectorProperties) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn set_max_bpc(props: &ConnectorProperties, bpc: u64) -> anyhow::Result<u64> {
-    let (info, value) = props.find(c"max bpc")?;
-    let property::ValueType::UnsignedRange(min, max) = info.value_type() else {
-        bail!("wrong property type")
-    };
-
-    let bpc = bpc.clamp(min, max);
-    let property::Value::UnsignedRange(value) = info.value_type().convert_value(*value) else {
-        bail!("wrong property type")
-    };
-
-    if value != bpc {
-        props
-            .device
-            .set_property(
-                props.connector,
-                info.handle(),
-                property::Value::UnsignedRange(bpc).into(),
-            )
-            .context("error setting property")?;
-    }
-    Ok(bpc)
 }
 
 fn is_vrr_capable(device: &DrmDevice, connector: connector::Handle) -> Option<bool> {

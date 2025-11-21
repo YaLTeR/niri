@@ -320,6 +320,10 @@ Apparently, setting max bpc to 8 breaks some displays driven by AMDGPU.
 If this happens to you, set this debug flag, which will prevent niri from changing max bpc.
 AMDGPU bug report: https://gitlab.freedesktop.org/drm/amd/-/issues/4487.
 
+<sup>Since: next release</sup>
+This setting is deprecated and does nothing: niri no longer sets max bpc.
+The old niri behavior with this setting enabled matches the new behavior.
+
 ```kdl
 debug {
     keep-max-bpc-unchanged
