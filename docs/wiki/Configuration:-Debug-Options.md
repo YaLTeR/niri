@@ -32,7 +32,6 @@ debug {
     honor-xdg-activation-with-invalid-serial
     skip-cursor-only-updates-during-vrr
     deactivate-unfocused-windows
-    keep-max-bpc-unchanged
 }
 
 binds {
