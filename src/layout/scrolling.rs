@@ -2894,68 +2894,59 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
         let active_idx = self.active_column_idx;
         let column_count = self.columns.len();
 
-        if self.dir() == LayoutDirection::Rtl {
-            let debug_single = column_count == 1;
-            if debug_single {
-                let col_x = self.column_x(active_idx);
-                let width = self.columns[active_idx].width();
-                let view_pos = self.view_pos();
-                let vo_cur = self.view_offset.current();
-                let vo_tgt = self.view_offset.target();
-                let screen_left = col_x - view_pos;
-                let screen_right = screen_left + width;
-                eprintln!(
-                    "[rtl1][toggle_width pre] idx={active_idx} width={width} col_x={col_x} \
+        // Preserve the existing single-column RTL instrumentation for debugging.
+        let debug_single_rtl = self.dir() == LayoutDirection::Rtl && column_count == 1;
+        if debug_single_rtl {
+            let col_x = self.column_x(active_idx);
+            let width = self.columns[active_idx].width();
+            let view_pos = self.view_pos();
+            let vo_cur = self.view_offset.current();
+            let vo_tgt = self.view_offset.target();
+            let screen_left = col_x - view_pos;
+            let screen_right = screen_left + width;
+            eprintln!(
+                "[rtl1][toggle_width pre] idx={active_idx} width={width} col_x={col_x} \
 view_pos={view_pos} vo_cur={vo_cur} vo_tgt={vo_tgt} screen_left={screen_left} screen_right={screen_right}",
-                );
-            }
+            );
+        }
 
-            // In RTL, keep the right edge of the active column visually pinned when toggling
-            // preset width. This mirrors LTR behavior (where the left edge is effectively
-            // pinned) in a behavioral sense.
-            // Apply the preset toggle, which updates the column's desired width and schedules
-            // tile size changes.
-            {
-                let col = &mut self.columns[active_idx];
-                col.toggle_width(None, forwards);
-            }
-
-            if debug_single {
-                let col_x = self.column_x(active_idx);
-                let width = self.columns[active_idx].width();
-                let view_pos = self.view_pos();
-                let vo_cur = self.view_offset.current();
-                let vo_tgt = self.view_offset.target();
-                let screen_left = col_x - view_pos;
-                let screen_right = screen_left + width;
-                eprintln!(
-                    "[rtl1][toggle_width post-col] idx={active_idx} width={width} col_x={col_x} \
-view_pos={view_pos} vo_cur={vo_cur} vo_tgt={vo_tgt} screen_left={screen_left} screen_right={screen_right}",
-                );
-            }
-
-            // For multi-column RTL layouts, recompute the view offset based on the new column
-            // width so that the active column remains correctly pinned.
-            //
-            // For single-column workspaces, keep the camera static: do not refit the view here.
-            if column_count > 1 {
-                let new_view_offset =
-                    self.compute_new_view_offset_for_column(None, active_idx, Some(active_idx));
-                self.animate_view_offset_with_config(
-                    active_idx,
-                    new_view_offset,
-                    self.options.animations.horizontal_view_movement.0,
-                );
-            }
-
-            let col = &mut self.columns[active_idx];
-            cancel_resize_for_column(&mut self.interactive_resize, col);
-        } else {
+        // Apply the preset toggle, which updates the column's desired width and schedules
+        // tile size changes in column-local space.
+        {
             let col = &mut self.columns[active_idx];
             col.toggle_width(None, forwards);
-
-            cancel_resize_for_column(&mut self.interactive_resize, col);
         }
+
+        if debug_single_rtl {
+            let col_x = self.column_x(active_idx);
+            let width = self.columns[active_idx].width();
+            let view_pos = self.view_pos();
+            let vo_cur = self.view_offset.current();
+            let vo_tgt = self.view_offset.target();
+            let screen_left = col_x - view_pos;
+            let screen_right = screen_left + width;
+            eprintln!(
+                "[rtl1][toggle_width post-col] idx={active_idx} width={width} col_x={col_x} \
+view_pos={view_pos} vo_cur={vo_cur} vo_tgt={vo_tgt} screen_left={screen_left} screen_right={screen_right}",
+            );
+        }
+
+        // For multi-column workspaces, recompute the camera position based on the new column
+        // width so that the active column remains correctly positioned and visible in both LTR
+        // and RTL. For single-column workspaces, keep the camera static and rely on the
+        // single-column pinning logic elsewhere.
+        if column_count > 1 {
+            let new_view_offset =
+                self.compute_new_view_offset_for_column(None, active_idx, Some(active_idx));
+            self.animate_view_offset_with_config(
+                active_idx,
+                new_view_offset,
+                self.options.animations.horizontal_view_movement.0,
+            );
+        }
+
+        let col = &mut self.columns[active_idx];
+        cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
     pub fn toggle_full_width(&mut self) {
