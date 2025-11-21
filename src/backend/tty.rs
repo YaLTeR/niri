@@ -12,8 +12,11 @@ use std::{io, mem};
 
 use anyhow::{anyhow, bail, ensure, Context};
 use bytemuck::cast_slice_mut;
+use drm_ffi::drm_mode_modeinfo;
 use libc::dev_t;
+use niri_config::output::Modeline;
 use niri_config::{Config, OutputName};
+use niri_ipc::{HSyncPolarity, VSyncPolarity};
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
@@ -37,16 +40,18 @@ use smithay::desktop::utils::OutputPresentationFeedback;
 use smithay::output::{Mode, Output, OutputModeSource, PhysicalProperties};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{Dispatcher, LoopHandle, RegistrationToken};
+use smithay::reexports::drm::control::atomic::AtomicModeReq;
+use smithay::reexports::drm::control::dumbbuffer::DumbBuffer;
 use smithay::reexports::drm::control::{
-    self, connector, crtc, property, Device, Mode as DrmMode, ModeFlags, ModeTypeFlags,
-    ResourceHandle,
+    self, connector, crtc, plane, property, AtomicCommitFlags, Device, Mode as DrmMode, ModeFlags,
+    ModeTypeFlags, PlaneType, ResourceHandle,
 };
 use smithay::reexports::gbm::Modifier;
 use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_protocols;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::DeviceFd;
+use smithay::utils::{DeviceFd, Transform};
 use smithay::wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal};
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
@@ -63,7 +68,7 @@ use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
 use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
-use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output};
+use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
 
 const SUPPORTED_COLOR_FORMATS: [Fourcc; 4] = [
     Fourcc::Xrgb8888,
@@ -92,6 +97,9 @@ pub struct Tty {
     dmabuf_global: Option<DmabufGlobal>,
     // The output config had changed, but the session is paused, so we need to update it on resume.
     update_output_config_on_resume: bool,
+    // The ignored nodes have changed, but the session is paused, so we need to update it on
+    // resume.
+    update_ignored_nodes_on_resume: bool,
     // Whether the debug tinting is enabled.
     debug_tint: bool,
     ipc_outputs: Arc<Mutex<IpcOutputMap>>,
@@ -213,6 +221,147 @@ impl OutputDevice {
         };
         info.name.clone()
     }
+
+    fn cleanup_mismatching_resources(
+        &self,
+        should_be_off: &dyn Fn(crtc::Handle, &connector::Info) -> bool,
+    ) -> anyhow::Result<()> {
+        let _span = tracy_client::span!("OutputDevice::cleanup_disconnected_resources");
+
+        let res_handles = self
+            .drm
+            .resource_handles()
+            .context("error getting plane handles")?;
+        let plane_handles = self
+            .drm
+            .plane_handles()
+            .context("error getting plane handles")?;
+
+        let mut req = AtomicModeReq::new();
+
+        // We want to disable all CRTCs that do not correspond to a connector we're using.
+        let mut cleanup = HashSet::<crtc::Handle>::new();
+        cleanup.extend(res_handles.crtcs());
+
+        for (conn, info) in self.drm_scanner.connectors() {
+            // We only keep the connector if it has a CRTC and the output isn't off in niri.
+            if let Some(crtc) = self.drm_scanner.crtc_for_connector(conn) {
+                // Verify that the connector's current CRTC matches the CRTC we expect. If not,
+                // clear the CRTC and the connector so that all connectors can get the expected
+                // CRTCs afterwards. (We do this because we do not handle CRTC rotations across TTY
+                // switches.)
+                let mut has_different_crtc = false;
+                if let Some(enc) = info.current_encoder() {
+                    match self.drm.get_encoder(enc) {
+                        Ok(enc) => {
+                            if let Some(current_crtc) = enc.crtc() {
+                                if current_crtc != crtc {
+                                    has_different_crtc = true;
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            debug!("couldn't get encoder: {err:?}");
+                            // Err on the safe side.
+                            has_different_crtc = true;
+                        }
+                    }
+                }
+
+                if !has_different_crtc && !should_be_off(crtc, info) {
+                    // Keep the corresponding CRTC.
+                    cleanup.remove(&crtc);
+                    continue;
+                }
+            }
+
+            // Clear the connector.
+            let Some((crtc_id, _, _)) = find_drm_property(&self.drm, *conn, "CRTC_ID") else {
+                debug!("couldn't find connector CRTC_ID property");
+                continue;
+            };
+
+            req.add_property(*conn, crtc_id, property::Value::CRTC(None));
+        }
+
+        // Legacy fallback.
+        if !self.drm.is_atomic() {
+            for crtc in res_handles.crtcs() {
+                #[allow(deprecated)]
+                let _ = self.drm.set_cursor(*crtc, Option::<&DumbBuffer>::None);
+            }
+            for crtc in cleanup {
+                let _ = self.drm.set_crtc(crtc, None, (0, 0), &[], None);
+            }
+            return Ok(());
+        }
+
+        // Disable non-primary planes, and planes belonging to disabled CRTCs.
+        let is_primary = |plane: plane::Handle| {
+            if let Some((_, info, value)) = find_drm_property(&self.drm, plane, "type") {
+                match info.value_type().convert_value(value) {
+                    property::Value::Enum(Some(val)) => val.value() == PlaneType::Primary as u64,
+                    _ => false,
+                }
+            } else {
+                debug!("couldn't find plane type property");
+                false
+            }
+        };
+
+        for plane in plane_handles {
+            let info = match self.drm.get_plane(plane) {
+                Ok(x) => x,
+                Err(err) => {
+                    debug!("error getting plane: {err:?}");
+                    continue;
+                }
+            };
+
+            let Some(crtc) = info.crtc() else {
+                continue;
+            };
+
+            if !cleanup.contains(&crtc) && is_primary(plane) {
+                continue;
+            }
+
+            let Some((crtc_id, _, _)) = find_drm_property(&self.drm, plane, "CRTC_ID") else {
+                debug!("couldn't find plane CRTC_ID property");
+                continue;
+            };
+
+            let Some((fb_id, _, _)) = find_drm_property(&self.drm, plane, "FB_ID") else {
+                debug!("couldn't find plane FB_ID property");
+                continue;
+            };
+
+            req.add_property(plane, crtc_id, property::Value::CRTC(None));
+            req.add_property(plane, fb_id, property::Value::Framebuffer(None));
+        }
+
+        // Disable the CRTCs.
+        for crtc in cleanup {
+            let Some((mode_id, _, _)) = find_drm_property(&self.drm, crtc, "MODE_ID") else {
+                debug!("couldn't find CRTC MODE_ID property");
+                continue;
+            };
+
+            let Some((active, _, _)) = find_drm_property(&self.drm, crtc, "ACTIVE") else {
+                debug!("couldn't find CRTC ACTIVE property");
+                continue;
+            };
+
+            req.add_property(crtc, mode_id, property::Value::Unknown(0));
+            req.add_property(crtc, active, property::Value::Boolean(false));
+        }
+
+        self.drm
+            .atomic_commit(AtomicCommitFlags::ALLOW_MODESET, req)
+            .context("error doing atomic commit")?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -263,6 +412,8 @@ impl Tty {
         config: Rc<RefCell<Config>>,
         event_loop: LoopHandle<'static, State>,
     ) -> anyhow::Result<Self> {
+        let _span = tracy_client::span!("Tty::new");
+
         let (session, notifier) = LibSeatSession::new().context(
             "Error creating a session. This might mean that you're trying to run niri on a TTY \
              that is already busy, for example if you're running this inside tmux that had been \
@@ -280,9 +431,11 @@ impl Tty {
             .unwrap();
 
         let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
-        libinput
-            .udev_assign_seat(&seat_name)
-            .map_err(|()| anyhow!("error assigning the seat to libinput"))?;
+        {
+            let _span = tracy_client::span!("Libinput::udev_assign_seat");
+            libinput.udev_assign_seat(&seat_name)
+        }
+        .map_err(|()| anyhow!("error assigning the seat to libinput"))?;
 
         let input_backend = LibinputInputBackend::new(libinput.clone());
         event_loop
@@ -347,6 +500,7 @@ impl Tty {
             devices: HashMap::new(),
             dmabuf_global: None,
             update_output_config_on_resume: false,
+            update_ignored_nodes_on_resume: false,
             debug_tint: false,
             ipc_outputs: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -380,7 +534,7 @@ impl Tty {
                     return;
                 }
 
-                self.device_changed(device_id, niri)
+                self.device_changed(device_id, niri, false)
             }
             UdevEvent::Removed { device_id } => {
                 if !self.session.is_active() {
@@ -417,6 +571,17 @@ impl Tty {
                     warn!("error resuming libinput");
                 }
 
+                if self.update_ignored_nodes_on_resume {
+                    self.update_ignored_nodes_on_resume = false;
+                    let mut ignored_nodes = ignored_nodes_from_config(&self.config.borrow());
+                    if ignored_nodes.remove(&self.primary_node)
+                        || ignored_nodes.remove(&self.primary_render_node)
+                    {
+                        warn!("ignoring the primary node or render node is not allowed");
+                    }
+                    self.ignored_nodes = ignored_nodes;
+                }
+
                 let mut device_list = self
                     .udev_dispatcher
                     .as_source_ref()
@@ -427,14 +592,20 @@ impl Tty {
                 let removed_devices = self
                     .devices
                     .keys()
-                    .filter(|node| !device_list.contains_key(&node.dev_id()))
+                    .filter(|node| {
+                        !device_list.contains_key(&node.dev_id())
+                            || self.ignored_nodes.contains(node)
+                    })
                     .copied()
                     .collect::<Vec<_>>();
 
                 let remained_devices = self
                     .devices
                     .keys()
-                    .filter(|node| device_list.contains_key(&node.dev_id()))
+                    .filter(|node| {
+                        device_list.contains_key(&node.dev_id())
+                            && !self.ignored_nodes.contains(node)
+                    })
                     .copied()
                     .collect::<Vec<_>>();
 
@@ -450,7 +621,7 @@ impl Tty {
 
                     // It hasn't been removed, update its state as usual.
                     let device = self.devices.get_mut(&node).unwrap();
-                    if let Err(err) = device.drm.activate(true) {
+                    if let Err(err) = device.drm.activate(false) {
                         warn!("error activating DRM device: {err:?}");
                     }
                     if let Some(lease_state) = &mut device.drm_lease_state {
@@ -458,11 +629,22 @@ impl Tty {
                     }
 
                     // Refresh the connectors.
-                    self.device_changed(node.dev_id(), niri);
+                    self.device_changed(node.dev_id(), niri, true);
 
                     // Apply pending gamma changes and restore our existing gamma.
                     let device = self.devices.get_mut(&node).unwrap();
                     for (crtc, surface) in device.surfaces.iter_mut() {
+                        if let Ok(props) =
+                            ConnectorProperties::try_new(&device.drm, surface.connector)
+                        {
+                            match reset_hdr(&props) {
+                                Ok(()) => (),
+                                Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
+                            }
+                        } else {
+                            warn!("failed to get connector properties");
+                        };
+
                         if let Some(ramp) = surface.pending_gamma_change.take() {
                             let ramp = ramp.as_deref();
                             let res = if let Some(gamma_props) = &mut surface.gamma_props {
@@ -524,12 +706,23 @@ impl Tty {
             return Ok(());
         }
 
+        let _span = tracy_client::span!("Tty::device_added");
+
         let open_flags = OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK;
-        let fd = self.session.open(path, open_flags)?;
+        let fd = {
+            let _span = tracy_client::span!("LibSeatSession::open");
+            self.session.open(path, open_flags)
+        }?;
         let device_fd = DrmDeviceFd::new(DeviceFd::from(fd));
 
-        let (drm, drm_notifier) = DrmDevice::new(device_fd.clone(), true)?;
-        let gbm = GbmDevice::new(device_fd)?;
+        let (drm, drm_notifier) = {
+            let _span = tracy_client::span!("DrmDevice::new");
+            DrmDevice::new(device_fd.clone(), false)
+        }?;
+        let gbm = {
+            let _span = tracy_client::span!("GbmDevice::new");
+            GbmDevice::new(device_fd)
+        }?;
 
         let display = unsafe { EGLDisplay::new(gbm.clone())? };
         let egl_device = EGLDevice::device_for_display(&display)?;
@@ -643,12 +836,12 @@ impl Tty {
         };
         assert!(self.devices.insert(node, device).is_none());
 
-        self.device_changed(device_id, niri);
+        self.device_changed(device_id, niri, true);
 
         Ok(())
     }
 
-    fn device_changed(&mut self, device_id: dev_t, niri: &mut Niri) {
+    fn device_changed(&mut self, device_id: dev_t, niri: &mut Niri, cleanup: bool) {
         debug!("device changed: {device_id}");
 
         let Ok(node) = DrmNode::from_dev_id(device_id) else {
@@ -680,6 +873,7 @@ impl Tty {
             return;
         };
 
+        // DrmScanner will preserve any existing connector-CRTC mapping.
         let scan_result = match device.drm_scanner.scan_connectors(&device.drm) {
             Ok(x) => x,
             Err(err) => {
@@ -761,6 +955,45 @@ impl Tty {
             // Insert it right away so next added connector will check against this one too.
             let device = self.devices.get_mut(&node).unwrap();
             device.known_crtcs.insert(crtc, info);
+        }
+
+        // If the device was just added or resumed, we need to cleanup any disconnected connectors
+        // and planes.
+        if cleanup {
+            let device = self.devices.get(&node).unwrap();
+
+            // Follow the logic in on_output_config_changed().
+            let disable_laptop_panels = self.should_disable_laptop_panels(niri.is_lid_closed);
+            let should_disable = |conn: &str| disable_laptop_panels && is_laptop_panel(conn);
+
+            let config = self.config.borrow();
+            let disable_monitor_names = config.debug.disable_monitor_names;
+
+            let should_be_off = |crtc, conn: &connector::Info| {
+                let output_name = device.known_crtc_name(&crtc, conn, disable_monitor_names);
+
+                let config = config
+                    .outputs
+                    .find(&output_name)
+                    .cloned()
+                    .unwrap_or_default();
+
+                config.off || should_disable(&output_name.connector)
+            };
+
+            if let Err(err) = device.cleanup_mismatching_resources(&should_be_off) {
+                warn!("error cleaning up connectors: {err:?}");
+            }
+
+            let device = self.devices.get_mut(&node).unwrap();
+            for surface in device.surfaces.values_mut() {
+                // We aren't force-clearing the CRTCs, so we need to make the surfaces read the
+                // updated state after a session resume. This also causes a full damage for the
+                // next redraw.
+                if let Err(err) = surface.compositor.reset_state() {
+                    warn!("error resetting DrmCompositor state: {err:?}");
+                }
+            }
         }
 
         // This will connect any new connectors if needed, and apply other changes, such as
@@ -907,27 +1140,42 @@ impl Tty {
             trace!("{m:?}");
         }
 
-        let (mode, fallback) =
-            pick_mode(&connector, config.mode).ok_or_else(|| anyhow!("no mode"))?;
+        let mut mode = None;
+        if let Some(modeline) = &config.modeline {
+            match calculate_drm_mode_from_modeline(modeline) {
+                Ok(x) => mode = Some(x),
+                Err(err) => {
+                    warn!("invalid custom modeline; falling back to advertised modes: {err:?}");
+                }
+            }
+        }
+
+        let (mode, fallback) = match mode {
+            Some(x) => (x, false),
+            None => pick_mode(&connector, config.mode).ok_or_else(|| anyhow!("no mode"))?,
+        };
+
         if fallback {
             let target = config.mode.unwrap();
             warn!(
                 "configured mode {}x{}{} could not be found, falling back to preferred",
-                target.width,
-                target.height,
-                if let Some(refresh) = target.refresh {
+                target.mode.width,
+                target.mode.height,
+                if let Some(refresh) = target.mode.refresh {
                     format!("@{refresh}")
                 } else {
                     String::new()
                 },
             );
         }
+
         debug!("picking mode: {mode:?}");
 
+        let mut orientation = None;
         if let Ok(props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
             match reset_hdr(&props) {
                 Ok(()) => (),
-                Err(err) => debug!("error resetting HDR properties: {err:?}"),
+                Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
             }
 
             if !niri.config.borrow().debug.keep_max_bpc_unchanged {
@@ -935,7 +1183,14 @@ impl Tty {
                 // run.
                 match set_max_bpc(&props, 8) {
                     Ok(_bpc) => (),
-                    Err(err) => debug!("error setting max bpc: {err:?}"),
+                    Err(err) => debug!("couldn't set max bpc: {err:?}"),
+                }
+            }
+
+            match get_panel_orientation(&props) {
+                Ok(x) => orientation = Some(x),
+                Err(err) => {
+                    trace!("couldn't get panel orientation: {err:?}");
                 }
             }
         } else {
@@ -943,7 +1198,7 @@ impl Tty {
         };
 
         let mut gamma_props = GammaProps::new(&device.drm, crtc)
-            .map_err(|err| debug!("error getting gamma properties: {err:?}"))
+            .map_err(|err| debug!("couldn't get gamma properties: {err:?}"))
             .ok();
 
         // Reset gamma in case it was set before.
@@ -953,7 +1208,7 @@ impl Tty {
             set_gamma_for_crtc(&device.drm, crtc, None)
         };
         if let Err(err) = res {
-            debug!("error resetting gamma: {err:?}");
+            debug!("couldn't reset gamma: {err:?}");
         }
 
         let surface = device
@@ -1015,6 +1270,9 @@ impl Tty {
             .user_data()
             .insert_if_missing(|| TtyOutputState { node, crtc });
         output.user_data().insert_if_missing(|| output_name.clone());
+        if let Some(x) = orientation {
+            output.user_data().insert_if_missing(|| PanelOrientation(x));
+        }
 
         let renderer = self.gpu_manager.single_renderer(&device.render_node)?;
         let egl_context = renderer.as_ref().egl_context();
@@ -1711,8 +1969,9 @@ impl Tty {
                 let surface = device.surfaces.get(&crtc);
                 let current_crtc_mode = surface.map(|surface| surface.compositor.pending_mode());
                 let mut current_mode = None;
+                let mut is_custom_mode = false;
 
-                let modes = connector
+                let mut modes: Vec<niri_ipc::Mode> = connector
                     .modes()
                     .iter()
                     .filter(|m| !m.flags().contains(ModeFlags::INTERLACE))
@@ -1732,6 +1991,21 @@ impl Tty {
                     .collect();
 
                 if let Some(crtc_mode) = current_crtc_mode {
+                    // Custom mode
+                    if crtc_mode.mode_type().contains(ModeTypeFlags::USERDEF) {
+                        modes.insert(
+                            0,
+                            niri_ipc::Mode {
+                                width: crtc_mode.size().0,
+                                height: crtc_mode.size().1,
+                                refresh_rate: Mode::from(crtc_mode).refresh as u32,
+                                is_preferred: false,
+                            },
+                        );
+                        current_mode = Some(0);
+                        is_custom_mode = true;
+                    }
+
                     if current_mode.is_none() {
                         if crtc_mode.flags().contains(ModeFlags::INTERLACE) {
                             warn!("connector mode list missing current mode (interlaced)");
@@ -1776,6 +2050,7 @@ impl Tty {
                     physical_size,
                     modes,
                     current_mode,
+                    is_custom_mode,
                     vrr_supported,
                     vrr_enabled,
                     logical,
@@ -1856,6 +2131,79 @@ impl Tty {
         }
     }
 
+    pub fn update_ignored_nodes_config(&mut self, niri: &mut Niri) {
+        let _span = tracy_client::span!("Tty::update_ignored_nodes_config");
+
+        // If we're inactive, we can't do anything, so just set a flag for later.
+        if !self.session.is_active() {
+            self.update_ignored_nodes_on_resume = true;
+            return;
+        }
+
+        let mut ignored_nodes = ignored_nodes_from_config(&self.config.borrow());
+        if ignored_nodes.remove(&self.primary_node)
+            || ignored_nodes.remove(&self.primary_render_node)
+        {
+            warn!("ignoring the primary node or render node is not allowed");
+        }
+
+        if ignored_nodes == self.ignored_nodes {
+            return;
+        }
+        self.ignored_nodes = ignored_nodes;
+
+        let mut device_list = self
+            .udev_dispatcher
+            .as_source_ref()
+            .device_list()
+            .map(|(device_id, path)| (device_id, path.to_owned()))
+            .collect::<HashMap<_, _>>();
+
+        let removed_devices = self
+            .devices
+            .keys()
+            .filter(|node| {
+                self.ignored_nodes.contains(node) || !device_list.contains_key(&node.dev_id())
+            })
+            .copied()
+            .collect::<Vec<_>>();
+
+        for node in removed_devices {
+            device_list.remove(&node.dev_id());
+            self.device_removed(node.dev_id(), niri);
+        }
+
+        for node in self.devices.keys() {
+            device_list.remove(&node.dev_id());
+        }
+
+        for (device_id, path) in device_list {
+            if let Err(err) = self.device_added(device_id, &path, niri) {
+                warn!("error adding device {path:?}: {err:?}");
+            }
+        }
+    }
+
+    fn should_disable_laptop_panels(&self, is_lid_closed: bool) -> bool {
+        if !is_lid_closed {
+            return false;
+        }
+
+        let config = self.config.borrow();
+        if !config.debug.keep_laptop_panel_on_when_lid_is_closed {
+            // Check if any external monitor is connected.
+            for device in self.devices.values() {
+                for (connector, _crtc) in device.drm_scanner.crtcs() {
+                    if !is_laptop_panel(&format_connector_name(connector)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
     pub fn on_output_config_changed(&mut self, niri: &mut Niri) {
         let _span = tracy_client::span!("Tty::on_output_config_changed");
 
@@ -1866,64 +2214,8 @@ impl Tty {
         }
         self.update_output_config_on_resume = false;
 
-        // Update ignored nodes.
-        let mut ignored_nodes = ignored_nodes_from_config(&self.config.borrow());
-        if ignored_nodes.remove(&self.primary_node)
-            || ignored_nodes.remove(&self.primary_render_node)
-        {
-            warn!("ignoring the primary node or render node is not allowed");
-        }
-        if ignored_nodes != self.ignored_nodes {
-            self.ignored_nodes = ignored_nodes;
-
-            let mut device_list = self
-                .udev_dispatcher
-                .as_source_ref()
-                .device_list()
-                .map(|(device_id, path)| (device_id, path.to_owned()))
-                .collect::<HashMap<_, _>>();
-
-            let removed_devices = self
-                .devices
-                .keys()
-                .filter(|node| {
-                    self.ignored_nodes.contains(node) || !device_list.contains_key(&node.dev_id())
-                })
-                .copied()
-                .collect::<Vec<_>>();
-
-            for node in removed_devices {
-                device_list.remove(&node.dev_id());
-                self.device_removed(node.dev_id(), niri);
-            }
-
-            for node in self.devices.keys() {
-                device_list.remove(&node.dev_id());
-            }
-
-            for (device_id, path) in device_list {
-                if let Err(err) = self.device_added(device_id, &path, niri) {
-                    warn!("error adding device {path:?}: {err:?}");
-                }
-            }
-        }
-
         // Figure out if we should disable laptop panels.
-        let mut disable_laptop_panels = false;
-        if niri.is_lid_closed {
-            let config = self.config.borrow();
-            if !config.debug.keep_laptop_panel_on_when_lid_is_closed {
-                // Check if any external monitor is connected.
-                'outer: for device in self.devices.values() {
-                    for (connector, _crtc) in device.drm_scanner.crtcs() {
-                        if !is_laptop_panel(&format_connector_name(connector)) {
-                            disable_laptop_panels = true;
-                            break 'outer;
-                        }
-                    }
-                }
-            }
-        }
+        let disable_laptop_panels = self.should_disable_laptop_panels(niri.is_lid_closed);
         let should_disable = |connector: &str| disable_laptop_panels && is_laptop_panel(connector);
 
         let mut to_disconnect = vec![];
@@ -1943,18 +2235,6 @@ impl Tty {
                     continue;
                 }
 
-                if let Ok(props) = ConnectorProperties::try_new(&device.drm, surface.connector) {
-                    match reset_hdr(&props) {
-                        Ok(()) => (),
-                        Err(err) => debug!(
-                            "output {:?} HDR: error resetting HDR properties: {err:?}",
-                            surface.name.connector
-                        ),
-                    }
-                } else {
-                    warn!("failed to get connector properties");
-                };
-
                 // Check if we need to change the mode.
                 let Some(connector) = device.drm_scanner.connectors().get(&surface.connector)
                 else {
@@ -1962,9 +2242,29 @@ impl Tty {
                     continue;
                 };
 
-                let Some((mode, fallback)) = pick_mode(connector, config.mode) else {
-                    warn!("couldn't pick mode for enabled connector");
-                    continue;
+                let mut mode = None;
+                if let Some(modeline) = &config.modeline {
+                    match calculate_drm_mode_from_modeline(modeline) {
+                        Ok(x) => mode = Some(x),
+                        Err(err) => {
+                            warn!(
+                                "output {:?}: invalid custom modeline; \
+                                 falling back to advertised modes: {err:?}",
+                                surface.name.connector
+                            );
+                        }
+                    }
+                }
+
+                let (mode, fallback) = match mode {
+                    Some(x) => (x, false),
+                    None => match pick_mode(connector, config.mode) {
+                        Some(result) => result,
+                        None => {
+                            warn!("couldn't pick mode for enabled connector");
+                            continue;
+                        }
+                    },
                 };
 
                 let change_mode = surface.compositor.pending_mode() != mode;
@@ -2017,9 +2317,9 @@ impl Tty {
                             "output {:?}: configured mode {}x{}{} could not be found, \
                              falling back to preferred",
                             surface.name.connector,
-                            target.width,
-                            target.height,
-                            if let Some(refresh) = target.refresh {
+                            target.mode.width,
+                            target.mode.height,
+                            if let Some(refresh) = target.mode.refresh {
                                 format!("@{refresh}")
                             } else {
                                 String::new()
@@ -2517,18 +2817,189 @@ fn queue_estimated_vblank_timer(
     output_state.redraw_state = RedrawState::WaitingForEstimatedVBlank(token);
 }
 
+pub fn calculate_drm_mode_from_modeline(modeline: &Modeline) -> anyhow::Result<DrmMode> {
+    ensure!(
+        modeline.hdisplay < modeline.hsync_start,
+        "hdisplay {} must be < hsync_start {}",
+        modeline.hdisplay,
+        modeline.hsync_start
+    );
+    ensure!(
+        modeline.hsync_start < modeline.hsync_end,
+        "hsync_start {} must be < hsync_end {}",
+        modeline.hsync_start,
+        modeline.hsync_end
+    );
+    ensure!(
+        modeline.hsync_end < modeline.htotal,
+        "hsync_end {} must be < htotal {}",
+        modeline.hsync_end,
+        modeline.htotal
+    );
+    ensure!(
+        modeline.vdisplay < modeline.vsync_start,
+        "vdisplay {} must be < vsync_start {}",
+        modeline.vdisplay,
+        modeline.vsync_start
+    );
+    ensure!(
+        modeline.vsync_start < modeline.vsync_end,
+        "vsync_start {} must be < vsync_end {}",
+        modeline.vsync_start,
+        modeline.vsync_end
+    );
+    ensure!(
+        modeline.vsync_end < modeline.vtotal,
+        "vsync_end {} must be < vtotal {}",
+        modeline.vsync_end,
+        modeline.vtotal
+    );
+
+    let pixel_clock_kilo_hertz = modeline.clock * 1000.0;
+    // Calculated as documented in the CVT 1.2 standard:
+    // https://app.box.com/s/vcocw3z73ta09txiskj7cnk6289j356b/file/93518784646
+    let vrefresh_hertz = (pixel_clock_kilo_hertz * 1000.0)
+        / (modeline.htotal as u64 * modeline.vtotal as u64) as f64;
+    ensure!(
+        vrefresh_hertz.is_finite(),
+        "calculated refresh rate is not finite"
+    );
+    let vrefresh_rounded = vrefresh_hertz.round() as u32;
+
+    let flags = match modeline.hsync_polarity {
+        HSyncPolarity::PHSync => ModeFlags::PHSYNC,
+        HSyncPolarity::NHSync => ModeFlags::NHSYNC,
+    } | match modeline.vsync_polarity {
+        VSyncPolarity::PVSync => ModeFlags::PVSYNC,
+        VSyncPolarity::NVSync => ModeFlags::NVSYNC,
+    };
+
+    let mode_name = format!(
+        "{}x{}@{:.2}",
+        modeline.hdisplay, modeline.vdisplay, vrefresh_hertz
+    );
+    let name = modeinfo_name_slice_from_string(&mode_name);
+
+    // https://www.kernel.org/doc/html/v6.17/gpu/drm-uapi.html#c.drm_mode_modeinfo
+    Ok(DrmMode::from(drm_mode_modeinfo {
+        clock: pixel_clock_kilo_hertz.round() as u32,
+        hdisplay: modeline.hdisplay,
+        hsync_start: modeline.hsync_start,
+        hsync_end: modeline.hsync_end,
+        htotal: modeline.htotal,
+        vdisplay: modeline.vdisplay,
+        vsync_start: modeline.vsync_start,
+        vsync_end: modeline.vsync_end,
+        vtotal: modeline.vtotal,
+        vrefresh: vrefresh_rounded,
+        flags: flags.bits(),
+        name,
+        // Defaults
+        type_: drm_ffi::DRM_MODE_TYPE_USERDEF,
+        hskew: 0,
+        vscan: 0,
+    }))
+}
+
+pub fn calculate_mode_cvt(width: u16, height: u16, refresh: f64) -> DrmMode {
+    // Cross-checked with sway's implementation:
+    // https://gitlab.freedesktop.org/wlroots/wlroots/-/blob/22528542970687720556035790212df8d9bb30bb/backend/drm/util.c#L251
+
+    let options = libdisplay_info::cvt::Options {
+        red_blank_ver: libdisplay_info::cvt::ReducedBlankingVersion::None,
+        h_pixels: width as i32,
+        v_lines: height as i32,
+        ip_freq_rqd: refresh,
+
+        // Defaults
+        video_opt: false,
+        vblank: 0f64,
+        additional_hblank: 0,
+        early_vsync_rqd: false,
+        int_rqd: false,
+        margins_rqd: false,
+    };
+    let cvt_timing = libdisplay_info::cvt::Timing::compute(options);
+
+    let hsync_start = width + cvt_timing.h_front_porch as u16;
+    let vsync_start = (cvt_timing.v_lines_rnd + cvt_timing.v_front_porch) as u16;
+    let hsync_end = hsync_start + cvt_timing.h_sync as u16;
+    let vsync_end = vsync_start + cvt_timing.v_sync as u16;
+
+    let htotal = hsync_end + cvt_timing.h_back_porch as u16;
+    let vtotal = vsync_end + cvt_timing.v_back_porch as u16;
+
+    let clock = f64::round(cvt_timing.act_pixel_freq * 1000f64) as u32;
+    let vrefresh = f64::round(cvt_timing.act_frame_rate) as u32;
+
+    let flags = drm_ffi::DRM_MODE_FLAG_NHSYNC | drm_ffi::DRM_MODE_FLAG_PVSYNC;
+
+    let mode_name = format!("{width}x{height}@{:.2}", cvt_timing.act_frame_rate);
+    let name = modeinfo_name_slice_from_string(&mode_name);
+
+    let drm_ffi_mode = drm_ffi::drm_sys::drm_mode_modeinfo {
+        clock,
+
+        hdisplay: width,
+        hsync_start,
+        hsync_end,
+        htotal,
+
+        vdisplay: height,
+        vsync_start,
+        vsync_end,
+        vtotal,
+
+        vrefresh,
+
+        flags,
+        type_: drm_ffi::DRM_MODE_TYPE_USERDEF,
+        name,
+
+        // Defaults
+        hskew: 0,
+        vscan: 0,
+    };
+
+    DrmMode::from(drm_ffi_mode)
+}
+
+// Returns a c-string of maximally 31 Rust string chars + null terminator. Excess characters are
+// dropped.
+fn modeinfo_name_slice_from_string(mode_name: &str) -> [core::ffi::c_char; 32] {
+    let mut name: [core::ffi::c_char; 32] = [0; 32];
+
+    for (a, b) in zip(&mut name[..31], mode_name.as_bytes()) {
+        // Can be u8 on aarch64 and i8 on x86_64.
+        *a = *b as _;
+    }
+
+    name
+}
+
 fn pick_mode(
     connector: &connector::Info,
-    target: Option<niri_ipc::ConfiguredMode>,
+    target: Option<niri_config::output::Mode>,
 ) -> Option<(control::Mode, bool)> {
     let mut mode = None;
     let mut fallback = false;
 
     if let Some(target) = target {
-        let refresh = target.refresh.map(|r| (r * 1000.).round() as i32);
+        let target_mode = target.mode;
 
+        if target.custom {
+            if let Some(refresh) = target_mode.refresh {
+                let custom_mode =
+                    calculate_mode_cvt(target_mode.width, target_mode.height, refresh);
+                return Some((custom_mode, false));
+            } else {
+                warn!("ignoring custom mode without refresh rate");
+            }
+        }
+
+        let refresh = target_mode.refresh.map(|r| (r * 1000.).round() as i32);
         for m in connector.modes() {
-            if m.size() != (target.width, target.height) {
+            if m.size() != (target.mode.width, target.mode.height) {
                 continue;
             }
 
@@ -2692,6 +3163,24 @@ fn is_vrr_capable(device: &DrmDevice, connector: connector::Handle) -> Option<bo
     info.value_type().convert_value(value).as_boolean()
 }
 
+fn get_panel_orientation(props: &ConnectorProperties) -> anyhow::Result<Transform> {
+    let (info, value) = props.find(c"panel orientation")?;
+    match info.value_type().convert_value(*value) {
+        property::Value::Enum(Some(val)) => match val.value() {
+            // "Normal"
+            0 => Ok(Transform::Normal),
+            // "Upside Down"
+            1 => Ok(Transform::_180),
+            // "Left Side Up"
+            2 => Ok(Transform::_90),
+            // "Right Side Up"
+            3 => Ok(Transform::_270),
+            _ => bail!("panel orientation has invalid value: {:?}", val),
+        },
+        _ => bail!("panel orientation has wrong value type"),
+    }
+}
+
 pub fn set_gamma_for_crtc(
     device: &DrmDevice,
     crtc: crtc::Handle,
@@ -2758,5 +3247,145 @@ fn make_output_name(
         make: info.as_ref().and_then(|info| info.make()),
         model: info.as_ref().and_then(|info| info.model()),
         serial: info.as_ref().and_then(|info| info.serial()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use insta::assert_debug_snapshot;
+    use niri_config::output::Modeline;
+    use niri_ipc::{HSyncPolarity, VSyncPolarity};
+
+    use crate::backend::tty::{calculate_drm_mode_from_modeline, calculate_mode_cvt};
+
+    #[test]
+    fn test_calculate_drmmode_from_modeline() {
+        let modeline1 = Modeline {
+            clock: 173.0,
+            hdisplay: 1920,
+            vdisplay: 1080,
+            hsync_start: 2048,
+            hsync_end: 2248,
+            htotal: 2576,
+            vsync_start: 1083,
+            vsync_end: 1088,
+            vtotal: 1120,
+            hsync_polarity: HSyncPolarity::NHSync,
+            vsync_polarity: VSyncPolarity::PVSync,
+        };
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline1).unwrap(), @"Mode {
+    name: \"1920x1080@59.96\",
+    clock: 173000,
+    size: (
+        1920,
+        1080,
+    ),
+    hsync: (
+        2048,
+        2248,
+        2576,
+    ),
+    vsync: (
+        1083,
+        1088,
+        1120,
+    ),
+    hskew: 0,
+    vscan: 0,
+    vrefresh: 60,
+    mode_type: ModeTypeFlags(
+        USERDEF,
+    ),
+}");
+        let modeline2 = Modeline {
+            clock: 452.5,
+            hdisplay: 1920,
+            vdisplay: 1080,
+            hsync_start: 2088,
+            hsync_end: 2296,
+            htotal: 2672,
+            vsync_start: 1083,
+            vsync_end: 1088,
+            vtotal: 1177,
+            hsync_polarity: HSyncPolarity::NHSync,
+            vsync_polarity: VSyncPolarity::PVSync,
+        };
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline2).unwrap(), @"Mode {
+    name: \"1920x1080@143.88\",
+    clock: 452500,
+    size: (
+        1920,
+        1080,
+    ),
+    hsync: (
+        2088,
+        2296,
+        2672,
+    ),
+    vsync: (
+        1083,
+        1088,
+        1177,
+    ),
+    hskew: 0,
+    vscan: 0,
+    vrefresh: 144,
+    mode_type: ModeTypeFlags(
+        USERDEF,
+    ),
+}");
+    }
+
+    #[test]
+    fn test_calc_cvt() {
+        // Crosschecked with other calculators like the cvt commandline utility.
+        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 60.0), @"Mode {
+    name: \"1920x1080@59.96\",
+    clock: 173000,
+    size: (
+        1920,
+        1080,
+    ),
+    hsync: (
+        2048,
+        2248,
+        2576,
+    ),
+    vsync: (
+        1083,
+        1088,
+        1120,
+    ),
+    hskew: 0,
+    vscan: 0,
+    vrefresh: 60,
+    mode_type: ModeTypeFlags(
+        USERDEF,
+    ),
+}");
+        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 144.0), @"Mode {
+    name: \"1920x1080@143.88\",
+    clock: 452500,
+    size: (
+        1920,
+        1080,
+    ),
+    hsync: (
+        2088,
+        2296,
+        2672,
+    ),
+    vsync: (
+        1083,
+        1088,
+        1177,
+    ),
+    hskew: 0,
+    vscan: 0,
+    vrefresh: 144,
+    mode_type: ModeTypeFlags(
+        USERDEF,
+    ),
+}");
     }
 }

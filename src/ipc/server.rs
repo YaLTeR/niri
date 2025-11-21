@@ -18,7 +18,7 @@ use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
     Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    WindowLayout, Workspace,
+    Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -399,6 +399,8 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             Response::Handled
         }
         Request::Output { output, action } => {
+            action.validate()?;
+
             let ipc_outputs = ctx.ipc_outputs.lock().unwrap();
             let found = ipc_outputs
                 .values()
@@ -512,6 +514,7 @@ fn make_ipc_window(
         is_floating: mapped.is_floating(),
         is_urgent: mapped.is_urgent(),
         layout,
+        focus_timestamp: mapped.get_focus_timestamp().map(Timestamp::from),
     })
 }
 
@@ -723,6 +726,14 @@ impl State {
                 events.push(Event::WindowFocusChanged { id: Some(id) });
             }
 
+            let focus_timestamp = mapped.get_focus_timestamp().map(Timestamp::from);
+            if focus_timestamp != ipc_win.focus_timestamp {
+                events.push(Event::WindowFocusTimestampChanged {
+                    id,
+                    focus_timestamp,
+                });
+            }
+
             let urgent = mapped.is_urgent();
             if urgent != ipc_win.is_urgent {
                 events.push(Event::WindowUrgencyChanged { id, urgent })
@@ -789,6 +800,17 @@ impl State {
         let mut state = server.event_stream_state.borrow_mut();
 
         let event = Event::ConfigLoaded { failed };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
+
+    pub fn ipc_screenshot_taken(&mut self, path: Option<String>) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let mut state = server.event_stream_state.borrow_mut();
+
+        let event = Event::ScreenshotCaptured { path };
         state.apply(event.clone());
         server.send_event(event);
     }

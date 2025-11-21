@@ -864,9 +864,9 @@ impl XdgShellHandler for State {
         let window = mapped.window.clone();
         let output = output.cloned();
 
-        self.niri.stop_casts_for_target(CastTarget::Window {
-            id: mapped.id().get(),
-        });
+        let id = mapped.id();
+        self.niri
+            .stop_casts_for_target(CastTarget::Window { id: id.get() });
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri.layout.store_unmap_snapshot(renderer, &window);
@@ -883,6 +883,7 @@ impl XdgShellHandler for State {
         let active_window = self.niri.layout.focus().map(|m| &m.window);
         let was_active = active_window == Some(&window);
 
+        self.niri.window_mru_ui.remove_window(id);
         self.niri.layout.remove_window(&window, transaction.clone());
         self.add_default_dmabuf_pre_commit_hook(surface.wl_surface());
 
@@ -898,6 +899,7 @@ impl XdgShellHandler for State {
 
         if let Some(output) = output {
             self.niri.queue_redraw(&output);
+            self.niri.queue_redraw_mru_output();
         }
     }
 
