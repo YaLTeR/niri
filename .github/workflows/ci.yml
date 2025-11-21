@@ -89,7 +89,7 @@ jobs:
 
     name: alpine musl
     runs-on: ubuntu-24.04
-    container: alpine:3
+    container: alpine:3.22.2@sha256:4b7ce07002c69e8f3d704a9c5d6fd3053be500b7f1c69fc0d80990c2ad8dd412 # https://hub.docker.com/layers/library/alpine/3.22.2/images/sha256-9eec16c5eada75150a82666ba0ad6df76b164a6f8582ba5cb964c0813fa56625
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
@@ -230,7 +230,7 @@ jobs:
 
   fedora:
     runs-on: ubuntu-24.04
-    container: fedora:41
+    container: fedora:43@sha256:2ad3073554aef41c15b2c52e968ec0540c931bc3dab8c599ca6eb6f32f3f2d14 # https://hub.docker.com/layers/library/fedora/43/images/sha256-b8f499bee9c97c7c1be0ff7b8b6e4ab72af4216c30d2365c9d474ce2d5c5fd9a
 
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
