@@ -77,7 +77,6 @@ pub struct Config {
     pub cursor: Cursor,
     pub screenshot_path: ScreenshotPath,
     pub screenshot_notification_disable: bool,
-    #[knuffel(child, default)]
     pub clipboard: Clipboard,
     pub hotkey_overlay: HotkeyOverlay,
     pub config_notification: ConfigNotification,
