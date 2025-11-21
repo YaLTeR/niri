@@ -102,6 +102,71 @@ fn rtl_second_window_inserts_on_left() {
 }
 
 #[test]
+fn rtl_two_columns_leave_left_third_empty() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.default_column_width = Some(PresetSize::Proportion(1.0 / 3.0));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let mut tiles: Vec<_> = ws
+        .tiles_with_render_positions()
+        .map(|(tile, pos, _)| (tile, pos))
+        .collect();
+    assert_eq!(tiles.len(), 2);
+
+    tiles.sort_by(|(_, p1), (_, p2)| p1.x.partial_cmp(&p2.x).unwrap());
+
+    let (left_tile, left_pos) = (&tiles[0].0, tiles[0].1);
+    let (right_tile, right_pos) = (&tiles[1].0, tiles[1].1);
+
+    let left_width = left_tile.animated_tile_size().w;
+    let right_width = right_tile.animated_tile_size().w;
+
+    // Both columns should have approximately the same width.
+    let eps = 1.0;
+    assert!(
+        (left_width - right_width).abs() <= eps,
+        "left_width={left_width} right_width={right_width}",
+    );
+
+    // The empty band on the left should be about as wide as one column.
+    let empty_width = left_pos.x;
+    let avg_width = (left_width + right_width) / 2.0;
+    assert!(
+        (empty_width - avg_width).abs() <= eps,
+        "empty_width={empty_width} avg_width={avg_width}",
+    );
+
+    // The rightmost column should still hug the right edge, so both columns remain visible.
+    let right_edge = right_pos.x + right_width;
+    assert!(
+        right_edge > view_width - gaps - 0.5,
+        "right_edge={right_edge} view_width={view_width} gaps={gaps}",
+    );
+}
+
+#[test]
 fn rtl_scrolling_insert_position_hits_correct_column() {
     let mut options = Options::default();
     options.layout.direction = LayoutDirection::Rtl;
