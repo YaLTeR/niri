@@ -242,6 +242,10 @@ where
                     config.borrow_mut().screenshot_path = part;
                 }
 
+                "screenshot-notification-disable" => {
+                    config.borrow_mut().screenshot_notification_disable = Flag::decode_node(node, ctx)?.0
+                }
+
                 "layout" => {
                     let mut part = LayoutPart::decode_node(node, ctx)?;
 
