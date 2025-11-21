@@ -238,9 +238,7 @@ jobs:
           show-progress: false
 
       - name: Install dependencies
-        run: |
-          sudo dnf5 update -y
-          sudo dnf5 install -y ${{ env.DEPS_DNF }} libadwaita-devel
+        run: sudo dnf5 install -y ${{ env.DEPS_DNF }} libadwaita-devel
 
       - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
       - run: cargo build --all
