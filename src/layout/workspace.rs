@@ -890,7 +890,16 @@ impl<W: LayoutElement> Workspace<W> {
         window: &W,
         width: Option<PresetSize>,
     ) -> ColumnWidth {
-        let width = width.unwrap_or_else(|| PresetSize::Fixed(window.size().w));
+        let width = match width {
+            Some(width) => width,
+            None => {
+                if let Some(default) = self.options.layout.default_column_width {
+                    default
+                } else {
+                    PresetSize::Fixed(window.size().w)
+                }
+            }
+        };
         match width {
             PresetSize::Fixed(fixed) => {
                 let mut fixed = f64::from(fixed);
