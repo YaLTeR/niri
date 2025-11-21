@@ -824,6 +824,25 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         )
     }
 
+    fn ensure_active_column_visible_fit_only_with_config(
+        &mut self,
+        target_x: Option<f64>,
+        config: niri_config::Animation,
+    ) {
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let idx = self.active_column_idx;
+        let new_view_offset = self.compute_new_view_offset_for_column_fit(target_x, idx);
+        self.animate_view_offset_with_config(idx, new_view_offset, config);
+    }
+
+    fn ensure_active_column_visible_fit_only(&mut self) {
+        let config = self.options.animations.horizontal_view_movement.0;
+        self.ensure_active_column_visible_fit_only_with_config(None, config);
+    }
+
     fn activate_column(&mut self, idx: usize) {
         self.activate_column_with_anim_config(
             idx,
@@ -2936,13 +2955,8 @@ view_pos={view_pos} vo_cur={vo_cur} vo_tgt={vo_tgt} screen_left={screen_left} sc
         // and RTL. For single-column workspaces, keep the camera static and rely on the
         // single-column pinning logic elsewhere.
         if column_count > 1 {
-            let new_view_offset =
-                self.compute_new_view_offset_for_column(None, active_idx, Some(active_idx));
-            self.animate_view_offset_with_config(
-                active_idx,
-                new_view_offset,
-                self.options.animations.horizontal_view_movement.0,
-            );
+            let config = self.options.animations.horizontal_view_movement.0;
+            self.ensure_active_column_visible_fit_only_with_config(None, config);
         }
 
         let col = &mut self.columns[active_idx];
