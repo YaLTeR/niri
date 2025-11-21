@@ -28,8 +28,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }}
+          sudo apt update -y
+          sudo apt install -y ${{ env.DEPS_APT }}
 
       - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
 
@@ -55,8 +55,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }}
+          sudo apt update -y
+          sudo apt install -y ${{ env.DEPS_APT }}
 
       - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
 
@@ -127,8 +127,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }}
+          sudo apt update -y
+          sudo apt install -y ${{ env.DEPS_APT }}
 
       - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
 
@@ -154,8 +154,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+          sudo apt update -y
+          sudo apt install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
       - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
 
@@ -178,8 +178,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+          sudo apt update -y
+          sudo apt install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
       - uses: dtolnay/rust-toolchain@a95ba095f1bb34d2845e791825c378683c8c6261 # v1.80.1
 
@@ -201,8 +201,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+          sudo apt update -y
+          sudo apt install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
       - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
         with:
@@ -239,8 +239,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo dnf update -y
-          sudo dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
+          sudo dnf5 update -y
+          sudo dnf5 install -y ${{ env.DEPS_DNF }} libadwaita-devel
 
       - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
       - run: cargo build --all
