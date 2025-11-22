@@ -41,6 +41,8 @@ use touch_overview_grab::TouchOverviewGrab;
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
+#[cfg(feature = "dbus")]
+use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
@@ -388,15 +390,26 @@ impl State {
 
         // Accessibility modifier grabs should override XKB state changes (e.g. Caps Lock), so we
         // need to process them before keyboard.input() below.
+        //
+        // Other accessibility-grabbed keys should still update our XKB state, but not cause any
+        // other changes.
         #[cfg(feature = "dbus")]
-        if self.a11y_process_key(
-            Duration::from_millis(u64::from(time)),
-            event.key_code(),
-            event.state(),
-        ) {
-            *consumed_by_a11y = true;
-            return;
-        }
+        let block = {
+            let block = self.a11y_process_key(
+                Duration::from_millis(u64::from(time)),
+                event.key_code(),
+                event.state(),
+            );
+            if block != KbMonBlock::Pass {
+                *consumed_by_a11y = true;
+            }
+            // The accessibility modifier first press must not change XKB state, so we return
+            // early here.
+            if block == KbMonBlock::ModifierFirstPress {
+                return;
+            }
+            block
+        };
 
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
@@ -405,6 +418,13 @@ impl State {
             serial,
             time,
             |this, mods, keysym| {
+                // After updating XKB state from accessibility-grabbed keys, return right away and
+                // don't handle them.
+                #[cfg(feature = "dbus")]
+                if block != KbMonBlock::Pass {
+                    return FilterResult::Intercept(None);
+                }
+
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
