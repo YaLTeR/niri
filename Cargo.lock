@@ -2410,6 +2410,7 @@ dependencies = [
  "url",
  "wayland-backend",
  "wayland-client",
+ "wayland-protocols-plasma",
  "wayland-scanner",
  "xcursor",
  "xshell",
@@ -4362,6 +4363,7 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-scanner",
+ "wayland-server",
 ]
 
 [[package]]
