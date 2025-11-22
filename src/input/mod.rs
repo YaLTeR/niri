@@ -3390,6 +3390,7 @@ impl State {
             match source {
                 AxisSource::Wheel => config.input.mouse.scroll_factor,
                 AxisSource::Finger => config.input.touchpad.scroll_factor,
+                AxisSource::Continuous => config.input.button_scroll_factor,
                 _ => None,
             }
         };
