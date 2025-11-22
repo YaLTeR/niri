@@ -420,17 +420,48 @@ impl State {
             serial,
             time,
             |this, mods, keysym| {
-                // After updating XKB state from accessibility-grabbed keys, return right away and
-                // don't handle them.
-                #[cfg(feature = "dbus")]
-                if block != KbMonBlock::Pass {
-                    return FilterResult::Intercept(None);
-                }
-
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
                 let modifiers = modifiers_from_state(*mods);
+
+                // After updating XKB state from accessibility-grabbed keys, return right away and
+                // don't handle them.
+                #[cfg(feature = "dbus")]
+                if block != KbMonBlock::Pass {
+                    // HACK: there's a slight problem with this code. Here we filter out keys
+                    // consumed by accessibility from getting sent to the Wayland client. However,
+                    // the Wayland client can still receive these keys from the wl_keyboard
+                    // enter/modifiers events. In particular, this can easily happen when opening
+                    // the Orca actions menu with Orca + Shift + A: in most cases, when this menu
+                    // opens, Shift is still held down, so the menu receives it in
+                    // wl_keyboard.enter/modifiers. Then the menu won't react to Enter presses
+                    // until the user taps Shift again to "release" it (since the initial Shift
+                    // release will be intercepted here).
+                    //
+                    // I don't think there's any good way of dealing with this apart from keeping a
+                    // separate xkb state for accessibility, so that we can track the pressed
+                    // modifiers without accidentally leaking them to wl_keyboard.enter. So for now
+                    // let's forward modifier releases to the clients here to deal with the most
+                    // common case.
+                    if !pressed
+                        && matches!(
+                            modified,
+                            Keysym::Shift_L
+                                | Keysym::Shift_R
+                                | Keysym::Control_L
+                                | Keysym::Control_R
+                                | Keysym::Super_L
+                                | Keysym::Super_R
+                                | Keysym::Alt_L
+                                | Keysym::Alt_R
+                        )
+                    {
+                        return FilterResult::Forward;
+                    } else {
+                        return FilterResult::Intercept(None);
+                    }
+                }
 
                 if this.niri.exit_confirm_dialog.is_open() && pressed {
                     if raw == Some(Keysym::Return) {
