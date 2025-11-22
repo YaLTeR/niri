@@ -293,7 +293,34 @@ where
                 }
 
                 "include" => {
-                    let path: PathBuf = utils::parse_arg_node("include", node, ctx)?;
+                    // Parse the argument and properties of the include node
+                    let mut iter_args = node.arguments.iter();
+                    let path_val = iter_args.next().ok_or_else(|| {
+                        DecodeError::missing(node, "additional argument `include` is required")
+                    })?;
+                    let path: PathBuf = knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
+
+                    if let Some(val) = iter_args.next() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &val.literal,
+                            "argument",
+                            "unexpected argument",
+                        ));
+                    }
+
+                    let mut if_exists = false;
+                    if let Some(if_exists_val) = node.properties.get("if-exists") {
+                        if_exists = knuffel::DecodeScalar::decode(if_exists_val, ctx)?;
+                    }
+
+                    for child in node.children() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            child,
+                            "node",
+                            format!("unexpected node `{}`", child.node_name.escape_default()),
+                        ));
+                    }
+
                     let base = ctx.get::<BasePath>().unwrap();
                     let path = base.0.join(path);
 
@@ -371,10 +398,16 @@ where
                             }
                         }
                         Err(err) => {
-                            ctx.emit_error(DecodeError::missing(
-                                node,
-                                format!("failed to read included config from {path:?}: {err}"),
-                            ));
+                            // If if-exists is true and the error is due to file not found, don't emit an error
+                            if if_exists && err.kind() == std::io::ErrorKind::NotFound {
+                                debug!("Skipped include of non-existent file: {:?}", path);
+                                continue;
+                            } else {
+                                ctx.emit_error(DecodeError::missing(
+                                    node,
+                                    format!("failed to read included config from {path:?}: {err}"),
+                                ));
+                            }
                         }
                     }
                 }
@@ -789,7 +822,7 @@ mod tests {
                 window-open { off; }
 
                 window-close {
-                    curve "cubic-bezier" 0.05 0.7 0.1 1  
+                    curve "cubic-bezier" 0.05 0.7 0.1 1
                 }
 
                 recent-windows-close {
@@ -2354,5 +2387,35 @@ mod tests {
         +                0.66667,
         "#,
         );
+    }
+
+    #[test]
+    fn include_if_exists_option() {
+        // Test that if-exists=true skips non-existent files
+        let result = Config::parse_mem(
+            r#"
+            include "non-existent-file.kdl" if-exists=true
+            layout { gaps 10; }
+            "#,
+        );
+        assert!(result.is_ok());
+
+        // Test that without if-exists, non-existent files cause an error
+        let result = Config::parse_mem(
+            r#"
+            include "another-non-existent-file.kdl"
+            layout { gaps 12; }
+            "#,
+        );
+        assert!(result.is_err());
+
+        // Test that if-exists=false also causes an error for non-existent files
+        let result = Config::parse_mem(
+            r#"
+            include "yet-another-non-existent-file.kdl" if-exists=false
+            layout { gaps 14; }
+            "#,
+        );
+        assert!(result.is_err());
     }
 }
