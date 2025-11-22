@@ -680,6 +680,61 @@ pub struct TabIndicatorRule {
     pub urgent_gradient: Option<Gradient>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FocusOpacity {
+    pub enabled: bool,
+    pub flash_opacity: f32,
+    pub animation_duration_ms: u32,
+    pub disable_on_solo: bool,
+}
+
+impl Default for FocusOpacity {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            flash_opacity: 0.8,         // Valid range: [0.0, 1.0]
+            animation_duration_ms: 150, // In milliseconds
+            disable_on_solo: true,
+        }
+    }
+}
+
+impl MergeWith<FocusOpacityPart> for FocusOpacity {
+    fn merge_with(&mut self, part: &FocusOpacityPart) {
+        if part.off {
+            self.enabled = false;
+        } else if part.on {
+            self.enabled = true;
+        }
+
+        if let Some(flash_opacity) = part.flash_opacity {
+            // Clamp flash opacity to valid range [0.0, 1.0]
+            self.flash_opacity = (flash_opacity.0 as f32).clamp(0.0, 1.0);
+        }
+        if let Some(animation_duration_ms) = part.animation_duration_ms {
+            // Ensure minimum animation duration of 10ms for smoothness
+            self.animation_duration_ms = animation_duration_ms.0.max(10.0).round().max(10.0) as u32;
+        }
+        if let Some(disable_on_solo) = part.disable_on_solo {
+            self.disable_on_solo = disable_on_solo.0;
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct FocusOpacityPart {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub flash_opacity: Option<FloatOrInt<0, 1>>,
+    #[knuffel(child, unwrap(argument))]
+    pub animation_duration_ms: Option<FloatOrInt<0, { i32::MAX }>>,
+    #[knuffel(child)]
+    pub disable_on_solo: Option<Flag>,
+}
+
 impl MergeWith<Self> for BorderRule {
     fn merge_with(&mut self, part: &Self) {
         merge_on_off!((self, part));
@@ -1251,5 +1306,118 @@ mod tests {
         )
         "
         );
+    }
+
+    #[test]
+    fn test_focus_opacity_default_values() {
+        let config = Config::parse_mem(
+            r##"
+            layout {
+                focus-opacity {
+                    on
+                }
+            }
+            "##,
+        )
+        .unwrap();
+
+        let focus_opacity = &config.layout.focus_opacity;
+        assert!(focus_opacity.enabled);
+        assert_eq!(focus_opacity.flash_opacity, 0.8);
+        assert_eq!(focus_opacity.animation_duration_ms, 150);
+        assert!(focus_opacity.disable_on_solo);
+    }
+
+    #[test]
+    fn test_focus_opacity_custom_values() {
+        let config = Config::parse_mem(
+            r##"
+            layout {
+                focus-opacity {
+                    on
+                    flash-opacity 0.6
+                    animation-duration-ms 200
+                    disable-on-solo false
+                }
+            }
+            "##,
+        )
+        .unwrap();
+
+        let focus_opacity = &config.layout.focus_opacity;
+        assert!(focus_opacity.enabled);
+        assert_eq!(focus_opacity.flash_opacity, 0.6);
+        assert_eq!(focus_opacity.animation_duration_ms, 200);
+        assert!(!focus_opacity.disable_on_solo);
+    }
+
+    #[test]
+    fn test_focus_opacity_disabled() {
+        let config = Config::parse_mem(
+            r##"
+            layout {
+                focus-opacity {
+                    off
+                }
+            }
+            "##,
+        )
+        .unwrap();
+
+        let focus_opacity = &config.layout.focus_opacity;
+        assert!(!focus_opacity.enabled);
+        // Default values should still be present even when disabled
+        assert_eq!(focus_opacity.flash_opacity, 0.8);
+        assert_eq!(focus_opacity.animation_duration_ms, 150);
+        assert!(focus_opacity.disable_on_solo);
+    }
+
+    #[test]
+    fn test_focus_opacity_disabled_by_default() {
+        let config = Config::parse_mem("").unwrap();
+
+        let focus_opacity = &config.layout.focus_opacity;
+        assert!(!focus_opacity.enabled);
+        assert_eq!(focus_opacity.flash_opacity, 0.8);
+        assert_eq!(focus_opacity.animation_duration_ms, 150);
+        assert!(focus_opacity.disable_on_solo);
+    }
+
+    #[test]
+    fn test_focus_opacity_validation_edge_cases() {
+        // Test extreme flash opacity values are clamped within the documented [0.0, 1.0] range
+        let config = Config::parse_mem(
+            r#"
+            layout {
+                focus-opacity {
+                    on
+                    flash-opacity 0  // Minimum allowed value
+                    animation-duration-ms 5  // Should be clamped to minimum 10ms
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let focus_opacity = &config.layout.focus_opacity;
+        assert!(focus_opacity.enabled);
+        assert_eq!(focus_opacity.flash_opacity, 0.0); // Minimum value
+        assert_eq!(focus_opacity.animation_duration_ms, 10); // Clamped to minimum
+
+        // Test maximum allowed flash opacity
+        let config = Config::parse_mem(
+            r#"
+            layout {
+                focus-opacity {
+                    on
+                    flash-opacity 1  // Maximum allowed value
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        let focus_opacity = &config.layout.focus_opacity;
+        assert_eq!(focus_opacity.flash_opacity, 1.0); // Maximum value
     }
 }

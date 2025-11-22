@@ -1345,6 +1345,12 @@ mod tests {
                         },
                     ),
                 },
+                focus_opacity: FocusOpacity {
+                    enabled: false,
+                    flash_opacity: 0.8,
+                    animation_duration_ms: 150,
+                    disable_on_solo: true,
+                },
                 preset_column_widths: [
                     Proportion(
                         0.25,

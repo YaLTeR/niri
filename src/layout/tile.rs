@@ -2,7 +2,7 @@ use core::f64;
 use std::rc::Rc;
 
 use niri_config::utils::MergeWith as _;
-use niri_config::{Color, CornerRadius, GradientInterpolation};
+use niri_config::{Color, CornerRadius, FocusOpacity, GradientInterpolation};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -30,6 +30,8 @@ use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderEleme
 use crate::render_helpers::RenderTarget;
 use crate::utils::transaction::Transaction;
 use crate::utils::{baba_is_float_offset, round_logical_in_physical};
+
+const FOCUS_FLASH_EPSILON: f64 = 0.001;
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -91,6 +93,12 @@ pub struct Tile<W: LayoutElement> {
 
     /// The animation of the tile's opacity.
     pub(super) alpha_animation: Option<AlphaAnimation>,
+
+    /// Whether the window was focused during the last render update.
+    pub(super) was_focused: bool,
+
+    /// Focus flash state machine for the focus-opacity effect.
+    focus_flash_state: FocusFlashState,
 
     /// Offset during the initial interactive move rubberband.
     pub(super) interactive_move_offset: Point<f64, Logical>,
@@ -169,6 +177,52 @@ pub(super) struct AlphaAnimation {
     offscreen: OffscreenBuffer,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum FocusFlashState {
+    Idle,
+    Rising { return_to: f64 },
+    Falling { return_to: f64 },
+}
+
+impl Default for FocusFlashState {
+    fn default() -> Self {
+        FocusFlashState::Idle
+    }
+}
+
+impl FocusFlashState {
+    fn set_rising(&mut self, return_to: f64) {
+        *self = FocusFlashState::Rising { return_to };
+    }
+
+    fn promote_to_falling(&mut self) -> Option<f64> {
+        match *self {
+            FocusFlashState::Rising { return_to } => {
+                *self = FocusFlashState::Falling { return_to };
+                Some(return_to)
+            }
+            _ => None,
+        }
+    }
+
+    fn take_and_clear(&mut self) -> Option<f64> {
+        match *self {
+            FocusFlashState::Idle => None,
+            FocusFlashState::Rising { return_to } | FocusFlashState::Falling { return_to } => {
+                *self = FocusFlashState::Idle;
+                Some(return_to)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FlashAnimStatus {
+    InFlight,
+    Complete,
+    Missing,
+}
+
 impl<W: LayoutElement> Tile<W> {
     pub fn new(
         window: W,
@@ -200,6 +254,8 @@ impl<W: LayoutElement> Tile<W> {
             move_x_animation: None,
             move_y_animation: None,
             alpha_animation: None,
+            was_focused: false,
+            focus_flash_state: FocusFlashState::Idle,
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
@@ -639,6 +695,98 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
+    /// Call this every refresh so the flash can reach the configured opacity and then return to
+    /// the opacity the window had before flashing. The animation is cancelled immediately if the
+    /// tile loses focus (or if flashing is disabled for solo windows).
+    pub fn update_focus_opacity(
+        &mut self,
+        focus_config: &FocusOpacity,
+        is_solo_window: bool,
+        is_focused: bool,
+    ) {
+        let rule_alpha = self.window.rules().opacity.unwrap_or(1.0).clamp(0.0, 1.0) as f64;
+        let current_alpha = self
+            .alpha_animation
+            .as_ref()
+            .map(|alpha| alpha.anim.value())
+            .unwrap_or(rule_alpha);
+        let flash_alpha = focus_config.flash_opacity.clamp(0.0, 1.0) as f64;
+        let (rise_duration_ms, fall_duration_ms) =
+            Self::focus_flash_durations(focus_config.animation_duration_ms);
+
+        if is_solo_window && focus_config.disable_on_solo {
+            if let Some(return_to) = self.focus_flash_state.take_and_clear() {
+                if !Self::nearly_equal(current_alpha, return_to) {
+                    self.animate_alpha(
+                        current_alpha,
+                        return_to,
+                        Self::focus_flash_animation(fall_duration_ms),
+                    );
+                }
+            }
+            self.was_focused = is_focused;
+            return;
+        }
+
+        if is_focused && !self.was_focused {
+            if !Self::nearly_equal(current_alpha, flash_alpha) {
+                self.focus_flash_state.set_rising(current_alpha);
+                self.animate_alpha(
+                    current_alpha,
+                    flash_alpha,
+                    Self::focus_flash_animation(rise_duration_ms),
+                );
+            } else {
+                self.focus_flash_state = FocusFlashState::Idle;
+            }
+
+            self.was_focused = true;
+            return;
+        }
+
+        if !is_focused {
+            if let Some(return_to) = self.focus_flash_state.take_and_clear() {
+                if !Self::nearly_equal(current_alpha, return_to) {
+                    self.animate_alpha(
+                        current_alpha,
+                        return_to,
+                        Self::focus_flash_animation(fall_duration_ms),
+                    );
+                }
+            }
+
+            self.was_focused = false;
+            return;
+        }
+
+        match self.focus_flash_state {
+            FocusFlashState::Idle => {}
+            FocusFlashState::Rising { .. } => match self.flash_anim_status(flash_alpha) {
+                FlashAnimStatus::InFlight => {}
+                FlashAnimStatus::Complete => {
+                    if let Some(return_to) = self.focus_flash_state.promote_to_falling() {
+                        self.animate_alpha(
+                            current_alpha,
+                            return_to,
+                            Self::focus_flash_animation(fall_duration_ms),
+                        );
+                    }
+                }
+                FlashAnimStatus::Missing => {
+                    self.focus_flash_state = FocusFlashState::Idle;
+                }
+            },
+            FocusFlashState::Falling { return_to } => match self.flash_anim_status(return_to) {
+                FlashAnimStatus::InFlight => {}
+                FlashAnimStatus::Complete | FlashAnimStatus::Missing => {
+                    self.focus_flash_state = FocusFlashState::Idle;
+                }
+            },
+        }
+
+        self.was_focused = is_focused;
+    }
+
     pub fn window(&self) -> &W {
         &self.window
     }
@@ -665,6 +813,39 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
+    fn flash_anim_status(&self, target: f64) -> FlashAnimStatus {
+        match &self.alpha_animation {
+            Some(alpha) if Self::nearly_equal(alpha.anim.to(), target) => {
+                if alpha.anim.is_clamped_done() {
+                    FlashAnimStatus::Complete
+                } else {
+                    FlashAnimStatus::InFlight
+                }
+            }
+            _ => FlashAnimStatus::Missing,
+        }
+    }
+
+    fn focus_flash_animation(duration_ms: u32) -> niri_config::Animation {
+        niri_config::Animation {
+            off: false,
+            kind: niri_config::animations::Kind::Easing(niri_config::animations::EasingParams {
+                duration_ms: duration_ms.max(1),
+                curve: niri_config::animations::Curve::EaseOutQuad,
+            }),
+        }
+    }
+
+    fn focus_flash_durations(total_ms: u32) -> (u32, u32) {
+        let total = total_ms.max(1);
+        let rise = (total + 1) / 2;
+        let fall = total.saturating_sub(rise).max(1);
+        (rise, fall)
+    }
+
+    fn nearly_equal(a: f64, b: f64) -> bool {
+        (a - b).abs() <= FOCUS_FLASH_EPSILON
+    }
     fn expanded_progress(&self) -> f64 {
         if let Some(resize) = &self.resize_animation {
             if let Some(anim) = &resize.expanded_progress {
