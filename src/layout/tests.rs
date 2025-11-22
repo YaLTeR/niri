@@ -3,14 +3,15 @@ use std::cell::{Cell, OnceCell, RefCell};
 use niri_config::utils::{Flag, MergeWith as _};
 use niri_config::workspace::WorkspaceName;
 use niri_config::{
-    CenterFocusedColumn, FloatOrInt, OutputName, Struts, TabIndicatorLength, TabIndicatorPosition,
-    WorkspaceReference,
+    CenterFocusedColumn, FloatOrInt, LayoutDirection, OutputName, PresetSize, Struts,
+    TabIndicatorLength, TabIndicatorPosition, WorkspaceReference,
 };
 use proptest::prelude::*;
 use proptest_derive::Arbitrary;
 use smithay::output::{Mode, PhysicalProperties, Subpixel};
 use smithay::utils::Rectangle;
 
+use super::monitor::InsertPosition;
 use super::*;
 
 mod animations;
@@ -20,6 +21,517 @@ impl<W: LayoutElement> Default for Layout<W> {
     fn default() -> Self {
         Self::with_options(Clock::with_time(Duration::ZERO), Default::default())
     }
+}
+
+#[test]
+fn rtl_first_window_spawns_on_right_edge() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+    assert_eq!(tiles.len(), 1);
+    let (tile, pos, _) = tiles[0];
+    let tile_width = tile.animated_tile_size().w;
+
+    // Window should hug the right edge, leaving at most the configured gap.
+    assert!(pos.x + tile_width > view_width - gaps - 0.5);
+}
+
+#[test]
+fn rtl_second_window_inserts_on_left() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.default_column_width = Some(PresetSize::Proportion(0.8));
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+    let gaps = scrolling.options().layout.gaps;
+
+    let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+    assert_eq!(tiles.len(), 2);
+
+    let find_tile = |id: usize| {
+        tiles
+            .iter()
+            .find(|(tile, _, _)| tile.window().id() == &id)
+            .map(|(tile, pos, _)| (*tile, *pos))
+            .unwrap()
+    };
+
+    let (new_tile, new_pos) = find_tile(2);
+    let (old_tile, old_pos) = find_tile(1);
+    let new_width = new_tile.animated_tile_size().w;
+    let old_width = old_tile.animated_tile_size().w;
+
+    // Newly opened column must be visually left of the previously active column.
+    assert!(new_pos.x + new_width <= old_pos.x + gaps + 0.5);
+
+    // The older column should still reach the right edge so both windows remain visible.
+    let view_width = scrolling.view_size().w;
+    assert!(old_pos.x + old_width > view_width - gaps - 0.5);
+}
+
+#[test]
+fn rtl_two_columns_leave_left_third_empty() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.default_column_width = Some(PresetSize::Proportion(1.0 / 3.0));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let mut tiles: Vec<_> = ws
+        .tiles_with_render_positions()
+        .map(|(tile, pos, _)| (tile, pos))
+        .collect();
+    assert_eq!(tiles.len(), 2);
+
+    tiles.sort_by(|(_, p1), (_, p2)| p1.x.partial_cmp(&p2.x).unwrap());
+
+    let (left_tile, left_pos) = (&tiles[0].0, tiles[0].1);
+    let (right_tile, right_pos) = (&tiles[1].0, tiles[1].1);
+
+    let left_width = left_tile.animated_tile_size().w;
+    let right_width = right_tile.animated_tile_size().w;
+
+    // Both columns should have approximately the same width.
+    let eps = 1.0;
+    assert!(
+        (left_width - right_width).abs() <= eps,
+        "left_width={left_width} right_width={right_width}",
+    );
+
+    // The empty band on the left should be about as wide as one column.
+    let empty_width = left_pos.x;
+    let avg_width = (left_width + right_width) / 2.0;
+    assert!(
+        (empty_width - avg_width).abs() <= eps,
+        "empty_width={empty_width} avg_width={avg_width}",
+    );
+
+    // The rightmost column should still hug the right edge, so both columns remain visible.
+    let right_edge = right_pos.x + right_width;
+    assert!(
+        right_edge > view_width - gaps - 0.5,
+        "right_edge={right_edge} view_width={view_width} gaps={gaps}",
+    );
+}
+
+#[test]
+fn rtl_scrolling_insert_position_hits_correct_column() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.default_column_width = Some(PresetSize::Proportion(0.5));
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+
+    for (tile, pos, _visible) in tiles {
+        let id = *tile.window().id();
+
+        // Determine the column index in the internal storage order.
+        let expected_col_idx = scrolling
+            .columns()
+            .enumerate()
+            .find(|(_, col)| col.contains(&id))
+            .map(|(idx, _)| idx)
+            .unwrap();
+
+        let size = tile.animated_tile_size();
+        let pointer_pos = smithay::utils::Point::from((
+            pos.x + size.w / 2.,
+            pos.y + size.h / 2.,
+        ));
+
+        let insert_pos = ws.scrolling_insert_position(pointer_pos);
+
+        match insert_pos {
+            InsertPosition::InColumn(col_idx, _) => {
+                assert_eq!(col_idx, expected_col_idx, "tile {id}: InColumn col_idx={col_idx}, expected={expected_col_idx}")
+            }
+            InsertPosition::NewColumn(col_idx) => {
+                assert_eq!(col_idx, expected_col_idx, "tile {id}: NewColumn col_idx={col_idx}, expected={expected_col_idx}")
+            }
+            InsertPosition::Floating => panic!("unexpected floating insert position for tile {id}"),
+        }
+    }
+}
+
+#[test]
+fn view_offset_gesture_snaps_symmetrically_in_rtl_and_ltr() {
+    fn run(dir: LayoutDirection) -> (usize, usize) {
+        let mut options = Options::default();
+        options.layout.direction = dir;
+        options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::CompleteAnimations,
+            Op::ViewOffsetGestureBegin {
+                output_idx: 1,
+                workspace_idx: None,
+                is_touchpad: true,
+            },
+            Op::ViewOffsetGestureUpdate {
+                delta: 400.0,
+                timestamp: std::time::Duration::from_millis(16),
+                is_touchpad: true,
+            },
+            Op::ViewOffsetGestureEnd {
+                is_touchpad: Some(true),
+            },
+        ];
+
+        let layout = check_ops_with_options(options, ops);
+        let ws = layout.active_workspace().unwrap();
+        let scrolling = ws.scrolling();
+
+        let active_idx = scrolling.active_column_idx();
+        let col_count = scrolling.columns().count();
+
+        (active_idx, col_count)
+    }
+
+    let (ltr_idx, ltr_count) = run(LayoutDirection::Ltr);
+    let (rtl_idx, rtl_count) = run(LayoutDirection::Rtl);
+
+    assert_eq!(ltr_count, rtl_count);
+    assert!(ltr_count >= 1);
+    let last = ltr_count - 1;
+
+    // Map storage indices to logical "visual left-to-right" indices.
+    let ltr_logical = ltr_idx;
+    let rtl_logical = rtl_count - rtl_idx - 1;
+
+    assert!(ltr_logical <= last);
+    assert!(rtl_logical <= last);
+    assert_eq!(rtl_logical, last - ltr_logical);
+}
+
+#[test]
+fn dnd_edge_scroll_moves_view_consistently_in_rtl_and_ltr() {
+    fn run(dir: LayoutDirection, px: f64) -> f64 {
+        let mut options = Options::default();
+        options.layout.direction = dir;
+        options.layout.default_column_width = Some(PresetSize::Proportion(0.5));
+        options.gestures.dnd_edge_view_scroll.delay_ms = 0;
+
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::CompleteAnimations,
+        ];
+
+        let mut layout = check_ops_with_options(options, ops);
+
+        let ws = layout.active_workspace().unwrap();
+        let before = ws.scrolling().view_pos();
+
+        let ops = [
+            Op::DndUpdate {
+                output_idx: 1,
+                px,
+                py: 100.0,
+            },
+            Op::AdvanceAnimations { msec_delta: 0 },
+            Op::AdvanceAnimations { msec_delta: 1000 },
+        ];
+        check_ops_on_layout(&mut layout, ops);
+
+        let ws = layout.active_workspace().unwrap();
+        let after = ws.scrolling().view_pos();
+
+        after - before
+    }
+
+    let view_width = 1280.0;
+    let left_edge = 0.0;
+    let right_edge = view_width;
+
+    let ltr_left = run(LayoutDirection::Ltr, left_edge);
+    let ltr_right = run(LayoutDirection::Ltr, right_edge);
+    let rtl_left = run(LayoutDirection::Rtl, left_edge);
+    let rtl_right = run(LayoutDirection::Rtl, right_edge);
+
+    let eps = 0.01;
+
+    let sign = |x: f64| {
+        if x > eps {
+            1
+        } else if x < -eps {
+            -1
+        } else {
+            0
+        }
+    };
+
+    let ltr_left_sign = sign(ltr_left);
+    let rtl_left_sign = sign(rtl_left);
+    let ltr_right_sign = sign(ltr_right);
+    let rtl_right_sign = sign(rtl_right);
+
+    assert_eq!(ltr_left_sign, rtl_left_sign);
+    assert_eq!(ltr_right_sign, rtl_right_sign);
+    assert!(ltr_left_sign != 0 || ltr_right_sign != 0);
+}
+
+#[test]
+fn swap_window_in_direction_is_mirrored_in_rtl_and_ltr() {
+    fn window_order(layout: &Layout<TestWindow>) -> Vec<usize> {
+        let ws = layout.active_workspace().unwrap();
+        let mut tiles: Vec<_> = ws
+            .tiles_with_render_positions()
+            .map(|(tile, pos, _)| (pos.x, *tile.window().id()))
+            .collect();
+        tiles.sort_by(|(x1, _), (x2, _)| x1.partial_cmp(x2).unwrap());
+        tiles.into_iter().map(|(_, id)| id).collect()
+    }
+
+    fn run(dir: LayoutDirection) {
+        let mut options = Options::default();
+        options.layout.direction = dir;
+        options.layout.default_column_width = Some(PresetSize::Proportion(0.8));
+
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::CompleteAnimations,
+        ];
+
+        let mut layout = check_ops_with_options(options, ops);
+
+        let before = window_order(&layout);
+
+        assert!(before.len() >= 2);
+
+        // We will focus window 2 before swapping. Determine its position and physical
+        // right neighbor (if any) in the current visual order.
+        let idx = before.iter().position(|&id| id == 2).unwrap();
+        let right_neighbor = before.get(idx + 1).copied();
+
+        let ops = [
+            Op::FocusWindow(2),
+            Op::SwapWindowInDirection(ScrollDirection::Right),
+            Op::CompleteAnimations,
+        ];
+        check_ops_on_layout(&mut layout, ops);
+
+        let after = window_order(&layout);
+
+        match right_neighbor {
+            Some(neigh) => {
+                // Window 2 had a physical right neighbor; they should have swapped,
+                // and all other windows should remain in place.
+                assert_eq!(before.len(), after.len());
+                assert_eq!(after[idx], neigh);
+                assert_eq!(after[idx + 1], 2);
+
+                for i in 0..before.len() {
+                    if i != idx && i != idx + 1 {
+                        assert_eq!(after[i], before[i]);
+                    }
+                }
+            }
+            None => {
+                // Window 2 was already the rightmost window; swapping to the right
+                // should be a no-op.
+                assert_eq!(before, after);
+            }
+        }
+    }
+
+    run(LayoutDirection::Ltr);
+    run(LayoutDirection::Rtl);
+}
+
+#[test]
+fn move_column_right_is_physical_in_rtl_and_ltr() {
+    fn column_indices(layout: &Layout<TestWindow>) -> [usize; 4] {
+        let ws = layout.active_workspace().unwrap();
+        let scrolling = ws.scrolling();
+
+        let mut cols = [0; 4];
+        for (tile, layout) in scrolling.tiles_with_ipc_layouts() {
+            let id = *tile.window().id();
+            if id <= 3 {
+                if let Some((col, _row)) = layout.pos_in_scrolling_layout {
+                    cols[id] = col as usize;
+                }
+            }
+        }
+
+        cols
+    }
+
+    fn run(dir: LayoutDirection) {
+        let mut options = Options::default();
+        options.layout.direction = dir;
+        options.layout.default_column_width = Some(PresetSize::Proportion(0.8));
+
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::CompleteAnimations,
+        ];
+
+        let mut layout = check_ops_with_options(options, ops);
+
+        let before = column_indices(&layout);
+
+        let src_col = before[2];
+        assert_ne!(src_col, 0);
+
+        let mut right_col: Option<usize> = None;
+        for id in 1..=3 {
+            let col = before[id];
+            if col > src_col {
+                right_col = Some(match right_col {
+                    Some(rc) => rc.min(col),
+                    None => col,
+                });
+            }
+        }
+
+        let ops = [
+            Op::FocusWindow(2),
+            Op::MoveColumnRight,
+            Op::CompleteAnimations,
+        ];
+        check_ops_on_layout(&mut layout, ops);
+
+        let after = column_indices(&layout);
+
+        match right_col {
+            Some(rc) => {
+                for id in 1..=3 {
+                    match before[id] {
+                        c if c == src_col => assert_eq!(after[id], rc),
+                        c if c == rc => assert_eq!(after[id], src_col),
+                        c => assert_eq!(after[id], c),
+                    }
+                }
+            }
+            None => {
+                for id in 1..=3 {
+                    assert_eq!(after[id], before[id]);
+                }
+            }
+        }
+    }
+
+    run(LayoutDirection::Ltr);
+    run(LayoutDirection::Rtl);
 }
 
 #[derive(Debug)]
@@ -3395,6 +3907,404 @@ fn preset_column_width_reset_after_set_width() {
     let layout = check_ops_with_options(options, ops);
     let win = layout.windows().next().unwrap().1;
     assert_eq!(win.requested_size().unwrap().w, 500);
+}
+
+#[test]
+fn preset_column_width_pins_left_edge_in_ltr() {
+    // Use three proportional presets so that the middle column visibly changes width
+    // when toggling once.
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Ltr;
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+    options.layout.preset_column_widths = vec![
+        PresetSize::Proportion(1. / 3.),
+        PresetSize::Proportion(0.5),
+        PresetSize::Proportion(2. / 3.),
+    ];
+
+    // Baseline: three columns, middle focused, no preset toggle.
+    let ops_base = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+        Op::FocusColumn(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout_base = check_ops_with_options(options.clone(), ops_base);
+    let ws_base = layout_base.active_workspace().unwrap();
+    let tiles_base: Vec<_> = ws_base.tiles_with_render_positions().collect();
+    assert_eq!(tiles_base.len(), 3);
+
+    let (tile_mid_base, pos_mid_base) = {
+        let (tile, pos, _) = tiles_base
+            .iter()
+            .find(|(tile, _, _)| tile.window().id() == &2)
+            .unwrap();
+        (*tile, *pos)
+    };
+    let size_mid_base = tile_mid_base.animated_tile_size();
+
+    // After toggle: same setup, but switch preset column width once.
+    let ops_toggled = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+        Op::FocusColumn(2),
+        Op::SwitchPresetColumnWidth,
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+
+    let layout_toggled = check_ops_with_options(options, ops_toggled);
+    let ws_toggled = layout_toggled.active_workspace().unwrap();
+    let tiles_toggled: Vec<_> = ws_toggled.tiles_with_render_positions().collect();
+    assert_eq!(tiles_toggled.len(), 3);
+    let (tile_mid_toggled, pos_mid_toggled) = {
+        let (tile, pos, _) = tiles_toggled
+            .iter()
+            .find(|(tile, _, _)| tile.window().id() == &2)
+            .unwrap();
+        (*tile, *pos)
+    };
+    let size_mid_toggled = tile_mid_toggled.animated_tile_size();
+
+    // Middle column width must actually change.
+    assert!((size_mid_toggled.w - size_mid_base.w).abs() > 1.0);
+
+    // In LTR, the left edge of the focused column should remain pinned.
+    assert!((pos_mid_toggled.x - pos_mid_base.x).abs() < 1.0);
+}
+
+#[test]
+fn preset_column_width_pins_right_edge_in_rtl() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+    options.layout.preset_column_widths = vec![
+        PresetSize::Proportion(1. / 3.),
+        PresetSize::Proportion(0.5),
+        PresetSize::Proportion(2. / 3.),
+    ];
+
+    let ops_base = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+        Op::FocusColumn(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout_base = check_ops_with_options(options.clone(), ops_base);
+    let ws_base = layout_base.active_workspace().unwrap();
+    let tiles_base: Vec<_> = ws_base.tiles_with_render_positions().collect();
+    assert_eq!(tiles_base.len(), 3);
+
+    let (tile_mid_base, pos_mid_base) = {
+        let (tile, pos, _) = tiles_base
+            .iter()
+            .find(|(tile, _, _)| tile.window().id() == &2)
+            .unwrap();
+        (*tile, *pos)
+    };
+    let size_mid_base = tile_mid_base.animated_tile_size();
+    let right_edge_base = pos_mid_base.x + size_mid_base.w;
+
+    let ops_toggled = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+        Op::FocusColumn(2),
+        Op::SwitchPresetColumnWidth,
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+
+    let layout_toggled = check_ops_with_options(options, ops_toggled);
+    let ws_toggled = layout_toggled.active_workspace().unwrap();
+    let tiles_toggled: Vec<_> = ws_toggled.tiles_with_render_positions().collect();
+    assert_eq!(tiles_toggled.len(), 3);
+    let (tile_mid_toggled, pos_mid_toggled) = {
+        let (tile, pos, _) = tiles_toggled
+            .iter()
+            .find(|(tile, _, _)| tile.window().id() == &2)
+            .unwrap();
+        (*tile, *pos)
+    };
+    let size_mid_toggled = tile_mid_toggled.animated_tile_size();
+    let right_edge_toggled = pos_mid_toggled.x + size_mid_toggled.w;
+
+    // Middle column width must actually change.
+    assert!((size_mid_toggled.w - size_mid_base.w).abs() > 1.0);
+
+    // In RTL, the right edge of the focused column should remain pinned.
+    assert!((right_edge_toggled - right_edge_base).abs() < 1.0);
+}
+
+#[test]
+fn single_column_preset_width_keeps_right_edge_in_rtl() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+    options.layout.preset_column_widths = vec![
+        PresetSize::Proportion(1. / 3.),
+        PresetSize::Proportion(0.5),
+        PresetSize::Proportion(2. / 3.),
+    ];
+
+    // Baseline: single column, no preset toggle.
+    let ops_base = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    let layout_base = check_ops_with_options(options.clone(), ops_base);
+    let ws_base = layout_base.active_workspace().unwrap();
+    let tiles_base: Vec<_> = ws_base.tiles_with_render_positions().collect();
+    assert_eq!(tiles_base.len(), 1);
+
+    let (tile_base, pos_base, _) = tiles_base[0];
+    let size_base = tile_base.animated_tile_size();
+    let right_edge_base = pos_base.x + size_base.w;
+
+    // After toggle: same setup, but switch preset column width once.
+    let ops_toggled = [
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::SwitchPresetColumnWidth,
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    let layout_toggled = check_ops_with_options(options, ops_toggled);
+    let ws_toggled = layout_toggled.active_workspace().unwrap();
+    let tiles_toggled: Vec<_> = ws_toggled.tiles_with_render_positions().collect();
+    assert_eq!(tiles_toggled.len(), 1);
+
+    let (tile_toggled, pos_toggled, _) = tiles_toggled[0];
+    let size_toggled = tile_toggled.animated_tile_size();
+    let right_edge_toggled = pos_toggled.x + size_toggled.w;
+
+    // Column width must actually change.
+    assert!((size_toggled.w - size_base.w).abs() > 1.0);
+
+    // In single-column RTL, the right edge of the column should remain pinned.
+    assert!((right_edge_toggled - right_edge_base).abs() < 1.0);
+}
+
+#[test]
+fn preset_column_width_with_pre_panned_camera_keeps_view_pos_in_ltr_and_rtl() {
+    fn run(dir: LayoutDirection) -> f64 {
+        let mut options = Options::default();
+        options.layout.direction = dir;
+        options.layout.center_focused_column = CenterFocusedColumn::Never;
+        options.layout.preset_column_widths = vec![
+            PresetSize::Proportion(1. / 3.),
+            PresetSize::Proportion(0.5),
+            PresetSize::Proportion(2. / 3.),
+        ];
+
+        let ops_initial = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(2),
+            },
+            Op::AddWindow {
+                params: TestWindowParams::new(3),
+            },
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::CompleteAnimations,
+        ];
+
+        let mut layout = check_ops_with_options(options, ops_initial);
+
+        // Pre-pan the camera using a DnD edge scroll so that view_pos becomes non-zero.
+        let ws = layout.active_workspace().unwrap();
+        let view_width = ws.scrolling().view_size().w;
+
+        let ops_pan = [
+            Op::DndUpdate {
+                output_idx: 1,
+                px: view_width,
+                py: 100.0,
+            },
+            Op::AdvanceAnimations { msec_delta: 0 },
+            Op::AdvanceAnimations { msec_delta: 1000 },
+        ];
+        check_ops_on_layout(&mut layout, ops_pan);
+
+        let ws = layout.active_workspace().unwrap();
+        let before = ws.scrolling().view_pos();
+
+        let ops_toggle = [
+            Op::SwitchPresetColumnWidth,
+            Op::Communicate(1),
+            Op::Communicate(2),
+            Op::Communicate(3),
+            Op::CompleteAnimations,
+        ];
+        check_ops_on_layout(&mut layout, ops_toggle);
+
+        let ws = layout.active_workspace().unwrap();
+        let after = ws.scrolling().view_pos();
+
+        after - before
+    }
+
+    let delta_ltr = run(LayoutDirection::Ltr);
+    let delta_rtl = run(LayoutDirection::Rtl);
+
+    let eps = 0.01;
+    assert!(delta_ltr.abs() < eps, "LTR view_pos changed by {delta_ltr}");
+    assert!(delta_rtl.abs() < eps, "RTL view_pos changed by {delta_rtl}");
+}
+
+#[test]
+fn interactive_resize_pins_leading_edge_in_ltr_and_rtl() {
+    fn run(dir: LayoutDirection) -> (f64, f64) {
+        let mut options = Options::default();
+        options.layout.direction = dir;
+        options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+        let ops = [
+            Op::AddOutput(1),
+            Op::AddWindow {
+                params: TestWindowParams::new(1),
+            },
+            Op::Communicate(1),
+            Op::CompleteAnimations,
+        ];
+
+        let mut layout = check_ops_with_options(options, ops);
+
+        let ws = layout.active_workspace().unwrap();
+        let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+        assert_eq!(tiles.len(), 1);
+        let (tile_before, pos_before, _) = tiles[0];
+        let size_before = tile_before.animated_tile_size();
+
+        // Leading edge in screen space: left in LTR, right in RTL.
+        let leading_before = match dir {
+            LayoutDirection::Ltr => pos_before.x,
+            LayoutDirection::Rtl => pos_before.x + size_before.w,
+        };
+
+        let edges = match dir {
+            LayoutDirection::Ltr => ResizeEdge::LEFT,
+            LayoutDirection::Rtl => ResizeEdge::RIGHT,
+        };
+
+        let dx = match dir {
+            // Move the grabbed edge visibly so width changes.
+            LayoutDirection::Ltr => 200.0,
+            LayoutDirection::Rtl => -200.0,
+        };
+
+        let ops_resize = [
+            Op::InteractiveResizeBegin { window: 1, edges },
+            Op::InteractiveResizeUpdate {
+                window: 1,
+                dx,
+                dy: 0.0,
+            },
+            Op::Communicate(1),
+            Op::InteractiveResizeEnd { window: 1 },
+            Op::CompleteAnimations,
+        ];
+        check_ops_on_layout(&mut layout, ops_resize);
+
+        let ws = layout.active_workspace().unwrap();
+        let tiles_after: Vec<_> = ws.tiles_with_render_positions().collect();
+        assert_eq!(tiles_after.len(), 1);
+        let (tile_after, pos_after, _) = tiles_after[0];
+        let size_after = tile_after.animated_tile_size();
+
+        // Width must actually change so this is a meaningful resize.
+        assert!((size_after.w - size_before.w).abs() > 1.0);
+
+        let leading_after = match dir {
+            LayoutDirection::Ltr => pos_after.x,
+            LayoutDirection::Rtl => pos_after.x + size_after.w,
+        };
+
+        (leading_before, leading_after)
+    }
+
+    let (ltr_before, ltr_after) = run(LayoutDirection::Ltr);
+    let (rtl_before, rtl_after) = run(LayoutDirection::Rtl);
+
+    let eps = 1.0;
+    assert!((ltr_after - ltr_before).abs() < eps, "LTR leading edge moved: {ltr_before} -> {ltr_after}");
+    assert!((rtl_after - rtl_before).abs() < eps, "RTL leading edge moved: {rtl_before} -> {rtl_after}");
 }
 
 #[test]

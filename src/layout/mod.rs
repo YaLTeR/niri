@@ -626,6 +626,10 @@ impl Options {
 
         self
     }
+
+    pub fn layout_direction(&self) -> niri_config::LayoutDirection {
+        self.layout.direction
+    }
 }
 
 impl OverviewProgress {

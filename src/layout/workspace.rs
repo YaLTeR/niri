@@ -361,6 +361,10 @@ impl<W: LayoutElement> Workspace<W> {
         self.scale
     }
 
+    pub fn layout_direction(&self) -> niri_config::LayoutDirection {
+        self.options.layout_direction()
+    }
+
     pub fn advance_animations(&mut self) {
         self.scrolling.advance_animations();
         self.floating.advance_animations();
