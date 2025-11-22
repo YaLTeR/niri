@@ -410,6 +410,8 @@ impl State {
             }
             block
         };
+        #[cfg(not(feature = "dbus"))]
+        let _ = consumed_by_a11y;
 
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
