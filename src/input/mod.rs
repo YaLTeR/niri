@@ -36,12 +36,13 @@ use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
-use touch_move_grab::TouchMoveGrab;
 use touch_overview_grab::TouchOverviewGrab;
 
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
+#[cfg(feature = "dbus")]
+use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
@@ -59,7 +60,6 @@ pub mod scroll_swipe_gesture;
 pub mod scroll_tracker;
 pub mod spatial_movement_grab;
 pub mod swipe_tracker;
-pub mod touch_move_grab;
 pub mod touch_overview_grab;
 pub mod touch_resize_grab;
 
@@ -83,6 +83,28 @@ impl<D: SeatHandler> PointerOrTouchStartData<D> {
             PointerOrTouchStartData::Pointer(x) => x.location,
             PointerOrTouchStartData::Touch(x) => x.location,
         }
+    }
+
+    pub fn unwrap_pointer(&self) -> &PointerGrabStartData<D> {
+        match self {
+            PointerOrTouchStartData::Pointer(x) => x,
+            PointerOrTouchStartData::Touch(_) => panic!("start_data is not Pointer"),
+        }
+    }
+
+    pub fn unwrap_touch(&self) -> &TouchGrabStartData<D> {
+        match self {
+            PointerOrTouchStartData::Pointer(_) => panic!("start_data is not Touch"),
+            PointerOrTouchStartData::Touch(x) => x,
+        }
+    }
+
+    pub fn is_pointer(&self) -> bool {
+        matches!(self, Self::Pointer(_))
+    }
+
+    pub fn is_touch(&self) -> bool {
+        matches!(self, Self::Touch(_))
     }
 }
 
@@ -368,15 +390,28 @@ impl State {
 
         // Accessibility modifier grabs should override XKB state changes (e.g. Caps Lock), so we
         // need to process them before keyboard.input() below.
+        //
+        // Other accessibility-grabbed keys should still update our XKB state, but not cause any
+        // other changes.
         #[cfg(feature = "dbus")]
-        if self.a11y_process_key(
-            Duration::from_millis(u64::from(time)),
-            event.key_code(),
-            event.state(),
-        ) {
-            *consumed_by_a11y = true;
-            return;
-        }
+        let block = {
+            let block = self.a11y_process_key(
+                Duration::from_millis(u64::from(time)),
+                event.key_code(),
+                event.state(),
+            );
+            if block != KbMonBlock::Pass {
+                *consumed_by_a11y = true;
+            }
+            // The accessibility modifier first press must not change XKB state, so we return
+            // early here.
+            if block == KbMonBlock::ModifierFirstPress {
+                return;
+            }
+            block
+        };
+        #[cfg(not(feature = "dbus"))]
+        let _ = consumed_by_a11y;
 
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
@@ -389,6 +424,44 @@ impl State {
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
                 let modifiers = modifiers_from_state(*mods);
+
+                // After updating XKB state from accessibility-grabbed keys, return right away and
+                // don't handle them.
+                #[cfg(feature = "dbus")]
+                if block != KbMonBlock::Pass {
+                    // HACK: there's a slight problem with this code. Here we filter out keys
+                    // consumed by accessibility from getting sent to the Wayland client. However,
+                    // the Wayland client can still receive these keys from the wl_keyboard
+                    // enter/modifiers events. In particular, this can easily happen when opening
+                    // the Orca actions menu with Orca + Shift + A: in most cases, when this menu
+                    // opens, Shift is still held down, so the menu receives it in
+                    // wl_keyboard.enter/modifiers. Then the menu won't react to Enter presses
+                    // until the user taps Shift again to "release" it (since the initial Shift
+                    // release will be intercepted here).
+                    //
+                    // I don't think there's any good way of dealing with this apart from keeping a
+                    // separate xkb state for accessibility, so that we can track the pressed
+                    // modifiers without accidentally leaking them to wl_keyboard.enter. So for now
+                    // let's forward modifier releases to the clients here to deal with the most
+                    // common case.
+                    if !pressed
+                        && matches!(
+                            modified,
+                            Keysym::Shift_L
+                                | Keysym::Shift_R
+                                | Keysym::Control_L
+                                | Keysym::Control_R
+                                | Keysym::Super_L
+                                | Keysym::Super_R
+                                | Keysym::Alt_L
+                                | Keysym::Alt_R
+                        )
+                    {
+                        return FilterResult::Forward;
+                    } else {
+                        return FilterResult::Intercept(None);
+                    }
+                }
 
                 if this.niri.exit_confirm_dialog.is_open() && pressed {
                     if raw == Some(Keysym::Return) {
@@ -2773,31 +2846,19 @@ impl State {
                     let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                     if is_overview_open || mod_down {
                         let location = pointer.current_location();
-                        let (output, pos_within_output) = self.niri.output_under(location).unwrap();
-                        let output = output.clone();
 
                         if !is_overview_open {
                             self.niri.layout.activate_window(&window);
                         }
 
-                        if self.niri.layout.interactive_move_begin(
-                            window.clone(),
-                            &output,
-                            pos_within_output,
-                        ) {
-                            let start_data = PointerGrabStartData {
-                                focus: None,
-                                button: button_code,
-                                location,
-                            };
-                            let grab = MoveGrab::new(start_data, window.clone(), is_overview_open);
+                        let start_data = PointerGrabStartData {
+                            focus: None,
+                            button: button_code,
+                            location,
+                        };
+                        let start_data = PointerOrTouchStartData::Pointer(start_data);
+                        if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), false) {
                             pointer.set_grab(self, grab, serial, Focus::Clear);
-
-                            if !is_overview_open {
-                                self.niri
-                                    .cursor_manager
-                                    .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
-                            }
                         }
                     }
                 }
@@ -4037,22 +4098,15 @@ impl State {
             } else if let Some((window, _)) = under.window {
                 self.niri.layout.activate_window(&window);
 
-                // Check if we need to start an interactive move.
+                // Check if we need to start a touch move grab.
                 if mod_down {
-                    let (output, pos_within_output) = self.niri.output_under(pos).unwrap();
-                    let output = output.clone();
-
-                    if self.niri.layout.interactive_move_begin(
-                        window.clone(),
-                        &output,
-                        pos_within_output,
-                    ) {
-                        let start_data = TouchGrabStartData {
-                            focus: None,
-                            slot,
-                            location: pos,
-                        };
-                        let grab = TouchMoveGrab::new(start_data, window.clone());
+                    let start_data = TouchGrabStartData {
+                        focus: None,
+                        slot,
+                        location: pos,
+                    };
+                    let start_data = PointerOrTouchStartData::Touch(start_data);
+                    if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true) {
                         handle.set_grab(self, grab, serial);
                     }
                 }
@@ -4908,11 +4962,17 @@ fn grab_allows_hot_corner(grab: &(dyn PointerGrab<State> + 'static)) -> bool {
     //
     // Some notable grabs not mentioned here:
     // - DnDGrab allows hot corner to DnD across workspaces.
-    // - MoveGrab allows hot corner to DnD across workspaces.
     // - ClickGrab keeps pointer focus on the window, so the hot corner doesn't trigger.
     // - Touch grabs: touch doesn't trigger the hot corner.
     if grab.is::<ResizeGrab>() || grab.is::<SpatialMovementGrab>() {
         return false;
+    }
+
+    if let Some(grab) = grab.downcast_ref::<MoveGrab>() {
+        // Window move allows hot corner to DnD across workspaces.
+        if !grab.is_move() {
+            return false;
+        }
     }
 
     true
