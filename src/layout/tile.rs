@@ -860,6 +860,10 @@ impl<W: LayoutElement> Tile<W> {
         let offset = self.bob_offset();
         let point = point - offset;
 
+        if self.window.rules().input_passthrough == Some(true) {
+            return None;
+        }
+
         if self.is_in_input_region(point) {
             let win_pos = self.buf_loc() + offset;
             Some(HitType::Input { win_pos })
