@@ -231,23 +231,33 @@ fn rtl_three_columns_all_visible() {
         );
     }
 
-    // With three 1/3-width columns, they should exactly fill the viewport.
-    // All three should be visible with no empty space on left or right.
+    // With three 1/3-width columns, they should nearly fill the viewport.
+    // All three should be visible.
     let leftmost_pos = tiles[0].1.x;
     let rightmost_pos = tiles[2].1.x;
     let rightmost_width = tiles[2].0.animated_tile_size().w;
     let rightmost_right_edge = rightmost_pos + rightmost_width;
 
-    // Leftmost column should be near the left edge (minimal empty space)
+    // Calculate the total band width
+    let total_band_width = tiles.iter()
+        .map(|(tile, _)| tile.animated_tile_size().w)
+        .sum::<f64>()
+        + gaps * (tiles.len() - 1) as f64;
+
+    // The remaining space in the viewport
+    let remaining_space = view_width - total_band_width;
+
+    // In RTL, we position the band so the rightmost column's right edge is at the viewport width.
+    // This means the leftmost column will be at position = remaining_space.
     assert!(
-        leftmost_pos <= gaps + eps,
-        "leftmost column should be near left edge: pos={leftmost_pos}",
+        (leftmost_pos - remaining_space).abs() <= eps,
+        "leftmost column should be at remaining_space: pos={leftmost_pos} expected={remaining_space}",
     );
 
-    // Rightmost column should be near the right edge
+    // Rightmost column's right edge should be at the viewport width
     assert!(
-        rightmost_right_edge >= view_width - gaps - eps,
-        "rightmost column should be near right edge: right_edge={rightmost_right_edge} view_width={view_width}",
+        (rightmost_right_edge - view_width).abs() <= eps,
+        "rightmost column right edge should be at viewport width: right_edge={rightmost_right_edge} view_width={view_width}",
     );
 
     // All columns should be visible
