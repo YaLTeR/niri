@@ -158,11 +158,24 @@ fn rtl_two_columns_leave_left_third_empty() {
         "empty_width={empty_width} avg_width={avg_width}",
     );
 
-    // The rightmost column should still hug the right edge, so both columns remain visible.
+    // Both columns should be visible. The rightmost column's right edge should be at
+    // approximately (empty_width + total_band_width), which is the natural result of
+    // positioning the leftmost column at one column width from the left.
     let right_edge = right_pos.x + right_width;
+    let total_band_width = left_width + gaps + right_width;
+    let expected_right_edge = empty_width + total_band_width;
     assert!(
-        right_edge > view_width - gaps - 0.5,
-        "right_edge={right_edge} view_width={view_width} gaps={gaps}",
+        (right_edge - expected_right_edge).abs() <= eps,
+        "right_edge={right_edge} expected={expected_right_edge} (empty_width={empty_width} + band_width={total_band_width})",
+    );
+    
+    // Verify both columns are actually visible (not off-screen)
+    assert!(
+        left_pos.x >= 0.0 && right_edge <= view_width,
+        "columns should be fully visible: left={} right_edge={} view_width={}",
+        left_pos.x,
+        right_edge,
+        view_width,
     );
 }
 

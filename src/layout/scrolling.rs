@@ -577,6 +577,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             padding,
         );
 
+        // Calculate total band width for band-aware camera positioning in RTL
+        // Only pass band width if there are multiple columns (2+) to enable special multi-column positioning
+        let total_band_width = if self.columns.len() >= 2 {
+            let gaps = self.options.layout.gaps;
+            let total_width: f64 = self.data.iter().map(|col| col.width).sum();
+            let total_gaps = gaps * (self.columns.len().saturating_sub(1)) as f64;
+            Some(total_width + total_gaps)
+        } else {
+            None
+        };
+
         compute_new_view_offset(
             cur_view_pos,
             area.size.w,
@@ -585,6 +596,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             padding,
             PinnedViewportEdge::Leading,
             self.dir(),
+            total_band_width,
         )
     }
 
@@ -2563,8 +2575,11 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
         let gaps = self.options.layout.gaps;
         let mut positions = vec![0.; data.len() + 1];
 
-        // Phase 1: make the implicit band origin explicit, but keep it fixed at 0.0 so behavior
-        // remains unchanged. Later phases will allow this to vary.
+        // Calculate total band width (currently unused in column_xs but kept for future use)
+        let _total_band_width: f64 = data.iter().map(|col| col.width).sum::<f64>()
+            + gaps * (data.len().saturating_sub(1)) as f64;
+
+        // Band origin: start of the column band in world space.
         let band_origin_x = 0.0;
 
         match self.dir() {
@@ -5930,6 +5945,7 @@ fn compute_new_view_offset(
     gaps: f64,
     pinned: PinnedViewportEdge,
     dir: LayoutDirection,
+    total_band_width: Option<f64>,
 ) -> f64 {
     // Map the abstract pinned edge to a concrete side of the viewport.
     let align_trailing = match (pinned, dir) {
@@ -5950,7 +5966,47 @@ fn compute_new_view_offset(
             new_col_x
         }
     } else {
-        // Compute the padding in case it needs to be smaller due to large tile width.
+        // For RTL with band information, use band-aware positioning
+        if let Some(band_width) = total_band_width {
+            if dir == LayoutDirection::Rtl && align_trailing && band_width < view_width {
+                // In RTL when all columns fit in the viewport, position the camera so:
+                // 1. There's approximately one column width of empty space on the left
+                // 2. The rightmost column is near the right edge
+                //
+                // The active column is the leftmost (at new_col_x).
+                // We want leftmost at screen ~col_width, so: new_col_x - view_pos = col_width
+                // Therefore: view_pos = new_col_x - col_width
+                //
+                // But we also want the rightmost column near the right edge.
+                // Rightmost right edge at: new_col_x + band_width
+                // In screen space: (new_col_x + band_width) - view_pos
+                // With view_pos = new_col_x - col_width:
+                // = (new_col_x + band_width) - (new_col_x - col_width) = band_width + col_width
+                //
+                // We want this ≈ view_width, so: band_width + col_width ≈ view_width
+                // This means: view_pos = new_col_x - col_width
+                let result = new_col_x - new_col_width;
+                
+                #[cfg(test)]
+                eprintln!(
+                    "[scroll][compute_view] pinned={:?} dir={:?} cur_x={} view_w={} col_x={} col_w={} gaps={} align_trailing={} band_w={} result={}",
+                    pinned,
+                    dir,
+                    cur_x,
+                    view_width,
+                    new_col_x,
+                    new_col_width,
+                    gaps,
+                    align_trailing,
+                    band_width,
+                    result,
+                );
+                
+                return result;
+            }
+        }
+        
+        // Standard padding-based positioning
         let padding = ((view_width - new_col_width) / 2.).clamp(0., gaps);
 
         // The band of X values for which the column (plus padding) is fully visible.
