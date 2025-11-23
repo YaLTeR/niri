@@ -132,7 +132,8 @@ type GbmDrmCompositor = DrmCompositor<
 
 pub struct OutputDevice {
     token: RegistrationToken,
-    render_node: DrmNode,
+    // Can be None for display-only devices such as DisplayLink.
+    render_node: Option<DrmNode>,
     drm_scanner: DrmScanner,
     surfaces: HashMap<crtc::Handle, Surface>,
     known_crtcs: HashMap<crtc::Handle, CrtcInfo>,
@@ -140,6 +141,8 @@ pub struct OutputDevice {
     // See https://github.com/Smithay/smithay/issues/1102.
     drm: DrmDevice,
     gbm: GbmDevice<DrmDeviceFd>,
+    // For display-only devices this will be the allocator from the primary device.
+    allocator: GbmAllocator<DrmDeviceFd>,
 
     pub drm_lease_state: Option<DrmLeaseState>,
     non_desktop_connectors: HashSet<(connector::Handle, crtc::Handle)>,
@@ -507,7 +510,29 @@ impl Tty {
     }
 
     pub fn init(&mut self, niri: &mut Niri) {
-        for (device_id, path) in self.udev_dispatcher.clone().as_source_ref().device_list() {
+        let udev = self.udev_dispatcher.clone();
+        let udev = udev.as_source_ref();
+
+        // Initialize the primary node first as later nodes might depend on the primary render node
+        // being available.
+        if let Some((primary_device_id, primary_device_path)) = udev
+            .device_list()
+            .find(|&(device_id, _)| device_id == self.primary_node.dev_id())
+        {
+            if let Err(err) = self.device_added(primary_device_id, primary_device_path, niri) {
+                warn!(
+                    "error adding primary node device, display-only devices may not work: {err:?}"
+                );
+            }
+        } else {
+            warn!("primary node is missing, display-only devices may not work");
+        };
+
+        for (device_id, path) in udev.device_list() {
+            if device_id == self.primary_node.dev_id() {
+                continue;
+            }
+
             if let Err(err) = self.device_added(device_id, path, niri) {
                 warn!("error adding device: {err:?}");
             }
@@ -694,6 +719,10 @@ impl Tty {
 
         let node = DrmNode::from_dev_id(device_id)?;
 
+        if node == self.primary_node {
+            debug!("this is the primary node");
+        }
+
         // Only consider primary node on udev event
         // https://gitlab.freedesktop.org/wlroots/wlroots/-/commit/768fbaad54027f8dd027e7e015e8eeb93cb38c52
         if node.ty() != NodeType::Primary {
@@ -724,24 +753,40 @@ impl Tty {
             GbmDevice::new(device_fd)
         }?;
 
-        let display = unsafe { EGLDisplay::new(gbm.clone())? };
-        let egl_device = EGLDevice::device_for_display(&display)?;
+        let mut try_initialize_gpu = || {
+            let display = unsafe { EGLDisplay::new(gbm.clone())? };
+            let egl_device = EGLDevice::device_for_display(&display)?;
 
-        let render_node = egl_device
-            .try_get_render_node()?
-            .context("no render node")?;
-        self.gpu_manager
-            .as_mut()
-            .add_node(render_node, gbm.clone())
-            .context("error adding render node to GPU manager")?;
+            // Software EGL devices (e.g., llvmpipe/softpipe) are rejected for now. They have some
+            // problems (segfault on importing dmabufs from other renderers) and need to be
+            // excluded from some places like DRM leasing.
+            ensure!(
+                !egl_device.is_software(),
+                "software EGL renderers are skipped"
+            );
 
-        if node == self.primary_node || render_node == self.primary_render_node {
-            if node == self.primary_node {
-                debug!("this is the primary node");
-            }
-            if render_node == self.primary_render_node {
-                debug!("this is the primary render node");
-            }
+            let render_node = egl_device
+                .try_get_render_node()
+                .ok()
+                .flatten()
+                .unwrap_or(node);
+            self.gpu_manager
+                .as_mut()
+                .add_node(render_node, gbm.clone())
+                .context("error adding render node to GPU manager")?;
+
+            Ok(render_node)
+        };
+
+        let render_node = try_initialize_gpu()
+            .inspect_err(|err| {
+                debug!("failed to initialize renderer, falling back to primary gpu: {err:?}");
+            })
+            .ok();
+
+        if render_node == Some(self.primary_render_node) {
+            let render_node = self.primary_render_node;
+            debug!("this is the primary render node");
 
             let mut renderer = self
                 .gpu_manager
@@ -785,13 +830,14 @@ impl Tty {
             assert!(self.dmabuf_global.replace(dmabuf_global).is_none());
 
             // Update the dmabuf feedbacks for all surfaces.
-            for device in self.devices.values_mut() {
+            for (node, device) in self.devices.iter_mut() {
                 for surface in device.surfaces.values_mut() {
                     match surface_dmabuf_feedback(
                         &surface.compositor,
                         primary_formats.clone(),
                         self.primary_render_node,
                         device.render_node,
+                        *node,
                     ) {
                         Ok(feedback) => {
                             surface.dmabuf_feedback = Some(feedback);
@@ -803,6 +849,16 @@ impl Tty {
                 }
             }
         }
+
+        let allocator_gbm = if render_node.is_some() {
+            gbm.clone()
+        } else if let Some(primary_device) = self.devices.get(&self.primary_node) {
+            primary_device.gbm.clone()
+        } else {
+            bail!("no allocator available for device");
+        };
+        let gbm_flags = GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT;
+        let allocator = GbmAllocator::new(allocator_gbm, gbm_flags);
 
         let token = niri
             .event_loop
@@ -827,6 +883,7 @@ impl Tty {
             render_node,
             drm,
             gbm,
+            allocator,
             drm_scanner: DrmScanner::new(),
             surfaces: HashMap::new(),
             known_crtcs: HashMap::new(),
@@ -1039,8 +1096,8 @@ impl Tty {
             lease_state.disable_global::<State>();
         }
 
-        if node == self.primary_node || device.render_node == self.primary_render_node {
-            match self.gpu_manager.single_renderer(&device.render_node) {
+        if device.render_node == Some(self.primary_render_node) {
+            match self.gpu_manager.single_renderer(&self.primary_render_node) {
                 Ok(mut renderer) => renderer.unbind_wl_display(),
                 Err(err) => {
                     warn!("error creating renderer during device removal: {err}");
@@ -1075,9 +1132,11 @@ impl Tty {
             }
         }
 
-        self.gpu_manager.as_mut().remove_node(&device.render_node);
-        // Trigger re-enumeration in order to remove the device from gpu_manager.
-        let _ = self.gpu_manager.devices();
+        if let Some(render_node) = device.render_node {
+            self.gpu_manager.as_mut().remove_node(&render_node);
+            // Trigger re-enumeration in order to remove the device from gpu_manager.
+            let _ = self.gpu_manager.devices();
+        }
 
         niri.event_loop.remove(device.token);
 
@@ -1178,15 +1237,6 @@ impl Tty {
                 Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
             }
 
-            if !niri.config.borrow().debug.keep_max_bpc_unchanged {
-                // We only use 8888 RGB formats, so set max bpc to 8 to allow more types of links to
-                // run.
-                match set_max_bpc(&props, 8) {
-                    Ok(_bpc) => (),
-                    Err(err) => debug!("couldn't set max bpc: {err:?}"),
-                }
-            }
-
             match get_panel_orientation(&props) {
                 Ok(x) => orientation = Some(x),
                 Err(err) => {
@@ -1240,10 +1290,6 @@ impl Tty {
             }
         }
 
-        // Create GBM allocator.
-        let gbm_flags = GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT;
-        let allocator = GbmAllocator::new(device.gbm.clone(), gbm_flags);
-
         // Update the output mode.
         let (physical_width, physical_height) = connector.size().unwrap_or((0, 0));
 
@@ -1274,12 +1320,15 @@ impl Tty {
             output.user_data().insert_if_missing(|| PanelOrientation(x));
         }
 
-        let renderer = self.gpu_manager.single_renderer(&device.render_node)?;
+        let render_node = device.render_node.unwrap_or(self.primary_render_node);
+        let renderer = self.gpu_manager.single_renderer(&render_node)?;
         let egl_context = renderer.as_ref().egl_context();
         let render_formats = egl_context.dmabuf_render_formats();
 
         // Filter out the CCS modifiers as they have increased bandwidth, causing some monitor
         // configurations to stop working.
+        //
+        // For display only devices, restrict to linear buffers for best compatibility.
         //
         // The invalid modifier attempt below should make this unnecessary in some cases, but it
         // would still be a bad idea to remove this until Smithay has some kind of full-device
@@ -1289,7 +1338,11 @@ impl Tty {
             .iter()
             .copied()
             .filter(|format| {
-                !matches!(
+                if device.render_node.is_none() {
+                    return format.modifier == Modifier::Linear;
+                }
+
+                let is_ccs = matches!(
                     format.modifier,
                     Modifier::I915_y_tiled_ccs
                     // I915_FORMAT_MOD_Yf_TILED_CCS
@@ -1304,7 +1357,9 @@ impl Tty {
                     | Modifier::Unrecognized(0x10000000000000b)
                     // I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC
                     | Modifier::Unrecognized(0x10000000000000c)
-                )
+                );
+
+                !is_ccs
             })
             .collect::<FormatSet>();
 
@@ -1313,7 +1368,7 @@ impl Tty {
             OutputModeSource::Auto(output.clone()),
             surface,
             None,
-            allocator.clone(),
+            device.allocator.clone(),
             GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
             SUPPORTED_COLOR_FORMATS,
             // This is only used to pick a good internal format, so it can use the surface's render
@@ -1343,7 +1398,7 @@ impl Tty {
                     OutputModeSource::Auto(output.clone()),
                     surface,
                     None,
-                    allocator,
+                    device.allocator.clone(),
                     GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
                     SUPPORTED_COLOR_FORMATS,
                     render_formats,
@@ -1367,6 +1422,7 @@ impl Tty {
                 primary_formats,
                 self.primary_render_node,
                 device.render_node,
+                node,
             ) {
                 Ok(feedback) => {
                     dmabuf_feedback = Some(feedback);
@@ -1560,6 +1616,30 @@ impl Tty {
             return;
         };
 
+        let refresh_interval = output_state.frame_clock.refresh_interval();
+
+        let time = if presentation_time.is_zero() {
+            now
+        } else {
+            presentation_time
+        };
+
+        if output_state
+            .vblank_throttle
+            .throttle(refresh_interval, time, move |state| {
+                let meta = DrmEventMetadata {
+                    sequence: meta.sequence,
+                    time: DrmEventTime::Monotonic(Duration::ZERO),
+                };
+
+                let tty = state.backend.tty();
+                tty.on_vblank(&mut state.niri, node, crtc, meta);
+            })
+        {
+            // Throttled.
+            return;
+        }
+
         let redraw_needed = match mem::replace(&mut output_state.redraw_state, RedrawState::Idle) {
             RedrawState::WaitingForVBlank { redraw_needed } => redraw_needed,
             state @ (RedrawState::Idle
@@ -1582,7 +1662,7 @@ impl Tty {
         // Mark the last frame as submitted.
         match surface.compositor.frame_submitted() {
             Ok(Some((mut feedback, target_presentation_time))) => {
-                let refresh = match output_state.frame_clock.refresh_interval() {
+                let refresh = match refresh_interval {
                     Some(refresh) => {
                         if output_state.frame_clock.vrr() {
                             Refresh::Variable(refresh)
@@ -1598,12 +1678,9 @@ impl Tty {
                 let mut flags = wp_presentation_feedback::Kind::Vsync
                     | wp_presentation_feedback::Kind::HwCompletion;
 
-                let time = if presentation_time.is_zero() {
-                    now
-                } else {
+                if !presentation_time.is_zero() {
                     flags.insert(wp_presentation_feedback::Kind::HwClock);
-                    presentation_time
-                };
+                }
 
                 feedback.presented::<_, smithay::utils::Monotonic>(time, refresh, seq, flags);
 
@@ -1723,7 +1800,7 @@ impl Tty {
 
         let mut renderer = match self.gpu_manager.renderer(
             &self.primary_render_node,
-            &device.render_node,
+            &device.render_node.unwrap_or(self.primary_render_node),
             surface.compositor.format(),
         ) {
             Ok(renderer) => renderer,
@@ -2075,7 +2152,7 @@ impl Tty {
         let device = self
             .devices
             .values()
-            .find(|d| d.render_node == self.primary_render_node);
+            .find(|d| d.render_node == Some(self.primary_render_node));
         // Otherwise, try to get the device corresponding to the primary node.
         let device = device.or_else(|| self.devices.get(&self.primary_node));
 
@@ -2626,7 +2703,8 @@ fn surface_dmabuf_feedback(
     compositor: &GbmDrmCompositor,
     primary_formats: FormatSet,
     primary_render_node: DrmNode,
-    surface_render_node: DrmNode,
+    surface_render_node: Option<DrmNode>,
+    surface_scanout_node: DrmNode,
 ) -> Result<SurfaceDmabufFeedback, io::Error> {
     let surface = compositor.surface();
     let planes = surface.planes();
@@ -2651,7 +2729,10 @@ fn surface_dmabuf_feedback(
 
     // HACK: AMD iGPU + dGPU systems share some modifiers between the two, and yet cross-device
     // buffers produce a glitched scanout if the modifier is not Linear...
-    if primary_render_node != surface_render_node {
+    //
+    // Also limit scan-out formats to Linear if we have a device without a render node (i.e.
+    // we're rendering on a different device).
+    if surface_render_node != Some(primary_render_node) {
         primary_scanout_formats.retain(|f| f.modifier == Modifier::Linear);
         primary_or_overlay_scanout_formats.retain(|f| f.modifier == Modifier::Linear);
     }
@@ -2670,12 +2751,12 @@ fn surface_dmabuf_feedback(
     let scanout = builder
         .clone()
         .add_preference_tranche(
-            surface_render_node.dev_id(),
+            surface_scanout_node.dev_id(),
             Some(TrancheFlags::Scanout),
             primary_scanout_formats,
         )
         .add_preference_tranche(
-            surface_render_node.dev_id(),
+            surface_scanout_node.dev_id(),
             Some(TrancheFlags::Scanout),
             primary_or_overlay_scanout_formats,
         )
@@ -2683,7 +2764,7 @@ fn surface_dmabuf_feedback(
 
     // If this is the primary node surface, send scanout formats in both tranches to avoid
     // duplication.
-    let render = if primary_render_node == surface_render_node {
+    let render = if surface_render_node == Some(primary_render_node) {
         scanout.clone()
     } else {
         builder.build()?
@@ -3132,30 +3213,6 @@ fn reset_hdr(props: &ConnectorProperties) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn set_max_bpc(props: &ConnectorProperties, bpc: u64) -> anyhow::Result<u64> {
-    let (info, value) = props.find(c"max bpc")?;
-    let property::ValueType::UnsignedRange(min, max) = info.value_type() else {
-        bail!("wrong property type")
-    };
-
-    let bpc = bpc.clamp(min, max);
-    let property::Value::UnsignedRange(value) = info.value_type().convert_value(*value) else {
-        bail!("wrong property type")
-    };
-
-    if value != bpc {
-        props
-            .device
-            .set_property(
-                props.connector,
-                info.handle(),
-                property::Value::UnsignedRange(bpc).into(),
-            )
-            .context("error setting property")?;
-    }
-    Ok(bpc)
 }
 
 fn is_vrr_capable(device: &DrmDevice, connector: connector::Handle) -> Option<bool> {
