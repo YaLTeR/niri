@@ -275,6 +275,99 @@ fn rtl_three_columns_all_visible() {
 }
 
 #[test]
+fn rtl_four_columns_scrolls_correctly() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.default_column_width = Some(PresetSize::Proportion(1.0 / 3.0));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(4),
+        },
+        Op::Communicate(4),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let mut tiles: Vec<_> = ws
+        .tiles_with_render_positions()
+        .map(|(tile, pos, _)| (tile, pos))
+        .collect();
+    assert_eq!(tiles.len(), 4);
+
+    tiles.sort_by(|(_, p1), (_, p2)| p1.x.partial_cmp(&p2.x).unwrap());
+
+    let eps = 1.0;
+
+    // With 4 columns of 1/3 width each, only 3 can fit in the viewport.
+    // In RTL, the newest columns (3 and 4) should be visible on the left,
+    // along with column 2, while the oldest (column 1) scrolls off to the right.
+
+    // The leftmost visible column should be near the left edge
+    let leftmost_visible_pos = tiles[0].1.x;
+    assert!(
+        leftmost_visible_pos <= gaps + eps,
+        "leftmost visible column should be near left edge: pos={leftmost_visible_pos}",
+    );
+
+    // The rightmost visible column's right edge should be near the right edge
+    let rightmost_visible_idx = tiles.iter()
+        .rposition(|(_, pos)| pos.x < view_width)
+        .unwrap();
+    let rightmost_visible_pos = tiles[rightmost_visible_idx].1;
+    let rightmost_visible_width = tiles[rightmost_visible_idx].0.animated_tile_size().w;
+    let rightmost_visible_right_edge = rightmost_visible_pos.x + rightmost_visible_width;
+    
+    assert!(
+        rightmost_visible_right_edge >= view_width - eps,
+        "rightmost visible column should be near right edge: right_edge={rightmost_visible_right_edge} view_width={view_width}",
+    );
+
+    // Exactly 3 columns should be visible (the 3 newest in RTL)
+    let visible_count = tiles.iter().filter(|(_, pos)| {
+        let width = tiles.iter().find(|(_, p)| p == pos).unwrap().0.animated_tile_size().w;
+        pos.x >= 0.0 && pos.x + width <= view_width
+    }).count();
+    
+    assert_eq!(
+        visible_count, 3,
+        "exactly 3 columns should be visible, got {visible_count}",
+    );
+
+    // The oldest column (column 1, which is rightmost in RTL) should extend beyond the viewport
+    let oldest_column_pos = tiles[3].1.x; // Rightmost in sorted order
+    let oldest_column_width = tiles[3].0.animated_tile_size().w;
+    let oldest_column_right_edge = oldest_column_pos + oldest_column_width;
+    assert!(
+        oldest_column_right_edge > view_width,
+        "oldest column should extend beyond viewport: right_edge={oldest_column_right_edge} view_width={view_width}",
+    );
+}
+
+#[test]
 fn rtl_scrolling_insert_position_hits_correct_column() {
     let mut options = Options::default();
     options.layout.direction = LayoutDirection::Rtl;
@@ -4202,7 +4295,13 @@ fn preset_column_width_pins_right_edge_in_rtl() {
     assert!((size_mid_toggled.w - size_mid_base.w).abs() > 1.0);
 
     // In RTL, the right edge of the focused column should remain pinned.
-    assert!((right_edge_toggled - right_edge_base).abs() < 1.0);
+    assert!(
+        (right_edge_toggled - right_edge_base).abs() < 1.0,
+        "right_edge_base={} right_edge_toggled={} diff={}",
+        right_edge_base,
+        right_edge_toggled,
+        (right_edge_toggled - right_edge_base).abs(),
+    );
 }
 
 #[test]

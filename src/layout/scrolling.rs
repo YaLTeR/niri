@@ -5985,27 +5985,41 @@ fn compute_new_view_offset(
     } else {
         // For RTL with band information, use band-aware positioning
         if let Some(band_width) = total_band_width {
-            if dir == LayoutDirection::Rtl && align_trailing && band_width < view_width {
-                // In RTL when multiple columns fit in the viewport, we need to position them
-                // so they're all visible with appropriate spacing.
+            if dir == LayoutDirection::Rtl && align_trailing {
+                // In RTL when multiple columns exist, we need to position the camera
+                // to show the appropriate columns based on band size.
                 //
-                // Case 1: Band nearly fills viewport (e.g., 3 columns of 1/3 width each)
-                //         Position camera to show all columns from left edge to right edge
-                // Case 2: Band is much smaller (e.g., 2 columns of 1/3 width)
+                // Case 1: Band exceeds viewport (e.g., 4+ columns of 1/3 width)
+                //         Position camera to show leftmost (newest) columns
+                // Case 2: Band nearly fills viewport (e.g., 3 columns of 1/3 width)
+                //         Position camera to show all columns from left to right edge
+                // Case 3: Band is much smaller (e.g., 2 columns of 1/3 width)
                 //         Leave approximately one column width of empty space on the left
                 //
                 // The active column is the leftmost (at new_col_x).
-                // Rightmost column's right edge is at: new_col_x + band_width
                 
-                let result = if band_width + new_col_width >= view_width {
-                    // Band fills or nearly fills viewport: show from left edge
-                    // With band_origin_x set to position rightmost at viewport width,
+                let result = if band_width > view_width && new_col_x < new_col_width {
+                    // Band exceeds viewport AND we're positioning the leftmost column:
+                    // Show leftmost (newest) columns from left edge.
+                    // Position so leftmost column is at left edge, allowing as many columns
+                    // as possible to be visible (some will extend beyond right edge).
+                    // Only apply this when new_col_x is small (indicating leftmost column).
+                    new_col_x
+                } else if band_width + new_col_width >= view_width && new_col_x < view_width * 0.4 {
+                    // Band fills or nearly fills viewport AND we're positioning leftmost column:
+                    // Show from left edge. With band_origin_x set to position rightmost at viewport width,
                     // we want view_pos = 0 to show the band from left to right edge.
+                    // Only apply when new_col_x is in left portion of viewport (indicating leftmost column).
                     0.0
-                } else {
+                } else if band_width < view_width && new_col_x < view_width * 0.4 {
                     // Band is smaller: leave ~1 column width of space on left
                     // view_pos = new_col_x - col_width positions leftmost at screen col_width
                     new_col_x - new_col_width
+                } else {
+                    // Fall back to standard padding-based positioning
+                    let padding = ((view_width - new_col_width) / 2.).clamp(0., gaps);
+                    let band_right = new_col_x + new_col_width + padding;
+                    band_right - view_width
                 };
                 
                 #[cfg(test)]
