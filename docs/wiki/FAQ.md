@@ -142,3 +142,8 @@ profile {
 	output eDP-1 enable scale 1.25 position 1920,0
 }
 ```
+
+### Why does Firefox or Thunderbird have 1 px smaller border?
+
+They draw their own 1 px dark border around the window, which obscures one pixel of niri's border.
+If you don't like this, set the [`clip-to-geometry true` window rule](./Configuration:-Window-Rules.md#clip-to-geometry).
