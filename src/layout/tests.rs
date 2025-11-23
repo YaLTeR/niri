@@ -180,6 +180,91 @@ fn rtl_two_columns_leave_left_third_empty() {
 }
 
 #[test]
+fn rtl_three_columns_all_visible() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.default_column_width = Some(PresetSize::Proportion(1.0 / 3.0));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let mut tiles: Vec<_> = ws
+        .tiles_with_render_positions()
+        .map(|(tile, pos, _)| (tile, pos))
+        .collect();
+    assert_eq!(tiles.len(), 3);
+
+    tiles.sort_by(|(_, p1), (_, p2)| p1.x.partial_cmp(&p2.x).unwrap());
+
+    let eps = 1.0;
+
+    // All three columns should have approximately the same width (1/3 of viewport)
+    for i in 0..3 {
+        let width = tiles[i].0.animated_tile_size().w;
+        assert!(
+            (width - 405.0).abs() <= eps * 5.0, // Allow some tolerance for rounding
+            "column {i} width={width}, expected ~405",
+        );
+    }
+
+    // With three 1/3-width columns, they should exactly fill the viewport.
+    // All three should be visible with no empty space on left or right.
+    let leftmost_pos = tiles[0].1.x;
+    let rightmost_pos = tiles[2].1.x;
+    let rightmost_width = tiles[2].0.animated_tile_size().w;
+    let rightmost_right_edge = rightmost_pos + rightmost_width;
+
+    // Leftmost column should be near the left edge (minimal empty space)
+    assert!(
+        leftmost_pos <= gaps + eps,
+        "leftmost column should be near left edge: pos={leftmost_pos}",
+    );
+
+    // Rightmost column should be near the right edge
+    assert!(
+        rightmost_right_edge >= view_width - gaps - eps,
+        "rightmost column should be near right edge: right_edge={rightmost_right_edge} view_width={view_width}",
+    );
+
+    // All columns should be visible
+    for (i, (tile, pos)) in tiles.iter().enumerate() {
+        let width = tile.animated_tile_size().w;
+        let right_edge = pos.x + width;
+        assert!(
+            pos.x >= 0.0 && right_edge <= view_width,
+            "column {i} should be fully visible: left={} right={} view_width={}",
+            pos.x,
+            right_edge,
+            view_width,
+        );
+    }
+}
+
+#[test]
 fn rtl_scrolling_insert_position_hits_correct_column() {
     let mut options = Options::default();
     options.layout.direction = LayoutDirection::Rtl;
