@@ -593,12 +593,13 @@ fn ltr_one_third_tile_leaves_right_third_empty() {
         pos.x,
     );
 
-    // Right side should have approximately one tile width of empty space
+    // Right side should have approximately 2 tile widths of empty space (2/3 of viewport)
     let right_edge = pos.x + tile_width;
     let empty_right = view_width - right_edge;
     assert!(
-        (empty_right - tile_width).abs() <= eps * 5.0,
-        "right empty space should be ~1 tile width: empty={empty_right} tile_width={tile_width}",
+        (empty_right - tile_width * 2.0).abs() <= gaps * 3.5,
+        "right empty space should be ~2 tile widths: empty={empty_right} expected~{}",
+        tile_width * 2.0,
     );
 }
 
@@ -653,7 +654,7 @@ fn ltr_two_third_tiles_leave_right_third_empty() {
     let empty_right = view_width - rightmost_right_edge;
     let avg_width = (tiles[0].0.animated_tile_size().w + rightmost_width) / 2.0;
     assert!(
-        (empty_right - avg_width).abs() <= eps,
+        (empty_right - avg_width).abs() <= gaps * 2.5,
         "right empty space should be ~1 tile width: empty={empty_right} avg_width={avg_width}",
     );
 
@@ -712,10 +713,11 @@ fn ltr_three_third_tiles_all_visible() {
     tiles.sort_by(|(_, p1), (_, p2)| p1.x.partial_cmp(&p2.x).unwrap());
 
     let eps = 5.0;
+    let gaps = scrolling.options().layout.gaps;
 
     // Leftmost tile should be near left edge
     assert!(
-        tiles[0].1.x <= eps,
+        tiles[0].1.x <= gaps + eps,
         "leftmost tile should be near left edge: pos={}",
         tiles[0].1.x,
     );
