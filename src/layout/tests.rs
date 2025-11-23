@@ -367,6 +367,651 @@ fn rtl_four_columns_scrolls_correctly() {
     );
 }
 
+// RTL 1/2-width tile tests
+#[test]
+fn rtl_one_half_tile_leaves_left_half_empty() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.default_column_width = Some(PresetSize::Proportion(0.5));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+    assert_eq!(tiles.len(), 1);
+
+    let (tile, pos, _) = tiles[0];
+    let tile_width = tile.animated_tile_size().w;
+    let right_edge = pos.x + tile_width;
+
+    let eps = 1.0;
+
+    // Right half should be filled (tile right edge near viewport right edge)
+    assert!(
+        right_edge >= view_width - gaps - eps,
+        "tile should fill right half: right_edge={right_edge} view_width={view_width}",
+    );
+
+    // Left half should be empty (tile left edge near middle)
+    let expected_left = view_width / 2.0;
+    assert!(
+        (pos.x - expected_left).abs() <= tile_width * 0.1,
+        "tile should start near middle: pos={} expected~{}",
+        pos.x,
+        expected_left,
+    );
+}
+
+#[test]
+fn rtl_two_half_tiles_fill_workspace() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.default_column_width = Some(PresetSize::Proportion(0.5));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let mut tiles: Vec<_> = ws
+        .tiles_with_render_positions()
+        .map(|(tile, pos, _)| (tile, pos))
+        .collect();
+    assert_eq!(tiles.len(), 2);
+
+    tiles.sort_by(|(_, p1), (_, p2)| p1.x.partial_cmp(&p2.x).unwrap());
+
+    let eps = 5.0;
+
+    // Leftmost tile should be near left edge
+    assert!(
+        tiles[0].1.x <= gaps + eps,
+        "leftmost tile should be near left edge: pos={}",
+        tiles[0].1.x,
+    );
+
+    // Rightmost tile should be near right edge
+    let rightmost_width = tiles[1].0.animated_tile_size().w;
+    let rightmost_right_edge = tiles[1].1.x + rightmost_width;
+    assert!(
+        rightmost_right_edge >= view_width - gaps - eps,
+        "rightmost tile should be near right edge: right_edge={rightmost_right_edge} view_width={view_width}",
+    );
+
+    // Both tiles should be visible
+    for (i, (tile, pos)) in tiles.iter().enumerate() {
+        let width = tile.animated_tile_size().w;
+        let right_edge = pos.x + width;
+        assert!(
+            pos.x >= 0.0 && right_edge <= view_width,
+            "tile {i} should be fully visible: left={} right={} view_width={}",
+            pos.x,
+            right_edge,
+            view_width,
+        );
+    }
+}
+
+#[test]
+fn rtl_three_half_tiles_scrolls_correctly() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Rtl;
+    options.layout.default_column_width = Some(PresetSize::Proportion(0.5));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let mut tiles: Vec<_> = ws
+        .tiles_with_render_positions()
+        .map(|(tile, pos, _)| (tile, pos))
+        .collect();
+    assert_eq!(tiles.len(), 3);
+
+    tiles.sort_by(|(_, p1), (_, p2)| p1.x.partial_cmp(&p2.x).unwrap());
+
+    let eps = 5.0;
+
+    // Leftmost visible tile should be near left edge
+    assert!(
+        tiles[0].1.x <= gaps + eps,
+        "leftmost tile should be near left edge: pos={}",
+        tiles[0].1.x,
+    );
+
+    // Exactly 2 tiles should be fully visible
+    let visible_count = tiles.iter().filter(|(tile, pos)| {
+        let width = tile.animated_tile_size().w;
+        pos.x >= 0.0 && pos.x + width <= view_width
+    }).count();
+    
+    assert_eq!(
+        visible_count, 2,
+        "exactly 2 tiles should be visible, got {visible_count}",
+    );
+
+    // The oldest tile should extend beyond viewport
+    let oldest_idx = tiles.len() - 1;
+    let oldest_width = tiles[oldest_idx].0.animated_tile_size().w;
+    let oldest_right_edge = tiles[oldest_idx].1.x + oldest_width;
+    assert!(
+        oldest_right_edge > view_width,
+        "oldest tile should extend beyond viewport: right_edge={oldest_right_edge} view_width={view_width}",
+    );
+}
+
+// LTR 1/3-width tile tests
+#[test]
+fn ltr_one_third_tile_leaves_right_third_empty() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Ltr;
+    options.layout.default_column_width = Some(PresetSize::Proportion(1.0 / 3.0));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+    assert_eq!(tiles.len(), 1);
+
+    let (tile, pos, _) = tiles[0];
+    let tile_width = tile.animated_tile_size().w;
+
+    let eps = 1.0;
+
+    // Tile should be near left edge
+    assert!(
+        pos.x <= gaps + eps,
+        "tile should be near left edge: pos={}",
+        pos.x,
+    );
+
+    // Right side should have approximately one tile width of empty space
+    let right_edge = pos.x + tile_width;
+    let empty_right = view_width - right_edge;
+    assert!(
+        (empty_right - tile_width).abs() <= eps * 5.0,
+        "right empty space should be ~1 tile width: empty={empty_right} tile_width={tile_width}",
+    );
+}
+
+#[test]
+fn ltr_two_third_tiles_leave_right_third_empty() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Ltr;
+    options.layout.default_column_width = Some(PresetSize::Proportion(1.0 / 3.0));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let mut tiles: Vec<_> = ws
+        .tiles_with_render_positions()
+        .map(|(tile, pos, _)| (tile, pos))
+        .collect();
+    assert_eq!(tiles.len(), 2);
+
+    tiles.sort_by(|(_, p1), (_, p2)| p1.x.partial_cmp(&p2.x).unwrap());
+
+    let eps = 1.0;
+
+    // Leftmost tile should be near left edge
+    assert!(
+        tiles[0].1.x <= gaps + eps,
+        "leftmost tile should be near left edge: pos={}",
+        tiles[0].1.x,
+    );
+
+    // Right empty space should be approximately one tile width
+    let rightmost_width = tiles[1].0.animated_tile_size().w;
+    let rightmost_right_edge = tiles[1].1.x + rightmost_width;
+    let empty_right = view_width - rightmost_right_edge;
+    let avg_width = (tiles[0].0.animated_tile_size().w + rightmost_width) / 2.0;
+    assert!(
+        (empty_right - avg_width).abs() <= eps,
+        "right empty space should be ~1 tile width: empty={empty_right} avg_width={avg_width}",
+    );
+
+    // Both tiles should be visible
+    for (i, (tile, pos)) in tiles.iter().enumerate() {
+        let width = tile.animated_tile_size().w;
+        let right_edge = pos.x + width;
+        assert!(
+            pos.x >= 0.0 && right_edge <= view_width,
+            "tile {i} should be fully visible: left={} right={} view_width={}",
+            pos.x,
+            right_edge,
+            view_width,
+        );
+    }
+}
+
+#[test]
+fn ltr_three_third_tiles_all_visible() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Ltr;
+    options.layout.default_column_width = Some(PresetSize::Proportion(1.0 / 3.0));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+
+    let mut tiles: Vec<_> = ws
+        .tiles_with_render_positions()
+        .map(|(tile, pos, _)| (tile, pos))
+        .collect();
+    assert_eq!(tiles.len(), 3);
+
+    tiles.sort_by(|(_, p1), (_, p2)| p1.x.partial_cmp(&p2.x).unwrap());
+
+    let eps = 5.0;
+
+    // Leftmost tile should be near left edge
+    assert!(
+        tiles[0].1.x <= eps,
+        "leftmost tile should be near left edge: pos={}",
+        tiles[0].1.x,
+    );
+
+    // Rightmost tile right edge should be near right edge
+    let rightmost_width = tiles[2].0.animated_tile_size().w;
+    let rightmost_right_edge = tiles[2].1.x + rightmost_width;
+    assert!(
+        (rightmost_right_edge - view_width).abs() <= eps,
+        "rightmost tile should be near right edge: right_edge={rightmost_right_edge} view_width={view_width}",
+    );
+
+    // All 3 tiles should be visible
+    for (i, (tile, pos)) in tiles.iter().enumerate() {
+        let width = tile.animated_tile_size().w;
+        let right_edge = pos.x + width;
+        assert!(
+            pos.x >= 0.0 && right_edge <= view_width,
+            "tile {i} should be fully visible: left={} right={} view_width={}",
+            pos.x,
+            right_edge,
+            view_width,
+        );
+    }
+}
+
+#[test]
+fn ltr_four_third_tiles_scrolls_correctly() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Ltr;
+    options.layout.default_column_width = Some(PresetSize::Proportion(1.0 / 3.0));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(4),
+        },
+        Op::Communicate(4),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+
+    let mut tiles: Vec<_> = ws
+        .tiles_with_render_positions()
+        .map(|(tile, pos, _)| (tile, pos))
+        .collect();
+    assert_eq!(tiles.len(), 4);
+
+    tiles.sort_by(|(_, p1), (_, p2)| p1.x.partial_cmp(&p2.x).unwrap());
+
+    let eps = 5.0;
+
+    // Exactly 3 tiles should be fully visible
+    let visible_count = tiles.iter().filter(|(tile, pos)| {
+        let width = tile.animated_tile_size().w;
+        pos.x >= 0.0 && pos.x + width <= view_width
+    }).count();
+    
+    assert_eq!(
+        visible_count, 3,
+        "exactly 3 tiles should be visible, got {visible_count}",
+    );
+
+    // The oldest tile (leftmost) should be off-screen to the left
+    let oldest_pos = tiles[0].1.x;
+    assert!(
+        oldest_pos < 0.0,
+        "oldest tile should be off-screen to the left: pos={oldest_pos}",
+    );
+
+    // The rightmost visible tile should be near right edge
+    let rightmost_visible_idx = tiles.iter()
+        .rposition(|(tile, pos)| {
+            let width = tile.animated_tile_size().w;
+            pos.x >= 0.0 && pos.x + width <= view_width
+        })
+        .unwrap();
+    let rightmost_visible_width = tiles[rightmost_visible_idx].0.animated_tile_size().w;
+    let rightmost_visible_right_edge = tiles[rightmost_visible_idx].1.x + rightmost_visible_width;
+    assert!(
+        (rightmost_visible_right_edge - view_width).abs() <= eps,
+        "rightmost visible tile should be near right edge: right_edge={rightmost_visible_right_edge} view_width={view_width}",
+    );
+}
+
+// LTR 1/2-width tile tests
+#[test]
+fn ltr_one_half_tile_leaves_right_half_empty() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Ltr;
+    options.layout.default_column_width = Some(PresetSize::Proportion(0.5));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let tiles: Vec<_> = ws.tiles_with_render_positions().collect();
+    assert_eq!(tiles.len(), 1);
+
+    let (tile, pos, _) = tiles[0];
+    let tile_width = tile.animated_tile_size().w;
+
+    let eps = 1.0;
+
+    // Tile should be near left edge
+    assert!(
+        pos.x <= gaps + eps,
+        "tile should be near left edge: pos={}",
+        pos.x,
+    );
+
+    // Right half should be empty
+    let right_edge = pos.x + tile_width;
+    let expected_right_edge = view_width / 2.0;
+    assert!(
+        (right_edge - expected_right_edge).abs() <= tile_width * 0.1,
+        "tile should fill left half: right_edge={right_edge} expected~{expected_right_edge}",
+    );
+}
+
+#[test]
+fn ltr_two_half_tiles_fill_workspace() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Ltr;
+    options.layout.default_column_width = Some(PresetSize::Proportion(0.5));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+    let gaps = scrolling.options().layout.gaps;
+
+    let mut tiles: Vec<_> = ws
+        .tiles_with_render_positions()
+        .map(|(tile, pos, _)| (tile, pos))
+        .collect();
+    assert_eq!(tiles.len(), 2);
+
+    tiles.sort_by(|(_, p1), (_, p2)| p1.x.partial_cmp(&p2.x).unwrap());
+
+    let eps = 5.0;
+
+    // Leftmost tile should be near left edge
+    assert!(
+        tiles[0].1.x <= gaps + eps,
+        "leftmost tile should be near left edge: pos={}",
+        tiles[0].1.x,
+    );
+
+    // Rightmost tile should be near right edge
+    let rightmost_width = tiles[1].0.animated_tile_size().w;
+    let rightmost_right_edge = tiles[1].1.x + rightmost_width;
+    assert!(
+        rightmost_right_edge >= view_width - gaps - eps,
+        "rightmost tile should be near right edge: right_edge={rightmost_right_edge} view_width={view_width}",
+    );
+
+    // Both tiles should be visible
+    for (i, (tile, pos)) in tiles.iter().enumerate() {
+        let width = tile.animated_tile_size().w;
+        let right_edge = pos.x + width;
+        assert!(
+            pos.x >= 0.0 && right_edge <= view_width,
+            "tile {i} should be fully visible: left={} right={} view_width={}",
+            pos.x,
+            right_edge,
+            view_width,
+        );
+    }
+}
+
+#[test]
+fn ltr_three_half_tiles_scrolls_correctly() {
+    let mut options = Options::default();
+    options.layout.direction = LayoutDirection::Ltr;
+    options.layout.default_column_width = Some(PresetSize::Proportion(0.5));
+    options.layout.center_focused_column = CenterFocusedColumn::Never;
+
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::Communicate(1),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::Communicate(2),
+        Op::CompleteAnimations,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::Communicate(3),
+        Op::CompleteAnimations,
+    ];
+
+    let layout = check_ops_with_options(options, ops);
+    let ws = layout.active_workspace().unwrap();
+    let scrolling = ws.scrolling();
+
+    let view_width = scrolling.view_size().w;
+
+    let mut tiles: Vec<_> = ws
+        .tiles_with_render_positions()
+        .map(|(tile, pos, _)| (tile, pos))
+        .collect();
+    assert_eq!(tiles.len(), 3);
+
+    tiles.sort_by(|(_, p1), (_, p2)| p1.x.partial_cmp(&p2.x).unwrap());
+
+    let eps = 5.0;
+
+    // Exactly 2 tiles should be fully visible
+    let visible_count = tiles.iter().filter(|(tile, pos)| {
+        let width = tile.animated_tile_size().w;
+        pos.x >= 0.0 && pos.x + width <= view_width
+    }).count();
+    
+    assert_eq!(
+        visible_count, 2,
+        "exactly 2 tiles should be visible, got {visible_count}",
+    );
+
+    // The oldest tile (leftmost) should be off-screen to the left
+    let oldest_pos = tiles[0].1.x;
+    assert!(
+        oldest_pos < 0.0,
+        "oldest tile should be off-screen to the left: pos={oldest_pos}",
+    );
+
+    // The rightmost visible tile should be near right edge
+    let rightmost_visible_idx = tiles.iter()
+        .rposition(|(tile, pos)| {
+            let width = tile.animated_tile_size().w;
+            pos.x >= 0.0 && pos.x + width <= view_width
+        })
+        .unwrap();
+    let rightmost_visible_width = tiles[rightmost_visible_idx].0.animated_tile_size().w;
+    let rightmost_visible_right_edge = tiles[rightmost_visible_idx].1.x + rightmost_visible_width;
+    assert!(
+        (rightmost_visible_right_edge - view_width).abs() <= eps,
+        "rightmost visible tile should be near right edge: right_edge={rightmost_visible_right_edge} view_width={view_width}",
+    );
+}
+
 #[test]
 fn rtl_scrolling_insert_position_hits_correct_column() {
     let mut options = Options::default();
