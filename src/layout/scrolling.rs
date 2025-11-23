@@ -2581,7 +2581,19 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
 
         // Band origin: start of the column band in world space.
         let band_origin_x = match self.dir() {
-            LayoutDirection::Ltr => 0.0,
+            LayoutDirection::Ltr => {
+                // For LTR, when band nearly fills viewport, adjust origin so rightmost column
+                // right edge is at viewport width
+                let view_width = self.view_size.w;
+                // Only adjust when band is close to filling viewport (> 90%)
+                if _total_band_width < view_width && _total_band_width > view_width * 0.9 && data.len() >= 2 {
+                    // Rightmost column's right edge should be at view_width
+                    // band_origin_x + total_band_width = view_width
+                    view_width - _total_band_width
+                } else {
+                    0.0
+                }
+            },
             LayoutDirection::Rtl => {
                 // For RTL, position the band so the rightmost column's right edge is at the viewport width.
                 // This ensures all columns are properly positioned when the camera shows them.

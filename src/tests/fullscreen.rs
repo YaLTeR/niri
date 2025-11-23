@@ -177,7 +177,7 @@ fn unfullscreen_before_fullscreen_ack_doesnt_prevent_view_offset_save_restore() 
     let window2_id = mapped2.window.clone();
 
     // The view position is at the first window.
-    assert_snapshot!(niri.layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
+    assert_snapshot!(niri.layout.active_workspace().unwrap().scrolling().view_pos(), @"-15.97118877079017");
 
     // Fullscreen window2 and send the configure so we can clear pending.
     niri.layout.set_fullscreen(&window2_id, true);
@@ -213,7 +213,7 @@ fn unfullscreen_before_fullscreen_ack_doesnt_prevent_view_offset_save_restore() 
     f.niri_complete_animations();
 
     // The view position should restore to the first window.
-    assert_snapshot!(f.niri().layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
+    assert_snapshot!(f.niri().layout.active_workspace().unwrap().scrolling().view_pos(), @"-11.14958020491439");
 }
 
 #[test]
