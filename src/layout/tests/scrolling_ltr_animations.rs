@@ -84,9 +84,9 @@ fn anim_move_column_right() {
     
     // Initial state
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=   0 w= 426
-    win2: x= 426 w= 426
-    win3: x= 852 w= 426
+    win1: x=   2 w= 426
+    win2: x= 428 w= 426
+    win3: x= 854 w= 426
     ");
 
     // Move first column right (swap with second)
@@ -95,25 +95,25 @@ fn anim_move_column_right() {
     
     // At start of animation
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=   0 w= 426
-    win2: x= 426 w= 426
-    win3: x= 852 w= 426
+    win1: x=   2 w= 426
+    win2: x= 428 w= 426
+    win3: x= 854 w= 426
     ");
 
     // Halfway through animation (500ms)
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x= 213 w= 426
-    win2: x= 213 w= 426
-    win3: x= 852 w= 426
+    win1: x= 215 w= 426
+    win2: x= 215 w= 426
+    win3: x= 854 w= 426
     ");
 
     // Complete animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x= 426 w= 426
-    win2: x=   0 w= 426
-    win3: x= 852 w= 426
+    win1: x= 428 w= 426
+    win2: x=   2 w= 426
+    win3: x= 854 w= 426
     ");
 }
 
@@ -138,9 +138,9 @@ fn anim_move_column_left() {
 
     // Initial state
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=-852 w= 426
-    win2: x=-426 w= 426
-    win3: x=   0 w= 426
+    win1: x=   2 w= 426
+    win2: x= 428 w= 426
+    win3: x= 854 w= 426
     ");
 
     // Move third column left (swap with second)
@@ -150,17 +150,17 @@ fn anim_move_column_left() {
     // Halfway through animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=-639 w= 426
-    win2: x=   0 w= 426
-    win3: x=   0 w= 426
+    win1: x=   2 w= 426
+    win2: x= 641 w= 426
+    win3: x= 641 w= 426
     ");
 
     // Complete animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=-426 w= 426
-    win2: x= 426 w= 426
-    win3: x=   0 w= 426
+    win1: x=   2 w= 426
+    win2: x= 854 w= 426
+    win3: x= 428 w= 426
     ");
 }
 
@@ -190,17 +190,17 @@ fn anim_move_column_to_first() {
     // Halfway through animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=-213 w= 426
-    win2: x= 213 w= 426
-    win3: x=   0 w= 426
+    win1: x= 215 w= 426
+    win2: x= 641 w= 426
+    win3: x= 428 w= 426
     ");
 
     // Complete animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x= 426 w= 426
-    win2: x= 852 w= 426
-    win3: x=   0 w= 426
+    win1: x= 428 w= 426
+    win2: x= 854 w= 426
+    win3: x=   2 w= 426
     ");
 }
 
@@ -232,17 +232,17 @@ fn anim_move_column_to_last() {
     // Halfway through animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=   0 w= 426
-    win2: x=-213 w= 426
-    win3: x= 213 w= 426
+    win1: x= 427 w= 426
+    win2: x= 214 w= 426
+    win3: x= 640 w= 426
     ");
 
     // Complete animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=   0 w= 426
-    win2: x=-852 w= 426
-    win3: x=-426 w= 426
+    win1: x= 854 w= 426
+    win2: x=   2 w= 426
+    win3: x= 428 w= 426
     ");
 }
 
@@ -339,7 +339,7 @@ fn anim_view_offset_focus_left() {
     // Complete animation
     Op::AdvanceAnimations { msec_delta: 1000 }.apply(&mut layout);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(852.0)
+    View Offset: Static(424.0)
     Active Column: 2
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1

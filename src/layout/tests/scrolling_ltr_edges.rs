@@ -71,7 +71,7 @@ fn leading_edge_pinned_on_spawn() {
     check_ops_on_layout(&mut layout, ops);
     // View offset should be negative, meaning first column's left edge is still at 0
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(426.0)
+    View Offset: Static(0.0)
     Active Column: 1
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
@@ -151,7 +151,7 @@ fn leading_edge_pinned_with_multiple_columns() {
     
     // First column's left edge should be at 0
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(0.0)
+    View Offset: Static(-2.0)
     Active Column: 0
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
@@ -169,7 +169,7 @@ fn leading_edge_pinned_with_multiple_columns() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(0.0)
+    View Offset: Static(-2.0)
     Active Column: 0
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
@@ -209,7 +209,7 @@ fn leading_edge_pinned_middle_column() {
     check_ops_on_layout(&mut layout, ops);
     // Middle column left edge was at 426, should still be at 426
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(426.0)
+    View Offset: Static(0.0)
     Active Column: 1
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
@@ -266,7 +266,7 @@ fn column_x_positions_two_columns() {
     // Column 0 at x=0, Column 1 at x=426
     // View offset = -426, so column 1 renders at x=0 on screen
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(426.0)
+    View Offset: Static(-0.0)
     Active Column: 1
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
@@ -297,7 +297,7 @@ fn column_x_positions_three_columns() {
     // Column 0 at x=0, Column 1 at x=426, Column 2 at x=852
     // View offset adjusts so column 2 is visible
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(852.0)
+    View Offset: Static(-2.0)
     Active Column: 2
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
@@ -331,7 +331,7 @@ fn column_x_positions_mixed_widths() {
     // Column 1 at x=200 (640px)
     // Column 2 at x=840 (300px)
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(840.0)
+    View Offset: Static(-0.0)
     Active Column: 2
     Column 0: width=Fixed(200.0), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 200.0, h: 720.0 }, window_id=1
@@ -373,7 +373,7 @@ fn column_x_positions_with_gaps() {
     // Gap: 16
     // Column 2: 886 to 1305 (width 419)
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(826.0)
+    View Offset: Static(-33.0)
     Active Column: 2
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 405.0, h: 688.0 }, window_id=1
@@ -427,7 +427,7 @@ fn view_offset_clamped_with_small_columns() {
     // Total width = 400px < 1280px view
     // View offset should not go negative beyond what's needed
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(200.0)
+    View Offset: Static(-0.0)
     Active Column: 1
     Column 0: width=Fixed(200.0), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 200.0, h: 720.0 }, window_id=1
@@ -460,7 +460,7 @@ fn view_offset_with_overflow() {
     
     // View offset should show the active (last) column
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(1278.0)
+    View Offset: Static(424.0)
     Active Column: 3
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1

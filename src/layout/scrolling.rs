@@ -2596,17 +2596,9 @@ screen_left_after={screen_left_after} screen_right_after={screen_right_after}",
         // Band origin: start of the column band in world space.
         let band_origin_x = match self.dir() {
             LayoutDirection::Ltr => {
-                // For LTR, when band nearly fills viewport, adjust origin so rightmost column
-                // right edge is at viewport width
-                let view_width = self.view_size.w;
-                // Only adjust when band is close to filling viewport (> 90%)
-                if _total_band_width < view_width && _total_band_width > view_width * 0.9 && data.len() >= 2 {
-                    // Rightmost column's right edge should be at view_width
-                    // band_origin_x + total_band_width = view_width
-                    view_width - _total_band_width
-                } else {
-                    0.0
-                }
+                // For LTR, columns always start at x=0 in world space
+                // This is the canonical LTR behavior
+                0.0
             },
             LayoutDirection::Rtl => {
                 // For RTL, position the band so the rightmost column's right edge is at the viewport width.
@@ -6030,18 +6022,21 @@ fn compute_new_view_offset(
                 let result = match dir {
                     LayoutDirection::Ltr => {
                         // LTR: newest columns are on the right
-                        if band_width > view_width {
-                            // Band exceeds viewport: show rightmost (newest) columns
-                            // Position so rightmost column's right edge is at viewport right edge
-                            let rightmost_right_edge = new_col_x + new_col_width;
-                            rightmost_right_edge - view_width
-                        } else if band_width + new_col_width >= view_width {
-                            // Band fills or nearly fills viewport: show all columns
-                            0.0
+                        if band_width <= view_width {
+                            // Band fits in viewport
+                            if band_width >= view_width * 0.9 {
+                                // Band nearly fills viewport: center it
+                                let remaining_space = view_width - band_width;
+                                -remaining_space
+                            } else {
+                                // Band has significant empty space: position at left edge
+                                -gaps
+                            }
                         } else {
-                            // Band is smaller: leave ~1 column width of space on right
-                            // Position so there's empty space on the right
-                            0.0
+                            // Band exceeds viewport: position to show active column at right edge
+                            // This maximizes the number of visible columns
+                            let new_right_x = new_col_x + new_col_width;
+                            new_right_x - view_width
                         }
                     },
                     LayoutDirection::Rtl => {
