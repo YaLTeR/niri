@@ -10,6 +10,7 @@ use super::*;
 // Test Operations
 // ============================================================================
 
+// @niri_config("default-1-3", "default-1-3-rtl")
 fn spawn_single_column_one_third_ops() -> Vec<Op> {
     vec![
         Op::AddWindow { params: TestWindowParams::new(1) },
@@ -19,6 +20,7 @@ fn spawn_single_column_one_third_ops() -> Vec<Op> {
     ]
 }
 
+// @niri_config("default-1-2", "default-1-2-rtl")
 fn spawn_single_column_one_half_ops() -> Vec<Op> {
     vec![
         Op::AddWindow { params: TestWindowParams::new(1) },
@@ -28,6 +30,7 @@ fn spawn_single_column_one_half_ops() -> Vec<Op> {
     ]
 }
 
+// @niri_config("default-2-3", "default-2-3-rtl")
 fn spawn_single_column_two_thirds_ops() -> Vec<Op> {
     vec![
         Op::AddWindow { params: TestWindowParams::new(1) },
@@ -37,6 +40,7 @@ fn spawn_single_column_two_thirds_ops() -> Vec<Op> {
     ]
 }
 
+// @niri_config("default-fixed-width", "default-fixed-width-rtl")
 fn spawn_single_column_fixed_width_ops() -> Vec<Op> {
     vec![
         Op::AddWindow { params: TestWindowParams::new(1) },
@@ -46,6 +50,7 @@ fn spawn_single_column_fixed_width_ops() -> Vec<Op> {
     ]
 }
 
+// @niri_config("default-1-3", "default-1-3-rtl")
 fn column_x_positions_single_column_ops() -> Vec<Op> {
     vec![
         Op::AddWindow { params: TestWindowParams::new(1) },
