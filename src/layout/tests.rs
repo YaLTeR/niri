@@ -92,7 +92,7 @@ impl TestWindow {
             is_pending_windowed_fullscreen: Cell::new(false),
             animate_next_configure: Cell::new(false),
             animation_snapshot: RefCell::new(None),
-            rules: params.rules.unwrap_or(ResolvedWindowRules::empty()),
+            rules: params.rules.unwrap_or_default(),
         }))
     }
 
@@ -357,7 +357,7 @@ prop_compose! {
         ResolvedWindowRules {
             focus_ring,
             border,
-            ..ResolvedWindowRules::empty()
+            ..ResolvedWindowRules::default()
         }
     }
 }
