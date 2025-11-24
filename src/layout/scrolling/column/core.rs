@@ -22,7 +22,7 @@ use crate::animation::Animation;
 use crate::layout::SizingMode;
 
 #[cfg(test)]
-use crate::animation::Clock as TestClock;
+use crate::animation::Clock;
 
 impl<W: LayoutElement> Column<W> {
     #[allow(clippy::too_many_arguments)]
