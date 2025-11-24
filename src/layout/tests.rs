@@ -16,6 +16,11 @@ use super::*;
 
 mod animations;
 mod fullscreen;
+mod scrolling_ltr;
+mod scrolling_ltr_animations;
+mod scrolling_ltr_tiles;
+mod scrolling_ltr_edges;
+mod scrolling_ltr_config;
 
 impl<W: LayoutElement> Default for Layout<W> {
     fn default() -> Self {
