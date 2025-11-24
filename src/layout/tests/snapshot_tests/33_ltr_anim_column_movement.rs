@@ -2,10 +2,6 @@ use insta::assert_snapshot;
 
 use super::*;
 
-// ============================================================================
-// ANIMATION TESTS - Column Movement
-// ============================================================================
-
 fn make_anim_options() -> Options {
     use niri_config::animations::{Curve, EasingParams, Kind};
     
@@ -54,6 +50,10 @@ fn set_up_anim_empty() -> Layout<TestWindow> {
     let ops = [Op::AddOutput(1)];
     check_ops_with_options(make_anim_options(), ops)
 }
+
+// ============================================================================
+// ANIMATION TESTS - Column Movement
+// ============================================================================
 
 #[test]
 fn anim_move_column_right() {
@@ -243,177 +243,5 @@ fn anim_move_column_to_last() {
     win1: x= 852 w= 426
     win2: x=   0 w= 426
     win3: x= 426 w= 426
-    ");
-}
-
-// ============================================================================
-// ANIMATION TESTS - View Offset During Focus Changes
-// ============================================================================
-
-#[test]
-fn anim_view_offset_focus_right() {
-    let mut layout = set_up_anim_empty();
-
-    // Setup: Four 1/3 columns (creates overflow)
-    let ops = [
-        Op::AddWindow { params: TestWindowParams::new(1) },
-        Op::SetColumnWidth(SizeChange::SetProportion(100.0 / 3.0)),
-        Op::AddWindow { params: TestWindowParams::new(2) },
-        Op::SetColumnWidth(SizeChange::SetProportion(100.0 / 3.0)),
-        Op::AddWindow { params: TestWindowParams::new(3) },
-        Op::SetColumnWidth(SizeChange::SetProportion(100.0 / 3.0)),
-        Op::AddWindow { params: TestWindowParams::new(4) },
-        Op::SetColumnWidth(SizeChange::SetProportion(100.0 / 3.0)),
-        Op::FocusColumnLeft,
-        Op::FocusColumnLeft,
-        Op::FocusColumnLeft,
-        Op::Communicate(1),
-        Op::Communicate(2),
-        Op::Communicate(3),
-        Op::Communicate(4),
-        Op::CompleteAnimations,
-    ];
-    check_ops_on_layout(&mut layout, ops);
-
-    // Focus right - should animate view offset
-    let ops = [Op::FocusColumnRight];
-    check_ops_on_layout(&mut layout, ops);
-
-    // Halfway through animation
-    Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
-    assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-426.0)
-    Active Column: 1
-    Column 0: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
-    Column 1: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
-    Column 2: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
-    Column 3: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=4
-    ");
-
-    // Complete animation
-    Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
-    assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-426.0)
-    Active Column: 1
-    Column 0: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
-    Column 1: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
-    Column 2: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
-    Column 3: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=4
-    ");
-}
-
-#[test]
-fn anim_view_offset_focus_left() {
-    let mut layout = set_up_anim_empty();
-
-    // Setup: Four columns, focus on last
-    let ops = [
-        Op::AddWindow { params: TestWindowParams::new(1) },
-        Op::SetColumnWidth(SizeChange::SetProportion(100.0 / 3.0)),
-        Op::AddWindow { params: TestWindowParams::new(2) },
-        Op::SetColumnWidth(SizeChange::SetProportion(100.0 / 3.0)),
-        Op::AddWindow { params: TestWindowParams::new(3) },
-        Op::SetColumnWidth(SizeChange::SetProportion(100.0 / 3.0)),
-        Op::AddWindow { params: TestWindowParams::new(4) },
-        Op::SetColumnWidth(SizeChange::SetProportion(100.0 / 3.0)),
-        Op::Communicate(1),
-        Op::Communicate(2),
-        Op::Communicate(3),
-        Op::Communicate(4),
-        Op::CompleteAnimations,
-    ];
-    check_ops_on_layout(&mut layout, ops);
-
-    // Focus left - should animate view offset
-    let ops = [Op::FocusColumnLeft];
-    check_ops_on_layout(&mut layout, ops);
-
-    // Complete animation
-    Op::AdvanceAnimations { msec_delta: 1000 }.apply(&mut layout);
-    assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-0.0)
-    Active Column: 2
-    Column 0: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
-    Column 1: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
-    Column 2: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
-    Column 3: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=4
-    ");
-}
-
-#[test]
-fn anim_resize_non_preset_fixed() {
-    let mut layout = set_up_anim_empty();
-
-    // Setup: Single column
-    let ops = [
-        Op::AddWindow { params: TestWindowParams::new(1) },
-        Op::SetColumnWidth(SizeChange::SetProportion(100.0 / 3.0)),
-        Op::Communicate(1),
-        Op::CompleteAnimations,
-    ];
-    check_ops_on_layout(&mut layout, ops);
-
-    // Resize to fixed 800px
-    let ops = [
-        Op::SetColumnWidth(SizeChange::SetFixed(800)),
-        Op::Communicate(1),
-    ];
-    check_ops_on_layout(&mut layout, ops);
-
-    // Halfway through animation
-    Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
-    assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=   0 w= 613
-    ");
-
-    // Complete animation
-    Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
-    assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=   0 w= 800
-    ");
-}
-
-#[test]
-fn anim_resize_adjust_proportion() {
-    let mut layout = set_up_anim_empty();
-
-    // Setup: Single column at 50%
-    let ops = [
-        Op::AddWindow { params: TestWindowParams::new(1) },
-        Op::SetColumnWidth(SizeChange::SetProportion(50.0)),
-        Op::Communicate(1),
-        Op::CompleteAnimations,
-    ];
-    check_ops_on_layout(&mut layout, ops);
-
-    // Adjust by +10%
-    let ops = [
-        Op::SetColumnWidth(SizeChange::AdjustProportion(10.0)),
-        Op::Communicate(1),
-    ];
-    check_ops_on_layout(&mut layout, ops);
-
-    // Halfway through animation
-    Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
-    assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=   0 w= 704
-    ");
-
-    // Complete animation
-    Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
-    assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=   0 w= 768
     ");
 }

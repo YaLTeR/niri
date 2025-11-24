@@ -1,0 +1,94 @@
+use insta::assert_snapshot;
+
+use super::*;
+
+fn make_options() -> Options {
+    let mut options = Options {
+        layout: niri_config::Layout {
+            gaps: 0.0,
+            struts: niri_config::Struts {
+                left: niri_config::FloatOrInt(0.0),
+                right: niri_config::FloatOrInt(0.0),
+                top: niri_config::FloatOrInt(0.0),
+                bottom: niri_config::FloatOrInt(0.0),
+            },
+            center_focused_column: niri_config::CenterFocusedColumn::Never,
+            always_center_single_column: false,
+            default_column_width: Some(niri_config::PresetSize::Proportion(1.0 / 3.0)),
+            ..Default::default()
+        },
+        ..Options::default()
+    };
+    options.animations.window_open.anim.off = true;
+    options.animations.window_close.anim.off = true;
+    options.animations.window_resize.anim.off = true;
+    options.animations.window_movement.0.off = true;
+    options.animations.horizontal_view_movement.0.off = true;
+
+    options
+}
+
+// ============================================================================
+// CONFIG TESTS - Overflow Scenarios
+// ============================================================================
+
+#[test]
+fn many_columns_overflow() {
+    let mut options = make_options();
+    options.layout.default_column_width = Some(niri_config::PresetSize::Fixed(200));
+    
+    let ops = [Op::AddOutput(1)];
+    let mut layout = check_ops_with_options(options, ops);
+
+    // Create 10 columns (way more than fits)
+    let ops = [
+        Op::AddWindow { params: TestWindowParams::new(1) },
+        Op::AddWindow { params: TestWindowParams::new(2) },
+        Op::AddWindow { params: TestWindowParams::new(3) },
+        Op::AddWindow { params: TestWindowParams::new(4) },
+        Op::AddWindow { params: TestWindowParams::new(5) },
+        Op::AddWindow { params: TestWindowParams::new(6) },
+        Op::AddWindow { params: TestWindowParams::new(7) },
+        Op::AddWindow { params: TestWindowParams::new(8) },
+        Op::AddWindow { params: TestWindowParams::new(9) },
+        Op::AddWindow { params: TestWindowParams::new(10) },
+        Op::Communicate(1),
+        Op::Communicate(2),
+        Op::Communicate(3),
+        Op::Communicate(4),
+        Op::Communicate(5),
+        Op::Communicate(6),
+        Op::Communicate(7),
+        Op::Communicate(8),
+        Op::Communicate(9),
+        Op::Communicate(10),
+        Op::CompleteAnimations,
+    ];
+    check_ops_on_layout(&mut layout, ops);
+    
+    // Should show the last column
+    assert_snapshot!(layout.snapshot(), @r"
+    View Offset: Static(-900.0)
+    Active Column: 9
+    Column 0: width=Fixed(100.0), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
+    Column 1: width=Fixed(100.0), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
+    Column 2: width=Fixed(100.0), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    Column 3: width=Fixed(100.0), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=4
+    Column 4: width=Fixed(100.0), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=5
+    Column 5: width=Fixed(100.0), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=6
+    Column 6: width=Fixed(100.0), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=7
+    Column 7: width=Fixed(100.0), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=8
+    Column 8: width=Fixed(100.0), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=9
+    Column 9: width=Fixed(100.0), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=10
+    ");
+}
