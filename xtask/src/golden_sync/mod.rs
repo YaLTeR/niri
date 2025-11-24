@@ -35,13 +35,13 @@ use anyhow::{Context, Result};
 
 use codegen::{generate_mod_stub, update_golden_mod_rs};
 use rtl_transform::{format_header, generate_rtl_snapshot, LTR_HEADER};
-use snapshot_parser::{extract_module_name, extract_snapshots, find_snapshot_files};
+use snapshot_parser::{extract_module_name, extract_snapshots, find_snapshot_files, TestInfo};
 
 /// Module info collected from snapshot tests
 struct ModuleInfo {
     #[allow(dead_code)]
     name: String,
-    snapshots: BTreeMap<String, String>,
+    tests: BTreeMap<String, TestInfo>,
 }
 
 /// Sync snapshot tests to golden test folders
@@ -111,7 +111,7 @@ fn run_snapshot_tests(root: &Path, dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-/// Collect snapshots from all snapshot test files
+/// Collect snapshots and ops from all snapshot test files
 fn collect_snapshots(snapshot_dir: &Path) -> Result<BTreeMap<String, ModuleInfo>> {
     let snapshot_files = find_snapshot_files(snapshot_dir)?;
     println!("📄 Found {} snapshot test files", snapshot_files.len());
@@ -132,25 +132,26 @@ fn collect_snapshots(snapshot_dir: &Path) -> Result<BTreeMap<String, ModuleInfo>
         
         println!("\n📖 Processing: {} -> {}", file_name, module_name);
         
-        // Parse the file to extract snapshots
+        // Parse the file to extract snapshots and ops
         let content = fs::read_to_string(file)?;
-        let snapshots = extract_snapshots(&content)?;
+        let tests = extract_snapshots(&content)?;
         
-        if snapshots.is_empty() {
+        if tests.is_empty() {
             println!("   No snapshots found");
             continue;
         }
         
-        println!("   Found {} snapshots", snapshots.len());
+        println!("   Found {} tests", tests.len());
         
         let module = modules.entry(module_name.clone()).or_insert_with(|| ModuleInfo {
             name: module_name,
-            snapshots: BTreeMap::new(),
+            tests: BTreeMap::new(),
         });
         
-        for (fn_name, snapshot) in snapshots {
-            println!("   - {}", fn_name);
-            module.snapshots.insert(fn_name, snapshot);
+        for (fn_name, test_info) in tests {
+            let has_ops = test_info.ops.is_some();
+            println!("   - {} {}", fn_name, if has_ops { "(with ops)" } else { "" });
+            module.tests.insert(fn_name, test_info);
         }
     }
     
@@ -183,9 +184,9 @@ fn write_golden_files(
         println!("\n📂 {}/", module_name);
         
         // Write golden files (LTR and RTL)
-        for (fn_name, snapshot) in &module_info.snapshots {
+        for (fn_name, test_info) in &module_info.tests {
             // Write LTR golden file with header
-            let ltr_content = format!("{}{}", format_header(LTR_HEADER), snapshot);
+            let ltr_content = format!("{}{}", format_header(LTR_HEADER), test_info.snapshot);
             let golden_file = golden_subdir.join(format!("{}.txt", fn_name));
             
             if dry_run {
@@ -196,7 +197,7 @@ fn write_golden_files(
             }
             
             // Generate and write RTL golden file
-            let rtl_snapshot = generate_rtl_snapshot(snapshot);
+            let rtl_snapshot = generate_rtl_snapshot(&test_info.snapshot);
             let rtl_golden_file = golden_subdir.join(format!("{}_rtl.txt", fn_name));
             
             if dry_run {
@@ -207,16 +208,19 @@ fn write_golden_files(
             }
         }
         
-        // Create mod.rs stub if it doesn't exist
+        // Always regenerate mod.rs with extracted ops
         let mod_file = module_dir.join("mod.rs");
-        if !mod_file.exists() {
-            let stub = generate_mod_stub(module_name, &module_info.snapshots);
-            if dry_run {
-                println!("   Would create: mod.rs (stub)");
+        let existed = mod_file.exists();
+        let stub = generate_mod_stub(module_name, &module_info.tests);
+        if dry_run {
+            if existed {
+                println!("   Would regenerate: mod.rs");
             } else {
-                fs::write(&mod_file, stub)?;
-                println!("   ✅ mod.rs (stub created)");
+                println!("   Would create: mod.rs");
             }
+        } else {
+            fs::write(&mod_file, &stub)?;
+            println!("   ✅ mod.rs");
         }
     }
     
