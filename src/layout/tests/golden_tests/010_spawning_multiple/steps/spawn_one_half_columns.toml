@@ -1,0 +1,51 @@
+# Visual test steps for spawn_one_half_columns
+# Tests spawning multiple 1/2 width columns incrementally
+
+[test]
+name = "spawn_one_half_columns"
+description = "Spawn multiple windows at 1/2 width, verifying layout at each step"
+
+[config]
+ltr = "default-1-2"
+rtl = "default-1-2-rtl"
+
+# Step 1: First column
+[[steps]]
+action = "spawn_and_verify"
+description = "Spawn first 1/2 column: [1/2 tile, 1/2 empty]"
+ipc = { action = "Spawn", command = ["alacritty"] }
+expected = """
+column[0] [ACTIVE]: x=0.0 width=Proportion(0.5)
+  tile[0] [ACTIVE]: x=0.0 y=0.0 w=640 h=720
+"""
+
+# Step 2: Second column (workspace full)
+[[steps]]
+action = "spawn_and_verify"
+description = "Spawn second 1/2 column: [1/2 tile, 1/2 tile] workspace full"
+ipc = { action = "Spawn", command = ["alacritty"] }
+expected = """
+column[0]: x=0.0 width=Proportion(0.5)
+  tile[0]: x=0.0 y=0.0 w=640 h=720
+column[1] [ACTIVE]: x=640.0 width=Proportion(0.5)
+  tile[0] [ACTIVE]: x=640.0 y=0.0 w=640 h=720
+"""
+
+# Step 3: Third column (first column now off-screen left)
+[[steps]]
+action = "spawn_and_verify"
+description = "Spawn third 1/2 column: first column scrolls off-screen"
+ipc = { action = "Spawn", command = ["alacritty"] }
+expected = """
+column[0]: x=0.0 width=Proportion(0.5)
+  tile[0]: x=0.0 y=0.0 w=640 h=720
+column[1]: x=640.0 width=Proportion(0.5)
+  tile[0]: x=640.0 y=0.0 w=640 h=720
+column[2] [ACTIVE]: x=1280.0 width=Proportion(0.5)
+  tile[0] [ACTIVE]: x=1280.0 y=0.0 w=640 h=720
+"""
+
+[[steps]]
+action = "exit"
+description = "Exit niri"
+ipc = { action = "Quit", skip_confirmation = true }

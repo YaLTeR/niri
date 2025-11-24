@@ -64,5 +64,9 @@ pub fn save_note(
     writeln!(file, "Note: {}", note.trim())?;
     writeln!(file)?;
 
+    // Flush immediately so notes are preserved if stopped halfway
+    file.flush()?;
+    file.sync_all()?;
+
     Ok(())
 }

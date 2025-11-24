@@ -1,3 +1,7 @@
+# AUTO-GENERATED - DO NOT EDIT
+# Source: scrolling_original.rs (via snapshot tests)
+# Run `cargo xtask sync-golden` to regenerate
+
 left:   0 right: 100 width: 100
 left: 100 right: 200 width: 100
 left: 200 right: 300 width: 100

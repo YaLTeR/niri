@@ -1,0 +1,67 @@
+# Visual test steps for spawn_one_third_columns
+# Tests spawning multiple 1/3 width columns incrementally
+
+[test]
+name = "spawn_one_third_columns"
+description = "Spawn multiple windows at 1/3 width, verifying layout at each step"
+
+[config]
+ltr = "default-1-3"
+rtl = "default-1-3-rtl"
+
+# Step 1: First column
+[[steps]]
+action = "spawn_and_verify"
+description = "Spawn first 1/3 column: [1/3 tile, 2/3 empty]"
+ipc = { action = "Spawn", command = ["alacritty"] }
+expected = """
+column[0] [ACTIVE]: x=0.0 width=Proportion(0.33333333333333337)
+  tile[0] [ACTIVE]: x=0.0 y=0.0 w=426 h=720
+"""
+
+# Step 2: Second column
+[[steps]]
+action = "spawn_and_verify"
+description = "Spawn second 1/3 column: [1/3 tile, 1/3 tile, 1/3 empty]"
+ipc = { action = "Spawn", command = ["alacritty"] }
+expected = """
+column[0]: x=0.0 width=Proportion(0.33333333333333337)
+  tile[0]: x=0.0 y=0.0 w=426 h=720
+column[1] [ACTIVE]: x=426.0 width=Proportion(0.33333333333333337)
+  tile[0] [ACTIVE]: x=426.0 y=0.0 w=426 h=720
+"""
+
+# Step 3: Third column (workspace full)
+[[steps]]
+action = "spawn_and_verify"
+description = "Spawn third 1/3 column: [1/3, 1/3, 1/3] workspace full"
+ipc = { action = "Spawn", command = ["alacritty"] }
+expected = """
+column[0]: x=0.0 width=Proportion(0.33333333333333337)
+  tile[0]: x=0.0 y=0.0 w=426 h=720
+column[1]: x=426.0 width=Proportion(0.33333333333333337)
+  tile[0]: x=426.0 y=0.0 w=426 h=720
+column[2] [ACTIVE]: x=852.0 width=Proportion(0.33333333333333337)
+  tile[0] [ACTIVE]: x=852.0 y=0.0 w=426 h=720
+"""
+
+# Step 4: Fourth column (first column now off-screen left)
+[[steps]]
+action = "spawn_and_verify"
+description = "Spawn fourth 1/3 column: first column scrolls off-screen"
+ipc = { action = "Spawn", command = ["alacritty"] }
+expected = """
+column[0]: x=0.0 width=Proportion(0.33333333333333337)
+  tile[0]: x=0.0 y=0.0 w=426 h=720
+column[1]: x=426.0 width=Proportion(0.33333333333333337)
+  tile[0]: x=426.0 y=0.0 w=426 h=720
+column[2]: x=852.0 width=Proportion(0.33333333333333337)
+  tile[0]: x=852.0 y=0.0 w=426 h=720
+column[3] [ACTIVE]: x=1278.0 width=Proportion(0.33333333333333337)
+  tile[0] [ACTIVE]: x=1278.0 y=0.0 w=426 h=720
+"""
+
+[[steps]]
+action = "exit"
+description = "Exit niri"
+ipc = { action = "Quit", skip_confirmation = true }

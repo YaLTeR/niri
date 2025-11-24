@@ -1,0 +1,125 @@
+//! Code generation for golden test modules
+//!
+//! Generates mod.rs stubs and updates the main golden_tests/mod.rs.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::path::Path;
+
+use anyhow::Result;
+use regex::Regex;
+
+/// Generate a stub mod.rs for a new golden test module
+pub fn generate_mod_stub(module_name: &str, snapshots: &BTreeMap<String, String>) -> String {
+    let mut stub = String::new();
+    
+    stub.push_str(&format!("// Golden tests for {}\n", module_name));
+    stub.push_str("//\n");
+    stub.push_str("// Auto-generated stub. Customize as needed.\n\n");
+    stub.push_str("use super::*;\n\n");
+    
+    // Generate test operations placeholder
+    stub.push_str("// ============================================================================\n");
+    stub.push_str("// Test Operations\n");
+    stub.push_str("// ============================================================================\n\n");
+    
+    for fn_name in snapshots.keys() {
+        stub.push_str(&format!("fn {}_ops() -> Vec<Op> {{\n", fn_name));
+        stub.push_str("    // TODO: Define test operations\n");
+        stub.push_str("    vec![]\n");
+        stub.push_str("}\n\n");
+    }
+    
+    // Generate LTR tests
+    stub.push_str("// ============================================================================\n");
+    stub.push_str("// LTR Tests\n");
+    stub.push_str("// ============================================================================\n\n");
+    
+    for fn_name in snapshots.keys() {
+        stub.push_str("#[test]\n");
+        stub.push_str(&format!("fn {}() {{\n", fn_name));
+        stub.push_str("    let mut layout = set_up_empty();\n");
+        stub.push_str(&format!("    check_ops_on_layout(&mut layout, {}_ops());\n", fn_name));
+        stub.push_str(&format!("    assert_golden!(layout.snapshot(), \"{}\");\n", fn_name));
+        stub.push_str("}\n\n");
+    }
+    
+    // Generate RTL tests (ignored)
+    stub.push_str("// ============================================================================\n");
+    stub.push_str("// RTL Tests\n");
+    stub.push_str("// ============================================================================\n\n");
+    
+    stub.push_str("fn make_options_rtl() -> Options {\n");
+    stub.push_str("    let mut options = make_options();\n");
+    stub.push_str("    options.layout.right_to_left = true;\n");
+    stub.push_str("    options\n");
+    stub.push_str("}\n\n");
+    
+    stub.push_str("fn set_up_empty_rtl() -> Layout<TestWindow> {\n");
+    stub.push_str("    let ops = [Op::AddOutput(1)];\n");
+    stub.push_str("    check_ops_with_options(make_options_rtl(), ops)\n");
+    stub.push_str("}\n\n");
+    
+    for fn_name in snapshots.keys() {
+        stub.push_str("#[test]\n");
+        stub.push_str("#[ignore = \"RTL scrolling not yet implemented\"]\n");
+        stub.push_str(&format!("fn {}_rtl() {{\n", fn_name));
+        stub.push_str("    let mut layout = set_up_empty_rtl();\n");
+        stub.push_str(&format!("    check_ops_on_layout(&mut layout, {}_ops());\n", fn_name));
+        stub.push_str(&format!("    assert_golden_rtl!(layout, \"{}\");\n", fn_name));
+        stub.push_str("}\n");
+    }
+    
+    stub
+}
+
+/// Update golden_tests/mod.rs to include new modules
+pub fn update_golden_mod_rs(golden_dir: &Path, new_modules: &[String], dry_run: bool) -> Result<()> {
+    let mod_file = golden_dir.join("mod.rs");
+    let content = fs::read_to_string(&mod_file)?;
+    
+    // Find existing module declarations
+    let existing_re = Regex::new(r#"#\[path = "(\d+_[^/]+)/mod\.rs"\]"#).unwrap();
+    let existing: BTreeSet<String> = existing_re
+        .captures_iter(&content)
+        .map(|c| c[1].to_string())
+        .collect();
+    
+    // Find modules to add
+    let to_add: Vec<&String> = new_modules
+        .iter()
+        .filter(|m| !existing.contains(*m))
+        .collect();
+    
+    if to_add.is_empty() {
+        println!("   No new modules to add");
+        return Ok(());
+    }
+    
+    // Generate new module declarations
+    let mut additions = String::new();
+    for module in &to_add {
+        // Convert module name to a valid Rust identifier
+        let mod_ident = module.replace('-', "_");
+        // Remove leading digits for the module name
+        let mod_ident = mod_ident.trim_start_matches(|c: char| c.is_ascii_digit() || c == '_');
+        
+        additions.push_str(&format!("\n#[path = \"{}/mod.rs\"]\n", module));
+        additions.push_str(&format!("mod {};\n", mod_ident));
+    }
+    
+    // Append to the file
+    if dry_run {
+        println!("   Would add to mod.rs:");
+        for module in &to_add {
+            println!("     - {}", module);
+        }
+    } else {
+        let mut new_content = content;
+        new_content.push_str(&additions);
+        fs::write(&mod_file, new_content)?;
+        println!("   ✅ Added {} new module(s)", to_add.len());
+    }
+    
+    Ok(())
+}

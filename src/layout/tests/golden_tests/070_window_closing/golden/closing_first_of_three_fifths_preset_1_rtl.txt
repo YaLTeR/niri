@@ -1,3 +1,7 @@
+# AUTO-GENERATED - DO NOT EDIT
+# Source: scrolling_original.rs -> LTR golden -> rtl_calculator.rs
+# Run `cargo xtask sync-golden` to regenerate
+
 view_width=1280
 view_height=720
 scale=1
@@ -10,11 +14,11 @@ parent_area_y=0
 parent_area_width=1280
 parent_area_height=720
 gaps=0
-view_offset=Static(0.0)
-view_pos=0.0
+view_offset=Static(-100.0)
+view_pos=-100.0
 active_column=2
 active_column_x=-100.0
-active_tile_viewport_x=-100.0
+active_tile_viewport_x=0.0
 active_tile_viewport_y=0.0
 column[0]: x=1180.0 width=Fixed(100.0) active_tile=0
   tile[0]: x=1180.0 y=0.0 w=100 h=720 window_id=1

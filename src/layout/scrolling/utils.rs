@@ -12,18 +12,13 @@ pub fn compute_new_view_offset(
     gaps: f64,
     is_rtl: bool,
 ) -> f64 {
-    if is_rtl {
-        // RTL: columns are positioned from the right edge
-        // In RTL, we want columns to stay at their natural position (right-aligned)
-        // The view_offset should be 0 for a single column at the right edge
-        // For now, always return 0 to disable scrolling in RTL
-        // TODO: implement proper RTL scrolling behavior
-        return 0.;
-    }
-
-    // LTR logic below
     // If the column is wider than the view, always left-align it.
     if view_width <= new_col_width {
+        if is_rtl {
+            // In RTL, view_pos = view_offset, so to show column at left edge:
+            // view_pos = new_col_x, thus view_offset = new_col_x
+            return new_col_x;
+        }
         return 0.;
     }
 
@@ -36,16 +31,37 @@ pub fn compute_new_view_offset(
 
     // If the column is already fully visible, leave the view as is.
     if cur_x <= new_x && new_right_x <= cur_x + view_width {
+        if is_rtl {
+            // In RTL, view_pos = view_offset, so return cur_x (the current view_pos)
+            return cur_x;
+        }
         return -(new_col_x - cur_x);
     }
 
-    // Otherwise, prefer the alignment that results in less motion from the current position.
+    // Prefer the alignment that results in less motion from the current position.
+    // In RTL mode, we prefer left-alignment (new columns spawn to the left);
+    // in LTR mode, we also prefer left-alignment.
     let dist_to_left = (cur_x - new_x).abs();
     let dist_to_right = ((cur_x + view_width) - new_right_x).abs();
-    if dist_to_left <= dist_to_right {
-        -padding
+    
+    let prefer_left = dist_to_left <= dist_to_right;
+    
+    if is_rtl {
+        // In RTL, view_pos = view_offset
+        // To show column at left edge with padding: view_pos = new_col_x - padding
+        // To show column at right edge with padding: view_pos = new_col_x + new_col_width + padding - view_width
+        if prefer_left {
+            new_x  // new_col_x - padding
+        } else {
+            new_right_x - view_width  // new_col_x + new_col_width + padding - view_width
+        }
     } else {
-        -(view_width - padding - new_col_width)
+        // In LTR, view_offset = view_pos - column_x
+        if prefer_left {
+            -padding
+        } else {
+            -(view_width - padding - new_col_width)
+        }
     }
 }
 

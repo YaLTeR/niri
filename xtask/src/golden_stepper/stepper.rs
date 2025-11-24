@@ -41,75 +41,62 @@ fn run_stepper_loop(
     stdout: &mut io::Stdout,
 ) -> Result<()> {
     let steps = &config.steps;
-    let mut current_step = 0;
 
-    // Show first step
-    print_step_with_prompt(current_step, steps)?;
+    for (idx, step) in steps.iter().enumerate() {
+        // Show step info
+        print_step_info(idx, steps)?;
 
-    loop {
-        // Prompt for input (type note + Enter, or just Enter to continue)
+        // Execute the action FIRST
+        if let Some(ipc) = &step.ipc {
+            println!("   📡 Sending IPC: {}", ipc.action_type);
+            stdout.flush()?;
+            match send_ipc_action(ipc, socket_path) {
+                Ok(()) => {
+                    println!("   ✓ IPC action completed");
+                }
+                Err(e) => {
+                    println!("   ⚠️  IPC error: {}", e);
+                }
+            }
+            thread::sleep(Duration::from_millis(500));
+        } else if let Some(key) = &step.key {
+            if has_wtype && step.action != "verify" {
+                println!("   ⌨️  Sending key: {}", key);
+                stdout.flush()?;
+                send_key_with_wtype(key)?;
+                thread::sleep(Duration::from_millis(500));
+            } else {
+                println!("   👆 Press in niri: {}", key);
+            }
+        }
+
+        // Skip prompt for exit action
+        if step.action == "exit" {
+            println!("   Exiting...");
+            break;
+        }
+
+        // Now prompt for notes
+        println!();
+        println!("   📝 Verify the result above. Type notes or press Enter to continue:");
+        print!("> ");
+        stdout.flush()?;
+
         let note = read_input_line(stdout)?;
 
-        // Save note if not empty
-        if !note.trim().is_empty() {
-            if note.trim() == "q" || note.trim() == "quit" {
-                println!("Quitting...");
-                break;
-            }
-            save_note(config, current_step, &note, notes_file, rtl)?;
-            println!("✓ Note saved\n");
+        if note.trim() == "q" || note.trim() == "quit" {
+            println!("Quitting...");
+            break;
         }
 
-        // Execute current step
-        if current_step < steps.len() {
-            let step = &steps[current_step];
-
-            // Execute IPC action if present
-            if let Some(ipc) = &step.ipc {
-                println!("   📡 Sending IPC: {}", ipc.action_type);
-                stdout.flush()?;
-                match send_ipc_action(ipc, socket_path) {
-                    Ok(()) => {
-                        println!("   ✓ IPC action completed");
-                    }
-                    Err(e) => {
-                        println!("   ⚠️  IPC error: {}", e);
-                    }
-                }
-                thread::sleep(Duration::from_millis(300));
-            }
-            // Execute key press if present (and no IPC action)
-            else if let Some(key) = &step.key {
-                if has_wtype && step.action != "verify" {
-                    println!("   ⌨️  Sending key: {}", key);
-                    stdout.flush()?;
-                    send_key_with_wtype(key)?;
-                    thread::sleep(Duration::from_millis(300));
-                } else {
-                    println!("   👆 Press in niri: {}", key);
-                }
-            }
-
-            current_step += 1;
-
-            if current_step >= steps.len() {
-                println!();
-                println!("✅ All steps completed!");
-                println!("Type any final notes and press Enter (or just Enter to exit):");
-                print!("> ");
-                stdout.flush()?;
-
-                let final_note = read_input_line(stdout)?;
-                if !final_note.trim().is_empty() {
-                    save_note(config, current_step - 1, &final_note, notes_file, rtl)?;
-                    println!("✓ Final note saved");
-                }
-                break;
-            } else {
-                print_step_with_prompt(current_step, steps)?;
-            }
+        if !note.trim().is_empty() {
+            save_note(config, idx, &note, notes_file, rtl)?;
+            println!("   ✓ Note saved");
         }
     }
+
+    println!();
+    println!("✅ All steps completed!");
 
     Ok(())
 }
@@ -122,7 +109,7 @@ fn read_input_line(stdout: &mut io::Stdout) -> Result<String> {
     Ok(input)
 }
 
-fn print_step_with_prompt(idx: usize, steps: &[Step]) -> Result<()> {
+fn print_step_info(idx: usize, steps: &[Step]) -> Result<()> {
     let step = &steps[idx];
 
     println!();
@@ -151,7 +138,6 @@ fn print_step_with_prompt(idx: usize, steps: &[Step]) -> Result<()> {
         }
     }
     println!("└──────────────────────────────────────────────────────────────");
-    print!("> ");
 
     io::stdout().flush()?;
     Ok(())

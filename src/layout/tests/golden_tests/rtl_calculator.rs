@@ -235,11 +235,47 @@ pub fn calculate_rtl_column_x(
     None
 }
 
+/// Calculate RTL view_offset from LTR snapshot.
+/// 
+/// In RTL mode, view_pos = view_offset (unlike LTR where view_pos = column_x + view_offset).
+/// The view scrolls to keep the active column visible at the left edge of the viewport.
+/// 
+/// Formula: view_offset = active_column_x (to show active column at viewport left edge)
+pub fn calculate_rtl_view_offset(ltr_snapshot: &str) -> Option<f64> {
+    let active_column_x = calculate_rtl_active_column_x(ltr_snapshot)?;
+    let metadata = parse_snapshot_metadata(ltr_snapshot)?;
+    
+    // If the active column is within the viewport (x >= 0 and x + width <= view_width),
+    // no scrolling is needed (view_offset = 0)
+    // Otherwise, scroll to show the active column at the left edge
+    
+    let columns = parse_columns(ltr_snapshot);
+    let tiles = parse_tiles(ltr_snapshot);
+    let active_column_idx = parse_active_column(ltr_snapshot)?;
+    
+    // Get active column width
+    let active_col_width = columns.iter()
+        .find(|(idx, _)| *idx == active_column_idx)
+        .and_then(|(_, tile_indices)| tile_indices.first())
+        .and_then(|&tile_idx| tiles.get(tile_idx))
+        .map(|t| t.width)
+        .unwrap_or(0.0);
+    
+    let view_width = metadata.working_area_width;
+    
+    // Check if active column fits in viewport without scrolling
+    if active_column_x >= 0.0 && active_column_x + active_col_width <= view_width {
+        Some(0.0)
+    } else {
+        // Scroll to show active column at left edge
+        Some(active_column_x)
+    }
+}
+
 /// Calculate RTL view_pos from LTR snapshot.
-/// Currently always returns 0.0 because RTL scrolling is not yet implemented.
-pub fn calculate_rtl_view_pos(_ltr_snapshot: &str) -> f64 {
-    // RTL scrolling not yet implemented, view_pos is always 0
-    0.0
+/// In RTL mode, view_pos = view_offset.
+pub fn calculate_rtl_view_pos(ltr_snapshot: &str) -> f64 {
+    calculate_rtl_view_offset(ltr_snapshot).unwrap_or(0.0)
 }
 
 /// Calculate RTL active_column_x from LTR snapshot.
@@ -277,7 +313,7 @@ pub fn calculate_rtl_tile_x(
 
 /// Calculate RTL tile Y position for a specific tile.
 /// Y position is the same in LTR and RTL (vertical doesn't change).
-pub fn calculate_rtl_tile_y(ltr_snapshot: &str, tile_y_ltr: f64) -> f64 {
+pub fn calculate_rtl_tile_y(_ltr_snapshot: &str, tile_y_ltr: f64) -> f64 {
     // Y doesn't change in RTL
     tile_y_ltr
 }

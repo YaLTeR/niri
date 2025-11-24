@@ -13,12 +13,11 @@ use crate::golden_stepper::types::IpcAction;
 pub fn send_ipc_action(ipc: &IpcAction, socket_path: Option<&Path>) -> Result<()> {
     let action = parse_ipc_action(ipc)?;
 
-    let mut socket = if let Some(path) = socket_path {
-        Socket::connect_to(path)
-            .context(format!("Failed to connect to niri socket at {}", path.display()))?
-    } else {
-        Socket::connect().context("Failed to connect to niri socket. Is niri running?")?
-    };
+    let socket_path = socket_path
+        .context("No socket path provided - cannot send IPC to dev niri")?;
+    
+    let mut socket = Socket::connect_to(socket_path)
+        .context(format!("Failed to connect to niri socket at {}", socket_path.display()))?;
 
     let reply = socket
         .send(Request::Action(action))

@@ -103,16 +103,7 @@ fn column_x_positions_single_column() {
 // RTL Tests
 // ============================================================================
 
-fn make_options_rtl() -> Options {
-    let mut options = make_options();
-    options.layout.right_to_left = true;
-    options
-}
 
-fn set_up_empty_rtl() -> Layout<TestWindow> {
-    let ops = [Op::AddOutput(1)];
-    check_ops_with_options(make_options_rtl(), ops)
-}
 
 #[test]
 fn spawn_single_column_one_third_rtl() {

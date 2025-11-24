@@ -1,6 +1,6 @@
 //! Main runner for golden test stepper with steps files.
 
-use std::io::{BufRead, BufReader};
+use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -126,11 +126,20 @@ pub fn run_with_steps(root: &Path, module_dir: &Path, steps_file: &Path, rtl: bo
     let niri_socket = if socket_found {
         let path = socket_path.lock().unwrap().clone().unwrap();
         println!("   Found socket: {}", path.display());
+        // Give niri a bit more time to fully initialize
+        thread::sleep(Duration::from_millis(500));
         Some(path)
     } else {
         println!("   ⚠️  Could not find niri socket, IPC may not work");
         None
     };
+
+    // Wait for user to confirm niri is ready
+    println!();
+    println!("👀 Make sure the dev niri window is visible and focused.");
+    println!("   Press Enter when ready to start the test...");
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
 
     // Notes file path
     let notes_file = module_dir.join("notes.txt");

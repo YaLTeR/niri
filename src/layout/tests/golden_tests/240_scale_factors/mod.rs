@@ -52,16 +52,7 @@ fn scale_factor_with_gaps() {
 // RTL Tests
 // ============================================================================
 
-fn make_options_rtl() -> Options {
-    let mut options = make_options();
-    options.layout.right_to_left = true;
-    options
-}
 
-fn set_up_empty_rtl() -> Layout<TestWindow> {
-    let ops = [Op::AddOutput(1)];
-    check_ops_with_options(make_options_rtl(), ops)
-}
 
 #[test]
 #[ignore = "RTL scrolling not yet implemented"]
