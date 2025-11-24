@@ -61,6 +61,28 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn snapshot(&self) -> String {
         let mut s = String::new();
         
+        // View/output dimensions (needed for RTL calculations)
+        s.push_str(&format!("view_width={:.0}\n", self.view_size.w));
+        s.push_str(&format!("view_height={:.0}\n", self.view_size.h));
+        
+        // Scale factor (affects pixel rounding)
+        s.push_str(&format!("scale={}\n", self.scale));
+        
+        // Working area (after struts and layer-shell exclusive zones)
+        s.push_str(&format!("working_area_x={:.0}\n", self.working_area.loc.x));
+        s.push_str(&format!("working_area_y={:.0}\n", self.working_area.loc.y));
+        s.push_str(&format!("working_area_width={:.0}\n", self.working_area.size.w));
+        s.push_str(&format!("working_area_height={:.0}\n", self.working_area.size.h));
+        
+        // Parent area (excluding struts, for popup positioning)
+        s.push_str(&format!("parent_area_x={:.0}\n", self.parent_area.loc.x));
+        s.push_str(&format!("parent_area_y={:.0}\n", self.parent_area.loc.y));
+        s.push_str(&format!("parent_area_width={:.0}\n", self.parent_area.size.w));
+        s.push_str(&format!("parent_area_height={:.0}\n", self.parent_area.size.h));
+        
+        // Layout options that affect positioning
+        s.push_str(&format!("gaps={}\n", self.options.layout.gaps));
+        
         // View offset (logical scroll position)
         s.push_str(&format!("view_offset={:?}\n", self.view_offset));
         

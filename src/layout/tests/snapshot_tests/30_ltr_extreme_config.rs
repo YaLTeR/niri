@@ -40,6 +40,18 @@ fn very_large_gaps_extreme() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=200
     view_offset=Static(-200.0)
     active_column=0
     column[0]: width=Proportion(0.33333333333333337) active_tile=0
@@ -67,6 +79,18 @@ fn very_large_struts_extreme() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=400
+    working_area_y=200
+    working_area_width=480
+    working_area_height=320
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(-400.0)
     active_column=0
     column[0]: width=Fixed(100.0) active_tile=0

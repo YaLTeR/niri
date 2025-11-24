@@ -55,6 +55,18 @@ fn view_offset_clamped_at_zero() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(0.0)
     active_column=0
     column[0]: width=Proportion(0.33333333333333337) active_tile=0
@@ -81,6 +93,18 @@ fn view_offset_clamped_with_small_columns() {
     // Total width = 400px < 1280px view
     // View offset should not go negative beyond what's needed
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(-100.0)
     active_column=1
     column[0]: width=Fixed(200.0) active_tile=0
@@ -114,6 +138,18 @@ fn view_offset_with_overflow() {
     
     // View offset should show the active (last) column
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(-300.0)
     active_column=3
     column[0]: width=Proportion(0.33333333333333337) active_tile=0

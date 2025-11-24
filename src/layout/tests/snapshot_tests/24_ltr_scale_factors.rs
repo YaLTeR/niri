@@ -57,6 +57,18 @@ fn scale_factor_1_5() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=853
+    view_height=480
+    scale=1.5
+    working_area_x=0
+    working_area_y=0
+    working_area_width=853
+    working_area_height=480
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=853
+    parent_area_height=480
+    gaps=0
     view_offset=Static(-100.0)
     active_column=1
     column[0]: width=Proportion(0.33333333333333337) active_tile=0
@@ -91,6 +103,18 @@ fn scale_factor_2_0() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=640
+    view_height=360
+    scale=2
+    working_area_x=0
+    working_area_y=0
+    working_area_width=640
+    working_area_height=360
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=640
+    parent_area_height=360
+    gaps=0
     view_offset=Static(-100.0)
     active_column=1
     column[0]: width=Proportion(0.5) active_tile=0
@@ -126,6 +150,18 @@ fn scale_factor_with_gaps() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=853
+    view_height=480
+    scale=1.5
+    working_area_x=0
+    working_area_y=0
+    working_area_width=853
+    working_area_height=480
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=853
+    parent_area_height=480
+    gaps=16
     view_offset=Static(-132.0)
     active_column=1
     column[0]: width=Proportion(0.33333333333333337) active_tile=0

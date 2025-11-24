@@ -35,6 +35,18 @@ fn different_default_column_width() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(0.0)
     active_column=0
     column[0]: width=Fixed(100.0) active_tile=0
@@ -57,6 +69,18 @@ fn default_column_width_fixed() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(0.0)
     active_column=0
     column[0]: width=Fixed(100.0) active_tile=0

@@ -68,6 +68,18 @@ fn many_columns_overflow() {
     
     // Should show the last column
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(-900.0)
     active_column=9
     column[0]: width=Fixed(100.0) active_tile=0

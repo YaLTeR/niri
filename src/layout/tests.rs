@@ -15,6 +15,7 @@ use super::*;
 
 mod animations;
 mod fullscreen;
+mod golden_tests;
 mod snapshot_tests;
 
 impl<W: LayoutElement> Default for Layout<W> {

@@ -55,6 +55,18 @@ fn leading_edge_pinned_on_spawn() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(0.0)
     active_column=0
     column[0]: width=Proportion(0.33333333333333337) active_tile=0
@@ -71,6 +83,18 @@ fn leading_edge_pinned_on_spawn() {
     check_ops_on_layout(&mut layout, ops);
     // View offset should be negative, meaning first column's left edge is still at 0
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(-426.0)
     active_column=1
     column[0]: width=Proportion(0.33333333333333337) active_tile=0
@@ -101,6 +125,18 @@ fn leading_edge_pinned_on_resize() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(0.0)
     active_column=0
     column[0]: width=Proportion(0.5) active_tile=0
@@ -115,6 +151,18 @@ fn leading_edge_pinned_on_resize() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(0.0)
     active_column=0
     column[0]: width=Proportion(0.6666666666666667) active_tile=0
@@ -151,6 +199,18 @@ fn leading_edge_pinned_with_multiple_columns() {
     
     // First column's left edge should be at 0
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(-0.0)
     active_column=0
     column[0]: width=Proportion(0.33333333333333337) active_tile=0
@@ -169,6 +229,18 @@ fn leading_edge_pinned_with_multiple_columns() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(0.0)
     active_column=0
     column[0]: width=Proportion(0.5) active_tile=0
@@ -209,6 +281,18 @@ fn leading_edge_pinned_middle_column() {
     check_ops_on_layout(&mut layout, ops);
     // Middle column left edge was at 426, should still be at 426
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(-100.0)
     active_column=1
     column[0]: width=Proportion(0.33333333333333337) active_tile=0

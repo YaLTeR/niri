@@ -71,6 +71,18 @@ fn anim_view_offset_focus_right() {
     // Halfway through animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(-426.0)
     active_column=1
     column[0]: width=Proportion(0.33333333333333337) active_tile=0
@@ -86,6 +98,18 @@ fn anim_view_offset_focus_right() {
     // Complete animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(-426.0)
     active_column=1
     column[0]: width=Proportion(0.33333333333333337) active_tile=0
@@ -128,6 +152,18 @@ fn anim_view_offset_focus_left() {
     // Complete animation
     Op::AdvanceAnimations { msec_delta: 1000 }.apply(&mut layout);
     assert_snapshot!(layout.snapshot(), @r"
+    view_width=1280
+    view_height=720
+    scale=1
+    working_area_x=0
+    working_area_y=0
+    working_area_width=1280
+    working_area_height=720
+    parent_area_x=0
+    parent_area_y=0
+    parent_area_width=1280
+    parent_area_height=720
+    gaps=0
     view_offset=Static(-0.0)
     active_column=2
     column[0]: width=Proportion(0.33333333333333337) active_tile=0
