@@ -1082,7 +1082,7 @@ impl Cast {
         ) {
             Ok(pointer_vec) => pointer_vec,
             Err(_) => {
-                warn!("error rendering cursor, using default bitmap");
+                error!("error rendering cursor");
                 return;
             }
         };
