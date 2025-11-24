@@ -4686,29 +4686,19 @@ impl<W: LayoutElement> Column<W> {
             .tiles
             .iter()
             .map(Tile::min_size_nonfullscreen)
-            .map(|size| {
-                // gets out edge cases/NaN
-                // limits to width only early
-                size.w.max(1.);
-            })
-            .max()
-            .unwrap_or(1);
+            .map(|size| size.w.max(1.))
+            .reduce(|a, b| a.max(b))
+            .unwrap_or(1.);
         let max_width = self
             .tiles
             .iter()
             .map(Tile::max_size_nonfullscreen)
             .filter_map(|size| {
-                // gets rid of NaN and edge cases
                 let w = size.w.max(0.);
-                if w == 0. {
-                    None
-                } else {
-                    Some(w)
-                }
+                (w > 0.).then_some(w)
             })
-            .min()
-            .unwrap_or(f64::INFINITY); // better semantics?
-
+            .reduce(|a, b| a.min(b))
+            .unwrap_or(f64::INFINITY);
         let max_width = f64::max(max_width, min_width);
 
         let width = self.resolve_column_width(width);
