@@ -76,6 +76,8 @@ pub fn format_column_edges(layout: &Layout<TestWindow>) -> String {
 // Phase 1: Basic Spawning & Geometry (Files 00-05)
 #[path = "00_ltr_spawning_single.rs"]
 mod ltr_spawning_single;
+#[path = "00_rtl.rs"]
+mod rtl;
 #[path = "01_ltr_spawning_multiple.rs"]
 mod ltr_spawning_multiple;
 #[path = "02_ltr_add_window_next_to.rs"]

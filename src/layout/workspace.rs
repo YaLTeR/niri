@@ -149,7 +149,7 @@ niri_render_elements! {
 }
 
 #[derive(Debug)]
-pub(super) struct InteractiveResize<W: LayoutElement> {
+pub struct InteractiveResize<W: LayoutElement> {
     pub window: W::Id,
     pub original_window_size: Size<f64, Logical>,
     pub data: InteractiveResizeData,

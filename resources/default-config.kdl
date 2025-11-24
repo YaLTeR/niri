@@ -104,6 +104,12 @@ input {
     // If the position is unset or results in an overlap, the output is instead placed
     // automatically.
     position x=1280 y=0
+
+    // You can override layout settings per-output.
+    // This is useful for example to enable right-to-left scrolling on specific monitors.
+    // layout {
+    //     right-to-left
+    // }
 }
 
 // Settings that influence how windows are positioned and sized.
@@ -112,6 +118,12 @@ input {
 layout {
     // Set gaps around windows in logical pixels.
     gaps 16
+
+    // Uncomment this to enable right-to-left scrolling direction.
+    // By default, columns are arranged left-to-right (LTR).
+    // With right-to-left enabled, new windows spawn on the left and you scroll leftward.
+    // This can be set globally here, or per-output in the output configuration.
+    // right-to-left
 
     // When to center a column when changing focus, options are:
     // - "never", default behavior, focusing an off-screen column will keep at the left

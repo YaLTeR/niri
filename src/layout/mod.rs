@@ -424,7 +424,7 @@ enum DndHoldTarget<WindowId> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct InteractiveResizeData {
-    pub(self) edges: ResizeEdge,
+    pub edges: ResizeEdge,
 }
 
 #[derive(Debug, Clone, Copy)]
