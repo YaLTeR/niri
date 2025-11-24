@@ -49,10 +49,10 @@ fn window_height_resize() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(0.0)
-    Active Column: 0
-    Column 0: width=Proportion(0.5), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 400.0 }, window_id=1
+    view_offset=Static(0.0)
+    active_column=0
+    column[0]: width=Proportion(0.5) active_tile=0
+      tile[0]: w=640 h=400 window_id=1
     ");
 }
 
@@ -75,9 +75,9 @@ fn preset_window_heights() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(0.0)
-    Active Column: 0
-    Column 0: width=Proportion(0.5), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 240.0 }, window_id=1
+    view_offset=Static(0.0)
+    active_column=0
+    column[0]: width=Proportion(0.5) active_tile=0
+      tile[0]: w=640 h=240 window_id=1
     ");
 }

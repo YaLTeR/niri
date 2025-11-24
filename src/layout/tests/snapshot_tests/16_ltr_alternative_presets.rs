@@ -27,10 +27,10 @@ fn preset_two_fifths_tiles() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(0.0)
-    Active Column: 0
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
+    view_offset=Static(0.0)
+    active_column=0
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
     ");
 
     // 2) Add second 2/5 tile [2/5 first tile, 2/5 second tile, 1/5 empty]
@@ -41,12 +41,12 @@ fn preset_two_fifths_tiles() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-100.0)
-    Active Column: 1
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
+    view_offset=Static(-100.0)
+    active_column=1
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=2
     ");
 
     // 3) Add third 2/5 tile - causes overflow, 1/5 of first tile goes OOB
@@ -58,14 +58,14 @@ fn preset_two_fifths_tiles() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-200.0)
-    Active Column: 2
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    view_offset=Static(-200.0)
+    active_column=2
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=2
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=3
     ");
 
     // 4) Focus left to second column - camera should adjust
@@ -75,14 +75,14 @@ fn preset_two_fifths_tiles() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-100.0)
-    Active Column: 1
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    view_offset=Static(-100.0)
+    active_column=1
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=2
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=3
     ");
 
     // 5) Focus left to first column - should be fully visible
@@ -92,14 +92,14 @@ fn preset_two_fifths_tiles() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(0.0)
-    Active Column: 0
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    view_offset=Static(0.0)
+    active_column=0
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=2
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=3
     ");
 }
 
@@ -129,14 +129,14 @@ fn preset_two_fifths_with_gaps() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-248.0)
-    Active Column: 2
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 688.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 688.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 688.0 }, window_id=3
+    view_offset=Static(-248.0)
+    active_column=2
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=688 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=688 window_id=2
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=688 window_id=3
     ");
 }
 
@@ -171,14 +171,14 @@ fn preset_two_fifths_with_struts() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-250.0)
-    Active Column: 2
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 680.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 680.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 680.0 }, window_id=3
+    view_offset=Static(-250.0)
+    active_column=2
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=680 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=680 window_id=2
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=680 window_id=3
     ");
 }
 
@@ -214,14 +214,14 @@ fn preset_two_fifths_gaps_struts_combined() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-266.0)
-    Active Column: 2
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 666.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 666.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 666.0 }, window_id=3
+    view_offset=Static(-266.0)
+    active_column=2
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=666 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=666 window_id=2
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=666 window_id=3
     ");
 
     // 2) Cycle middle column to 3/5 - should push third column more OOB
@@ -233,14 +233,14 @@ fn preset_two_fifths_gaps_struts_combined() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-154.0)
-    Active Column: 1
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 666.0 }, window_id=1
-    Column 1: width=Proportion(0.4), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 471.0, h: 666.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 666.0 }, window_id=3
+    view_offset=Static(-154.0)
+    active_column=1
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=666 window_id=1
+    column[1]: width=Proportion(0.4) active_tile=0
+      tile[0]: w=471 h=666 window_id=2
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=666 window_id=3
     ");
 }
 

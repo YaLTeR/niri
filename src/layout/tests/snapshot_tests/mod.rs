@@ -73,11 +73,63 @@ pub fn format_column_edges(layout: &Layout<TestWindow>) -> String {
     buf
 }
 
+/// Parse a snapshot string to extract tile widths.
+/// Returns Vec<f64> of tile widths in order.
+#[allow(dead_code)]
+pub fn parse_snapshot_widths(snapshot: &str) -> Vec<f64> {
+    let mut widths = Vec::new();
+    for line in snapshot.lines() {
+        if line.trim().starts_with("tile[") {
+            // Parse: "  tile[0]: w=426 h=720 window_id=1"
+            if let Some(w_start) = line.find("w=") {
+                let w_str = &line[w_start + 2..];
+                if let Some(w_end) = w_str.find(' ') {
+                    if let Ok(width) = w_str[..w_end].parse::<f64>() {
+                        widths.push(width);
+                    }
+                }
+            }
+        }
+    }
+    widths
+}
+
+/// Parse a snapshot string to extract all tile dimensions.
+/// Returns Vec<(width, height)> in order.
+#[allow(dead_code)]
+pub fn parse_snapshot_tiles(snapshot: &str) -> Vec<(f64, f64)> {
+    let mut tiles = Vec::new();
+    for line in snapshot.lines() {
+        if line.trim().starts_with("tile[") {
+            // Parse: "  tile[0]: w=426 h=720 window_id=1"
+            let mut width = None;
+            let mut height = None;
+            
+            if let Some(w_start) = line.find("w=") {
+                let w_str = &line[w_start + 2..];
+                if let Some(w_end) = w_str.find(' ') {
+                    width = w_str[..w_end].parse::<f64>().ok();
+                }
+            }
+            
+            if let Some(h_start) = line.find("h=") {
+                let h_str = &line[h_start + 2..];
+                if let Some(h_end) = h_str.find(' ') {
+                    height = h_str[..h_end].parse::<f64>().ok();
+                }
+            }
+            
+            if let (Some(w), Some(h)) = (width, height) {
+                tiles.push((w, h));
+            }
+        }
+    }
+    tiles
+}
+
 // Phase 1: Basic Spawning & Geometry (Files 00-05)
 #[path = "00_ltr_spawning_single.rs"]
 mod ltr_spawning_single;
-#[path = "00_rtl.rs"]
-mod rtl;
 #[path = "01_ltr_spawning_multiple.rs"]
 mod ltr_spawning_multiple;
 #[path = "02_ltr_add_window_next_to.rs"]

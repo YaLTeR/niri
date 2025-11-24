@@ -57,12 +57,12 @@ fn scale_factor_1_5() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-100.0)
-    Active Column: 1
-    Column 0: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 284.0, h: 480.0 }, window_id=1
-    Column 1: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 284.0, h: 480.0 }, window_id=2
+    view_offset=Static(-100.0)
+    active_column=1
+    column[0]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=284 h=480 window_id=1
+    column[1]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=284 h=480 window_id=2
     ");
 }
 
@@ -91,12 +91,12 @@ fn scale_factor_2_0() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-100.0)
-    Active Column: 1
-    Column 0: width=Proportion(0.5), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 320.0, h: 360.0 }, window_id=1
-    Column 1: width=Proportion(0.5), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 320.0, h: 360.0 }, window_id=2
+    view_offset=Static(-100.0)
+    active_column=1
+    column[0]: width=Proportion(0.5) active_tile=0
+      tile[0]: w=320 h=360 window_id=1
+    column[1]: width=Proportion(0.5) active_tile=0
+      tile[0]: w=320 h=360 window_id=2
     ");
 }
 
@@ -126,11 +126,11 @@ fn scale_factor_with_gaps() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-132.0)
-    Active Column: 1
-    Column 0: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 263.3333333333333, h: 448.0 }, window_id=1
-    Column 1: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 263.3333333333333, h: 448.0 }, window_id=2
+    view_offset=Static(-132.0)
+    active_column=1
+    column[0]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=263 h=448 window_id=1
+    column[1]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=263 h=448 window_id=2
     ");
 }

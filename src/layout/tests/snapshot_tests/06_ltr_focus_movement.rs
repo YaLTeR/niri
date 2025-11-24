@@ -64,16 +64,16 @@ fn focus_movement() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-300.0)
-    Active Column: 3
-    Column 0: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
-    Column 1: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
-    Column 2: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
-    Column 3: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=4
+    view_offset=Static(-300.0)
+    active_column=3
+    column[0]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=1
+    column[1]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=2
+    column[2]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=3
+    column[3]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=4
     ");
 
     // 2) Move focus left to Window 3.
@@ -84,16 +84,16 @@ fn focus_movement() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-0.0)
-    Active Column: 2
-    Column 0: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
-    Column 1: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
-    Column 2: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
-    Column 3: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=4
+    view_offset=Static(-0.0)
+    active_column=2
+    column[0]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=1
+    column[1]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=2
+    column[2]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=3
+    column[3]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=4
     ");
 
     // 3) Move focus left to Window 1 (which is out of view).
@@ -105,16 +105,16 @@ fn focus_movement() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-0.0)
-    Active Column: 0
-    Column 0: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
-    Column 1: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
-    Column 2: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
-    Column 3: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=4
+    view_offset=Static(-0.0)
+    active_column=0
+    column[0]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=1
+    column[1]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=2
+    column[2]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=3
+    column[3]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=4
     ");
 
     // 4) Move focus right back to 4.
@@ -127,16 +127,16 @@ fn focus_movement() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-854.0)
-    Active Column: 3
-    Column 0: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
-    Column 1: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
-    Column 2: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
-    Column 3: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=4
+    view_offset=Static(-854.0)
+    active_column=3
+    column[0]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=1
+    column[1]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=2
+    column[2]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=3
+    column[3]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=426 h=720 window_id=4
     ");
 }
 
@@ -166,13 +166,13 @@ fn focus_with_mixed_widths() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-0.0)
-    Active Column: 1
-    Column 0: width=Fixed(200.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 200.0, h: 720.0 }, window_id=1
-    Column 1: width=Proportion(0.5), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(300.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 300.0, h: 720.0 }, window_id=3
+    view_offset=Static(-0.0)
+    active_column=1
+    column[0]: width=Fixed(200.0) active_tile=0
+      tile[0]: w=200 h=720 window_id=1
+    column[1]: width=Proportion(0.5) active_tile=0
+      tile[0]: w=640 h=720 window_id=2
+    column[2]: width=Fixed(300.0) active_tile=0
+      tile[0]: w=300 h=720 window_id=3
     ");
 }

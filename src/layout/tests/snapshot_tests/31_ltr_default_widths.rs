@@ -35,10 +35,10 @@ fn different_default_column_width() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(0.0)
-    Active Column: 0
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
+    view_offset=Static(0.0)
+    active_column=0
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
     ");
 }
 
@@ -57,9 +57,9 @@ fn default_column_width_fixed() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(0.0)
-    Active Column: 0
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
+    view_offset=Static(0.0)
+    active_column=0
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
     ");
 }

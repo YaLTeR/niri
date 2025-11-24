@@ -68,27 +68,27 @@ fn many_columns_overflow() {
     
     // Should show the last column
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-900.0)
-    Active Column: 9
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
-    Column 3: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=4
-    Column 4: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=5
-    Column 5: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=6
-    Column 6: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=7
-    Column 7: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=8
-    Column 8: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=9
-    Column 9: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=10
+    view_offset=Static(-900.0)
+    active_column=9
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=2
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=3
+    column[3]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=4
+    column[4]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=5
+    column[5]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=6
+    column[6]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=7
+    column[7]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=8
+    column[8]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=9
+    column[9]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=10
     ");
 }

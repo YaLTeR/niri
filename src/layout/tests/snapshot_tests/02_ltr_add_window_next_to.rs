@@ -23,12 +23,12 @@ fn spawn_window_between_two_columns() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-100.0)
-    Active Column: 1
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
+    view_offset=Static(-100.0)
+    active_column=1
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=2
     ");
 
     // Spawn window 3 next to window 1 (inserts between 1 and 2)
@@ -44,14 +44,14 @@ fn spawn_window_between_two_columns() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-100.0)
-    Active Column: 2
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
+    view_offset=Static(-100.0)
+    active_column=2
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=3
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=2
     ");
 }
 
@@ -88,16 +88,16 @@ fn spawn_window_between_three_columns() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-200.0)
-    Active Column: 3
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=4
-    Column 3: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    view_offset=Static(-200.0)
+    active_column=3
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=2
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=4
+    column[3]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=3
     ");
 }
 
@@ -137,16 +137,16 @@ fn spawn_window_between_with_mixed_sizes() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-200.0)
-    Active Column: 3
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
-    Column 1: width=Proportion(0.33333333333333326), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=4
-    Column 3: width=Proportion(0.5), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=3
+    view_offset=Static(-200.0)
+    active_column=3
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
+    column[1]: width=Proportion(0.33333333333333326) active_tile=0
+      tile[0]: w=426 h=720 window_id=2
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=4
+    column[3]: width=Proportion(0.5) active_tile=0
+      tile[0]: w=640 h=720 window_id=3
     ");
 }
 
@@ -184,16 +184,16 @@ fn spawn_window_between_with_gaps() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-248.0)
-    Active Column: 3
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 688.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 688.0 }, window_id=4
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 688.0 }, window_id=2
-    Column 3: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 688.0 }, window_id=3
+    view_offset=Static(-248.0)
+    active_column=3
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=688 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=688 window_id=4
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=688 window_id=2
+    column[3]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=688 window_id=3
     ");
 }
 
@@ -217,14 +217,14 @@ fn spawn_window_between_with_overflow() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-200.0)
-    Active Column: 2
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    view_offset=Static(-200.0)
+    active_column=2
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=2
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=3
     ");
 
     // Spawn window 4 next to window 2 (inserts in middle, increases overflow)
@@ -241,16 +241,16 @@ fn spawn_window_between_with_overflow() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-200.0)
-    Active Column: 3
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=4
-    Column 3: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    view_offset=Static(-200.0)
+    active_column=3
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=2
+    column[2]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=4
+    column[3]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=720 window_id=3
     ");
 }
 

@@ -52,17 +52,41 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
+    /// Returns a snapshot of the logical layout state in a parsable format.
+    /// This captures direction-agnostic properties: structure, widths, sizes.
+    /// Does NOT include render positions (x coordinates), as those are direction-dependent.
+    /// 
+    /// Format is designed to be easily parsable for generating both LTR and RTL golden files.
+    /// Each line follows a consistent key=value or key:value pattern.
     pub fn snapshot(&self) -> String {
         let mut s = String::new();
-        s.push_str(&format!("View Offset: {:?}\n", self.view_offset));
-        s.push_str(&format!("Active Column: {}\n", self.active_column_idx));
+        
+        // View offset (logical scroll position)
+        s.push_str(&format!("view_offset={:?}\n", self.view_offset));
+        
+        // Active column index
+        s.push_str(&format!("active_column={}\n", self.active_column_idx));
+        
+        // Column and tile structure
         for (i, col) in self.columns.iter().enumerate() {
-            s.push_str(&format!("Column {}: width={:?}, active_tile={}\n", i, col.width, col.active_tile_idx));
+            s.push_str(&format!(
+                "column[{}]: width={:?} active_tile={}\n",
+                i, col.width, col.active_tile_idx
+            ));
+            
             for (j, tile) in col.tiles.iter().enumerate() {
                 let data = &col.data[j];
-                s.push_str(&format!("  Tile {}: size={:?}, window_id={:?}\n", j, data.size, tile.window().id()));
+                // Only include width and height, not position
+                s.push_str(&format!(
+                    "  tile[{}]: w={:.0} h={:.0} window_id={:?}\n",
+                    j,
+                    data.size.w,
+                    data.size.h,
+                    tile.window().id()
+                ));
             }
         }
+        
         s
     }
 

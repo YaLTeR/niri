@@ -26,12 +26,12 @@ fn empty_workspace_above_first() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-100.0)
-    Active Column: 1
-    Column 0: width=Proportion(0.5), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Proportion(0.5), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=2
+    view_offset=Static(-100.0)
+    active_column=1
+    column[0]: width=Proportion(0.5) active_tile=0
+      tile[0]: w=640 h=720 window_id=1
+    column[1]: width=Proportion(0.5) active_tile=0
+      tile[0]: w=640 h=720 window_id=2
     ");
 }
 
@@ -68,16 +68,16 @@ fn gaps_struts_and_centering_combined() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-384.0)
-    Active Column: 3
-    Column 0: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 392.0, h: 668.0 }, window_id=1
-    Column 1: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 392.0, h: 668.0 }, window_id=2
-    Column 2: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 392.0, h: 668.0 }, window_id=3
-    Column 3: width=Proportion(0.33333333333333337), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 392.0, h: 668.0 }, window_id=4
+    view_offset=Static(-384.0)
+    active_column=3
+    column[0]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=392 h=668 window_id=1
+    column[1]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=392 h=668 window_id=2
+    column[2]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=392 h=668 window_id=3
+    column[3]: width=Proportion(0.33333333333333337) active_tile=0
+      tile[0]: w=392 h=668 window_id=4
     ");
 }
 
@@ -99,12 +99,12 @@ fn preset_widths_with_gaps() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-140.0)
-    Active Column: 1
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 680.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 680.0 }, window_id=2
+    view_offset=Static(-140.0)
+    active_column=1
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=680 window_id=1
+    column[1]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=680 window_id=2
     ");
 
     // 2) Switch preset width to 1/2
@@ -115,12 +115,12 @@ fn preset_widths_with_gaps() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-140.0)
-    Active Column: 1
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 680.0 }, window_id=1
-    Column 1: width=Proportion(0.33333333333333326), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 399.0, h: 680.0 }, window_id=2
+    view_offset=Static(-140.0)
+    active_column=1
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=680 window_id=1
+    column[1]: width=Proportion(0.33333333333333326) active_tile=0
+      tile[0]: w=399 h=680 window_id=2
     ");
 
     // 3) Switch preset width to 2/3
@@ -131,12 +131,12 @@ fn preset_widths_with_gaps() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-140.0)
-    Active Column: 1
-    Column 0: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 680.0 }, window_id=1
-    Column 1: width=Proportion(0.5), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 610.0, h: 680.0 }, window_id=2
+    view_offset=Static(-140.0)
+    active_column=1
+    column[0]: width=Fixed(100.0) active_tile=0
+      tile[0]: w=100 h=680 window_id=1
+    column[1]: width=Proportion(0.5) active_tile=0
+      tile[0]: w=610 h=680 window_id=2
     ");
 }
 

@@ -44,10 +44,10 @@ fn resize_adjust_incremental() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(0.0)
-    Active Column: 0
-    Column 0: width=Proportion(0.6), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 768.0, h: 720.0 }, window_id=1
+    view_offset=Static(0.0)
+    active_column=0
+    column[0]: width=Proportion(0.6) active_tile=0
+      tile[0]: w=768 h=720 window_id=1
     ");
 
     let ops = [
@@ -57,10 +57,10 @@ fn resize_adjust_incremental() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(0.0)
-    Active Column: 0
-    Column 0: width=Proportion(0.5499999999999999), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 703.0, h: 720.0 }, window_id=1
+    view_offset=Static(0.0)
+    active_column=0
+    column[0]: width=Proportion(0.5499999999999999) active_tile=0
+      tile[0]: w=703 h=720 window_id=1
     ");
 }
 
@@ -83,9 +83,9 @@ fn adjust_fixed_width_incrementally() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(0.0)
-    Active Column: 0
-    Column 0: width=Fixed(500.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 500.0, h: 720.0 }, window_id=1
+    view_offset=Static(0.0)
+    active_column=0
+    column[0]: width=Fixed(500.0) active_tile=0
+      tile[0]: w=500 h=720 window_id=1
     ");
 }
