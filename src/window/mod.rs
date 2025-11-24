@@ -30,7 +30,7 @@ pub enum WindowRef<'a> {
 }
 
 /// Rules fully resolved for a window.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ResolvedWindowRules {
     /// Default width for this window.
     ///
