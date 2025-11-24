@@ -256,3 +256,111 @@ mod spawning_single;
 
 #[path = "010_spawning_multiple/mod.rs"]
 mod spawning_multiple;
+
+#[path = "020_add_window_next_to/mod.rs"]
+mod add_window_next_to;
+
+#[path = "030_column_positions/mod.rs"]
+mod column_positions;
+
+#[path = "040_view_offset/mod.rs"]
+mod view_offset;
+
+#[path = "050_leading_edge/mod.rs"]
+mod leading_edge;
+
+#[path = "060_focus_movement/mod.rs"]
+mod focus_movement;
+
+#[path = "070_window_closing/mod.rs"]
+mod window_closing;
+
+#[path = "080_column_resize/mod.rs"]
+mod column_resize;
+
+#[path = "090_focus_edge_cases/mod.rs"]
+mod focus_edge_cases;
+
+#[path = "100_window_lifecycle/mod.rs"]
+mod window_lifecycle;
+
+#[path = "110_resize_advanced/mod.rs"]
+mod resize_advanced;
+
+#[path = "120_resize_incremental/mod.rs"]
+mod resize_incremental;
+
+#[path = "130_column_move/mod.rs"]
+mod column_move;
+
+#[path = "140_column_move_first_last/mod.rs"]
+mod column_move_first_last;
+
+#[path = "150_preset_width/mod.rs"]
+mod preset_width;
+
+#[path = "160_alternative_presets/mod.rs"]
+mod alternative_presets;
+
+#[path = "170_tiles_multiple/mod.rs"]
+mod tiles_multiple;
+
+#[path = "180_tiles_focus/mod.rs"]
+mod tiles_focus;
+
+#[path = "190_tiles_movement/mod.rs"]
+mod tiles_movement;
+
+#[path = "200_window_height/mod.rs"]
+mod window_height;
+
+#[path = "210_consume_expel/mod.rs"]
+mod consume_expel;
+
+#[path = "220_maximize_fullscreen/mod.rs"]
+mod maximize_fullscreen;
+
+#[path = "230_column_display/mod.rs"]
+mod column_display;
+
+#[path = "240_scale_factors/mod.rs"]
+mod scale_factors;
+
+#[path = "250_gaps_struts/mod.rs"]
+mod gaps_struts;
+
+#[path = "260_center_focused/mod.rs"]
+mod center_focused;
+
+#[path = "270_small_large_columns/mod.rs"]
+mod small_large_columns;
+
+#[path = "280_overflow_scenarios/mod.rs"]
+mod overflow_scenarios;
+
+#[path = "290_resize_during_ops/mod.rs"]
+mod resize_during_ops;
+
+#[path = "300_extreme_config/mod.rs"]
+mod extreme_config;
+
+#[path = "310_default_widths/mod.rs"]
+mod default_widths;
+
+#[path = "320_config_variants/mod.rs"]
+mod config_variants;
+
+#[path = "330_anim_column_movement/mod.rs"]
+mod anim_column_movement;
+
+#[path = "340_anim_view_offset/mod.rs"]
+mod anim_view_offset;
+
+#[path = "350_anim_resize/mod.rs"]
+mod anim_resize;
+
+#[path = "360_anim_preset_width/mod.rs"]
+mod anim_preset_width;
+
+#[path = "370_active_tile_visibility/mod.rs"]
+mod active_tile_visibility;

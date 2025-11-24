@@ -1,0 +1,24 @@
+view_width=1280
+view_height=720
+scale=1
+working_area_x=0
+working_area_y=0
+working_area_width=1280
+working_area_height=720
+parent_area_x=0
+parent_area_y=0
+parent_area_width=1280
+parent_area_height=720
+gaps=0
+view_offset=Static(-200.0)
+view_pos=326.0
+active_column=2
+active_column_x=526.0
+active_tile_viewport_x=200.0
+active_tile_viewport_y=0.0
+column[0]: x=0.0 width=Fixed(100.0) active_tile=0
+  tile[0]: x=0.0 y=0.0 w=100 h=720 window_id=1
+column[1]: x=100.0 width=Proportion(0.33333333333333326) active_tile=0
+  tile[0]: x=100.0 y=0.0 w=426 h=720 window_id=2
+column[2] [ACTIVE]: x=526.0 width=Proportion(0.5) active_tile=0
+  tile[0] [ACTIVE]: x=526.0 y=0.0 w=640 h=720 window_id=3

@@ -1,0 +1,22 @@
+view_width=640
+view_height=360
+scale=2
+working_area_x=0
+working_area_y=0
+working_area_width=640
+working_area_height=360
+parent_area_x=0
+parent_area_y=0
+parent_area_width=640
+parent_area_height=360
+gaps=0
+view_offset=Static(-100.0)
+view_pos=220.0
+active_column=1
+active_column_x=320.0
+active_tile_viewport_x=100.0
+active_tile_viewport_y=0.0
+column[0]: x=0.0 width=Proportion(0.5) active_tile=0
+  tile[0]: x=0.0 y=0.0 w=320 h=360 window_id=1
+column[1] [ACTIVE]: x=320.0 width=Proportion(0.5) active_tile=0
+  tile[0] [ACTIVE]: x=320.0 y=0.0 w=320 h=360 window_id=2

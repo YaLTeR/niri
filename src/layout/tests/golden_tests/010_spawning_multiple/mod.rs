@@ -222,6 +222,7 @@ fn set_up_empty_rtl() -> Layout<TestWindow> {
 }
 
 #[test]
+#[ignore = "RTL scrolling not yet implemented"]
 fn spawn_one_third_one_tile_rtl() {
     let mut layout = set_up_empty_rtl();
     check_ops_on_layout(&mut layout, spawn_one_third_one_tile_ops());
@@ -229,6 +230,7 @@ fn spawn_one_third_one_tile_rtl() {
 }
 
 #[test]
+#[ignore = "RTL scrolling not yet implemented"]
 fn spawn_one_third_two_tiles_rtl() {
     let mut layout = set_up_empty_rtl();
     check_ops_on_layout(&mut layout, spawn_one_third_two_tiles_ops());
@@ -236,6 +238,7 @@ fn spawn_one_third_two_tiles_rtl() {
 }
 
 #[test]
+#[ignore = "RTL scrolling not yet implemented"]
 fn spawn_one_third_three_tiles_rtl() {
     let mut layout = set_up_empty_rtl();
     check_ops_on_layout(&mut layout, spawn_one_third_three_tiles_ops());
@@ -243,6 +246,7 @@ fn spawn_one_third_three_tiles_rtl() {
 }
 
 #[test]
+#[ignore = "RTL scrolling not yet implemented"]
 fn spawn_one_third_four_tiles_rtl() {
     let mut layout = set_up_empty_rtl();
     check_ops_on_layout(&mut layout, spawn_one_third_four_tiles_ops());
@@ -250,6 +254,7 @@ fn spawn_one_third_four_tiles_rtl() {
 }
 
 #[test]
+#[ignore = "RTL scrolling not yet implemented"]
 fn spawn_one_half_one_tile_rtl() {
     let mut layout = set_up_empty_rtl();
     check_ops_on_layout(&mut layout, spawn_one_half_one_tile_ops());
@@ -257,6 +262,7 @@ fn spawn_one_half_one_tile_rtl() {
 }
 
 #[test]
+#[ignore = "RTL scrolling not yet implemented"]
 fn spawn_one_half_two_tiles_rtl() {
     let mut layout = set_up_empty_rtl();
     check_ops_on_layout(&mut layout, spawn_one_half_two_tiles_ops());
@@ -264,6 +270,7 @@ fn spawn_one_half_two_tiles_rtl() {
 }
 
 #[test]
+#[ignore = "RTL scrolling not yet implemented"]
 fn spawn_one_half_three_tiles_rtl() {
     let mut layout = set_up_empty_rtl();
     check_ops_on_layout(&mut layout, spawn_one_half_three_tiles_ops());

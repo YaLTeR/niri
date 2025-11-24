@@ -3,6 +3,7 @@ members = [
     "niri-config",
     "niri-ipc",
     "niri-visual-tests",
+    "xtask",
 ]
 
 [workspace.package]
@@ -129,6 +130,8 @@ xshell = "0.2.7"
 
 [features]
 default = ["dbus", "systemd", "xdp-gnome-screencast"]
+# Use original scrolling implementation for snapshot tests (captures known-good behavior)
+scrolling-original = []
 # Enables D-Bus support (serve various freedesktop and GNOME interfaces, accessibility tree, power button handling).
 dbus = ["dep:zbus", "dep:async-io", "dep:url", "dep:accesskit", "dep:accesskit_unix"]
 # Enables systemd integration (global environment, apps in transient scopes).

@@ -79,11 +79,19 @@ pub mod focus_ring;
 pub mod insert_hint_element;
 pub mod monitor;
 pub mod opening_window;
-pub mod scrolling;
 pub mod shadow;
 pub mod tab_indicator;
 pub mod tile;
 pub mod workspace;
+
+// Use original scrolling implementation when the feature is enabled (for snapshot tests)
+// Otherwise use the refactored modular implementation
+#[cfg(feature = "scrolling-original")]
+#[path = "scrolling_original.rs"]
+pub mod scrolling;
+
+#[cfg(not(feature = "scrolling-original"))]
+pub mod scrolling;
 
 #[cfg(test)]
 mod tests;

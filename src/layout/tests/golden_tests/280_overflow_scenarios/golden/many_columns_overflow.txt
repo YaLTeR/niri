@@ -1,0 +1,38 @@
+view_width=1280
+view_height=720
+scale=1
+working_area_x=0
+working_area_y=0
+working_area_width=1280
+working_area_height=720
+parent_area_x=0
+parent_area_y=0
+parent_area_width=1280
+parent_area_height=720
+gaps=0
+view_offset=Static(-900.0)
+view_pos=0.0
+active_column=9
+active_column_x=900.0
+active_tile_viewport_x=900.0
+active_tile_viewport_y=0.0
+column[0]: x=0.0 width=Fixed(100.0) active_tile=0
+  tile[0]: x=0.0 y=0.0 w=100 h=720 window_id=1
+column[1]: x=100.0 width=Fixed(100.0) active_tile=0
+  tile[0]: x=100.0 y=0.0 w=100 h=720 window_id=2
+column[2]: x=200.0 width=Fixed(100.0) active_tile=0
+  tile[0]: x=200.0 y=0.0 w=100 h=720 window_id=3
+column[3]: x=300.0 width=Fixed(100.0) active_tile=0
+  tile[0]: x=300.0 y=0.0 w=100 h=720 window_id=4
+column[4]: x=400.0 width=Fixed(100.0) active_tile=0
+  tile[0]: x=400.0 y=0.0 w=100 h=720 window_id=5
+column[5]: x=500.0 width=Fixed(100.0) active_tile=0
+  tile[0]: x=500.0 y=0.0 w=100 h=720 window_id=6
+column[6]: x=600.0 width=Fixed(100.0) active_tile=0
+  tile[0]: x=600.0 y=0.0 w=100 h=720 window_id=7
+column[7]: x=700.0 width=Fixed(100.0) active_tile=0
+  tile[0]: x=700.0 y=0.0 w=100 h=720 window_id=8
+column[8]: x=800.0 width=Fixed(100.0) active_tile=0
+  tile[0]: x=800.0 y=0.0 w=100 h=720 window_id=9
+column[9] [ACTIVE]: x=900.0 width=Fixed(100.0) active_tile=0
+  tile[0] [ACTIVE]: x=900.0 y=0.0 w=100 h=720 window_id=10
