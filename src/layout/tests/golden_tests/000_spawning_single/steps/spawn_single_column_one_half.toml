@@ -1,0 +1,24 @@
+# Visual test steps for spawn_single_column_one_half
+# Config sets default-column-width to 1/2, so window spawns at correct size
+
+[test]
+name = "spawn_single_column_one_half"
+description = "Spawn a single window at 1/2 width (default from config)"
+
+[config]
+ltr = "default-1-2"
+rtl = "default-1-2-rtl"
+
+[[steps]]
+action = "spawn_and_verify"
+description = "Spawn terminal and verify 1/2 width: x=0 w=640 (LTR) or x=640 (RTL)"
+ipc = { action = "Spawn", command = ["alacritty"] }
+expected = """
+column[0] [ACTIVE]: x=0.0 width=Proportion(0.5)
+  tile[0] [ACTIVE]: x=0.0 y=0.0 w=640 h=720
+"""
+
+[[steps]]
+action = "exit"
+description = "Exit niri"
+ipc = { action = "Quit", skip_confirmation = true }

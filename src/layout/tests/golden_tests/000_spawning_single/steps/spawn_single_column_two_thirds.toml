@@ -1,0 +1,24 @@
+# Visual test steps for spawn_single_column_two_thirds
+# Config sets default-column-width to 2/3, so window spawns at correct size
+
+[test]
+name = "spawn_single_column_two_thirds"
+description = "Spawn a single window at 2/3 width (default from config)"
+
+[config]
+ltr = "default-2-3"
+rtl = "default-2-3-rtl"
+
+[[steps]]
+action = "spawn_and_verify"
+description = "Spawn terminal and verify 2/3 width: x=0 w=853 (LTR) or x=427 (RTL)"
+ipc = { action = "Spawn", command = ["alacritty"] }
+expected = """
+column[0] [ACTIVE]: x=0.0 width=Proportion(0.6666666666666667)
+  tile[0] [ACTIVE]: x=0.0 y=0.0 w=853 h=720
+"""
+
+[[steps]]
+action = "exit"
+description = "Exit niri"
+ipc = { action = "Quit", skip_confirmation = true }

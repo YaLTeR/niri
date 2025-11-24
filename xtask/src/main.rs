@@ -27,12 +27,16 @@ enum Commands {
     
     /// Launch niri with config for manual golden test verification
     GoldenStepper {
-        /// The ops function to test (e.g., spawn_single_column_one_third_ops)
+        /// The ops function to test, or a directory containing step files
         function_name: String,
         
-        /// Use the RTL config variant
+        /// Use the RTL config variant (ignored when running a directory)
         #[arg(long)]
         rtl: bool,
+        
+        /// Run all step files in a directory (LTR then RTL for each)
+        #[arg(long)]
+        all: bool,
     },
 }
 
@@ -44,8 +48,8 @@ fn main() -> Result<()> {
         Commands::SyncGolden { dry_run } => {
             golden_sync::sync_golden(&root, dry_run)?;
         }
-        Commands::GoldenStepper { function_name, rtl } => {
-            golden_stepper::run(&root, &function_name, rtl)?;
+        Commands::GoldenStepper { function_name, rtl, all } => {
+            golden_stepper::run(&root, &function_name, rtl, all)?;
         }
     }
     

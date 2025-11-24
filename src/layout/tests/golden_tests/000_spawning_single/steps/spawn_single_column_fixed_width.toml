@@ -1,0 +1,24 @@
+# Visual test steps for spawn_single_column_fixed_width
+# Config sets default-column-width to fixed 400px, so window spawns at correct size
+
+[test]
+name = "spawn_single_column_fixed_width"
+description = "Spawn a single window at fixed 400px width (default from config)"
+
+[config]
+ltr = "default-fixed-400"
+rtl = "default-fixed-400-rtl"
+
+[[steps]]
+action = "spawn_and_verify"
+description = "Spawn terminal and verify fixed 400px: x=0 (LTR) or x=880 (RTL)"
+ipc = { action = "Spawn", command = ["alacritty"] }
+expected = """
+column[0] [ACTIVE]: x=0.0 width=Fixed(400.0)
+  tile[0] [ACTIVE]: x=0.0 y=0.0 w=400 h=720
+"""
+
+[[steps]]
+action = "exit"
+description = "Exit niri"
+ipc = { action = "Quit", skip_confirmation = true }

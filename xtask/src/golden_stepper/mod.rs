@@ -1,258 +1,130 @@
-//! Golden test stepper - manual visual verification
+//! Golden test stepper - step-by-step visual verification
 //!
-//! Launch niri with specific configs to manually verify golden test behavior.
-//! 
+//! Launch niri and execute test steps one at a time.
+//!
 //! Usage:
 //!   cargo xtask golden-stepper <function_name> [--rtl]
+//!   cargo xtask golden-stepper <directory_path> --all
 //!
-//! The function must have a `// @niri_config("ltr_config", "rtl_config")` comment
-//! that specifies which config files to use.
+//! Each test has a `steps/<test_name>.toml` file defining the sequence of actions.
+
+mod ipc;
+mod legacy;
+mod notes;
+mod parser;
+mod runner;
+mod stepper;
+mod types;
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
-use anyhow::{Context, Result};
-use regex::Regex;
+use anyhow::Result;
+
+use parser::find_steps_file;
 
 /// Launch niri with config for manual golden test verification
-pub fn run(root: &Path, fn_name: &str, rtl: bool) -> Result<()> {
+pub fn run(root: &Path, fn_name: &str, rtl: bool, all: bool) -> Result<()> {
     let golden_dir = root.join("src/layout/tests/golden_tests");
     let config_dir = golden_dir.join(".config");
-    
-    // Find the function in golden test files and extract the niri_config attribute
-    let config_name = find_config_for_function(&golden_dir, fn_name, rtl)?;
-    
-    let config_path = config_dir.join(format!("{}.kdl", config_name));
-    
-    if !config_path.exists() {
-        anyhow::bail!(
-            "Config file not found: {}\n\nAvailable configs in {}:\n{}",
-            config_path.display(),
-            config_dir.display(),
-            list_available_configs(&config_dir)?
-        );
+
+    // Check if fn_name is an absolute directory path
+    let path = Path::new(fn_name);
+    if path.is_absolute() && path.is_dir() {
+        return run_all_in_directory(root, path);
     }
-    
-    let mode = if rtl { "RTL" } else { "LTR" };
-    println!("🚀 Launching niri for golden test verification");
-    println!("   Function: {}", fn_name);
-    println!("   Mode: {}", mode);
-    println!("   Config: {}", config_path.display());
-    println!();
-    
-    // Try to find and display the ops
-    if let Some(ops) = extract_ops_from_function(&golden_dir, fn_name)? {
-        println!("📝 Test operations:");
-        for line in ops.lines() {
-            println!("   {}", line);
-        }
-        println!();
+
+    // Check if fn_name is a prefix like "000" that matches a module directory
+    if let Some(module_dir) = find_module_by_prefix(&golden_dir, fn_name)? {
+        return run_all_in_directory(root, &module_dir);
     }
-    
-    // Try to find and display the golden file
-    let golden_file_name = fn_name.trim_end_matches("_ops");
-    let golden_suffix = if rtl { "_rtl" } else { "" };
-    if let Some(golden_content) = find_golden_file(&golden_dir, golden_file_name, golden_suffix)? {
-        println!("🎯 Expected result (golden file):");
-        // Show just the key position info
-        for line in golden_content.lines() {
-            if line.contains("column[") || line.contains("tile[") || 
-               line.starts_with("active_column_x=") || line.starts_with("active_tile_viewport_x=") {
-                println!("   {}", line);
+
+    // Try to find a steps file for this test
+    let test_name = fn_name.trim_end_matches("_ops");
+    if let Some((module_dir, steps_file)) = find_steps_file(&golden_dir, test_name)? {
+        return runner::run_with_steps(root, &module_dir, &steps_file, rtl);
+    }
+
+    // Fall back to legacy mode (no steps file)
+    legacy::run_legacy(root, &golden_dir, &config_dir, fn_name, rtl)
+}
+
+/// Find a module directory by prefix (e.g., "000" -> "000_spawning_single")
+fn find_module_by_prefix(golden_dir: &Path, prefix: &str) -> Result<Option<std::path::PathBuf>> {
+    for entry in fs::read_dir(golden_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                // Match if directory starts with the prefix
+                if name.starts_with(prefix) {
+                    // Verify it has a steps directory
+                    if path.join("steps").exists() {
+                        return Ok(Some(path));
+                    }
+                }
             }
         }
-        println!();
     }
+    Ok(None)
+}
+
+/// Run all step files in a directory, LTR then RTL for each
+fn run_all_in_directory(root: &Path, module_dir: &Path) -> Result<()> {
+    let steps_dir = module_dir.join("steps");
     
-    println!("📋 Test instructions:");
-    println!("   1. Open terminal windows (Mod+T) to match the test operations");
-    println!("   2. Use Mod+R to cycle preset widths");
-    println!("   3. Verify window positions match the golden file expectations");
-    println!("   4. Press Mod+Shift+E to exit");
+    if !steps_dir.exists() {
+        anyhow::bail!("Steps directory not found: {}", steps_dir.display());
+    }
+
+    // Collect all .toml files and sort alphabetically
+    let mut step_files: Vec<_> = fs::read_dir(&steps_dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().map(|e| e == "toml").unwrap_or(false))
+        .collect();
+    
+    step_files.sort();
+
+    if step_files.is_empty() {
+        anyhow::bail!("No .toml step files found in: {}", steps_dir.display());
+    }
+
+    println!("╔══════════════════════════════════════════════════════════════╗");
+    println!("║  🎯 Golden Test Stepper - Batch Mode                         ║");
+    println!("╠══════════════════════════════════════════════════════════════╣");
+    println!("║  Directory: {:<49} ║", module_dir.file_name().unwrap().to_string_lossy());
+    println!("║  Tests: {:<53} ║", step_files.len());
+    println!("╚══════════════════════════════════════════════════════════════╝");
     println!();
-    
-    // Build niri first
-    println!("🔨 Building niri...");
-    let status = Command::new("cargo")
-        .args(["build", "--package", "niri"])
-        .current_dir(root)
-        .status()
-        .context("Failed to build niri")?;
-    
-    if !status.success() {
-        anyhow::bail!("Failed to build niri");
+
+    // Show the execution order
+    println!("Execution order:");
+    for (i, file) in step_files.iter().enumerate() {
+        let name = file.file_stem().unwrap().to_string_lossy();
+        let idx = i * 2 + 1;
+        println!("  {}. {} (LTR)", idx, name);
+        println!("  {}. {} (RTL)", idx + 1, name);
     }
-    
-    // Launch niri with the config
-    println!("🖥️  Starting niri...\n");
-    let status = Command::new("cargo")
-        .args(["run", "--package", "niri", "--", "-c"])
-        .arg(&config_path)
-        .current_dir(root)
-        .status()
-        .context("Failed to run niri")?;
-    
-    if !status.success() {
-        eprintln!("\n⚠️  niri exited with non-zero status");
+    println!();
+
+    // Run each file: LTR then RTL
+    for step_file in &step_files {
+        let name = step_file.file_stem().unwrap().to_string_lossy();
+        
+        // Run LTR
+        println!("\n{}", "=".repeat(66));
+        println!("  Running: {} (LTR)", name);
+        println!("{}\n", "=".repeat(66));
+        runner::run_with_steps(root, module_dir, step_file, false)?;
+
+        // Run RTL
+        println!("\n{}", "=".repeat(66));
+        println!("  Running: {} (RTL)", name);
+        println!("{}\n", "=".repeat(66));
+        runner::run_with_steps(root, module_dir, step_file, true)?;
     }
-    
+
+    println!("\n✅ All tests completed!");
     Ok(())
-}
-
-/// Find the config name for a function by parsing the // @niri_config(...) comment
-/// 
-/// Format: // @niri_config("ltr_config", "rtl_config")
-///         fn function_name() -> Vec<Op> { ... }
-fn find_config_for_function(golden_dir: &Path, fn_name: &str, rtl: bool) -> Result<String> {
-    // Pattern to match // @niri_config("ltr", "rtl") followed by fn name
-    // Supports both comment format and attribute format (for future proc macro)
-    let comment_pattern = format!(
-        r#"//\s*@niri_config\("([^"]+)",\s*"([^"]+)"\)\s*\n\s*fn\s+{}\s*\("#,
-        regex::escape(fn_name)
-    );
-    let attr_pattern = format!(
-        r#"#\[niri_config\("([^"]+)",\s*"([^"]+)"\)\]\s*fn\s+{}\s*\("#,
-        regex::escape(fn_name)
-    );
-    let comment_re = Regex::new(&comment_pattern)?;
-    let attr_re = Regex::new(&attr_pattern)?;
-    
-    // Search through all mod.rs files in golden test directories
-    for entry in fs::read_dir(golden_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        
-        if path.is_dir() {
-            let mod_file = path.join("mod.rs");
-            if mod_file.exists() {
-                let content = fs::read_to_string(&mod_file)?;
-                
-                // Try comment format first, then attribute format
-                let caps = comment_re.captures(&content)
-                    .or_else(|| attr_re.captures(&content));
-                
-                if let Some(caps) = caps {
-                    let ltr_config = &caps[1];
-                    let rtl_config = &caps[2];
-                    
-                    return Ok(if rtl {
-                        rtl_config.to_string()
-                    } else {
-                        ltr_config.to_string()
-                    });
-                }
-            }
-        }
-    }
-    
-    // If no attribute found, try to guess from function name
-    eprintln!("⚠️  No // @niri_config(...) comment found for function: {}", fn_name);
-    eprintln!("   Using default config naming convention...");
-    
-    // Default: try "default-1-3" / "default-1-3-rtl" pattern
-    if rtl {
-        Ok("default-1-3-rtl".to_string())
-    } else {
-        Ok("default-1-3".to_string())
-    }
-}
-
-/// List available config files
-fn list_available_configs(config_dir: &Path) -> Result<String> {
-    let mut configs = Vec::new();
-    
-    if config_dir.exists() {
-        for entry in fs::read_dir(config_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().map(|e| e == "kdl").unwrap_or(false) {
-                if let Some(name) = path.file_stem() {
-                    configs.push(format!("  - {}", name.to_string_lossy()));
-                }
-            }
-        }
-    }
-    
-    configs.sort();
-    Ok(configs.join("\n"))
-}
-
-/// Extract ops from a function body
-fn extract_ops_from_function(golden_dir: &Path, fn_name: &str) -> Result<Option<String>> {
-    // Pattern to match function definition and its body
-    let fn_pattern = format!(r"fn\s+{}\s*\(\)\s*->\s*Vec<Op>\s*\{{", regex::escape(fn_name));
-    let fn_re = Regex::new(&fn_pattern)?;
-    
-    // Search through all mod.rs files
-    for entry in fs::read_dir(golden_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        
-        if path.is_dir() {
-            let mod_file = path.join("mod.rs");
-            if mod_file.exists() {
-                let content = fs::read_to_string(&mod_file)?;
-                
-                if let Some(mat) = fn_re.find(&content) {
-                    // Find the function body
-                    let start = mat.end();
-                    let rest = &content[start..];
-                    
-                    // Find matching closing brace
-                    let mut depth = 1;
-                    let mut end = 0;
-                    for (i, c) in rest.chars().enumerate() {
-                        match c {
-                            '{' => depth += 1,
-                            '}' => {
-                                depth -= 1;
-                                if depth == 0 {
-                                    end = i;
-                                    break;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    
-                    if end > 0 {
-                        let body = &rest[..end];
-                        // Clean up and format
-                        let cleaned: Vec<&str> = body
-                            .lines()
-                            .map(|l| l.trim())
-                            .filter(|l| !l.is_empty() && !l.starts_with("//") && *l != "vec![" && *l != "]")
-                            .collect();
-                        return Ok(Some(cleaned.join("\n")));
-                    }
-                }
-            }
-        }
-    }
-    
-    Ok(None)
-}
-
-/// Find a golden file by test name
-fn find_golden_file(golden_dir: &Path, test_name: &str, suffix: &str) -> Result<Option<String>> {
-    let file_name = format!("{}{}.txt", test_name, suffix);
-    
-    // Search through all golden subdirectories
-    for entry in fs::read_dir(golden_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        
-        if path.is_dir() {
-            let golden_subdir = path.join("golden");
-            if golden_subdir.exists() {
-                let golden_file = golden_subdir.join(&file_name);
-                if golden_file.exists() {
-                    return Ok(Some(fs::read_to_string(golden_file)?));
-                }
-            }
-        }
-    }
-    
-    Ok(None)
 }

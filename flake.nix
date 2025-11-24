@@ -206,6 +206,7 @@
                 }
               ))
               pkgs.cargo-insta
+              pkgs.wtype # For golden-stepper automated key sending
             ];
 
             nativeBuildInputs = [

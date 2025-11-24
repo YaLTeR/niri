@@ -1,0 +1,24 @@
+# Visual test steps for column_x_positions_single_column
+# Config sets default-column-width to 1/3, so window spawns at correct size
+
+[test]
+name = "column_x_positions_single_column"
+description = "Verify column x positions: x=0 (LTR) or x=854 (RTL)"
+
+[config]
+ltr = "default-1-3"
+rtl = "default-1-3-rtl"
+
+[[steps]]
+action = "spawn_and_verify"
+description = "Spawn terminal and verify x position: x=0 (LTR) or x=854 (RTL)"
+ipc = { action = "Spawn", command = ["alacritty"] }
+expected = """
+column[0] [ACTIVE]: x=0.0 width=Proportion(0.33333333333333337)
+  tile[0] [ACTIVE]: x=0.0 y=0.0 w=426 h=720
+"""
+
+[[steps]]
+action = "exit"
+description = "Exit niri"
+ipc = { action = "Quit", skip_confirmation = true }
