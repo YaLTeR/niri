@@ -54,123 +54,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
     /// Returns a snapshot of the logical layout state in a parsable format.
     /// This captures direction-agnostic properties: structure, widths, sizes.
-    /// Does NOT include render positions (x coordinates), as those are direction-dependent.
     /// 
-    /// Format is designed to be easily parsable for generating both LTR and RTL golden files.
-    /// Each line follows a consistent key=value or key:value pattern.
+    /// Uses the shared snapshot module to ensure consistency with the original implementation.
     pub fn snapshot(&self) -> String {
-        #[cfg(test)]
-        {
-            tracing::debug!(
-                "📸 SNAPSHOT: columns={}, active={}, view_offset={:?}, view_pos={:.1}, rtl={}",
-                self.columns.len(),
-                self.active_column_idx,
-                self.view_offset,
-                self.view_pos(),
-                self.options.layout.right_to_left
-            );
-        }
-        
-        let mut s = String::new();
-        
-        // View/output dimensions (needed for RTL calculations)
-        s.push_str(&format!("view_width={:.0}\n", self.view_size.w));
-        s.push_str(&format!("view_height={:.0}\n", self.view_size.h));
-        
-        // Scale factor (affects pixel rounding)
-        s.push_str(&format!("scale={}\n", self.scale));
-        
-        // Working area (after struts and layer-shell exclusive zones)
-        s.push_str(&format!("working_area_x={:.0}\n", self.working_area.loc.x));
-        s.push_str(&format!("working_area_y={:.0}\n", self.working_area.loc.y));
-        s.push_str(&format!("working_area_width={:.0}\n", self.working_area.size.w));
-        s.push_str(&format!("working_area_height={:.0}\n", self.working_area.size.h));
-        
-        // Parent area (excluding struts, for popup positioning)
-        s.push_str(&format!("parent_area_x={:.0}\n", self.parent_area.loc.x));
-        s.push_str(&format!("parent_area_y={:.0}\n", self.parent_area.loc.y));
-        s.push_str(&format!("parent_area_width={:.0}\n", self.parent_area.size.w));
-        s.push_str(&format!("parent_area_height={:.0}\n", self.parent_area.size.h));
-        
-        // Layout options that affect positioning
-        s.push_str(&format!("gaps={}\n", self.options.layout.gaps));
-        
-        // View offset (logical scroll position)
-        s.push_str(&format!("view_offset={:?}\n", self.view_offset));
-        
-        // View position (transformed coordinate for rendering)
-        s.push_str(&format!("view_pos={:.1}\n", self.view_pos()));
-        
-        // Active column index
-        s.push_str(&format!("active_column={}\n", self.active_column_idx));
-        
-        // Compute column X positions
-        let col_xs: Vec<f64> = self.column_xs(self.data.iter().copied()).take(self.columns.len()).collect();
-        
-        // Active column position in content space
-        if !self.columns.is_empty() {
-            let active_col_x = col_xs[self.active_column_idx];
-            s.push_str(&format!("active_column_x={:.1}\n", active_col_x));
-        }
-        
-        // Active tile position in viewport space (where it appears on screen)
-        if !self.columns.is_empty() {
-            let active_col = &self.columns[self.active_column_idx];
-            if !active_col.tiles.is_empty() {
-                let active_col_x = col_xs[self.active_column_idx];
-                let view_pos = self.view_pos();
-                
-                // In viewport: active column is at (active_col_x - view_pos, 0)
-                let active_tile_viewport_x = active_col_x - view_pos;
-                
-                // For Y position, we need to compute tile Y offsets within the column
-                let active_tile_idx = active_col.active_tile_idx;
-                let gaps = self.options.layout.gaps;
-                let mut y = 0.0;
-                for i in 0..active_tile_idx {
-                    y += active_col.data[i].size.h + gaps;
-                }
-                
-                s.push_str(&format!("active_tile_viewport_x={:.1}\n", active_tile_viewport_x));
-                s.push_str(&format!("active_tile_viewport_y={:.1}\n", y));
-            }
-        }
-        
-        // Column and tile structure
-        for (i, col) in self.columns.iter().enumerate() {
-            let is_active_col = i == self.active_column_idx;
-            let col_x = col_xs[i];
-            
-            s.push_str(&format!(
-                "column[{}]{}: x={:.1} width={:?} active_tile={}\n",
-                i,
-                if is_active_col { " [ACTIVE]" } else { "" },
-                col_x,
-                col.width,
-                col.active_tile_idx
-            ));
-            
-            let mut tile_y = 0.0;
-            for (j, tile) in col.tiles.iter().enumerate() {
-                let data = &col.data[j];
-                let is_active_tile = is_active_col && j == col.active_tile_idx;
-                
-                s.push_str(&format!(
-                    "  tile[{}]{}: x={:.1} y={:.1} w={:.0} h={:.0} window_id={:?}\n",
-                    j,
-                    if is_active_tile { " [ACTIVE]" } else { "" },
-                    col_x,
-                    tile_y,
-                    data.size.w,
-                    data.size.h,
-                    tile.window().id()
-                ));
-                
-                tile_y += data.size.h + self.options.layout.gaps;
-            }
-        }
-        
-        s
+        crate::layout::snapshot::generate_snapshot(self)
     }
 
     pub fn update_config(
@@ -605,5 +492,80 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 assert_eq!(data2, *data);
             }
         }
+    }
+}
+
+// Snapshot trait implementations
+use crate::layout::snapshot::{ColumnWidth as SnapshotColumnWidth, SnapshotColumn, SnapshotScrollingSpace};
+use super::super::Column;
+
+impl<W: LayoutElement> SnapshotColumn<W> for Column<W> {
+    fn snapshot_width(&self) -> SnapshotColumnWidth {
+        match self.width {
+            super::super::types::ColumnWidth::Proportion(p) => SnapshotColumnWidth::Proportion(p),
+            super::super::types::ColumnWidth::Fixed(f) => SnapshotColumnWidth::Fixed(f),
+        }
+    }
+    
+    fn active_tile_idx(&self) -> usize {
+        self.active_tile_idx
+    }
+    
+    fn tile_count(&self) -> usize {
+        self.tiles.len()
+    }
+    
+    fn tile_size(&self, idx: usize) -> Size<f64, Logical> {
+        self.data[idx].size
+    }
+    
+    fn tile_window_id(&self, idx: usize) -> &W::Id {
+        self.tiles[idx].window().id()
+    }
+}
+
+impl<W: LayoutElement> SnapshotScrollingSpace<W> for ScrollingSpace<W> {
+    type Column = Column<W>;
+    
+    fn view_size(&self) -> Size<f64, Logical> {
+        self.view_size
+    }
+    
+    fn scale(&self) -> f64 {
+        self.scale
+    }
+    
+    fn working_area(&self) -> Rectangle<f64, Logical> {
+        self.working_area
+    }
+    
+    fn parent_area(&self) -> Rectangle<f64, Logical> {
+        self.parent_area
+    }
+    
+    fn gaps(&self) -> f64 {
+        self.options.layout.gaps
+    }
+    
+    fn view_offset_debug(&self) -> String {
+        format!("{:?}", self.view_offset)
+    }
+    
+    fn view_pos(&self) -> f64 {
+        self.view_pos()
+    }
+    
+    fn active_column_idx(&self) -> usize {
+        self.active_column_idx
+    }
+    
+    fn column_xs(&self) -> Vec<f64> {
+        self.column_xs(self.data.iter().copied())
+            .take(self.columns.len())
+            .collect()
+    }
+    
+    fn columns(&self) -> &[Self::Column] {
+        &self.columns
     }
 }
