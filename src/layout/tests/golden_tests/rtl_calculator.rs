@@ -130,38 +130,137 @@ pub fn parse_snapshot_metadata(snapshot: &str) -> Option<SnapshotMetadata> {
     })
 }
 
+/// Parse column information from snapshot.
+/// Returns Vec<(column_index, tile_indices)> where tile_indices are the indices in the tiles vec.
+fn parse_columns(snapshot: &str) -> Vec<(usize, Vec<usize>)> {
+    let mut columns = Vec::new();
+    let mut current_column_idx = None;
+    let mut current_tile_count = 0;
+    let mut global_tile_idx = 0;
+    
+    for line in snapshot.lines() {
+        if line.trim().starts_with("column[") {
+            // Parse: "column[0]: width=Proportion(0.33333333333333337) active_tile=0"
+            if let Some(idx_start) = line.find("column[") {
+                let idx_str = &line[idx_start + 7..];
+                if let Some(idx_end) = idx_str.find(']') {
+                    if let Ok(col_idx) = idx_str[..idx_end].parse::<usize>() {
+                        // Save previous column if any
+                        if let Some(prev_idx) = current_column_idx {
+                            let tile_indices: Vec<usize> = (global_tile_idx - current_tile_count..global_tile_idx).collect();
+                            columns.push((prev_idx, tile_indices));
+                        }
+                        current_column_idx = Some(col_idx);
+                        current_tile_count = 0;
+                    }
+                }
+            }
+        } else if line.trim().starts_with("tile[") {
+            current_tile_count += 1;
+            global_tile_idx += 1;
+        }
+    }
+    
+    // Save last column
+    if let Some(col_idx) = current_column_idx {
+        let tile_indices: Vec<usize> = (global_tile_idx - current_tile_count..global_tile_idx).collect();
+        columns.push((col_idx, tile_indices));
+    }
+    
+    columns
+}
+
+/// Parse view_offset from snapshot.
+#[allow(dead_code)]
+fn parse_view_offset(snapshot: &str) -> Option<f64> {
+    for line in snapshot.lines() {
+        if let Some(value) = line.strip_prefix("view_offset=") {
+            let value = value.trim();
+            // Parse "Static(0.0)" or "Static(-426.0)"
+            if let Some(static_start) = value.find("Static(") {
+                let num_str = &value[static_start + 7..];
+                if let Some(num_end) = num_str.find(')') {
+                    return num_str[..num_end].parse::<f64>().ok();
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Calculate expected RTL positions from LTR snapshot.
 /// 
-/// For single-column layouts, assumes LTR tiles start at working_area.x (left-aligned).
-/// RTL tiles should be right-aligned within the working area.
+/// RTL uses a different column positioning system:
+/// - In LTR: columns start at x=0 and grow rightward
+/// - In RTL: columns start at x=working_width and grow leftward
+/// 
+/// The RTL view_offset also works differently - it represents scrolling in the RTL direction.
 /// 
 /// All metadata is parsed from the snapshot for deterministic calculation.
 pub fn calculate_rtl_positions(ltr_snapshot: &str) -> Vec<RtlPosition> {
     let tiles = parse_tiles(ltr_snapshot);
     let metadata = parse_snapshot_metadata(ltr_snapshot)
         .expect("Failed to parse snapshot metadata - ensure snapshot includes all required fields");
+    let columns = parse_columns(ltr_snapshot);
+    // Note: view_offset is not used because RTL scrolling is not yet implemented
+    // (see scrolling/utils.rs line 19-21)
     
-    tiles.iter().map(|tile| {
-        // In LTR, single column starts at working_area.x (typically 0)
-        // In RTL, it should be right-aligned within working area
+    // In RTL, columns are positioned from right to left
+    // Column 0 starts at: working_width - column_0_width
+    // Column 1 starts at: working_width - column_0_width - gaps - column_1_width
+    // etc.
+    
+    let mut positions = Vec::new();
+    let working_area_x = metadata.working_area_x;
+    let working_width = metadata.working_area_width;
+    let gaps = metadata.gaps;
+    
+    // Calculate RTL x-position for each column
+    // In RTL, columns start from the right edge of the working area and grow leftward
+    // The right edge is at working_area_x + working_width
+    let mut x = working_area_x + working_width;
+    
+    for (_col_idx, tile_indices) in columns {
+        // Get the width of the first tile in this column (all tiles in a column have the same width)
+        let column_width = if let Some(&first_tile_idx) = tile_indices.first() {
+            tiles[first_tile_idx].width
+        } else {
+            continue;
+        };
         
-        // Mirror within the working area
-        let working_right = metadata.working_area_x + metadata.working_area_width;
-        let rtl_left = working_right - tile.width;
-        let rtl_right = rtl_left + tile.width;
+        // Move x leftward by the column width to get the column's left edge
+        x -= column_width;
+        let column_x = x;
         
-        RtlPosition {
-            left: rtl_left,
-            right: rtl_right,
-            width: tile.width,
+        // Add positions for all tiles in this column
+        for &tile_idx in &tile_indices {
+            let tile = &tiles[tile_idx];
+            
+            // In RTL mode, view_offset is currently always 0 (see scrolling/utils.rs line 19-21)
+            // This is a TODO in the actual implementation
+            // So we don't apply any view offset transformation
+            let rtl_left = column_x;
+            let rtl_right = rtl_left + tile.width;
+            
+            positions.push(RtlPosition {
+                left: rtl_left,
+                right: rtl_right,
+                width: tile.width,
+            });
         }
-    }).collect()
+        
+        // Move x leftward by the gap for the next column
+        x -= gaps;
+    }
+    
+    positions
 }
 
 /// Calculate expected RTL positions for multiple columns.
 /// 
 /// For multi-column layouts, we need to know the LTR x-positions.
 /// This can be extracted from format_column_edges output.
+#[allow(dead_code)]
 pub fn calculate_rtl_positions_multi_column(
     ltr_edges: &str,
     view_width: f64,

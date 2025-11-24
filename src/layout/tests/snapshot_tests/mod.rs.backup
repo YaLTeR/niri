@@ -127,94 +127,94 @@ pub fn parse_snapshot_tiles(snapshot: &str) -> Vec<(f64, f64)> {
     tiles
 }
 
-// Phase 1: Basic Spawning & Geometry (Files 000-050)
-#[path = "000_ltr_spawning_single.rs"]
+// Phase 1: Basic Spawning & Geometry (Files 00-05)
+#[path = "00_ltr_spawning_single.rs"]
 mod ltr_spawning_single;
-#[path = "010_ltr_spawning_multiple.rs"]
+#[path = "01_ltr_spawning_multiple.rs"]
 mod ltr_spawning_multiple;
-#[path = "020_ltr_add_window_next_to.rs"]
+#[path = "02_ltr_add_window_next_to.rs"]
 mod ltr_add_window_next_to;
-#[path = "030_ltr_column_positions.rs"]
+#[path = "03_ltr_column_positions.rs"]
 mod ltr_column_positions;
-#[path = "040_ltr_view_offset.rs"]
+#[path = "04_ltr_view_offset.rs"]
 mod ltr_view_offset;
-#[path = "050_ltr_leading_edge.rs"]
+#[path = "05_ltr_leading_edge.rs"]
 mod ltr_leading_edge;
 
-// Phase 2: Focus & Navigation (Files 060-100)
-#[path = "060_ltr_focus_movement.rs"]
+// Phase 2: Focus & Navigation (Files 06-10)
+#[path = "06_ltr_focus_movement.rs"]
 mod ltr_focus_movement;
-#[path = "070_ltr_window_closing.rs"]
+#[path = "07_ltr_window_closing.rs"]
 mod ltr_window_closing;
-#[path = "080_ltr_column_resize.rs"]
+#[path = "08_ltr_column_resize.rs"]
 mod ltr_column_resize;
-#[path = "090_ltr_focus_edge_cases.rs"]
+#[path = "09_ltr_focus_edge_cases.rs"]
 mod ltr_focus_edge_cases;
-#[path = "100_ltr_window_lifecycle.rs"]
+#[path = "10_ltr_window_lifecycle.rs"]
 mod ltr_window_lifecycle;
 
-// Phase 3: Column Operations (Files 110-160)
-#[path = "110_ltr_resize_advanced.rs"]
+// Phase 3: Column Operations (Files 11-16)
+#[path = "11_ltr_resize_advanced.rs"]
 mod ltr_resize_advanced;
-#[path = "120_ltr_resize_incremental.rs"]
+#[path = "12_ltr_resize_incremental.rs"]
 mod ltr_resize_incremental;
-#[path = "130_ltr_column_move.rs"]
+#[path = "13_ltr_column_move.rs"]
 mod ltr_column_move;
-#[path = "140_ltr_column_move_first_last.rs"]
+#[path = "14_ltr_column_move_first_last.rs"]
 mod ltr_column_move_first_last;
-#[path = "150_ltr_preset_width.rs"]
+#[path = "15_ltr_preset_width.rs"]
 mod ltr_preset_width;
-#[path = "160_ltr_alternative_presets.rs"]
+#[path = "16_ltr_alternative_presets.rs"]
 mod ltr_alternative_presets;
 
-// Phase 4: Tiles & Stacking (Files 170-210)
-#[path = "170_ltr_tiles_multiple.rs"]
+// Phase 4: Tiles & Stacking (Files 17-21)
+#[path = "17_ltr_tiles_multiple.rs"]
 mod ltr_tiles_multiple;
-#[path = "180_ltr_tiles_focus.rs"]
+#[path = "18_ltr_tiles_focus.rs"]
 mod ltr_tiles_focus;
-#[path = "190_ltr_tiles_movement.rs"]
+#[path = "19_ltr_tiles_movement.rs"]
 mod ltr_tiles_movement;
-#[path = "200_ltr_window_height.rs"]
+#[path = "20_ltr_window_height.rs"]
 mod ltr_window_height;
-#[path = "210_ltr_consume_expel.rs"]
+#[path = "21_ltr_consume_expel.rs"]
 mod ltr_consume_expel;
 
-// Phase 5: Advanced Features (Files 220-260)
-#[path = "220_ltr_maximize_fullscreen.rs"]
+// Phase 5: Advanced Features (Files 22-26)
+#[path = "22_ltr_maximize_fullscreen.rs"]
 mod ltr_maximize_fullscreen;
-#[path = "230_ltr_column_display.rs"]
+#[path = "23_ltr_column_display.rs"]
 mod ltr_column_display;
-#[path = "240_ltr_scale_factors.rs"]
+#[path = "24_ltr_scale_factors.rs"]
 mod ltr_scale_factors;
-#[path = "250_ltr_gaps_struts.rs"]
+#[path = "25_ltr_gaps_struts.rs"]
 mod ltr_gaps_struts;
-#[path = "260_ltr_center_focused.rs"]
+#[path = "26_ltr_center_focused.rs"]
 mod ltr_center_focused;
 
-// Phase 6: Edge Cases & Config (Files 270-320)
-#[path = "270_ltr_small_large_columns.rs"]
+// Phase 6: Edge Cases & Config (Files 27-32)
+#[path = "27_ltr_small_large_columns.rs"]
 mod ltr_small_large_columns;
-#[path = "280_ltr_overflow_scenarios.rs"]
+#[path = "28_ltr_overflow_scenarios.rs"]
 mod ltr_overflow_scenarios;
-#[path = "290_ltr_resize_during_ops.rs"]
+#[path = "29_ltr_resize_during_ops.rs"]
 mod ltr_resize_during_ops;
-#[path = "300_ltr_extreme_config.rs"]
+#[path = "30_ltr_extreme_config.rs"]
 mod ltr_extreme_config;
-#[path = "310_ltr_default_widths.rs"]
+#[path = "31_ltr_default_widths.rs"]
 mod ltr_default_widths;
-#[path = "320_ltr_config_variants.rs"]
+#[path = "32_ltr_config_variants.rs"]
 mod ltr_config_variants;
 
-// Phase 7: Animations (Files 330-360)
-#[path = "330_ltr_anim_column_movement.rs"]
+// Phase 7: Animations (Files 33-36)
+#[path = "33_ltr_anim_column_movement.rs"]
 mod ltr_anim_column_movement;
-#[path = "340_ltr_anim_view_offset.rs"]
+#[path = "34_ltr_anim_view_offset.rs"]
 mod ltr_anim_view_offset;
-#[path = "350_ltr_anim_resize.rs"]
+#[path = "35_ltr_anim_resize.rs"]
 mod ltr_anim_resize;
-#[path = "360_ltr_anim_preset_width.rs"]
+#[path = "36_ltr_anim_preset_width.rs"]
 mod ltr_anim_preset_width;
 
-// Phase 8: Active Tile Visibility (File 370)
-#[path = "370_ltr_active_tile_visibility.rs"]
+// Phase 8: Active Tile Visibility (File 37)
+#[path = "37_ltr_active_tile_visibility.rs"]
 mod ltr_active_tile_visibility;
