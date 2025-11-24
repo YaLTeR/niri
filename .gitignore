@@ -2,4 +2,6 @@
 /result
 
 # TEMP
-dev-config.kdl
+ltr-config.kdl
+rtl-config.kdl
+interactive_resize_behavior.md
