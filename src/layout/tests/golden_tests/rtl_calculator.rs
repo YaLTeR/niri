@@ -144,7 +144,6 @@ pub fn calculate_rtl_positions(ltr_snapshot: &str) -> Vec<RtlPosition> {
     tiles.iter().map(|tile| {
         // In LTR, single column starts at working_area.x (typically 0)
         // In RTL, it should be right-aligned within working area
-        let ltr_x = metadata.working_area_x;
         
         // Mirror within the working area
         let working_right = metadata.working_area_x + metadata.working_area_width;

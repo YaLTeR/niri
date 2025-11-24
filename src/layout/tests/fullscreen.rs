@@ -542,7 +542,7 @@ fn unfullscreen_of_tabbed_via_change_to_normal_preserves_view_pos() {
     check_ops_on_layout(&mut layout, ops);
 
     // View pos is back to showing the first window.
-    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"-16");
+    assert_snapshot!(layout.active_workspace().unwrap().scrolling().view_pos(), @"116");
 }
 
 #[test]

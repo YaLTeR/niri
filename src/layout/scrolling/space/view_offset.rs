@@ -30,7 +30,14 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let target_x = target_x.unwrap_or_else(|| self.target_view_pos());
 
         let new_offset =
-            super::super::utils::compute_new_view_offset(target_x + area.loc.x, area.size.w, col_x, width, padding);
+            super::super::utils::compute_new_view_offset(
+                target_x + area.loc.x,
+                area.size.w,
+                col_x,
+                width,
+                padding,
+                self.options.layout.right_to_left,
+            );
 
         // Non-fullscreen windows are always offset at least by the working area position.
         new_offset - area.loc.x

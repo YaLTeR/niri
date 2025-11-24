@@ -231,3 +231,6 @@ pub fn parse_snapshot_tiles(snapshot: &str) -> Vec<(f64, f64)> {
 // Phase 1: Basic Spawning & Geometry
 #[path = "00_spawning_single/mod.rs"]
 mod spawning_single;
+
+#[path = "01_spawning_multiple/mod.rs"]
+mod spawning_multiple;

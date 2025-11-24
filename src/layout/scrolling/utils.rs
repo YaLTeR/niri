@@ -10,7 +10,18 @@ pub fn compute_new_view_offset(
     new_col_x: f64,
     new_col_width: f64,
     gaps: f64,
+    is_rtl: bool,
 ) -> f64 {
+    if is_rtl {
+        // RTL: columns are positioned from the right edge
+        // In RTL, we want columns to stay at their natural position (right-aligned)
+        // The view_offset should be 0 for a single column at the right edge
+        // For now, always return 0 to disable scrolling in RTL
+        // TODO: implement proper RTL scrolling behavior
+        return 0.;
+    }
+
+    // LTR logic below
     // If the column is wider than the view, always left-align it.
     if view_width <= new_col_width {
         return 0.;

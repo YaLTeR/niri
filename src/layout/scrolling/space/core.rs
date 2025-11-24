@@ -260,11 +260,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn view_pos(&self) -> f64 {
-        self.column_x(self.active_column_idx) + self.view_offset.current()
+        if self.options.layout.right_to_left {
+            // In RTL, columns are already positioned from the right edge
+            // view_pos is just the view_offset, not column_x + view_offset
+            self.view_offset.current()
+        } else {
+            // In LTR, view_pos is column_x + view_offset
+            self.column_x(self.active_column_idx) + self.view_offset.current()
+        }
     }
 
     pub fn target_view_pos(&self) -> f64 {
-        self.column_x(self.active_column_idx) + self.view_offset.target()
+        if self.options.layout.right_to_left {
+            // In RTL, columns are already positioned from the right edge
+            self.view_offset.target()
+        } else {
+            // In LTR, view_pos is column_x + view_offset
+            self.column_x(self.active_column_idx) + self.view_offset.target()
+        }
     }
 
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
