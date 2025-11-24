@@ -706,9 +706,7 @@ fn window_height_resize() {
 }
 
 #[test]
-fn center_focused_column_always() {
-    let mut layout = set_up_empty();
-    
+fn center_focused_column_always() {    
     // Override options to use CenterFocusedColumn::Always
     let mut options = make_options();
     options.layout.center_focused_column = CenterFocusedColumn::Always;
@@ -716,7 +714,7 @@ fn center_focused_column_always() {
     let ops = [
         Op::AddOutput(1),
     ];
-    layout = check_ops_with_options(options.clone(), ops);
+    let mut layout = check_ops_with_options(options.clone(), ops);
 
     // 1) Spawn 3 windows
     let ops = [
@@ -2152,7 +2150,7 @@ fn large_gaps() {
 
 #[test]
 fn spawn_window_between_two_columns() {
-    let mut options = make_options();
+    let options = make_options();
     
     let ops = [Op::AddOutput(1)];
     let mut layout = check_ops_with_options(options, ops);
@@ -2201,7 +2199,7 @@ fn spawn_window_between_two_columns() {
 
 #[test]
 fn spawn_window_between_three_columns() {
-    let mut options = make_options();
+    let options = make_options();
     
     let ops = [Op::AddOutput(1)];
     let mut layout = check_ops_with_options(options, ops);
@@ -2247,7 +2245,7 @@ fn spawn_window_between_three_columns() {
 
 #[test]
 fn spawn_window_between_with_mixed_sizes() {
-    let mut options = make_options();
+    let options = make_options();
     
     let ops = [Op::AddOutput(1)];
     let mut layout = check_ops_with_options(options, ops);
@@ -3666,7 +3664,7 @@ fn closing_last_of_three_fifths_preset() {
 
 #[test]
 fn maximize_column_first_of_three() {
-    let mut options = make_options();
+    let options = make_options();
     
     let ops = [Op::AddOutput(1)];
     let mut layout = check_ops_with_options(options, ops);
@@ -3724,7 +3722,7 @@ fn maximize_column_first_of_three() {
 
 #[test]
 fn maximize_column_middle_of_three() {
-    let mut options = make_options();
+    let options = make_options();
     
     let ops = [Op::AddOutput(1)];
     let mut layout = check_ops_with_options(options, ops);
@@ -3781,7 +3779,7 @@ fn maximize_column_middle_of_three() {
 
 #[test]
 fn maximize_column_last_of_three() {
-    let mut options = make_options();
+    let options = make_options();
     
     let ops = [Op::AddOutput(1)];
     let mut layout = check_ops_with_options(options, ops);
@@ -3837,7 +3835,7 @@ fn maximize_column_last_of_three() {
 
 #[test]
 fn maximize_column_with_mixed_preset_sizes() {
-    let mut options = make_options();
+    let options = make_options();
     
     let ops = [Op::AddOutput(1)];
     let mut layout = check_ops_with_options(options, ops);

@@ -34,7 +34,7 @@ fn make_options() -> Options {
 
 #[test]
 fn scale_factor_1_5() {
-    let mut options = make_options();
+    let options = make_options();
     
     let ops = [
         Op::AddScaledOutput {
@@ -68,7 +68,7 @@ fn scale_factor_1_5() {
 
 #[test]
 fn scale_factor_2_0() {
-    let mut options = make_options();
+    let options = make_options();
     
     let ops = [
         Op::AddScaledOutput {
@@ -141,7 +141,7 @@ fn scale_factor_with_gaps() {
 
 #[test]
 fn very_small_view_width() {
-    let mut options = make_options();
+    let options = make_options();
     
     // This would require modifying the output size, which isn't directly exposed
     // Instead, test with very small column widths
@@ -249,7 +249,7 @@ fn zero_gaps_explicit() {
 
 #[test]
 fn close_column_while_resizing() {
-    let mut options = make_options();
+    let options = make_options();
     
     let ops = [Op::AddOutput(1)];
     let mut layout = check_ops_with_options(options, ops);
@@ -291,7 +291,7 @@ fn close_column_while_resizing() {
 
 #[test]
 fn close_column_while_moving() {
-    let mut options = make_options();
+    let options = make_options();
     
     let ops = [Op::AddOutput(1)];
     let mut layout = check_ops_with_options(options, ops);
@@ -457,7 +457,7 @@ fn many_columns_overflow() {
 
 #[test]
 fn single_very_wide_column() {
-    let mut options = make_options();
+    let options = make_options();
     
     let ops = [Op::AddOutput(1)];
     let mut layout = check_ops_with_options(options, ops);
