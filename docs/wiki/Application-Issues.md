@@ -52,6 +52,17 @@ To fix this, run them with the `_JAVA_AWT_WM_NONREPARENTING=1` environment varia
 For some reason, DMABUF screencasts are disabled in the Zen Browser, so screencasting doesn't work out of the box on niri.
 To fix it, open `about:config` and set `widget.dmabuf.force-enabled` to `true`.
 
+### GTK 4 dead keys / Compose
+
+GTK 4.20 [stopped](https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/8556) handling dead keys and Compose on its own on Wayland.
+To make them work, either run an IME like IBus or Fcitx5, or set the `GTK_IM_MODULE=simple` environment variable.
+
+```kdl
+environment {
+    GTK_IM_MODULE "simple"
+}
+```
+
 ### Fullscreen games
 
 Some video games, both Linux-native and on Wine, have various issues when using non-stacking desktop environments.

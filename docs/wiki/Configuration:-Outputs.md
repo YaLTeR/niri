@@ -97,6 +97,10 @@ output "eDP-1" {
 You can configure a custom mode (not offered by the monitor) by setting `custom=true`.
 In this case, the refresh rate is mandatory.
 
+Custom modes are not guaranteed to work.
+Niri is asking the monitor to run in a mode not supported by the manufacturer.
+Use at your own risk.
+
 > [!CAUTION]
 > Custom modes may damage your monitor, especially if it's a CRT.
 > Follow the maximum supported limits in your monitor's instructions.
@@ -114,6 +118,10 @@ output "HDMI-A-1" {
 
 Directly configures the monitor's mode via a modeline, overriding any configured `mode`.
 The modeline can be calculated via utilities such as [cvt](https://man.archlinux.org/man/cvt.1.en) or [gtf](https://man.archlinux.org/man/gtf.1.en).
+
+Modelines are not guaranteed to work.
+Niri is asking the monitor to run in a mode not supported by the manufacturer.
+Use at your own risk.
 
 > [!CAUTION]
 > Out of spec modelines may damage your monitor, especially if it's a CRT.

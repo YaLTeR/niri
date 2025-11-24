@@ -170,12 +170,13 @@ use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
+use crate::utils::vblank_throttle::VBlankThrottle;
 use crate::utils::watcher::Watcher;
 use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
-    logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
-    write_png_rgba8, xwayland,
+    logical_output, make_screenshot_path, output_matches_name, output_size, panel_orientation,
+    send_scale_transform, write_png_rgba8, xwayland,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -460,6 +461,7 @@ pub struct OutputState {
     pub unfinished_animations_remain: bool,
     /// Last sequence received in a vblank event.
     pub last_drm_sequence: Option<u32>,
+    pub vblank_throttle: VBlankThrottle,
     /// Sequence for frame callback throttling.
     ///
     /// We want to send frame callbacks for each surface at most once per monitor refresh cycle.
@@ -1714,9 +1716,10 @@ impl State {
                 });
             let scale = closest_representable_scale(scale.clamp(0.1, 10.));
 
-            let mut transform = config
-                .map(|c| ipc_transform_to_smithay(c.transform))
-                .unwrap_or(Transform::Normal);
+            let mut transform = panel_orientation(output)
+                + config
+                    .map(|c| ipc_transform_to_smithay(c.transform))
+                    .unwrap_or(Transform::Normal);
             // FIXME: fix winit damage on other transforms.
             if name.connector == "winit" {
                 transform = Transform::Flipped180;
@@ -3042,9 +3045,9 @@ impl Niri {
         });
         let scale = closest_representable_scale(scale.clamp(0.1, 10.));
 
-        let mut transform = c
-            .map(|c| ipc_transform_to_smithay(c.transform))
-            .unwrap_or(Transform::Normal);
+        let mut transform = panel_orientation(&output)
+            + c.map(|c| ipc_transform_to_smithay(c.transform))
+                .unwrap_or(Transform::Normal);
 
         let mut backdrop_color = c
             .and_then(|c| c.backdrop_color)
@@ -3091,6 +3094,7 @@ impl Niri {
             unfinished_animations_remain: false,
             frame_clock: FrameClock::new(refresh_interval, vrr),
             last_drm_sequence: None,
+            vblank_throttle: VBlankThrottle::new(self.event_loop.clone(), name.connector.clone()),
             frame_callback_sequence: 0,
             backdrop_buffer: SolidColorBuffer::new(size, backdrop_color),
             lock_render_state,

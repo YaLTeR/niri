@@ -56,6 +56,7 @@ impl OutputId {
 
 impl Backend {
     pub fn init(&mut self, niri: &mut Niri) {
+        let _span = tracy_client::span!("Backend::init");
         match self {
             Backend::Tty(tty) => tty.init(niri),
             Backend::Winit(winit) => winit.init(niri),

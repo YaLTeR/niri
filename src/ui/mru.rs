@@ -1224,6 +1224,16 @@ impl WindowMruUi {
             _ => None,
         }
     }
+
+    #[cfg(feature = "dbus")]
+    pub fn a11y_scope_text(&self) -> String {
+        let scope = match self.scope() {
+            MruScope::All => "all",
+            MruScope::Output => "output",
+            MruScope::Workspace => "workspace",
+        };
+        format!("Scope {scope}")
+    }
 }
 
 fn compute_view_offset(cur_x: f64, working_width: f64, new_col_x: f64, new_col_width: f64) -> f64 {
@@ -1840,6 +1850,7 @@ fn make_preset_opened_binds() -> Vec<Bind> {
 
     push(Keysym::Escape, Action::MruCancel);
     push(Keysym::Return, Action::MruConfirm);
+    push(Keysym::space, Action::MruConfirm);
     push(Keysym::a, Action::MruSetScope(MruScope::All));
     push(Keysym::o, Action::MruSetScope(MruScope::Output));
     push(Keysym::w, Action::MruSetScope(MruScope::Workspace));

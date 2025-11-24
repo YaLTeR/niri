@@ -40,7 +40,6 @@ use tracing::field::Empty;
 
 use crate::input::move_grab::MoveGrab;
 use crate::input::resize_grab::ResizeGrab;
-use crate::input::touch_move_grab::TouchMoveGrab;
 use crate::input::touch_resize_grab::TouchResizeGrab;
 use crate::input::{PointerOrTouchStartData, DOUBLE_CLICK_TIME};
 use crate::layout::ActivateWindow;
@@ -133,33 +132,17 @@ impl XdgShellHandler for State {
         let window = mapped.window.clone();
         let output = output.clone();
 
-        let output_pos = self
-            .niri
-            .global_space
-            .output_geometry(&output)
-            .unwrap()
-            .loc
-            .to_f64();
-
-        let pos_within_output = start_data.location() - output_pos;
-
-        if !self
-            .niri
-            .layout
-            .interactive_move_begin(window.clone(), &output, pos_within_output)
-        {
-            return;
-        }
-
-        match start_data {
-            PointerOrTouchStartData::Pointer(start_data) => {
-                let grab = MoveGrab::new(start_data, window, false);
-                pointer.set_grab(self, grab, serial, Focus::Clear);
+        match &start_data {
+            PointerOrTouchStartData::Pointer(_) => {
+                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true) {
+                    pointer.set_grab(self, grab, serial, Focus::Clear);
+                }
             }
-            PointerOrTouchStartData::Touch(start_data) => {
+            PointerOrTouchStartData::Touch(_) => {
                 let touch = self.niri.seat.get_touch().unwrap();
-                let grab = TouchMoveGrab::new(start_data, window);
-                touch.set_grab(self, grab, serial);
+                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true) {
+                    touch.set_grab(self, grab, serial);
+                }
             }
         }
 
