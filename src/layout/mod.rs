@@ -661,6 +661,21 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn snapshot(&self) -> String {
+        match &self.monitor_set {
+            MonitorSet::Normal { monitors, active_monitor_idx, .. } => {
+                monitors[*active_monitor_idx].active_workspace_ref().snapshot()
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                if let Some(ws) = workspaces.first() {
+                    ws.snapshot()
+                } else {
+                    "No workspaces".to_string()
+                }
+            }
+        }
+    }
+
     fn with_options_and_workspaces(clock: Clock, config: &Config, options: Options) -> Self {
         let opts = Rc::new(options);
 

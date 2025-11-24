@@ -341,6 +341,10 @@ impl<W: LayoutElement> Workspace<W> {
         Self::new_with_config_no_outputs(None, clock, options)
     }
 
+    pub fn snapshot(&self) -> String {
+        self.scrolling.snapshot()
+    }
+
     pub fn id(&self) -> WorkspaceId {
         self.id
     }

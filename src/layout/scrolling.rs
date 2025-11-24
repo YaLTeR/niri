@@ -309,6 +309,20 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
     }
 
+    pub fn snapshot(&self) -> String {
+        let mut s = String::new();
+        s.push_str(&format!("View Offset: {:?}\n", self.view_offset));
+        s.push_str(&format!("Active Column: {}\n", self.active_column_idx));
+        for (i, col) in self.columns.iter().enumerate() {
+            s.push_str(&format!("Column {}: width={:?}, active_tile={}\n", i, col.width, col.active_tile_idx));
+            for (j, tile) in col.tiles.iter().enumerate() {
+                let data = &col.data[j];
+                s.push_str(&format!("  Tile {}: size={:?}, window_id={:?}\n", j, data.size, tile.window().id()));
+            }
+        }
+        s
+    }
+
     pub fn update_config(
         &mut self,
         view_size: Size<f64, Logical>,
