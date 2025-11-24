@@ -154,14 +154,25 @@ fn sync_golden(dry_run: bool) -> Result<()> {
         }
         println!("\n📂 {}/", module_name);
         
-        // Write golden files
+        // Write golden files (LTR and RTL)
         for (fn_name, snapshot) in &module_info.snapshots {
+            // Write LTR golden file
             let golden_file = golden_subdir.join(format!("{}.txt", fn_name));
             if dry_run {
                 println!("   Would write: golden/{}.txt", fn_name);
             } else {
                 fs::write(&golden_file, snapshot)?;
                 println!("   ✅ golden/{}.txt", fn_name);
+            }
+            
+            // Generate and write RTL golden file
+            let rtl_snapshot = generate_rtl_snapshot(snapshot);
+            let rtl_golden_file = golden_subdir.join(format!("{}_rtl.txt", fn_name));
+            if dry_run {
+                println!("   Would write: golden/{}_rtl.txt", fn_name);
+            } else {
+                fs::write(&rtl_golden_file, &rtl_snapshot)?;
+                println!("   ✅ golden/{}_rtl.txt", fn_name);
             }
         }
         
@@ -184,9 +195,59 @@ fn sync_golden(dry_run: bool) -> Result<()> {
         update_golden_mod_rs(&golden_dir, &new_modules, dry_run)?;
     }
     
+    // Step 6: Generate RTL files for any existing golden files that don't have them
+    println!("\n🔄 Checking for missing RTL golden files...");
+    generate_missing_rtl_files(&golden_dir, dry_run)?;
+    
     println!("\n✨ Done!");
     if dry_run {
         println!("   (This was a dry run - no changes were made)");
+    }
+    
+    Ok(())
+}
+
+/// Generate RTL golden files for any LTR golden files that don't have RTL versions
+fn generate_missing_rtl_files(golden_dir: &Path, dry_run: bool) -> Result<()> {
+    for entry in fs::read_dir(golden_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        
+        if path.is_dir() {
+            let golden_subdir = path.join("golden");
+            if golden_subdir.exists() {
+                for file_entry in fs::read_dir(&golden_subdir)? {
+                    let file_entry = file_entry?;
+                    let file_path = file_entry.path();
+                    
+                    if file_path.is_file() {
+                        let file_name = file_path.file_name().unwrap().to_str().unwrap();
+                        
+                        // Skip if it's already an RTL file or not a .txt file
+                        if file_name.ends_with("_rtl.txt") || !file_name.ends_with(".txt") {
+                            continue;
+                        }
+                        
+                        // Check if RTL version exists
+                        let rtl_name = file_name.replace(".txt", "_rtl.txt");
+                        let rtl_path = golden_subdir.join(&rtl_name);
+                        
+                        if !rtl_path.exists() {
+                            // Generate RTL version
+                            let ltr_content = fs::read_to_string(&file_path)?;
+                            let rtl_content = generate_rtl_snapshot(&ltr_content);
+                            
+                            if dry_run {
+                                println!("   Would generate: {}", rtl_path.display());
+                            } else {
+                                fs::write(&rtl_path, &rtl_content)?;
+                                println!("   ✅ Generated: {}", rtl_name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     
     Ok(())
@@ -500,4 +561,141 @@ fn update_golden_mod_rs(golden_dir: &Path, new_modules: &[String], dry_run: bool
     }
     
     Ok(())
+}
+
+/// Generate an RTL snapshot from an LTR snapshot by mirroring x-positions
+fn generate_rtl_snapshot(ltr_snapshot: &str) -> String {
+    // Parse metadata from snapshot
+    let mut working_area_x: f64 = 0.0;
+    let mut working_area_width: f64 = 1280.0;
+    let mut gaps: f64 = 0.0;
+    
+    for line in ltr_snapshot.lines() {
+        if line.starts_with("working_area_x=") {
+            working_area_x = line.trim_start_matches("working_area_x=").parse().unwrap_or(0.0);
+        } else if line.starts_with("working_area_width=") {
+            working_area_width = line.trim_start_matches("working_area_width=").parse().unwrap_or(1280.0);
+        } else if line.starts_with("gaps=") {
+            gaps = line.trim_start_matches("gaps=").parse().unwrap_or(0.0);
+        }
+    }
+    
+    // Parse columns and tiles to get widths
+    let mut columns: Vec<(usize, f64)> = Vec::new(); // (col_idx, width)
+    let mut current_col_idx = 0;
+    
+    for line in ltr_snapshot.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("column[") {
+            // Extract column index
+            if let Some(idx_end) = trimmed.find(']') {
+                let idx_str = &trimmed[7..idx_end];
+                current_col_idx = idx_str.parse().unwrap_or(0);
+            }
+        } else if trimmed.starts_with("tile[") {
+            // Extract width from tile line: "tile[0] [ACTIVE]: x=0.0 y=0.0 w=426 h=720 window_id=1"
+            if let Some(w_start) = trimmed.find("w=") {
+                let w_str = &trimmed[w_start + 2..];
+                if let Some(w_end) = w_str.find(' ') {
+                    let width: f64 = w_str[..w_end].parse().unwrap_or(0.0);
+                    // Only add if we haven't seen this column yet
+                    if !columns.iter().any(|(idx, _)| *idx == current_col_idx) {
+                        columns.push((current_col_idx, width));
+                    }
+                }
+            }
+        }
+    }
+    
+    // Sort columns by index
+    columns.sort_by_key(|(idx, _)| *idx);
+    
+    // Calculate RTL x-positions
+    // In RTL, columns start from the right edge and grow leftward
+    let mut rtl_positions: BTreeMap<usize, f64> = BTreeMap::new();
+    let right_edge = working_area_x + working_area_width;
+    let mut x = right_edge;
+    
+    for (col_idx, width) in &columns {
+        x -= width;
+        rtl_positions.insert(*col_idx, x);
+        x -= gaps;
+    }
+    
+    // Find active column
+    let mut active_col_idx = 0;
+    for line in ltr_snapshot.lines() {
+        if line.starts_with("active_column=") {
+            active_col_idx = line.trim_start_matches("active_column=").parse().unwrap_or(0);
+            break;
+        }
+    }
+    
+    let active_col_rtl_x = rtl_positions.get(&active_col_idx).copied().unwrap_or(0.0);
+    let active_col_width = columns.iter()
+        .find(|(idx, _)| *idx == active_col_idx)
+        .map(|(_, w)| *w)
+        .unwrap_or(0.0);
+    
+    // RTL view_offset calculation
+    // In the current RTL implementation, view_offset is always 0 for single columns
+    // and the column is positioned at the right side of the working area
+    // view_pos = active_col_x + view_offset, so with view_offset=0, view_pos = active_col_x
+    // But actually, looking at the actual behavior, view_pos=0 when view_offset=0
+    // active_tile_viewport_x = active_col_x - view_pos = active_col_x - 0 = active_col_x
+    let rtl_view_offset = 0.0;
+    let rtl_view_pos = 0.0;
+    let rtl_active_tile_viewport_x = active_col_rtl_x - rtl_view_pos;
+    
+    // Generate RTL snapshot
+    let mut result = Vec::new();
+    let mut current_col_for_tiles = 0usize;
+    
+    for line in ltr_snapshot.lines() {
+        let trimmed = line.trim();
+        
+        if trimmed.starts_with("view_offset=") {
+            result.push(format!("view_offset=Static({:.1})", rtl_view_offset));
+        } else if trimmed.starts_with("view_pos=") {
+            result.push(format!("view_pos={:.1}", rtl_view_pos));
+        } else if trimmed.starts_with("active_column_x=") {
+            result.push(format!("active_column_x={:.1}", active_col_rtl_x));
+        } else if trimmed.starts_with("active_tile_viewport_x=") {
+            result.push(format!("active_tile_viewport_x={:.1}", rtl_active_tile_viewport_x));
+        } else if trimmed.starts_with("column[") {
+            // Extract column index and transform x
+            if let Some(idx_end) = trimmed.find(']') {
+                let idx_str = &trimmed[7..idx_end];
+                let col_idx: usize = idx_str.parse().unwrap_or(0);
+                current_col_for_tiles = col_idx;
+                
+                if let Some(&rtl_x) = rtl_positions.get(&col_idx) {
+                    let new_line = replace_x_in_line(trimmed, rtl_x);
+                    result.push(new_line);
+                } else {
+                    result.push(trimmed.to_string());
+                }
+            } else {
+                result.push(trimmed.to_string());
+            }
+        } else if trimmed.starts_with("tile[") {
+            // Use the current column's RTL x position
+            if let Some(&rtl_x) = rtl_positions.get(&current_col_for_tiles) {
+                let new_line = replace_x_in_line(trimmed, rtl_x);
+                result.push(format!("  {}", new_line));
+            } else {
+                result.push(line.to_string());
+            }
+        } else {
+            result.push(line.to_string());
+        }
+    }
+    
+    result.join("\n")
+}
+
+/// Replace x= value in a line with a new value
+fn replace_x_in_line(line: &str, new_x: f64) -> String {
+    let re = Regex::new(r"x=[0-9.-]+").unwrap();
+    re.replace(line, format!("x={:.1}", new_x)).to_string()
 }

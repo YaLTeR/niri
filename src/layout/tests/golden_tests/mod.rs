@@ -51,68 +51,32 @@ macro_rules! assert_golden {
 /// 5. Verifies logical state (snapshot) is identical to LTR
 macro_rules! assert_golden_rtl {
     ($layout:expr) => {{
-        use $crate::layout::tests::golden_tests::{calculate_rtl_positions, format_column_edges};
-        
-        // Derive golden file name from test function name
-        // Test function: spawn_single_column_one_third_rtl -> Golden: spawn_single_column_one_third
-        let test_fn_name = {
-            fn type_name_of<T>(_: &T) -> &'static str {
-                std::any::type_name::<T>()
-            }
-            // This won't work directly, we need the function name not type name
-            // Let's use a different approach: pass the name explicitly but make it a macro rule
-            stringify!($layout) // This gives us the variable name, not function name
-        };
-        
-        // Since we can't easily get function name in declarative macros,
-        // we'll require explicit test name for now
-        // Users should call: assert_golden_rtl!(layout, test_name)
         compile_error!("assert_golden_rtl! requires explicit test name parameter. Use: assert_golden_rtl!(layout, \"test_name\")")
     }};
     
     ($layout:expr, $test_name:literal) => {{
-        use $crate::layout::tests::golden_tests::{calculate_rtl_positions, format_column_edges};
+        use $crate::layout::tests::golden_tests::normalize_for_rtl_comparison;
         
-        // Load LTR golden snapshot
-        let ltr_golden = include_str!(concat!("golden/", $test_name, ".txt"));
+        // Load RTL golden snapshot (pre-calculated from LTR by xtask)
+        let rtl_golden = include_str!(concat!("golden/", $test_name, "_rtl.txt"));
         
-        // Calculate expected RTL positions from LTR golden
-        let expected_positions = calculate_rtl_positions(ltr_golden);
-        
-        // Verify actual RTL geometry matches expected mirrored positions
-        let actual_edges = format_column_edges(&$layout);
-        let expected_edges: String = expected_positions
-            .iter()
-            .map(|pos| pos.format())
-            .collect::<Vec<_>>()
-            .join("\n");
-        
-        assert_eq!(
-            actual_edges.trim(),
-            expected_edges.trim(),
-            "\n\n❌ RTL GEOMETRY MISMATCH ❌\n\
-             \nTest: {}\n\
-             \nRTL geometry should be a mathematical mirror of LTR.\n\
-             \nLTR golden: golden/{}.txt\n\
-             \nExpected RTL positions are calculated from LTR golden.\n\n",
-            $test_name,
-            $test_name
-        );
-        
-        // Verify logical state is identical to LTR (direction-agnostic)
-        // Note: view_offset is excluded from comparison because RTL scrolling is not yet implemented
+        // Get actual RTL snapshot
         let rtl_snapshot = $layout.snapshot();
-        let rtl_normalized = $crate::layout::tests::golden_tests::normalize_view_offset(&rtl_snapshot);
-        let ltr_normalized = $crate::layout::tests::golden_tests::normalize_view_offset(ltr_golden);
+        
+        // Compare full snapshots
         assert_eq!(
-            rtl_normalized.trim(),
-            ltr_normalized.trim(),
-            "\n\n❌ RTL LOGICAL STATE MISMATCH ❌\n\
+            rtl_snapshot.trim(),
+            rtl_golden.trim(),
+            "\n\n❌ RTL GOLDEN MISMATCH ❌\n\
              \nTest: {}\n\
-             \nLogical state (snapshot) should be identical between LTR and RTL.\n\
-             \nOnly visual geometry should differ.\n\
-             \n(Note: view_offset is normalized for comparison as RTL scrolling is not yet implemented)\n\n",
-            $test_name
+             \nRTL snapshot does not match golden file.\n\
+             \nGolden file: golden/{}_rtl.txt\n\
+             \nActual snapshot:\n{}\n\
+             \nExpected (golden):\n{}\n\n",
+            $test_name,
+            $test_name,
+            rtl_snapshot.trim(),
+            rtl_golden.trim()
         );
     }};
 }
@@ -134,6 +98,72 @@ pub fn normalize_view_offset(snapshot: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Normalize a snapshot for RTL comparison by extracting only structural properties.
+/// 
+/// This extracts properties that should be identical between LTR and RTL:
+/// - Dimensions (view_width, view_height, working_area dimensions, parent_area dimensions)
+/// - Scale factor
+/// - Gaps
+/// - Column structure (count, widths, active_tile indices)
+/// - Tile structure (count, heights, window_ids)
+/// 
+/// This EXCLUDES properties that differ between LTR and RTL:
+/// - X positions (column x, tile x, active_column_x, active_tile_viewport_x)
+/// - view_offset (RTL scrolling not yet implemented)
+/// - view_pos (derived from view_offset)
+pub fn normalize_for_rtl_comparison(snapshot: &str) -> String {
+    let mut result = Vec::new();
+    
+    for line in snapshot.lines() {
+        let trimmed = line.trim();
+        
+        // Include dimension and config properties
+        if trimmed.starts_with("view_width=") ||
+           trimmed.starts_with("view_height=") ||
+           trimmed.starts_with("scale=") ||
+           trimmed.starts_with("working_area_y=") ||
+           trimmed.starts_with("working_area_width=") ||
+           trimmed.starts_with("working_area_height=") ||
+           trimmed.starts_with("parent_area_y=") ||
+           trimmed.starts_with("parent_area_width=") ||
+           trimmed.starts_with("parent_area_height=") ||
+           trimmed.starts_with("gaps=") ||
+           trimmed.starts_with("active_column=") ||
+           trimmed.starts_with("active_tile_viewport_y=")
+        {
+            result.push(trimmed.to_string());
+        }
+        // For column lines, extract structural info but not x position
+        else if trimmed.starts_with("column[") {
+            // "column[0] [ACTIVE]: x=0.0 width=Proportion(0.33) active_tile=0"
+            // Extract: column index, active marker, width, active_tile
+            if let Some(width_start) = trimmed.find("width=") {
+                let structural = &trimmed[..trimmed.find(" x=").unwrap_or(trimmed.len())];
+                let width_part = &trimmed[width_start..];
+                result.push(format!("{} {}", structural, width_part));
+            }
+        }
+        // For tile lines, extract structural info but not x position
+        else if trimmed.starts_with("tile[") {
+            // "  tile[0] [ACTIVE]: x=0.0 y=0.0 w=426 h=720 window_id=1"
+            // Extract: tile index, active marker, y, w, h, window_id
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            let mut structural_parts = Vec::new();
+            
+            for part in &parts {
+                // Skip x= but keep everything else
+                if part.starts_with("x=") {
+                    continue;
+                }
+                structural_parts.push(*part);
+            }
+            result.push(format!("  {}", structural_parts.join(" ")));
+        }
+    }
+    
+    result.join("\n")
 }
 
 pub fn make_options() -> Options {
