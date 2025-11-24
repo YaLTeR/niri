@@ -10,21 +10,16 @@
 use std::iter::{self, zip};
 use std::rc::Rc;
 
-use niri_ipc::{ColumnDisplay, WindowLayout};
-use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
+use niri_ipc::ColumnDisplay;
+use smithay::utils::{Logical, Point, Rectangle, Size};
 
-use super::super::super::tab_indicator::TabIndicator;
 use super::super::super::tile::Tile;
 use super::super::super::{LayoutElement, Options};
-use super::super::super::monitor::InsertPosition;
 use super::super::types::ColumnData;
-use super::super::utils::{compute_working_area, compute_toplevel_bounds};
-use super::super::column::Column;
-use crate::render_helpers::renderer::NiriRenderer;
-use crate::utils::transaction::{Transaction, TransactionBlocker};
+use super::super::utils::compute_working_area;
+use crate::utils::transaction::TransactionBlocker;
 use super::super::ViewOffset;
 use super::{ScrollingSpace};
-use crate::window::ResolvedWindowRules;
 
 #[cfg(test)]
 use tracing::warn;

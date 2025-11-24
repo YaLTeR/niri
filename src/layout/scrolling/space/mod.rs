@@ -15,7 +15,7 @@ use std::rc::Rc;
 use smithay::utils::{Logical, Rectangle, Size};
 
 use super::super::closing_window::ClosingWindow;
-use super::super::workspace::{InteractiveResize, ResolvedSize};
+use super::super::workspace::InteractiveResize;
 use super::super::{LayoutElement, Options};
 use super::column::Column;
 use super::types::{ColumnData, ViewOffset};

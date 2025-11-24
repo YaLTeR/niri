@@ -1,11 +1,10 @@
-use std::rc::Rc;
 
 use niri_ipc::ColumnDisplay;
-use smithay::utils::{Logical, Point};
+use smithay::utils::Point;
 
 use super::super::ScrollingSpace;
 use crate::layout::LayoutElement;
-use super::super::super::{RemovedTile, ScrollDirection};
+use super::super::super::RemovedTile;
 use super::super::types::ScrollDirection as Direction;
 use crate::utils::transaction::Transaction;
 

@@ -15,12 +15,12 @@ mod sizing;
 use std::rc::Rc;
 
 use niri_ipc::ColumnDisplay;
-use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::utils::{Logical, Rectangle, Size};
 
 use super::super::tab_indicator::TabIndicator;
 use super::super::tile::Tile;
 use super::super::{LayoutElement, Options};
-use super::types::{ColumnWidth, MoveAnimation, TileData, WindowHeight};
+use super::types::{ColumnWidth, MoveAnimation, TileData};
 use crate::animation::Clock;
 
 /// A column of tiled windows in the scrolling layout.
@@ -99,7 +99,3 @@ pub struct Column<W: LayoutElement> {
 }
 
 // Re-export all the implementation pieces
-pub use core::*;
-pub use operations::*;
-pub use positioning::*;
-pub use sizing::*;

@@ -1,17 +1,14 @@
-use std::rc::Rc;
 
 use crate::layout::ColumnDisplay;
-use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::utils::{Logical, Point};
 
 use super::space::ScrollingSpace;
-use super::column::Column;
 use super::super::workspace::InteractiveResize;
 use super::super::{InteractiveResizeData};
-use super::super::tile::Tile;
 use super::super::LayoutElement;
 use crate::utils::ResizeEdge;
 
-use super::types::{ColumnData, ColumnWidth};
+use super::types::ColumnWidth;
 use crate::layout::SizeChange;
 
 impl<W: LayoutElement> ScrollingSpace<W> {

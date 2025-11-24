@@ -1,5 +1,4 @@
 use std::cmp::max;
-use std::rc::Rc;
 
 use niri_config::PresetSize;
 use niri_ipc::{ColumnDisplay, WindowLayout};
@@ -12,7 +11,7 @@ use super::super::super::monitor::InsertPosition;
 use super::super::super::tab_indicator::TabIndicator;
 use super::super::super::tile::Tile;
 use super::super::super::workspace::ResolvedSize;
-use super::super::super::{HitType, Options, ResolvedWindowRules};
+use super::super::super::{HitType, ResolvedWindowRules};
 use super::super::utils::{compute_toplevel_bounds, resolve_preset_size};
 use niri_config::utils::MergeWith as _;
 

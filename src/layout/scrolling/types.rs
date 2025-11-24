@@ -1,14 +1,12 @@
 use std::time::Duration;
 
 use niri_config::PresetSize;
-use niri_ipc::ColumnDisplay;
-use smithay::utils::{Logical, Point, Size};
+use smithay::utils::{Logical, Size};
 
 use crate::animation::Animation;
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::animation::Clock;
 
-use super::super::workspace::ResolvedSize;
 use super::super::LayoutElement;
 
 /// Amount of touchpad movement to scroll the view for the width of one working area.

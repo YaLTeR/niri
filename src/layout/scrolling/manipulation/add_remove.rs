@@ -6,11 +6,11 @@ use smithay::utils::{Point, Serial};
 
 use super::super::ScrollingSpace;
 use crate::layout::LayoutElement;
-use super::super::super::{RemovedTile, Options};
+use super::super::super::RemovedTile;
 use super::super::super::tile::Tile;
 use super::super::types::{ColumnData, ColumnWidth, ViewOffset};
 use super::super::column::Column;
-use crate::utils::transaction::{Transaction, TransactionBlocker};
+use crate::utils::transaction::Transaction;
 use crate::utils::ResizeEdge;
 
 impl<W: LayoutElement> ScrollingSpace<W> {

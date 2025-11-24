@@ -1,14 +1,11 @@
-use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CenterFocusedColumn, Animation as ConfigAnimation};
+use niri_config::CenterFocusedColumn;
 use ordered_float::NotNan;
-use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use super::ScrollingSpace;
 use crate::layout::LayoutElement;
-use crate::layout::Options;
-use super::types::{ViewOffset, ViewGesture, ScrollDirection, VIEW_GESTURE_WORKING_AREA_MOVEMENT};
+use super::types::{ViewOffset, ViewGesture, VIEW_GESTURE_WORKING_AREA_MOVEMENT};
 use crate::input::swipe_tracker::SwipeTracker;
 use super::column::Column;
 use crate::animation::Animation;

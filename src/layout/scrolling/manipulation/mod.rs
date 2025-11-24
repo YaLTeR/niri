@@ -9,6 +9,3 @@ mod add_remove;
 mod movement;
 mod consume_swap;
 
-pub use add_remove::*;
-pub use movement::*;
-pub use consume_swap::*;

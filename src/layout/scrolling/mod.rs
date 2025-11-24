@@ -22,10 +22,9 @@ pub use super::super::window::ResolvedWindowRules;
 pub use super::SizingMode;
 
 // Re-export internal types needed by other modules
-pub(super) use types::{MoveAnimation, ViewGesture, ViewOffset};
+pub(super) use types::ViewOffset;
 
 // Re-export resize-related types
 pub use super::workspace::InteractiveResize;
 pub use super::InteractiveResizeData;
 
-use crate::layout::LayoutElement;

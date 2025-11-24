@@ -17,10 +17,12 @@ use super::super::super::tab_indicator::{TabIndicator, TabInfo};
 use super::super::super::tile::Tile;
 use super::super::super::{LayoutElement, Options};
 use super::super::types::{MoveAnimation, TileData, WindowHeight};
-use super::super::utils::resolve_preset_size;
 use super::{Column, ColumnWidth};
-use crate::animation::{Animation, Clock};
+use crate::animation::Animation;
 use crate::layout::SizingMode;
+
+#[cfg(test)]
+use crate::animation::Clock as TestClock;
 
 impl<W: LayoutElement> Column<W> {
     #[allow(clippy::too_many_arguments)]

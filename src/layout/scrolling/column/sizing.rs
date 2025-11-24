@@ -8,7 +8,6 @@
 // - Width computation
 
 use std::iter::zip;
-use std::rc::Rc;
 
 use niri_config::PresetSize;
 use niri_ipc::ColumnDisplay;
@@ -16,7 +15,7 @@ use ordered_float::NotNan;
 use smithay::utils::{Logical, Size};
 
 use super::super::super::tile::Tile;
-use super::super::super::{LayoutElement, Options};
+use super::super::super::LayoutElement;
 use super::super::types::WindowHeight;
 use super::super::utils::resolve_preset_size;
 use super::super::super::workspace::ResolvedSize;

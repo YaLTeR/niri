@@ -1,9 +1,6 @@
-use std::rc::Rc;
 
 use super::super::ScrollingSpace;
 use crate::layout::LayoutElement;
-use super::super::super::Options;
-use super::super::column::Column;
 
 impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn focus_left(&mut self) -> bool {

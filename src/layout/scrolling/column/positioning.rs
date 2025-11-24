@@ -9,7 +9,6 @@
 
 use std::iter;
 use std::iter::zip;
-use std::rc::Rc;
 
 use niri_config::CenterFocusedColumn;
 use niri_ipc::ColumnDisplay;
@@ -17,10 +16,13 @@ use ordered_float::NotNan;
 use smithay::utils::{Logical, Point, Rectangle};
 
 use super::super::super::tile::Tile;
-use super::super::super::{LayoutElement, Options};
+use super::super::super::LayoutElement;
 use super::super::types::TileData;
 use super::{Column};
 use crate::layout::SizingMode;
+
+#[cfg(test)]
+use std::rc::Rc;
 
 impl<W: LayoutElement> Column<W> {
     pub(in crate::layout::scrolling) fn tiles_origin(&self) -> Point<f64, Logical> {

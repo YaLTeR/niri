@@ -9,15 +9,12 @@
 use std::cmp::min;
 use std::iter::zip;
 
-use niri_config::PresetSize;
 use niri_ipc::{ColumnDisplay, SizeChange};
-use smithay::utils::Point;
 
-use super::super::super::{LayoutElement, Options};
+use super::super::super::LayoutElement;
 use super::super::types::WindowHeight;
 use super::super::super::workspace::ResolvedSize;
 use super::{Column, ColumnWidth};
-use crate::layout::SizingMode;
 
 impl<W: LayoutElement> Column<W> {
     pub(in crate::layout::scrolling) fn focus_index(&mut self, index: u8) {

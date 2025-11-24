@@ -1,14 +1,10 @@
-use std::rc::Rc;
 
-use crate::layout::{ColumnDisplay, InteractiveResizeData};
-use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
+use crate::layout::ColumnDisplay;
+use smithay::utils::{Point, Rectangle, Scale};
 
 use super::ScrollingSpace;
 use super::ScrollingSpaceRenderElement;
 use crate::layout::LayoutElement;
-use crate::layout::Options;
-use super::column::Column;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::RenderTarget;
 use super::utils::compute_toplevel_bounds;
