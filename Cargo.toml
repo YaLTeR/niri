@@ -82,7 +82,7 @@ niri-ipc = { version = "25.8.0", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.1.0"
 pango = { version = "0.20.12", features = ["v1_44"] }
 pangocairo = "0.20.10"
-pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", optional = true, features = ["v0_3_33"] }
+pipewire = { version = "0.9.2", optional = true, features = ["v0_3_33"] }
 png = "0.18.0"
 portable-atomic = { version = "1.11.1", default-features = false, features = ["float"] }
 profiling = "1.0.17"
