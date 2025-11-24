@@ -256,6 +256,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
+        #[cfg(test)]
+        {
+            tracing::debug!(
+                "🎯 ACTIVATE_COLUMN: from={} to={}, columns={}, view_offset={:?}, rtl={}",
+                self.active_column_idx,
+                idx,
+                self.columns.len(),
+                self.view_offset,
+                self.options.layout.right_to_left
+            );
+        }
+
         self.animate_view_offset_to_column_with_config(
             None,
             idx,
@@ -270,6 +282,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             self.activate_prev_column_on_removal = None;
             self.view_offset_to_restore = None;
             self.interactive_resize = None;
+        }
+        
+        #[cfg(test)]
+        {
+            tracing::debug!(
+                "   → new view_offset={:?}, view_pos={:.1}",
+                self.view_offset,
+                self.view_pos()
+            );
         }
     }
 

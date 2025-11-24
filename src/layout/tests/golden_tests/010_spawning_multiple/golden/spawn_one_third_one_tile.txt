@@ -16,5 +16,5 @@ active_column=0
 active_column_x=0.0
 active_tile_viewport_x=0.0
 active_tile_viewport_y=0.0
-column[0] [ACTIVE]: x=0.0 width=Proportion(0.33333) active_tile=0
+column[0] [ACTIVE]: x=0.0 width=Proportion(0.33333333333333337) active_tile=0
   tile[0] [ACTIVE]: x=0.0 y=0.0 w=426 h=720 window_id=1

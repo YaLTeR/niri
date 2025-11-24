@@ -59,6 +59,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     /// Format is designed to be easily parsable for generating both LTR and RTL golden files.
     /// Each line follows a consistent key=value or key:value pattern.
     pub fn snapshot(&self) -> String {
+        #[cfg(test)]
+        {
+            tracing::debug!(
+                "📸 SNAPSHOT: columns={}, active={}, view_offset={:?}, view_pos={:.1}, rtl={}",
+                self.columns.len(),
+                self.active_column_idx,
+                self.view_offset,
+                self.view_pos(),
+                self.options.layout.right_to_left
+            );
+        }
+        
         let mut s = String::new();
         
         // View/output dimensions (needed for RTL calculations)

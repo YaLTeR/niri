@@ -23,6 +23,19 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         is_full_width: bool,
         anim_config: Option<Animation>,
     ) {
+        #[cfg(test)]
+        {
+            tracing::debug!(
+                "➕ ADD_TILE: window_id={:?}, col_idx={:?}, activate={}, width={:?}, is_full_width={}, rtl={}",
+                tile.window().id(),
+                col_idx,
+                activate,
+                width,
+                is_full_width,
+                self.options.layout.right_to_left
+            );
+        }
+        
         let column = Column::new_with_tile(
             tile,
             self.view_size,
