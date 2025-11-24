@@ -618,12 +618,7 @@ impl Options {
     }
 
     fn adjusted_for_scale(mut self, scale: f64) -> Self {
-        let round = |logical: f64| round_logical_in_physical_max1(scale, logical);
-
-        self.layout.gaps = round(self.layout.gaps);
-        self.layout.focus_ring.width = round(self.layout.focus_ring.width);
-        self.layout.border.width = round(self.layout.border.width);
-
+        self.layout.gaps = round_logical_in_physical_max1(scale, self.layout.gaps);
         self
     }
 }

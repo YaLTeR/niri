@@ -45,12 +45,13 @@ struct TestWindowInner {
     is_pending_windowed_fullscreen: Cell<bool>,
     animate_next_configure: Cell<bool>,
     animation_snapshot: RefCell<Option<LayoutElementRenderSnapshot>>,
+    rules: ResolvedWindowRules,
 }
 
 #[derive(Debug, Clone)]
 struct TestWindow(Rc<TestWindowInner>);
 
-#[derive(Debug, Clone, Copy, Arbitrary)]
+#[derive(Debug, Clone, Arbitrary)]
 struct TestWindowParams {
     #[proptest(strategy = "1..=5usize")]
     id: usize,
@@ -61,6 +62,8 @@ struct TestWindowParams {
     bbox: Rectangle<i32, Logical>,
     #[proptest(strategy = "arbitrary_min_max_size()")]
     min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
+    #[proptest(strategy = "prop::option::of(arbitrary_rules())")]
+    rules: Option<ResolvedWindowRules>,
 }
 
 impl TestWindowParams {
@@ -71,6 +74,7 @@ impl TestWindowParams {
             is_floating: false,
             bbox: Rectangle::from_size(Size::from((100, 200))),
             min_max_size: Default::default(),
+            rules: None,
         }
     }
 }
@@ -93,6 +97,7 @@ impl TestWindow {
             is_pending_windowed_fullscreen: Cell::new(false),
             animate_next_configure: Cell::new(false),
             animation_snapshot: RefCell::new(None),
+            rules: params.rules.unwrap_or_default(),
         }))
     }
 
@@ -267,8 +272,7 @@ impl LayoutElement for TestWindow {
     fn refresh(&self) {}
 
     fn rules(&self) -> &ResolvedWindowRules {
-        static EMPTY: ResolvedWindowRules = ResolvedWindowRules::empty();
-        &EMPTY
+        &self.0.rules
     }
 
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {
@@ -348,6 +352,19 @@ fn arbitrary_min_max_size() -> impl Strategy<Value = (Size<i32, Logical>, Size<i
             (size, size)
         }),
     ]
+}
+
+prop_compose! {
+    fn arbitrary_rules()(
+        focus_ring in arbitrary_focus_ring(),
+        border in arbitrary_border(),
+    ) -> ResolvedWindowRules {
+        ResolvedWindowRules {
+            focus_ring,
+            border,
+            ..ResolvedWindowRules::default()
+        }
+    }
 }
 
 fn arbitrary_view_offset_gesture_delta() -> impl Strategy<Value = f64> {
@@ -896,6 +913,7 @@ impl Op {
                     }
                 }
 
+                let is_floating = params.is_floating;
                 let win = TestWindow::new(params);
                 layout.add_window(
                     win,
@@ -903,7 +921,7 @@ impl Op {
                     None,
                     None,
                     false,
-                    params.is_floating,
+                    is_floating,
                     ActivateWindow::default(),
                 );
             }
@@ -964,6 +982,7 @@ impl Op {
                     }
                 }
 
+                let is_floating = params.is_floating;
                 let win = TestWindow::new(params);
                 layout.add_window(
                     win,
@@ -971,7 +990,7 @@ impl Op {
                     None,
                     None,
                     false,
-                    params.is_floating,
+                    is_floating,
                     ActivateWindow::default(),
                 );
             }
@@ -1037,6 +1056,7 @@ impl Op {
                     }
                 }
 
+                let is_floating = params.is_floating;
                 let win = TestWindow::new(params);
                 layout.add_window(
                     win,
@@ -1044,7 +1064,7 @@ impl Op {
                     None,
                     None,
                     false,
-                    params.is_floating,
+                    is_floating,
                     ActivateWindow::default(),
                 );
             }
