@@ -66,14 +66,14 @@ fn three_tiles_in_column() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-200.0)
+    View Offset: Static(1066.0)
     Active Column: 2
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
+    Column 2: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
     ");
 }
 
@@ -96,16 +96,16 @@ fn four_tiles_in_column_equal_height() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-300.0)
+    View Offset: Static(1492.0)
     Active Column: 3
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
-    Column 3: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=4
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
+    Column 2: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
+    Column 3: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=4
     ");
 }
 
@@ -128,14 +128,14 @@ fn tiles_with_mixed_heights() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-200.0)
+    View Offset: Static(1066.0)
     Active Column: 2
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 200.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 300.0 }, window_id=3
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 200.0 }, window_id=2
+    Column 2: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 300.0 }, window_id=3
     ");
 }
 
@@ -159,14 +159,14 @@ fn tiles_with_preset_heights() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-200.0)
+    View Offset: Static(1066.0)
     Active Column: 2
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 240.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 360.0 }, window_id=3
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 240.0 }, window_id=2
+    Column 2: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 360.0 }, window_id=3
     ");
 }
 
@@ -198,14 +198,14 @@ fn focus_window_down_in_column() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-100.0)
+    View Offset: Static(640.0)
     Active Column: 1
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
+    Column 2: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
     ");
 
     // Focus down within the column (should do nothing - only 1 tile per column in this test)
@@ -215,14 +215,14 @@ fn focus_window_down_in_column() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-100.0)
+    View Offset: Static(640.0)
     Active Column: 1
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
+    Column 2: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
     ");
 }
 
@@ -251,14 +251,14 @@ fn focus_window_up_in_column() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-100.0)
+    View Offset: Static(640.0)
     Active Column: 1
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
+    Column 2: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
     ");
 }
 
@@ -287,14 +287,14 @@ fn move_window_down_in_column() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-100.0)
+    View Offset: Static(640.0)
     Active Column: 1
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
+    Column 2: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
     ");
 }
 
@@ -325,12 +325,12 @@ fn toggle_column_tabbed_display() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-0.0)
+    View Offset: Static(0.0)
     Active Column: 0
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
     ");
 
     // Toggle back to normal
@@ -340,12 +340,12 @@ fn toggle_column_tabbed_display() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-0.0)
+    View Offset: Static(0.0)
     Active Column: 0
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
     ");
 }
 
@@ -374,14 +374,14 @@ fn set_column_display_tabbed() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-100.0)
+    View Offset: Static(640.0)
     Active Column: 1
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
+    Column 2: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
     ");
 }
 
@@ -408,12 +408,12 @@ fn set_column_display_normal() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-0.0)
+    View Offset: Static(0.0)
     Active Column: 0
     Column 0: width=Proportion(0.5), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 640.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
     ");
 }
 
@@ -449,7 +449,7 @@ fn consume_into_column_with_tiles() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-200.0)
+    View Offset: Static(852.0)
     Active Column: 2
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
@@ -486,13 +486,13 @@ fn expel_from_column_with_tiles() {
     ];
     check_ops_on_layout(&mut layout, ops);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-200.0)
+    View Offset: Static(852.0)
     Active Column: 2
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
-    Column 1: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=2
-    Column 2: width=Fixed(100.0), active_tile=0
-      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 100.0, h: 720.0 }, window_id=3
+    Column 1: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=2
+    Column 2: width=Proportion(0.3333333333333333), active_tile=0
+      Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=3
     ");
 }

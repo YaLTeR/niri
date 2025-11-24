@@ -1,5 +1,6 @@
 /target
 /result
+/src/tests/snapshots
 
 # TEMP
 ltr-config.kdl

@@ -138,9 +138,9 @@ fn anim_move_column_left() {
 
     // Initial state
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=-652 w= 426
-    win2: x=-226 w= 426
-    win3: x= 200 w= 426
+    win1: x=-852 w= 426
+    win2: x=-426 w= 426
+    win3: x=   0 w= 426
     ");
 
     // Move third column left (swap with second)
@@ -150,9 +150,9 @@ fn anim_move_column_left() {
     // Halfway through animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=-539 w= 426
-    win2: x= 100 w= 426
-    win3: x= 100 w= 426
+    win1: x=-639 w= 426
+    win2: x=   0 w= 426
+    win3: x=   0 w= 426
     ");
 
     // Complete animation
@@ -190,9 +190,9 @@ fn anim_move_column_to_first() {
     // Halfway through animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x=-113 w= 426
-    win2: x= 313 w= 426
-    win3: x= 100 w= 426
+    win1: x=-213 w= 426
+    win2: x= 213 w= 426
+    win3: x=   0 w= 426
     ");
 
     // Complete animation
@@ -232,17 +232,17 @@ fn anim_move_column_to_last() {
     // Halfway through animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x= 426 w= 426
-    win2: x= 213 w= 426
-    win3: x= 639 w= 426
+    win1: x=   0 w= 426
+    win2: x=-213 w= 426
+    win3: x= 213 w= 426
     ");
 
     // Complete animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(format_column_positions(&layout), @r"
-    win1: x= 852 w= 426
-    win2: x=   0 w= 426
-    win3: x= 426 w= 426
+    win1: x=   0 w= 426
+    win2: x=-852 w= 426
+    win3: x=-426 w= 426
     ");
 }
 
@@ -282,7 +282,7 @@ fn anim_view_offset_focus_right() {
     // Halfway through animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-426.0)
+    View Offset: Static(0.0)
     Active Column: 1
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
@@ -297,7 +297,7 @@ fn anim_view_offset_focus_right() {
     // Complete animation
     Op::AdvanceAnimations { msec_delta: 500 }.apply(&mut layout);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-426.0)
+    View Offset: Static(0.0)
     Active Column: 1
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
@@ -339,7 +339,7 @@ fn anim_view_offset_focus_left() {
     // Complete animation
     Op::AdvanceAnimations { msec_delta: 1000 }.apply(&mut layout);
     assert_snapshot!(layout.snapshot(), @r"
-    View Offset: Static(-0.0)
+    View Offset: Static(852.0)
     Active Column: 2
     Column 0: width=Proportion(0.33333333333333337), active_tile=0
       Tile 0: size=Size<smithay::utils::geometry::Logical> { w: 426.0, h: 720.0 }, window_id=1
