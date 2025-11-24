@@ -3635,6 +3635,45 @@ fn move_window_to_workspace_maximize_and_fullscreen() {
     assert_eq!(win.pending_sizing_mode(), SizingMode::Normal);
 }
 
+#[test]
+fn tabs_with_different_border() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams {
+                rules: Some(ResolvedWindowRules {
+                    border: niri_config::BorderRule {
+                        on: true,
+                        ..Default::default()
+                    },
+                    ..ResolvedWindowRules::default()
+                }),
+                ..TestWindowParams::new(2)
+            },
+        },
+        Op::SwitchPresetWindowHeight { id: None },
+        Op::ToggleColumnTabbedDisplay,
+        Op::AddWindow {
+            params: TestWindowParams::new(3),
+        },
+        Op::ConsumeOrExpelWindowLeft { id: None },
+    ];
+
+    let options = Options {
+        layout: niri_config::Layout {
+            struts: Struts {
+                left: FloatOrInt(0.),
+                right: FloatOrInt(0.),
+                top: FloatOrInt(20000.),
+                bottom: FloatOrInt(0.),
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    check_ops_with_options(options, ops);
+}
+
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {
     if parent_id == id {
         return true;

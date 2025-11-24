@@ -5399,7 +5399,8 @@ impl<W: LayoutElement> Column<W> {
                 tile.tile_height_for_window_height(f64::from(requested_size.h));
             let min_tile_height = f64::max(1., tile.min_size_nonfullscreen().h);
 
-            if self.pending_sizing_mode().is_normal()
+            if !is_tabbed
+                && self.pending_sizing_mode().is_normal()
                 && self.scale.round() == self.scale
                 && working_size.h.round() == working_size.h
                 && gaps.round() == gaps
