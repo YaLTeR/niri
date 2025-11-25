@@ -15,7 +15,9 @@ use crate::golden_stepper::stepper::run_interactive_stepper;
 /// Run with a steps file - interactive step-by-step execution
 pub fn run_with_steps(root: &Path, module_dir: &Path, steps_file: &Path, rtl: bool) -> Result<()> {
     let config = parse_steps_file(steps_file)?;
-    let config_dir = module_dir.parent().unwrap().join(".config");
+    // Config files are in manual_tests/.config
+    let manual_tests_dir = root.join("src/layout/tests/manual_tests");
+    let config_dir = manual_tests_dir.join(".config");
 
     let config_name = if rtl {
         &config.rtl_config

@@ -5,7 +5,7 @@
 //! that can be converted to both `Options` (for Rust tests) and `.kdl` files
 //! (for manual testing).
 //!
-//! To regenerate `.config/*.kdl` files from these presets:
+//! To regenerate `manual_tests/.config/*.kdl` files from these presets:
 //! ```
 //! cargo xtask generate-test-configs
 //! ```
@@ -673,12 +673,12 @@ mod tests {
     
     /// Run with: cargo test -p niri generate_test_configs -- --ignored --nocapture
     /// 
-    /// This generates all .kdl config files in the golden_tests/.config directory.
+    /// This generates all .kdl config files in the manual_tests/.config directory.
     #[test]
     #[ignore]
     fn generate_test_configs() {
         let config_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("src/layout/tests/golden_tests/.config");
+            .join("src/layout/tests/manual_tests/.config");
         
         generate_all_configs(&config_dir).expect("Failed to generate configs");
         println!("\n✅ Generated {} config files to {}", ALL_CONFIGS.len(), config_dir.display());

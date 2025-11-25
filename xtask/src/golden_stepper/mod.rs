@@ -26,7 +26,8 @@ use parser::find_steps_file;
 /// Launch niri with config for manual golden test verification
 pub fn run(root: &Path, fn_name: &str, rtl: bool, all: bool) -> Result<()> {
     let golden_dir = root.join("src/layout/tests/golden_tests");
-    let config_dir = golden_dir.join(".config");
+    let manual_tests_dir = root.join("src/layout/tests/manual_tests");
+    let config_dir = manual_tests_dir.join(".config");
 
     // Check if fn_name is an absolute directory path
     let path = Path::new(fn_name);
@@ -34,14 +35,14 @@ pub fn run(root: &Path, fn_name: &str, rtl: bool, all: bool) -> Result<()> {
         return run_all_in_directory(root, path);
     }
 
-    // Check if fn_name is a prefix like "000" that matches a module directory
-    if let Some(module_dir) = find_module_by_prefix(&golden_dir, fn_name)? {
+    // Check if fn_name is a prefix like "000" that matches a module directory in manual_tests
+    if let Some(module_dir) = find_module_by_prefix(&manual_tests_dir, fn_name)? {
         return run_all_in_directory(root, &module_dir);
     }
 
-    // Try to find a steps file for this test
+    // Try to find a steps file for this test in manual_tests
     let test_name = fn_name.trim_end_matches("_ops");
-    if let Some((module_dir, steps_file)) = find_steps_file(&golden_dir, test_name)? {
+    if let Some((module_dir, steps_file)) = find_steps_file(&manual_tests_dir, test_name)? {
         return runner::run_with_steps(root, &module_dir, &steps_file, rtl);
     }
 
