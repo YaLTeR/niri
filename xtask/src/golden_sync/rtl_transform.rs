@@ -151,6 +151,12 @@ fn calculate_rtl_positions(metadata: &LtrMetadata, columns: &[(usize, f64)]) -> 
 }
 
 /// Calculate RTL view state (view_offset, view_pos, etc.)
+///
+/// The relationship is: view_pos = active_col_x + view_offset
+/// Therefore: view_offset = view_pos - active_col_x
+///
+/// RTL mirroring: In LTR, columns that overflow are shown at the right edge.
+/// In RTL, they should be shown at the left edge (mirrored).
 fn calculate_rtl_view_state(
     metadata: &LtrMetadata,
     columns: &[(usize, f64)],
@@ -165,20 +171,26 @@ fn calculate_rtl_view_state(
     
     let view_width = metadata.working_area_width;
     
-    // If active column fits in viewport without scrolling, view_offset = 0
-    // Otherwise, scroll to show the active column at the left edge (x=0 on screen)
+    // If active column fits in viewport without scrolling, we want view_pos = 0
+    // view_offset = view_pos - active_col_x = 0 - active_col_x = -active_col_x
     let rtl_view_offset = if active_col_rtl_x >= 0.0 
         && active_col_rtl_x + active_col_width <= view_width 
     {
-        0.0
+        -active_col_rtl_x
     } else {
-        // Scroll to show active column at left edge of viewport
-        // view_offset is the negation of view_pos, and view_pos = active_col_rtl_x when scrolled
-        // So if column is at x=-424, view_offset should be -424 to bring it to screen x=0
-        active_col_rtl_x
+        // Column doesn't fit - show it at the left edge of viewport (mirrored from LTR's right edge)
+        // To show column at left edge: active_tile_viewport_x = 0
+        // active_tile_viewport_x = active_col_x - view_pos = 0
+        // So view_pos = active_col_x
+        // view_offset = view_pos - active_col_x = active_col_x - active_col_x = 0
+        // But that's wrong because view_pos = active_col_x + view_offset
+        // We want: view_pos = active_col_x (so column is at viewport x=0)
+        // view_offset = view_pos - active_col_x = 0
+        0.0
     };
     
-    let rtl_view_pos = rtl_view_offset;
+    // view_pos = active_col_x + view_offset
+    let rtl_view_pos = active_col_rtl_x + rtl_view_offset;
     let rtl_active_tile_viewport_x = active_col_rtl_x - rtl_view_pos;
     
     RtlViewState {

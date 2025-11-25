@@ -370,4 +370,17 @@ impl<W: LayoutElement> Column<W> {
 
         tiles_width
     }
+
+    /// Returns the target width based on the column's width specification.
+    /// This is the width the column will have after tiles resize to match.
+    /// The width is floored to match the actual tile size after Wayland's i32 conversion.
+    pub fn target_width(&self) -> f64 {
+        let width = if self.is_full_width || self.is_pending_maximized {
+            self.resolve_column_width(super::super::types::ColumnWidth::Proportion(1.))
+        } else {
+            self.resolve_column_width(self.width)
+        };
+        // Floor to match the actual tile size after Wayland's i32 conversion
+        width.floor()
+    }
 }

@@ -55,13 +55,22 @@ pub fn compute_new_view_offset(
     //                 = new_col_x + new_col_width + padding - view_width - new_col_x
     //                 = new_col_width + padding - view_width
     
-    // In RTL, prefer right alignment (showing the left part of the screen where empty space is).
-    // In LTR, prefer left alignment.
+    // In RTL, columns grow leftward (negative x direction).
+    // When a column overflows to the left (col_left < 0), show it at the LEFT edge.
+    // When a column overflows to the right (col_right > view_width), show it at the RIGHT edge.
+    // This mirrors LTR behavior where columns grow rightward.
     if is_rtl {
-        if dist_to_right <= dist_to_left {
-            new_col_width + padding - view_width
-        } else {
+        // Check if column is off-screen to the left
+        if col_left_with_padding < 0. {
+            // Show at left edge
             -padding
+        } else if col_right_with_padding > view_width {
+            // Show at right edge
+            new_col_width + padding - view_width
+        } else if dist_to_left <= dist_to_right {
+            -padding
+        } else {
+            new_col_width + padding - view_width
         }
     } else {
         if dist_to_left <= dist_to_right {

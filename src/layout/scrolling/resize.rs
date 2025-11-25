@@ -154,22 +154,26 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        let (col, tile_idx) = if let Some(window) = window {
+        let (col_idx, tile_idx) = if let Some(window) = window {
             self.columns
-                .iter_mut()
-                .find_map(|col| {
+                .iter()
+                .enumerate()
+                .find_map(|(col_idx, col)| {
                     col.tiles
                         .iter()
                         .position(|tile| tile.window().id() == window)
-                        .map(|tile_idx| (col, Some(tile_idx)))
+                        .map(|tile_idx| (col_idx, Some(tile_idx)))
                 })
                 .unwrap()
         } else {
-            (&mut self.columns[self.active_column_idx], None)
+            (self.active_column_idx, None)
         };
 
+        let col = &mut self.columns[col_idx];
         col.set_column_width(change, tile_idx, true);
+        self.data[col_idx].update(col);
 
+        let col = &mut self.columns[col_idx];
         super::space::view_offset::cancel_resize_for_column(&mut self.interactive_resize, col);
     }
 
