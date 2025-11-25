@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
-use niri_config::{Action, Bind, Binds, Key, ModKey, Modifiers, SwitchBinds, Trigger};
+use niri_config::{
+    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
+};
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
@@ -34,15 +36,17 @@ use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor;
 use smithay::wayland::pointer_constraints::{with_pointer_constraint, PointerConstraint};
 use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
-use touch_move_grab::TouchMoveGrab;
 use touch_overview_grab::TouchOverviewGrab;
 
 use self::move_grab::MoveGrab;
 use self::resize_grab::ResizeGrab;
 use self::spatial_movement_grab::SpatialMovementGrab;
+#[cfg(feature = "dbus")]
+use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
+use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
 use crate::utils::{center, get_monotonic_time, ResizeEdge};
@@ -56,7 +60,6 @@ pub mod scroll_swipe_gesture;
 pub mod scroll_tracker;
 pub mod spatial_movement_grab;
 pub mod swipe_tracker;
-pub mod touch_move_grab;
 pub mod touch_overview_grab;
 pub mod touch_resize_grab;
 
@@ -80,6 +83,28 @@ impl<D: SeatHandler> PointerOrTouchStartData<D> {
             PointerOrTouchStartData::Pointer(x) => x.location,
             PointerOrTouchStartData::Touch(x) => x.location,
         }
+    }
+
+    pub fn unwrap_pointer(&self) -> &PointerGrabStartData<D> {
+        match self {
+            PointerOrTouchStartData::Pointer(x) => x,
+            PointerOrTouchStartData::Touch(_) => panic!("start_data is not Pointer"),
+        }
+    }
+
+    pub fn unwrap_touch(&self) -> &TouchGrabStartData<D> {
+        match self {
+            PointerOrTouchStartData::Pointer(_) => panic!("start_data is not Touch"),
+            PointerOrTouchStartData::Touch(x) => x,
+        }
+    }
+
+    pub fn is_pointer(&self) -> bool {
+        matches!(self, Self::Pointer(_))
+    }
+
+    pub fn is_touch(&self) -> bool {
+        matches!(self, Self::Touch(_))
     }
 }
 
@@ -365,15 +390,28 @@ impl State {
 
         // Accessibility modifier grabs should override XKB state changes (e.g. Caps Lock), so we
         // need to process them before keyboard.input() below.
+        //
+        // Other accessibility-grabbed keys should still update our XKB state, but not cause any
+        // other changes.
         #[cfg(feature = "dbus")]
-        if self.a11y_process_key(
-            Duration::from_millis(u64::from(time)),
-            event.key_code(),
-            event.state(),
-        ) {
-            *consumed_by_a11y = true;
-            return;
-        }
+        let block = {
+            let block = self.a11y_process_key(
+                Duration::from_millis(u64::from(time)),
+                event.key_code(),
+                event.state(),
+            );
+            if block != KbMonBlock::Pass {
+                *consumed_by_a11y = true;
+            }
+            // The accessibility modifier first press must not change XKB state, so we return
+            // early here.
+            if block == KbMonBlock::ModifierFirstPress {
+                return;
+            }
+            block
+        };
+        #[cfg(not(feature = "dbus"))]
+        let _ = consumed_by_a11y;
 
         let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
             self,
@@ -385,6 +423,45 @@ impl State {
                 let key_code = event.key_code();
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
+                let modifiers = modifiers_from_state(*mods);
+
+                // After updating XKB state from accessibility-grabbed keys, return right away and
+                // don't handle them.
+                #[cfg(feature = "dbus")]
+                if block != KbMonBlock::Pass {
+                    // HACK: there's a slight problem with this code. Here we filter out keys
+                    // consumed by accessibility from getting sent to the Wayland client. However,
+                    // the Wayland client can still receive these keys from the wl_keyboard
+                    // enter/modifiers events. In particular, this can easily happen when opening
+                    // the Orca actions menu with Orca + Shift + A: in most cases, when this menu
+                    // opens, Shift is still held down, so the menu receives it in
+                    // wl_keyboard.enter/modifiers. Then the menu won't react to Enter presses
+                    // until the user taps Shift again to "release" it (since the initial Shift
+                    // release will be intercepted here).
+                    //
+                    // I don't think there's any good way of dealing with this apart from keeping a
+                    // separate xkb state for accessibility, so that we can track the pressed
+                    // modifiers without accidentally leaking them to wl_keyboard.enter. So for now
+                    // let's forward modifier releases to the clients here to deal with the most
+                    // common case.
+                    if !pressed
+                        && matches!(
+                            modified,
+                            Keysym::Shift_L
+                                | Keysym::Shift_R
+                                | Keysym::Control_L
+                                | Keysym::Control_R
+                                | Keysym::Super_L
+                                | Keysym::Super_R
+                                | Keysym::Alt_L
+                                | Keysym::Alt_R
+                        )
+                    {
+                        return FilterResult::Forward;
+                    } else {
+                        return FilterResult::Intercept(None);
+                    }
+                }
 
                 if this.niri.exit_confirm_dialog.is_open() && pressed {
                     if raw == Some(Keysym::Return) {
@@ -395,6 +472,18 @@ impl State {
                     // Don't send this press to any clients.
                     this.niri.suppressed_keys.insert(key_code);
                     return FilterResult::Intercept(None);
+                }
+
+                // Check if all modifiers were released while the MRU UI was open. If so, close the
+                // UI (which will also transfer the focus to the current MRU UI selection).
+                if this.niri.window_mru_ui.is_open() && !pressed && modifiers.is_empty() {
+                    this.do_action(Action::MruConfirm, false);
+
+                    if this.niri.suppressed_keys.remove(&key_code) {
+                        return FilterResult::Intercept(None);
+                    } else {
+                        return FilterResult::Forward;
+                    }
                 }
 
                 if pressed
@@ -416,20 +505,25 @@ impl State {
                     this.niri.screenshot_ui.set_space_down(pressed);
                 }
 
-                let bindings = &this.niri.config.borrow().binds;
-                let res = should_intercept_key(
-                    &mut this.niri.suppressed_keys,
-                    bindings,
-                    mod_key,
-                    key_code,
-                    modified,
-                    raw,
-                    pressed,
-                    *mods,
-                    &this.niri.screenshot_ui,
-                    this.niri.config.borrow().input.disable_power_key_handling,
-                    is_inhibiting_shortcuts,
-                );
+                let res = {
+                    let config = this.niri.config.borrow();
+                    let bindings =
+                        make_binds_iter(&config, &mut this.niri.window_mru_ui, modifiers);
+
+                    should_intercept_key(
+                        &mut this.niri.suppressed_keys,
+                        bindings,
+                        mod_key,
+                        key_code,
+                        modified,
+                        raw,
+                        pressed,
+                        *mods,
+                        &this.niri.screenshot_ui,
+                        this.niri.config.borrow().input.disable_power_key_handling,
+                        is_inhibiting_shortcuts,
+                    )
+                };
 
                 if matches!(res, FilterResult::Forward) {
                     // If we didn't find any bind, try other hardcoded keys.
@@ -440,6 +534,10 @@ impl State {
                             return FilterResult::Intercept(Some(bind));
                         }
                     }
+
+                    // Interaction with the active window, immediately update the active window's
+                    // focus timestamp without waiting for a possible pending MRU lock-in delay.
+                    this.niri.mru_apply_keyboard_commit();
                 }
 
                 res
@@ -641,6 +739,7 @@ impl State {
             }
             Action::Screenshot(show_cursor, path) => {
                 self.open_screenshot_ui(show_cursor, path);
+                self.niri.cancel_mru();
             }
             Action::ScreenshotWindow(write_to_disk, path) => {
                 let focus = self.niri.layout.focus_with_output();
@@ -753,7 +852,19 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::FocusWindowPrevious => {
-                if let Some(window) = self.niri.previously_focused_window.clone() {
+                let current = self.niri.layout.focus().map(|win| win.id());
+                if let Some(window) = self
+                    .niri
+                    .layout
+                    .windows()
+                    .map(|(_, win)| win)
+                    .filter(|win| Some(win.id()) != current)
+                    .max_by_key(|win| win.get_focus_timestamp())
+                    .map(|win| win.window.clone())
+                {
+                    // Commit current focus so repeated focus-window-previous works as expected.
+                    self.niri.mru_apply_keyboard_commit();
+
                     self.focus_window(&window);
                 }
             }
@@ -2179,6 +2290,90 @@ impl State {
                     watcher.load_config();
                 }
             }
+            Action::MruConfirm => {
+                self.confirm_mru();
+            }
+            Action::MruCancel => {
+                self.niri.cancel_mru();
+            }
+            Action::MruAdvance {
+                direction,
+                scope,
+                filter,
+            } => {
+                if self.niri.window_mru_ui.is_open() {
+                    self.niri.window_mru_ui.advance(direction, filter);
+                    self.niri.queue_redraw_mru_output();
+                } else if self.niri.config.borrow().recent_windows.on {
+                    self.niri.mru_apply_keyboard_commit();
+
+                    let config = self.niri.config.borrow();
+                    let scope = scope.unwrap_or(self.niri.window_mru_ui.scope());
+
+                    let mut wmru = WindowMru::new(&self.niri);
+                    if !wmru.is_empty() {
+                        wmru.set_scope(scope);
+                        if let Some(filter) = filter {
+                            wmru.set_filter(filter);
+                        }
+
+                        if let Some(output) = self.niri.layout.active_output() {
+                            self.niri.window_mru_ui.open(
+                                self.niri.clock.clone(),
+                                wmru,
+                                output.clone(),
+                            );
+
+                            // Only select the *next* window if some window (which should be the
+                            // first one) is already focused. If nothing is focused, keep the first
+                            // window (which is logically the "previously selected" one).
+                            let keep_first = direction == MruDirection::Forward
+                                && self.niri.layout.focus().is_none();
+                            if !keep_first {
+                                self.niri.window_mru_ui.advance(direction, None);
+                            }
+
+                            drop(config);
+                            self.niri.queue_redraw_all();
+                        }
+                    }
+                }
+            }
+            Action::MruCloseCurrentWindow => {
+                if self.niri.window_mru_ui.is_open() {
+                    if let Some(id) = self.niri.window_mru_ui.current_window_id() {
+                        if let Some(w) = self.niri.find_window_by_id(id) {
+                            if let Some(tl) = w.toplevel() {
+                                tl.send_close();
+                            }
+                        }
+                    }
+                }
+            }
+            Action::MruFirst => {
+                if self.niri.window_mru_ui.is_open() {
+                    self.niri.window_mru_ui.first();
+                    self.niri.queue_redraw_mru_output();
+                }
+            }
+            Action::MruLast => {
+                if self.niri.window_mru_ui.is_open() {
+                    self.niri.window_mru_ui.last();
+                    self.niri.queue_redraw_mru_output();
+                }
+            }
+            Action::MruSetScope(scope) => {
+                if self.niri.window_mru_ui.is_open() {
+                    self.niri.window_mru_ui.set_scope(scope);
+                    self.niri.queue_redraw_mru_output();
+                }
+            }
+            Action::MruCycleScope => {
+                if self.niri.window_mru_ui.is_open() {
+                    self.niri.window_mru_ui.cycle_scope();
+                    self.niri.queue_redraw_mru_output();
+                }
+            }
         }
     }
 
@@ -2299,6 +2494,14 @@ impl State {
             point.y = point.y.clamp(0, size.h - 1);
 
             self.niri.screenshot_ui.pointer_motion(point, None);
+        }
+
+        if let Some(mru_output) = self.niri.window_mru_ui.output() {
+            if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
+                if mru_output == output {
+                    self.niri.window_mru_ui.pointer_motion(pos_within_output);
+                }
+            }
         }
 
         let under = self.niri.contents_under(new_pos);
@@ -2433,6 +2636,14 @@ impl State {
             self.niri.screenshot_ui.pointer_motion(point, None);
         }
 
+        if let Some(mru_output) = self.niri.window_mru_ui.output() {
+            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+                if mru_output == output {
+                    self.niri.window_mru_ui.pointer_motion(pos_within_output);
+                }
+            }
+        }
+
         let under = self.niri.contents_under(pos);
 
         self.niri.handle_focus_follows_mouse(&under);
@@ -2513,7 +2724,29 @@ impl State {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
 
-            if self.niri.mods_with_mouse_binds.contains(&modifiers) {
+            let mut is_mru_open = false;
+            if let Some(mru_output) = self.niri.window_mru_ui.output() {
+                is_mru_open = true;
+                if let Some(MouseButton::Left) = button {
+                    let location = pointer.current_location();
+                    let (output, pos_within_output) = self.niri.output_under(location).unwrap();
+                    if mru_output == output {
+                        let id = self.niri.window_mru_ui.pointer_motion(pos_within_output);
+                        if id.is_some() {
+                            self.confirm_mru();
+                        } else {
+                            self.niri.cancel_mru();
+                        }
+                    } else {
+                        self.niri.cancel_mru();
+                    }
+
+                    self.niri.suppressed_buttons.insert(button_code);
+                    return;
+                }
+            }
+
+            if is_mru_open || self.niri.mods_with_mouse_binds.contains(&modifiers) {
                 if let Some(bind) = match button {
                     Some(MouseButton::Left) => Some(Trigger::MouseLeft),
                     Some(MouseButton::Right) => Some(Trigger::MouseRight),
@@ -2524,7 +2757,8 @@ impl State {
                 }
                 .and_then(|trigger| {
                     let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
+                    let bindings =
+                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
                     find_configured_bind(bindings, mod_key, trigger, mods)
                 }) {
                     self.niri.suppressed_buttons.insert(button_code);
@@ -2616,31 +2850,19 @@ impl State {
                     let mod_down = modifiers_from_state(mods).contains(mod_key.to_modifiers());
                     if is_overview_open || mod_down {
                         let location = pointer.current_location();
-                        let (output, pos_within_output) = self.niri.output_under(location).unwrap();
-                        let output = output.clone();
 
                         if !is_overview_open {
                             self.niri.layout.activate_window(&window);
                         }
 
-                        if self.niri.layout.interactive_move_begin(
-                            window.clone(),
-                            &output,
-                            pos_within_output,
-                        ) {
-                            let start_data = PointerGrabStartData {
-                                focus: None,
-                                button: button_code,
-                                location,
-                            };
-                            let grab = MoveGrab::new(start_data, window.clone(), is_overview_open);
+                        let start_data = PointerGrabStartData {
+                            focus: None,
+                            button: button_code,
+                            location,
+                        };
+                        let start_data = PointerOrTouchStartData::Pointer(start_data);
+                        if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), false) {
                             pointer.set_grab(self, grab, serial, Focus::Clear);
-
-                            if !is_overview_open {
-                                self.niri
-                                    .cursor_manager
-                                    .set_cursor_image(CursorImageStatus::Named(CursorIcon::Move));
-                            }
                         }
                     }
                 }
@@ -2828,59 +3050,66 @@ impl State {
             false
         };
 
+        let is_mru_open = self.niri.window_mru_ui.is_open();
+
         // Handle wheel scroll bindings.
         if source == AxisSource::Wheel {
             // If we have a scroll bind with current modifiers, then accumulate and don't pass to
             // Wayland. If there's no bind, reset the accumulator.
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let modifiers = modifiers_from_state(mods);
-            let should_handle =
-                should_handle_in_overview || self.niri.mods_with_wheel_binds.contains(&modifiers);
+            let should_handle = should_handle_in_overview
+                || is_mru_open
+                || self.niri.mods_with_wheel_binds.contains(&modifiers);
             if should_handle {
                 let horizontal = horizontal_amount_v120.unwrap_or(0.);
                 let ticks = self.niri.horizontal_wheel_tracker.accumulate(horizontal);
                 if ticks != 0 {
-                    let (bind_left, bind_right) = if should_handle_in_overview
-                        && modifiers.is_empty()
-                    {
-                        let bind_left = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollLeft,
-                                modifiers: Modifiers::empty(),
-                            },
-                            action: Action::FocusColumnLeftUnderMouse,
-                            repeat: true,
-                            cooldown: None,
-                            allow_when_locked: false,
-                            allow_inhibiting: false,
-                            hotkey_overlay_title: None,
-                        });
-                        let bind_right = Some(Bind {
-                            key: Key {
-                                trigger: Trigger::WheelScrollRight,
-                                modifiers: Modifiers::empty(),
-                            },
-                            action: Action::FocusColumnRightUnderMouse,
-                            repeat: true,
-                            cooldown: None,
-                            allow_when_locked: false,
-                            allow_inhibiting: false,
-                            hotkey_overlay_title: None,
-                        });
-                        (bind_left, bind_right)
-                    } else {
-                        let config = self.niri.config.borrow();
-                        let bindings = &config.binds;
-                        let bind_left =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollLeft, mods);
-                        let bind_right = find_configured_bind(
-                            bindings,
-                            mod_key,
-                            Trigger::WheelScrollRight,
-                            mods,
-                        );
-                        (bind_left, bind_right)
-                    };
+                    let (bind_left, bind_right) =
+                        if should_handle_in_overview && modifiers.is_empty() {
+                            let bind_left = Some(Bind {
+                                key: Key {
+                                    trigger: Trigger::WheelScrollLeft,
+                                    modifiers: Modifiers::empty(),
+                                },
+                                action: Action::FocusColumnLeftUnderMouse,
+                                repeat: true,
+                                cooldown: None,
+                                allow_when_locked: false,
+                                allow_inhibiting: false,
+                                hotkey_overlay_title: None,
+                            });
+                            let bind_right = Some(Bind {
+                                key: Key {
+                                    trigger: Trigger::WheelScrollRight,
+                                    modifiers: Modifiers::empty(),
+                                },
+                                action: Action::FocusColumnRightUnderMouse,
+                                repeat: true,
+                                cooldown: None,
+                                allow_when_locked: false,
+                                allow_inhibiting: false,
+                                hotkey_overlay_title: None,
+                            });
+                            (bind_left, bind_right)
+                        } else {
+                            let config = self.niri.config.borrow();
+                            let bindings =
+                                make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                            let bind_left = find_configured_bind(
+                                bindings.clone(),
+                                mod_key,
+                                Trigger::WheelScrollLeft,
+                                mods,
+                            );
+                            let bind_right = find_configured_bind(
+                                bindings,
+                                mod_key,
+                                Trigger::WheelScrollRight,
+                                mods,
+                            );
+                            (bind_left, bind_right)
+                        };
 
                     if let Some(right) = bind_right {
                         for _ in 0..ticks {
@@ -2952,9 +3181,14 @@ impl State {
                         (bind_up, bind_down)
                     } else {
                         let config = self.niri.config.borrow();
-                        let bindings = &config.binds;
-                        let bind_up =
-                            find_configured_bind(bindings, mod_key, Trigger::WheelScrollUp, mods);
+                        let bindings =
+                            make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                        let bind_up = find_configured_bind(
+                            bindings.clone(),
+                            mod_key,
+                            Trigger::WheelScrollUp,
+                            mods,
+                        );
                         let bind_down =
                             find_configured_bind(bindings, mod_key, Trigger::WheelScrollDown, mods);
                         (bind_up, bind_down)
@@ -3085,16 +3319,21 @@ impl State {
                 }
             }
 
-            if self.niri.mods_with_finger_scroll_binds.contains(&modifiers) {
+            if is_mru_open || self.niri.mods_with_finger_scroll_binds.contains(&modifiers) {
                 let ticks = self
                     .niri
                     .horizontal_finger_scroll_tracker
                     .accumulate(horizontal);
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
-                    let bind_left =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollLeft, mods);
+                    let bindings =
+                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                    let bind_left = find_configured_bind(
+                        bindings.clone(),
+                        mod_key,
+                        Trigger::TouchpadScrollLeft,
+                        mods,
+                    );
                     let bind_right =
                         find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollRight, mods);
                     drop(config);
@@ -3117,9 +3356,14 @@ impl State {
                     .accumulate(vertical);
                 if ticks != 0 {
                     let config = self.niri.config.borrow();
-                    let bindings = &config.binds;
-                    let bind_up =
-                        find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollUp, mods);
+                    let bindings =
+                        make_binds_iter(&config, &mut self.niri.window_mru_ui, modifiers);
+                    let bind_up = find_configured_bind(
+                        bindings.clone(),
+                        mod_key,
+                        Trigger::TouchpadScrollUp,
+                        mods,
+                    );
                     let bind_down =
                         find_configured_bind(bindings, mod_key, Trigger::TouchpadScrollDown, mods);
                     drop(config);
@@ -3238,6 +3482,14 @@ impl State {
             self.niri.screenshot_ui.pointer_motion(point, None);
         }
 
+        if let Some(mru_output) = self.niri.window_mru_ui.output() {
+            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+                if mru_output == output {
+                    self.niri.window_mru_ui.pointer_motion(pos_within_output);
+                }
+            }
+        }
+
         let under = self.niri.contents_under(pos);
 
         let tablet_seat = self.niri.seat.tablet_seat();
@@ -3313,6 +3565,19 @@ impl State {
 
                             if self.niri.screenshot_ui.pointer_down(output, point, None) {
                                 self.niri.queue_redraw_all();
+                            }
+                        }
+                    } else if let Some(mru_output) = self.niri.window_mru_ui.output() {
+                        if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+                            if mru_output == output {
+                                let id = self.niri.window_mru_ui.pointer_motion(pos_within_output);
+                                if id.is_some() {
+                                    self.confirm_mru();
+                                } else {
+                                    self.niri.cancel_mru();
+                                }
+                            } else {
+                                self.niri.cancel_mru();
                             }
                         }
                     } else if let Some((window, _)) = under.window {
@@ -3429,6 +3694,11 @@ impl State {
     }
 
     fn on_gesture_swipe_begin<I: InputBackend>(&mut self, event: I::GestureSwipeBeginEvent) {
+        if self.niri.window_mru_ui.is_open() {
+            // Don't start swipe gestures while in the MRU.
+            return;
+        }
+
         if event.fingers() == 3 {
             self.niri.gesture_swipe_3f_cumulative = Some((0., 0.));
 
@@ -3776,6 +4046,19 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+        } else if let Some(mru_output) = self.niri.window_mru_ui.output() {
+            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
+                if mru_output == output {
+                    let id = self.niri.window_mru_ui.pointer_motion(pos_within_output);
+                    if id.is_some() {
+                        self.confirm_mru();
+                    } else {
+                        self.niri.cancel_mru();
+                    }
+                } else {
+                    self.niri.cancel_mru();
+                }
+            }
         } else if !handle.is_grabbed() {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let mods = modifiers_from_state(mods);
@@ -3819,22 +4102,15 @@ impl State {
             } else if let Some((window, _)) = under.window {
                 self.niri.layout.activate_window(&window);
 
-                // Check if we need to start an interactive move.
+                // Check if we need to start a touch move grab.
                 if mod_down {
-                    let (output, pos_within_output) = self.niri.output_under(pos).unwrap();
-                    let output = output.clone();
-
-                    if self.niri.layout.interactive_move_begin(
-                        window.clone(),
-                        &output,
-                        pos_within_output,
-                    ) {
-                        let start_data = TouchGrabStartData {
-                            focus: None,
-                            slot,
-                            location: pos,
-                        };
-                        let grab = TouchMoveGrab::new(start_data, window.clone());
+                    let start_data = TouchGrabStartData {
+                        focus: None,
+                        slot,
+                        location: pos,
+                    };
+                    let start_data = PointerOrTouchStartData::Touch(start_data);
+                    if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true) {
                         handle.set_grab(self, grab, serial);
                     }
                 }
@@ -3975,9 +4251,9 @@ impl State {
 /// pressed keys as `suppressed`, thus preventing `releases` corresponding
 /// to them from being delivered.
 #[allow(clippy::too_many_arguments)]
-fn should_intercept_key(
+fn should_intercept_key<'a>(
     suppressed_keys: &mut HashSet<Keycode>,
-    bindings: &Binds,
+    bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
     key_code: Keycode,
     modified: Keysym,
@@ -4059,8 +4335,8 @@ fn should_intercept_key(
     }
 }
 
-fn find_bind(
-    bindings: &Binds,
+fn find_bind<'a>(
+    bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
     modified: Keysym,
     raw: Option<Keysym>,
@@ -4105,8 +4381,8 @@ fn find_bind(
     find_configured_bind(bindings, mod_key, trigger, mods)
 }
 
-fn find_configured_bind(
-    bindings: &Binds,
+fn find_configured_bind<'a>(
+    bindings: impl IntoIterator<Item = &'a Bind>,
     mod_key: ModKey,
     trigger: Trigger,
     mods: ModifiersState,
@@ -4119,7 +4395,7 @@ fn find_configured_bind(
         modifiers |= Modifiers::COMPOSITOR;
     }
 
-    for bind in &bindings.0 {
+    for bind in bindings {
         if bind.key.trigger != trigger {
             continue;
         }
@@ -4690,14 +4966,43 @@ fn grab_allows_hot_corner(grab: &(dyn PointerGrab<State> + 'static)) -> bool {
     //
     // Some notable grabs not mentioned here:
     // - DnDGrab allows hot corner to DnD across workspaces.
-    // - MoveGrab allows hot corner to DnD across workspaces.
     // - ClickGrab keeps pointer focus on the window, so the hot corner doesn't trigger.
     // - Touch grabs: touch doesn't trigger the hot corner.
     if grab.is::<ResizeGrab>() || grab.is::<SpatialMovementGrab>() {
         return false;
     }
 
+    if let Some(grab) = grab.downcast_ref::<MoveGrab>() {
+        // Window move allows hot corner to DnD across workspaces.
+        if !grab.is_move() {
+            return false;
+        }
+    }
+
     true
+}
+
+/// Returns an iterator over bindings.
+///
+/// Includes dynamically populated bindings like the MRU UI.
+fn make_binds_iter<'a>(
+    config: &'a Config,
+    mru: &'a mut WindowMruUi,
+    mods: Modifiers,
+) -> impl Iterator<Item = &'a Bind> + Clone {
+    // Figure out the binds to use depending on whether the MRU is enabled and/or open.
+    let general_binds = (!mru.is_open()).then_some(config.binds.0.iter());
+    let general_binds = general_binds.into_iter().flatten();
+
+    let mru_binds =
+        (config.recent_windows.on || mru.is_open()).then_some(config.recent_windows.binds.iter());
+    let mru_binds = mru_binds.into_iter().flatten();
+
+    let mru_open_binds = mru.is_open().then(|| mru.opened_bindings(mods));
+    let mru_open_binds = mru_open_binds.into_iter().flatten();
+
+    // General binds take precedence over the MRU binds.
+    general_binds.chain(mru_binds).chain(mru_open_binds)
 }
 
 #[cfg(test)]
@@ -4737,7 +5042,7 @@ mod tests {
         let close_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
             should_intercept_key(
                 suppr,
-                &bindings,
+                &bindings.0,
                 comp_mod,
                 close_key_code,
                 close_keysym,
@@ -4754,7 +5059,7 @@ mod tests {
         let none_key_event = |suppr: &mut HashSet<Keycode>, mods: ModifiersState, pressed| {
             should_intercept_key(
                 suppr,
-                &bindings,
+                &bindings.0,
                 comp_mod,
                 Keycode::from(Keysym::l.raw() + 8),
                 Keysym::l,
@@ -4960,7 +5265,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::q),
                 ModifiersState {
@@ -4973,7 +5278,7 @@ mod tests {
         );
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::q),
                 ModifiersState::default(),
@@ -4983,7 +5288,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::h),
                 ModifiersState {
@@ -4996,7 +5301,7 @@ mod tests {
         );
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::h),
                 ModifiersState::default(),
@@ -5006,7 +5311,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::j),
                 ModifiersState {
@@ -5018,7 +5323,7 @@ mod tests {
         );
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::j),
                 ModifiersState::default(),
@@ -5029,7 +5334,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::k),
                 ModifiersState {
@@ -5042,7 +5347,7 @@ mod tests {
         );
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::k),
                 ModifiersState::default(),
@@ -5052,7 +5357,7 @@ mod tests {
 
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::l),
                 ModifiersState {
@@ -5066,7 +5371,7 @@ mod tests {
         );
         assert_eq!(
             find_configured_bind(
-                &bindings,
+                &bindings.0,
                 ModKey::Super,
                 Trigger::Keysym(Keysym::l),
                 ModifiersState {
