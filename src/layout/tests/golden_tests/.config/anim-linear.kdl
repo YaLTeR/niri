@@ -1,5 +1,5 @@
-// Test config: default-2-3-rtl
-// Default column width 2/3 with RTL
+// Test config: anim-linear
+// Linear animations with 1000ms duration
 // AUTO-GENERATED - DO NOT EDIT
 // Regenerate with: cargo xtask generate-test-configs
 
@@ -17,14 +17,13 @@ output "HEADLESS-1" {
 
 layout {
     gaps 0
-    right-to-left
     center-focused-column "never"
     preset-column-widths {
         proportion 0.33333
         proportion 0.50000
         proportion 0.66667
     }
-    default-column-width { proportion 0.66667; }
+    default-column-width { proportion 0.33333; }
     focus-ring {
         off
     }
@@ -38,7 +37,19 @@ layout {
 prefer-no-csd
 
 animations {
-    off
+    // Linear 1000ms for testing
+    window-resize {
+        duration-ms 1000
+        curve "linear"
+    }
+    window-movement {
+        duration-ms 1000
+        curve "linear"
+    }
+    horizontal-view-movement {
+        duration-ms 1000
+        curve "linear"
+    }
 }
 
 binds {

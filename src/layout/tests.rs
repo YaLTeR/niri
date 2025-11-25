@@ -17,6 +17,7 @@ mod animations;
 mod fullscreen;
 mod golden_tests;
 mod snapshot_tests;
+pub mod test_configs;
 
 impl<W: LayoutElement> Default for Layout<W> {
     fn default() -> Self {

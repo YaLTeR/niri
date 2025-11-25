@@ -4,6 +4,24 @@ use crate::layout::LayoutElement;
 
 impl<W: LayoutElement> ScrollingSpace<W> {
     pub fn focus_left(&mut self) -> bool {
+        // In RTL mode, "left" visually means higher column index (columns grow leftward)
+        if self.options.layout.right_to_left {
+            self.focus_index_higher()
+        } else {
+            self.focus_index_lower()
+        }
+    }
+
+    pub fn focus_right(&mut self) -> bool {
+        // In RTL mode, "right" visually means lower column index (column[0] is on the right)
+        if self.options.layout.right_to_left {
+            self.focus_index_lower()
+        } else {
+            self.focus_index_higher()
+        }
+    }
+
+    fn focus_index_lower(&mut self) -> bool {
         if self.active_column_idx == 0 {
             return false;
         }
@@ -11,11 +29,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         true
     }
 
-    pub fn focus_right(&mut self) -> bool {
+    fn focus_index_higher(&mut self) -> bool {
         if self.active_column_idx + 1 >= self.columns.len() {
             return false;
         }
-
         self.activate_column(self.active_column_idx + 1);
         true
     }
@@ -170,20 +187,36 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn move_left(&mut self) -> bool {
+        // In RTL mode, "left" visually means higher column index
+        if self.options.layout.right_to_left {
+            self.move_index_higher()
+        } else {
+            self.move_index_lower()
+        }
+    }
+
+    pub fn move_right(&mut self) -> bool {
+        // In RTL mode, "right" visually means lower column index
+        if self.options.layout.right_to_left {
+            self.move_index_lower()
+        } else {
+            self.move_index_higher()
+        }
+    }
+
+    fn move_index_lower(&mut self) -> bool {
         if self.active_column_idx == 0 {
             return false;
         }
-
         self.move_column_to(self.active_column_idx - 1);
         true
     }
 
-    pub fn move_right(&mut self) -> bool {
+    fn move_index_higher(&mut self) -> bool {
         let new_idx = self.active_column_idx + 1;
         if new_idx >= self.columns.len() {
             return false;
         }
-
         self.move_column_to(new_idx);
         true
     }

@@ -1,6 +1,8 @@
 //! RTL snapshot transformation
 //!
 //! Transforms LTR golden snapshots into RTL equivalents by mirroring x-positions.
+//! In RTL mode, columns are physically mirrored: column[0] is on the RIGHT side,
+//! and columns grow leftward from the right edge of the working area.
 
 use std::collections::BTreeMap;
 
@@ -27,7 +29,11 @@ pub fn format_header(header: &[&str]) -> String {
     result
 }
 
-/// Generate an RTL snapshot from an LTR snapshot by mirroring x-positions
+/// Generate an RTL snapshot from an LTR snapshot by mirroring x-positions.
+///
+/// RTL layout mirrors column positions from the right edge:
+/// - column[0] is on the RIGHT side of the screen
+/// - columns grow LEFTWARD
 pub fn generate_rtl_snapshot(ltr_snapshot: &str) -> String {
     let metadata = parse_ltr_metadata(ltr_snapshot);
     let columns = parse_columns(ltr_snapshot);
@@ -113,7 +119,12 @@ fn parse_columns(ltr_snapshot: &str) -> Vec<(usize, f64)> {
     columns
 }
 
-/// Calculate RTL x-positions for each column
+/// Calculate RTL x-positions for each column.
+///
+/// RTL positions are computed from the right edge of the working area:
+/// - Start at working_area_x + working_area_width
+/// - For each column (in index order), subtract its width to get its x position
+/// - Then subtract gaps before the next column
 fn calculate_rtl_positions(metadata: &LtrMetadata, columns: &[(usize, f64)]) -> BTreeMap<usize, f64> {
     let mut rtl_positions: BTreeMap<usize, f64> = BTreeMap::new();
     let right_edge = metadata.working_area_x + metadata.working_area_width;
@@ -141,15 +152,18 @@ fn calculate_rtl_view_state(
         .map(|(_, w)| *w)
         .unwrap_or(0.0);
     
-    // RTL view_offset calculation
-    // In RTL mode, view_pos = view_offset (unlike LTR where view_pos = column_x + view_offset)
-    // If active column is within viewport, no scrolling needed
-    // Otherwise, scroll to show active column at left edge
+    let view_width = metadata.working_area_width;
+    
+    // If active column fits in viewport without scrolling, view_offset = 0
+    // Otherwise, scroll to show the active column at the left edge (x=0 on screen)
     let rtl_view_offset = if active_col_rtl_x >= 0.0 
-        && active_col_rtl_x + active_col_width <= metadata.working_area_width 
+        && active_col_rtl_x + active_col_width <= view_width 
     {
         0.0
     } else {
+        // Scroll to show active column at left edge of viewport
+        // view_offset is the negation of view_pos, and view_pos = active_col_rtl_x when scrolled
+        // So if column is at x=-424, view_offset should be -424 to bring it to screen x=0
         active_col_rtl_x
     };
     
@@ -172,7 +186,7 @@ fn generate_rtl_content(
 ) -> String {
     let mut result = Vec::new();
     
-    // Add header (same format as LTR)
+    // Add header
     for line in RTL_HEADER {
         result.push(line.to_string());
     }

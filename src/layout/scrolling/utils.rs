@@ -4,63 +4,70 @@ use smithay::utils::{Logical, Rectangle, Size};
 use super::super::workspace::ResolvedSize;
 use super::super::Options;
 
+/// Compute the view offset needed to bring a column into view.
+///
+/// The view offset is relative to the column position: view_pos = column_x + view_offset.
+///
+/// In RTL mode, columns are positioned from the right edge of the screen, so the alignment
+/// preferences are reversed (prefer right alignment in RTL, left alignment in LTR).
+///
+/// Returns the view offset (negative values scroll the view left).
 pub fn compute_new_view_offset(
-    cur_x: f64,
+    cur_view_x: f64,
     view_width: f64,
     new_col_x: f64,
     new_col_width: f64,
     gaps: f64,
     is_rtl: bool,
 ) -> f64 {
-    // If the column is wider than the view, always left-align it.
+    // If the column is wider than the view, always left-align it (offset = 0).
     if view_width <= new_col_width {
-        if is_rtl {
-            // In RTL, view_pos = view_offset, so to show column at left edge:
-            // view_pos = new_col_x, thus view_offset = new_col_x
-            return new_col_x;
-        }
         return 0.;
     }
 
     // Compute the padding in case it needs to be smaller due to large tile width.
     let padding = ((view_width - new_col_width) / 2.).clamp(0., gaps);
 
-    // Compute the desired new X with padding.
-    let new_x = new_col_x - padding;
-    let new_right_x = new_col_x + new_col_width + padding;
+    // Compute the desired column bounds with padding.
+    let col_left_with_padding = new_col_x - padding;
+    let col_right_with_padding = new_col_x + new_col_width + padding;
 
-    // If the column is already fully visible, leave the view as is.
-    if cur_x <= new_x && new_right_x <= cur_x + view_width {
-        if is_rtl {
-            // In RTL, view_pos = view_offset, so return cur_x (the current view_pos)
-            return cur_x;
+    // If the column is already fully visible, keep the current offset.
+    if cur_view_x <= col_left_with_padding && col_right_with_padding <= cur_view_x + view_width {
+        // In RTL, check if the column is within the screen bounds [0, view_width].
+        // If so, prefer anchoring the view at x=0 to show the empty space on the left.
+        if is_rtl && col_left_with_padding >= 0. && col_right_with_padding <= view_width {
+            // Position the view at x=0, so view_offset = -new_col_x
+            return -new_col_x;
         }
-        return -(new_col_x - cur_x);
+        return -(new_col_x - cur_view_x);
     }
 
     // Prefer the alignment that results in less motion from the current position.
-    // In RTL mode, we prefer left-alignment (new columns spawn to the left);
-    // in LTR mode, we also prefer left-alignment.
-    let dist_to_left = (cur_x - new_x).abs();
-    let dist_to_right = ((cur_x + view_width) - new_right_x).abs();
+    let dist_to_left = (cur_view_x - col_left_with_padding).abs();
+    let dist_to_right = ((cur_view_x + view_width) - col_right_with_padding).abs();
     
-    let prefer_left = dist_to_left <= dist_to_right;
+    // view_offset = view_pos - column_x
+    // To show column at left edge with padding: view_pos = col_left_with_padding
+    //   → view_offset = col_left_with_padding - new_col_x = -padding
+    // To show column at right edge with padding: view_pos = col_right_with_padding - view_width
+    //   → view_offset = (col_right_with_padding - view_width) - new_col_x
+    //                 = new_col_x + new_col_width + padding - view_width - new_col_x
+    //                 = new_col_width + padding - view_width
     
+    // In RTL, prefer right alignment (showing the left part of the screen where empty space is).
+    // In LTR, prefer left alignment.
     if is_rtl {
-        // In RTL, view_pos = view_offset
-        // To show column at left edge with padding: view_pos = new_col_x - padding
-        // To show column at right edge with padding: view_pos = new_col_x + new_col_width + padding - view_width
-        if prefer_left {
-            new_x  // new_col_x - padding
+        if dist_to_right <= dist_to_left {
+            new_col_width + padding - view_width
         } else {
-            new_right_x - view_width  // new_col_x + new_col_width + padding - view_width
+            -padding
         }
     } else {
-        // In LTR, view_offset = view_pos - column_x
-        if prefer_left {
+        if dist_to_left <= dist_to_right {
             -padding
         } else {
-            -(view_width - padding - new_col_width)
+            new_col_width + padding - view_width
         }
     }
 }

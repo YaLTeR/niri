@@ -36,15 +36,7 @@ pub struct RtlPosition {
     pub width: f64,
 }
 
-impl RtlPosition {
-    /// Format as a string for comparison with format_column_edges output
-    pub fn format(&self) -> String {
-        format!(
-            "left:{:>4.0} right:{:>4.0} width:{:>4.0}",
-            self.left, self.right, self.width
-        )
-    }
-}
+impl RtlPosition {}
 
 /// Calculate RTL x-position from LTR position and width.
 /// 
@@ -299,16 +291,6 @@ pub fn calculate_rtl_active_tile_viewport_x(ltr_snapshot: &str) -> Option<f64> {
 /// Y position is the same in LTR and RTL (vertical doesn't change).
 pub fn calculate_rtl_active_tile_viewport_y(ltr_snapshot: &str) -> Option<f64> {
     parse_f64(ltr_snapshot, "active_tile_viewport_y=")
-}
-
-/// Calculate RTL tile X position for a specific tile.
-/// Returns the X position of the tile in RTL content space.
-pub fn calculate_rtl_tile_x(
-    ltr_snapshot: &str,
-    column_idx: usize,
-) -> Option<f64> {
-    // Tile X is the same as column X (tiles are positioned at their column's X)
-    calculate_rtl_column_x(ltr_snapshot, column_idx)
 }
 
 /// Calculate RTL tile Y position for a specific tile.

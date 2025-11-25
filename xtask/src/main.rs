@@ -38,6 +38,9 @@ enum Commands {
         #[arg(long)]
         all: bool,
     },
+    
+    /// Generate .kdl config files from test_configs presets
+    GenerateTestConfigs,
 }
 
 fn main() -> Result<()> {
@@ -51,6 +54,9 @@ fn main() -> Result<()> {
         Commands::GoldenStepper { function_name, rtl, all } => {
             golden_stepper::run(&root, &function_name, rtl, all)?;
         }
+        Commands::GenerateTestConfigs => {
+            generate_test_configs(&root)?;
+        }
     }
     
     Ok(())
@@ -60,4 +66,22 @@ fn main() -> Result<()> {
 fn project_root() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     PathBuf::from(manifest_dir).parent().unwrap().to_path_buf()
+}
+
+/// Generate test config .kdl files by running the ignored test
+fn generate_test_configs(root: &std::path::Path) -> Result<()> {
+    use std::process::Command;
+    
+    println!("Generating test config files...");
+    
+    let status = Command::new("cargo")
+        .args(["test", "-p", "niri", "generate_test_configs", "--", "--ignored", "--nocapture"])
+        .current_dir(root)
+        .status()?;
+    
+    if !status.success() {
+        anyhow::bail!("Failed to generate test configs");
+    }
+    
+    Ok(())
 }

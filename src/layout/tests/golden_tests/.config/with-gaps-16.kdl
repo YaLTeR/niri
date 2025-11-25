@@ -1,5 +1,5 @@
-// Test config: default-2-3-rtl
-// Default column width 2/3 with RTL
+// Test config: with-gaps-16
+// 16px gaps between windows
 // AUTO-GENERATED - DO NOT EDIT
 // Regenerate with: cargo xtask generate-test-configs
 
@@ -16,15 +16,14 @@ output "HEADLESS-1" {
 }
 
 layout {
-    gaps 0
-    right-to-left
+    gaps 16
     center-focused-column "never"
     preset-column-widths {
         proportion 0.33333
         proportion 0.50000
         proportion 0.66667
     }
-    default-column-width { proportion 0.66667; }
+    default-column-width { proportion 0.33333; }
     focus-ring {
         off
     }

@@ -131,6 +131,9 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     ) {
         let was_empty = self.columns.is_empty();
 
+        // Always insert at active + 1. Due to mirrored positions in RTL:
+        // - LTR: new column appears to the RIGHT of active (higher x)
+        // - RTL: new column appears to the LEFT of active (lower x, since indices grow leftward)
         let idx = idx.unwrap_or_else(|| {
             if was_empty {
                 0
@@ -158,8 +161,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     ViewOffset::Static(self.compute_new_view_offset_for_column(None, idx, None));
             }
 
-            let prev_offset = (!was_empty && idx == self.active_column_idx + 1)
-                .then(|| self.view_offset.stationary());
+            // Track if this column was spawned adjacent to the active one.
+            // If so, closing it should return to the previous column.
+            let spawned_adjacent = !was_empty && idx == self.active_column_idx + 1;
+            let prev_offset = spawned_adjacent.then(|| self.view_offset.stationary());
 
             let anim_config =
                 anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
@@ -351,9 +356,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             }
         }
 
-        if column_idx + 1 == self.active_column_idx {
-            // The previous column, that we were going to activate upon removal of the active
-            // column, has just been itself removed.
+        // Check if the "previous" column (that we'd return to on removal) was itself removed.
+        // The previous column is always at active - 1 (the column we came from when spawning).
+        let removed_prev_column = column_idx + 1 == self.active_column_idx;
+        if removed_prev_column {
             self.activate_prev_column_on_removal = None;
         }
 
@@ -363,10 +369,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         if self.columns.is_empty() {
             return column;
-        }
+        } 
 
         let view_config = anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
-
+        
         if column_idx < self.active_column_idx {
             // A column to the left was removed; preserve the current position.
             // FIXME: preserve activate_prev_column_on_removal.
@@ -375,11 +381,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         } else if column_idx == self.active_column_idx
             && self.activate_prev_column_on_removal.is_some()
         {
-            // The active column was removed, and we needed to activate the previous column.
-            if 0 < column_idx {
+            // The active column was removed, and we should return to the previous column.
+            // The previous column was at active - 1 (the column we came from when spawning).
+            if self.active_column_idx > 0 {
                 let prev_offset = self.activate_prev_column_on_removal.unwrap();
-
-                self.activate_column_with_anim_config(self.active_column_idx - 1, view_config);
+                let prev_column_idx = self.active_column_idx - 1;
+                
+                self.activate_column_with_anim_config(prev_column_idx, view_config);
 
                 // Restore the view offset but make sure to scroll the view in case the
                 // previous window had resized.

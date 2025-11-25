@@ -1,5 +1,5 @@
-// Test config: default-2-3-rtl
-// Default column width 2/3 with RTL
+// Test config: with-struts
+// 20px struts on all sides
 // AUTO-GENERATED - DO NOT EDIT
 // Regenerate with: cargo xtask generate-test-configs
 
@@ -17,14 +17,19 @@ output "HEADLESS-1" {
 
 layout {
     gaps 0
-    right-to-left
     center-focused-column "never"
+    struts {
+        left 20
+        right 20
+        top 10
+        bottom 10
+    }
     preset-column-widths {
         proportion 0.33333
         proportion 0.50000
         proportion 0.66667
     }
-    default-column-width { proportion 0.66667; }
+    default-column-width { proportion 0.33333; }
     focus-ring {
         off
     }

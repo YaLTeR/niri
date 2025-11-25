@@ -207,45 +207,39 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         col.pending_sizing_mode().is_fullscreen()
     }
 
+    /// Returns the current view position (left edge of the viewport in column space).
+    ///
+    /// With physical semantics, view_pos is always computed the same way regardless of RTL.
     pub fn view_pos(&self) -> f64 {
-        if self.options.layout.right_to_left {
-            // In RTL, columns are already positioned from the right edge
-            // view_pos is just the view_offset, not column_x + view_offset
-            self.view_offset.current()
-        } else {
-            // In LTR, view_pos is column_x + view_offset
-            self.column_x(self.active_column_idx) + self.view_offset.current()
-        }
+        self.column_x(self.active_column_idx) + self.view_offset.current()
     }
 
+    /// Returns the target view position (where the view is animating towards).
     pub fn target_view_pos(&self) -> f64 {
-        if self.options.layout.right_to_left {
-            // In RTL, columns are already positioned from the right edge
-            self.view_offset.target()
-        } else {
-            // In LTR, view_pos is column_x + view_offset
-            self.column_x(self.active_column_idx) + self.view_offset.target()
-        }
+        self.column_x(self.active_column_idx) + self.view_offset.target()
     }
 
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
     // borrowing. Note that this method's return value does not borrow the entire &Self!
+    //
+    // In RTL mode, columns are physically mirrored: column[0] is on the RIGHT side of the screen,
+    // and columns grow leftward. This matches the natural reading direction for RTL languages.
     pub(in crate::layout::scrolling) fn column_xs<'a>(
         &'a self,
         data: impl Iterator<Item = ColumnData> + 'a,
     ) -> Box<dyn Iterator<Item = f64> + 'a> {
         let gaps = self.options.layout.gaps;
         let is_rtl = self.options.layout.right_to_left;
-        
+        let working_area_width = self.working_area.size.w;
+
         // Chain with a dummy value to be able to get one past all columns' X.
         let dummy = ColumnData { width: 0. };
         let data = data.chain(iter::once(dummy));
-        
-        if is_rtl {
-            // RTL: columns start from the right edge and grow leftward
-            let working_width = self.working_area.size.w;
-            let mut x = working_width;
 
+        if is_rtl {
+            // In RTL mode, position columns from the right edge of the working area.
+            // column[0] is on the right, and columns grow leftward.
+            let mut x = working_area_width;
             Box::new(data.map(move |data| {
                 x -= data.width;
                 let rv = x;
@@ -253,9 +247,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 rv
             }))
         } else {
-            // LTR: columns start from the left edge and grow rightward
+            // In LTR mode, start from x=0 and grow rightward.
             let mut x = 0.;
-
             Box::new(data.map(move |data| {
                 let rv = x;
                 x += data.width + gaps;

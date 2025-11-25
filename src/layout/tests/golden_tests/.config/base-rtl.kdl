@@ -1,5 +1,5 @@
-// Test config: default-2-3-rtl
-// Default column width 2/3 with RTL
+// Test config: base-rtl
+// Base config with RTL enabled
 // AUTO-GENERATED - DO NOT EDIT
 // Regenerate with: cargo xtask generate-test-configs
 
@@ -24,7 +24,7 @@ layout {
         proportion 0.50000
         proportion 0.66667
     }
-    default-column-width { proportion 0.66667; }
+    default-column-width { proportion 0.33333; }
     focus-ring {
         off
     }
