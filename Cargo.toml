@@ -26,7 +26,7 @@ tracing = { version = "0.1.41", features = ["max_level_trace", "release_max_leve
 # everyone who relied on them for color output, with no fallback available.
 # https://github.com/tokio-rs/tracing/issues/3378
 tracing-subscriber = { version = "=0.3.19", features = ["env-filter"] }
-tracy-client = { version = "0.18.2", default-features = false }
+tracy-client = { version = "0.18.3", default-features = false }
 
 [workspace.dependencies.smithay]
 # version = "0.4.1"
