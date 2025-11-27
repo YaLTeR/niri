@@ -733,6 +733,10 @@ impl State {
                     .set_cursor_image(CursorImageStatus::default_named());
                 self.niri.queue_redraw_all();
             }
+            Action::ScreenshotSelectAll => {
+                self.niri.screenshot_ui.select_entire_output();
+                self.niri.queue_redraw_all();
+            }
             Action::ScreenshotTogglePointer => {
                 self.niri.screenshot_ui.toggle_pointer();
                 self.niri.queue_redraw_all();

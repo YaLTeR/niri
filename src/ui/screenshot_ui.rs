@@ -38,9 +38,11 @@ const FONT: &str = "sans 14px";
 const BORDER: i32 = 4;
 const TEXT_HIDE_P: &str =
     "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
+     Press <span face='mono' bgcolor='#2C2C2C'> Ctrl+A </span> to select the entire output.\n\
      Press <span face='mono' bgcolor='#2C2C2C'> P </span> to hide the pointer.";
 const TEXT_SHOW_P: &str =
     "Press <span face='mono' bgcolor='#2C2C2C'> Space </span> to save the screenshot.\n\
+     Press <span face='mono' bgcolor='#2C2C2C'> Ctrl+A </span> to select the entire output.\n\
      Press <span face='mono' bgcolor='#2C2C2C'> P </span> to show the pointer.";
 
 // Ideally the screenshot UI should support cross-output selections. However, that poses some
@@ -456,6 +458,23 @@ impl ScreenshotUi {
             new_rect.loc,
             new_rect.loc + new_rect.size - Size::from((1, 1)),
         );
+
+        self.update_buffers();
+    }
+
+
+    pub fn select_entire_output(&mut self) {
+        let Self::Open {
+            selection,
+            output_data,
+            ..
+        } = self else { return };
+
+        let current_data = &output_data[&selection.0];
+        let size = current_data.size;
+
+        selection.1 = Point::new(0, 0);
+        selection.2 = Point::new(size.w - 1, size.h - 1);
 
         self.update_buffers();
     }
@@ -1065,6 +1084,10 @@ fn action(raw: Keysym, mods: ModifiersState) -> Option<Action> {
         return Some(Action::ConfirmScreenshot {
             write_to_disk: false,
         });
+    }
+
+    if mods.ctrl && raw == Keysym::a {
+        return Some(Action::ScreenshotSelectAll);
     }
 
     if !mods.ctrl && raw == Keysym::p {

@@ -118,6 +118,8 @@ pub enum Action {
     #[knuffel(skip)]
     CancelScreenshot,
     #[knuffel(skip)]
+    ScreenshotSelectAll,
+    #[knuffel(skip)]
     ScreenshotTogglePointer,
     Screenshot(
         #[knuffel(property(name = "show-pointer"), default = true)] bool,
