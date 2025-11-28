@@ -623,6 +623,7 @@ window-rule {
 <sup>Since: 25.02</sup>
 
 Set the default display mode for columns created from this window.
+Can be `normal` or `tabbed`.
 
 This is used any time a window goes into its own column.
 For example:
