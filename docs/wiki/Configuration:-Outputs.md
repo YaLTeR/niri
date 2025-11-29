@@ -98,7 +98,7 @@ You can configure a custom mode (not offered by the monitor) by setting `custom=
 In this case, the refresh rate is mandatory.
 
 Custom modes are not guaranteed to work.
-Niri is asking the monitor to run in a mode not supported by the manufacturer.
+Niri is asking the monitor to run in a mode that is not supported by the manufacturer.
 Use at your own risk.
 
 > [!CAUTION]
