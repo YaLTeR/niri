@@ -537,8 +537,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn is_centering_focused_column(&self) -> bool {
-        self.options.layout.center_focused_column == CenterFocusedColumn::Always
-            || (self.options.layout.always_center_single_column && self.columns.len() <= 1)
+        !self.is_maximizing_single_column()
+            && (self.options.layout.center_focused_column == CenterFocusedColumn::Always
+                || (self.options.layout.always_center_single_column && self.columns.len() <= 1))
+    }
+
+    pub fn is_maximizing_single_column(&self) -> bool {
+        self.options.layout.always_maximized_single_column && self.columns.len() <= 1
     }
 
     fn compute_new_view_offset_fit(
@@ -624,6 +629,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     ) -> f64 {
         if self.is_centering_focused_column() {
             return self.compute_new_view_offset_for_column_centered(target_x, idx);
+        } else if self.is_maximizing_single_column() && self.columns.len() == 1 {
+            return self.compute_new_view_offset_for_column_fit(target_x, idx);
         }
 
         match self.options.layout.center_focused_column {
@@ -870,9 +877,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         tile: Tile<W>,
         activate: bool,
         width: ColumnWidth,
-        is_full_width: bool,
+        mut is_full_width: bool,
         anim_config: Option<niri_config::Animation>,
     ) {
+        if self.columns.is_empty() && self.options.layout.always_maximized_single_column {
+            is_full_width = true;
+        }
         let column = Column::new_with_tile(
             tile,
             self.view_size,
@@ -985,6 +995,29 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         );
         self.data.insert(idx, ColumnData::new(&column));
         self.columns.insert(idx, column);
+
+        let always_maximized_single_column = !was_empty
+            && self.options.layout.always_maximized_single_column
+            && self.columns.len() == 2;
+
+        if always_maximized_single_column {
+            let existing_col_idx = if idx == 0 { 1 } else { 0 };
+            let existing_col = &mut self.columns[existing_col_idx];
+
+            if existing_col.is_full_width {
+                existing_col.is_full_width = false;
+
+                if let Some(default_width) = self.options.layout.default_column_width {
+                    existing_col.width = ColumnWidth::from(default_width);
+                } else {
+                    existing_col.width = ColumnWidth::Proportion(0.5);
+                }
+
+                existing_col.update_tile_sizes(true);
+
+                self.data[existing_col_idx].update(&self.columns[existing_col_idx]);
+            }
+        }
 
         if activate {
             // If this is the first window on an empty workspace, remove the effect of whatever
@@ -1239,6 +1272,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             );
         }
 
+        if self.columns.len() == 1 && self.options.layout.always_maximized_single_column {
+            let remaining_col = &mut self.columns[0];
+
+            if !remaining_col.is_full_width {
+                remaining_col.is_full_width = true;
+                remaining_col.update_tile_sizes(true);
+                self.data[0].update(&self.columns[0]);
+            }
+        }
         column
     }
 
@@ -1344,8 +1386,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 // If this is an interactive resize commit of an active window, then we need to
                 // either preserve the view offset or adjust it accordingly.
                 let centered = self.is_centering_focused_column();
+                let maximized = self.is_maximizing_single_column() && self.columns.len() == 1;
 
-                let width = self.data[col_idx].width;
+                // let width = self.data[col_idx].width;
+                let width = if maximized {
+                    self.working_area.size.w
+                } else {
+                    self.data[col_idx].width
+                };
+
                 let offset = if centered {
                     // FIXME: when view_offset becomes fractional, this can be made additive too.
                     let new_offset =
