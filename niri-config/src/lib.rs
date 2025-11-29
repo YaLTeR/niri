@@ -13,7 +13,7 @@
 #[macro_use]
 extern crate tracing;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs::{self, File};
@@ -39,6 +39,7 @@ pub mod layer_rule;
 pub mod layout;
 pub mod misc;
 pub mod output;
+pub mod recent_windows;
 pub mod utils;
 pub mod window_rule;
 pub mod workspace;
@@ -54,6 +55,8 @@ pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
+use crate::recent_windows::RecentWindowsPart;
+pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
 pub use crate::utils::FloatOrInt;
 use crate::utils::{Flag, MergeWith as _};
 pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
@@ -85,6 +88,7 @@ pub struct Config {
     pub switch_events: SwitchBinds,
     pub debug: Debug,
     pub workspaces: Vec<Workspace>,
+    pub recent_windows: RecentWindows,
 }
 
 #[derive(Debug, Clone)]
@@ -118,6 +122,7 @@ struct IncludeErrors(Vec<knuffel::Error>);
 //
 // We don't *need* it because we have a recursion limit, but it makes for nicer error messages.
 struct IncludeStack(HashSet<PathBuf>);
+struct SawMruBinds(Rc<Cell<bool>>);
 
 // Rather than listing all fields and deriving knuffel::Decode, we implement
 // knuffel::DecodeChildren by hand, since we need custom logic for every field anyway: we want to
@@ -140,6 +145,7 @@ where
         let includes = ctx.get::<Rc<RefCell<Includes>>>().unwrap().clone();
         let include_errors = ctx.get::<Rc<RefCell<IncludeErrors>>>().unwrap().clone();
         let recursion = ctx.get::<Recursion>().unwrap().0;
+        let saw_mru_binds = ctx.get::<SawMruBinds>().unwrap().0.clone();
 
         let mut seen = HashSet::new();
 
@@ -269,6 +275,21 @@ where
                     config.borrow_mut().layout.merge_with(&part);
                 }
 
+                "recent-windows" => {
+                    let part = RecentWindowsPart::decode_node(node, ctx)?;
+
+                    let mut config = config.borrow_mut();
+
+                    // When an MRU binds section is encountered for the first time, clear out the
+                    // default MRU binds.
+                    if !saw_mru_binds.get() && part.binds.is_some() {
+                        saw_mru_binds.set(true);
+                        config.recent_windows.binds.clear();
+                    }
+
+                    config.recent_windows.merge_with(&part);
+                }
+
                 "include" => {
                     let path: PathBuf = utils::parse_arg_node("include", node, ctx)?;
                     let base = ctx.get::<BasePath>().unwrap();
@@ -331,6 +352,7 @@ where
                                 ctx.set(includes.clone());
                                 ctx.set(include_errors.clone());
                                 ctx.set(IncludeStack(include_stack));
+                                ctx.set(SawMruBinds(saw_mru_binds.clone()));
                                 ctx.set(config.clone());
                             });
 
@@ -424,6 +446,7 @@ impl Config {
                 ctx.set(includes.clone());
                 ctx.set(include_errors.clone());
                 ctx.set(IncludeStack(include_stack));
+                ctx.set(SawMruBinds(Rc::new(Cell::new(false))));
                 ctx.set(config.clone());
             },
         );
@@ -663,6 +686,14 @@ mod tests {
                 }
             }
 
+            output "eDP-2" {
+                mode custom=true "1920x1080@144"
+            }
+
+            output "eDP-3" {
+                modeline 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "-hsync" "+vsync"
+            }
+
             layout {
                 focus-ring {
                     width 5
@@ -758,6 +789,10 @@ mod tests {
                 window-close {
                     curve "cubic-bezier" 0.05 0.7 0.1 1  
                 }
+
+                recent-windows-close {
+                    off
+                }
             }
 
             gestures {
@@ -840,6 +875,25 @@ mod tests {
             }
             workspace "workspace-2"
             workspace "workspace-3"
+
+            recent-windows {
+                off
+
+                highlight {
+                    padding 15
+                    active-color "#00ff00"
+                }
+
+                previews {
+                    max-height 960
+                }
+
+                binds {
+                    Alt+Tab { next-window; }
+                    Alt+grave { next-window filter="app-id"; }
+                    Super+Tab { next-window scope="output"; }
+                }
+            }
             "##,
         );
 
@@ -1035,14 +1089,18 @@ mod tests {
                             },
                         ),
                         mode: Some(
-                            ConfiguredMode {
-                                width: 1920,
-                                height: 1080,
-                                refresh: Some(
-                                    144.0,
-                                ),
+                            Mode {
+                                custom: false,
+                                mode: ConfiguredMode {
+                                    width: 1920,
+                                    height: 1080,
+                                    refresh: Some(
+                                        144.0,
+                                    ),
+                                },
                             },
                         ),
+                        modeline: None,
                         variable_refresh_rate: Some(
                             Vrr {
                                 on_demand: true,
@@ -1067,6 +1125,61 @@ mod tests {
                                 bottom_right: true,
                             },
                         ),
+                        layout: None,
+                    },
+                    Output {
+                        off: false,
+                        name: "eDP-2",
+                        scale: None,
+                        transform: Normal,
+                        position: None,
+                        mode: Some(
+                            Mode {
+                                custom: true,
+                                mode: ConfiguredMode {
+                                    width: 1920,
+                                    height: 1080,
+                                    refresh: Some(
+                                        144.0,
+                                    ),
+                                },
+                            },
+                        ),
+                        modeline: None,
+                        variable_refresh_rate: None,
+                        focus_at_startup: false,
+                        background_color: None,
+                        backdrop_color: None,
+                        hot_corners: None,
+                        layout: None,
+                    },
+                    Output {
+                        off: false,
+                        name: "eDP-3",
+                        scale: None,
+                        transform: Normal,
+                        position: None,
+                        mode: None,
+                        modeline: Some(
+                            Modeline {
+                                clock: 173.0,
+                                hdisplay: 1920,
+                                hsync_start: 2048,
+                                hsync_end: 2248,
+                                htotal: 2576,
+                                vdisplay: 1080,
+                                vsync_start: 1083,
+                                vsync_end: 1088,
+                                vtotal: 1120,
+                                hsync_polarity: NHSync,
+                                vsync_polarity: PVSync,
+                            },
+                        ),
+                        variable_refresh_rate: None,
+                        focus_at_startup: false,
+                        background_color: None,
+                        backdrop_color: None,
+                        hot_corners: None,
                         layout: None,
                     },
                 ],
@@ -1436,6 +1549,18 @@ mod tests {
                                 damping_ratio: 1.0,
                                 stiffness: 800,
                                 epsilon: 0.0001,
+                            },
+                        ),
+                    },
+                ),
+                recent_windows_close: RecentWindowsCloseAnim(
+                    Animation {
+                        off: true,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.001,
                             },
                         ),
                     },
@@ -2052,6 +2177,101 @@ mod tests {
                     layout: None,
                 },
             ],
+            recent_windows: RecentWindows {
+                on: false,
+                debounce_ms: 750,
+                open_delay_ms: 150,
+                highlight: MruHighlight {
+                    active_color: Color {
+                        r: 0.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    urgent_color: Color {
+                        r: 1.0,
+                        g: 0.6,
+                        b: 0.6,
+                        a: 1.0,
+                    },
+                    padding: 15.0,
+                    corner_radius: 0.0,
+                },
+                previews: MruPreviews {
+                    max_height: 960.0,
+                    max_scale: 0.5,
+                },
+                binds: [
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_Tab,
+                            ),
+                            modifiers: Modifiers(
+                                ALT,
+                            ),
+                        },
+                        action: MruAdvance {
+                            direction: Forward,
+                            scope: None,
+                            filter: Some(
+                                All,
+                            ),
+                        },
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_grave,
+                            ),
+                            modifiers: Modifiers(
+                                ALT,
+                            ),
+                        },
+                        action: MruAdvance {
+                            direction: Forward,
+                            scope: None,
+                            filter: Some(
+                                AppId,
+                            ),
+                        },
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_Tab,
+                            ),
+                            modifiers: Modifiers(
+                                SUPER,
+                            ),
+                        },
+                        action: MruAdvance {
+                            direction: Forward,
+                            scope: Some(
+                                Output,
+                            ),
+                            filter: Some(
+                                All,
+                            ),
+                        },
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                ],
+            },
         }
         "#);
     }

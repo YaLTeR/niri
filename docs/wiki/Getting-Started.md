@@ -1,5 +1,38 @@
+## Quick start
+
+Use these commands to install niri with [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) for a fairly out-of-the-box experience.
+
+Fedora:
+```
+sudo dnf copr enable avengemedia/dms
+sudo dnf install niri dms
+systemctl --user add-wants niri.service dms
+```
+
+Arch Linux (via [paru](https://github.com/morganamilo/paru)):
+```
+sudo pacman -Syu niri xwayland-satellite xdg-desktop-portal-gnome xdg-desktop-portal-gtk alacritty
+paru -S dms-shell-bin matugen wl-clipboard cliphist cava qt6-multimedia-ffmpeg
+systemctl --user add-wants niri.service dms
+```
+
+Ubuntu 25.10 and above:
+```
+sudo add-apt-repository ppa:avengemedia/danklinux
+sudo add-apt-repository ppa:avengemedia/dms
+sudo apt install niri dms
+```
+
+After running these commands, log out, choose Niri in your display manager, and log back in.
+Or, if not using a display manager, run `niri-session` on a TTY.
+
+The default niri config will run Waybar, so you might get two bars on screen.
+To fix this, stop Waybar with `pkill waybar` command, then open `~/.config/niri/config.kdl` and delete the `spawn-at-startup "waybar"` line.
+
+## Slower and more considered start
+
 The easiest way to get niri is to install one of the distribution packages.
-Here are some of them: [Fedora COPR](https://copr.fedorainfracloud.org/coprs/yalter/niri/) and [nightly COPR](https://copr.fedorainfracloud.org/coprs/yalter/niri-git/) (which I maintain myself), [NixOS Flake](https://github.com/sodiboo/niri-flake), and some more from repology below.
+Here are some of them: [Fedora COPR](https://copr.fedorainfracloud.org/coprs/yalter/niri/) and [nightly COPR](https://copr.fedorainfracloud.org/coprs/yalter/niri-git/) (which I maintain myself), [NixOS Flake](https://github.com/sodiboo/niri-flake), and some more from repology below, including a [pacstall package](https://pacstall.dev/packages/niri/) for Debian-based distros.
 See the [Building](#building) section if you'd like to compile niri yourself and the [Packaging niri](./Packaging-niri.md) page if you want to package niri.
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/niri.svg)](https://repology.org/project/niri/versions)

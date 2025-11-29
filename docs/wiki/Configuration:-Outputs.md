@@ -27,6 +27,10 @@ output "eDP-1" {
     layout {
         // ...layout settings for eDP-1...
     }
+
+    // Custom modes. Caution: may damage your display.
+    // mode custom=true "1920x1080@100"
+    // modeline 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "-hsync" "+vsync"
 }
 
 output "HDMI-A-1" {
@@ -83,6 +87,50 @@ output "HDMI-A-1" {
 // (for example, for testing purposes).
 output "eDP-1" {
     mode "1280x720"
+}
+```
+
+#### `mode custom=true`
+
+<sup>Since: 25.11</sup>
+
+You can configure a custom mode (not offered by the monitor) by setting `custom=true`.
+In this case, the refresh rate is mandatory.
+
+Custom modes are not guaranteed to work.
+Niri is asking the monitor to run in a mode that is not supported by the manufacturer.
+Use at your own risk.
+
+> [!CAUTION]
+> Custom modes may damage your monitor, especially if it's a CRT.
+> Follow the maximum supported limits in your monitor's instructions.
+
+```kdl
+// Use a custom mode for this display.
+output "HDMI-A-1" {
+    mode custom=true "2560x1440@143.912"
+}
+```
+
+### `modeline`
+
+<sup>Since: 25.11</sup>
+
+Directly configures the monitor's mode via a modeline, overriding any configured `mode`.
+The modeline can be calculated via utilities such as [cvt](https://man.archlinux.org/man/cvt.1.en) or [gtf](https://man.archlinux.org/man/gtf.1.en).
+
+Modelines are not guaranteed to work.
+Niri is asking the monitor to run in a mode not supported by the manufacturer.
+Use at your own risk.
+
+> [!CAUTION]
+> Out of spec modelines may damage your monitor, especially if it's a CRT.
+> Follow the maximum supported limits in your monitor's instructions.
+
+```kdl
+// Use a modeline for this display.
+output "eDP-3" {
+    modeline 173.00  1920 2048 2248 2576  1080 1083 1088 1120 "-hsync" "+vsync"
 }
 ```
 
@@ -208,7 +256,7 @@ This is visible when you're not using any background tools like swaybg.
 
 <sup>Until: 25.05</sup> The alpha channel for this color will be ignored.
 
-<sup>Since: next release</sup> This setting is deprecated, set `background-color` in the [output `layout {}` block](#layout-config-overrides) instead.
+<sup>Since: 25.11</sup> This setting is deprecated, set `background-color` in the [output `layout {}` block](#layout-config-overrides) instead.
 
 ```kdl
 output "HDMI-A-1" {
@@ -233,7 +281,7 @@ output "HDMI-A-1" {
 
 ### `hot-corners`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 Customize the hot corners for this output.
 By default, hot corners [in the gestures settings](./Configuration:-Gestures.md#hot-corners) are used for all outputs.
@@ -261,7 +309,7 @@ output "DP-2" {
 
 ### Layout config overrides
 
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 You can customize layout settings for an output with a `layout {}` block:
 

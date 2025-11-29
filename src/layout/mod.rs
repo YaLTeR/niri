@@ -619,12 +619,7 @@ impl Options {
     }
 
     fn adjusted_for_scale(mut self, scale: f64) -> Self {
-        let round = |logical: f64| round_logical_in_physical_max1(scale, logical);
-
-        self.layout.gaps = round(self.layout.gaps);
-        self.layout.focus_ring.width = round(self.layout.focus_ring.width);
-        self.layout.border.width = round(self.layout.border.width);
-
+        self.layout.gaps = round_logical_in_physical_max1(scale, self.layout.gaps);
         self
     }
 }
@@ -4041,16 +4036,12 @@ impl<W: LayoutElement> Layout<W> {
                     mon.dnd_scroll_gesture_end();
                 }
 
-                let mut ws_id = None;
                 for ws in self.workspaces_mut() {
-                    let id = ws.id();
                     if let Some(tile) = ws.tiles_mut().find(|tile| *tile.window().id() == window_id)
                     {
                         let offset = tile.interactive_move_offset;
                         tile.interactive_move_offset = Point::from((0., 0.));
                         tile.animate_move_from(offset);
-
-                        ws_id = Some(id);
                     }
 
                     // Unlock the view on the workspaces, but if the moved window was active,
@@ -4063,32 +4054,6 @@ impl<W: LayoutElement> Layout<W> {
                     if moved_tile_was_active {
                         ws.activate_window(&window_id);
                     }
-                }
-
-                // In the overview, we want to click on a window to focus it, and also to
-                // click-and-drag to move the window. The way we handle this is by always starting
-                // the interactive move (to get frozen view), then, when in the overview, *not*
-                // calling interactive_move_update() until the cursor moves far enough. This means
-                // that if we "just click" then we end up in this branch with state == Starting.
-                // Close the overview in this case.
-                if self.overview_open {
-                    let ws_id = ws_id.unwrap();
-                    if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-                        for mon in monitors {
-                            if let Some(ws_idx) =
-                                mon.workspaces.iter().position(|ws| ws.id() == ws_id)
-                            {
-                                mon.activate_workspace_with_anim_config(
-                                    ws_idx,
-                                    Some(self.options.animations.overview_open_close.0),
-                                );
-                                break;
-                            }
-                        }
-                    }
-
-                    self.activate_window(&window_id);
-                    self.close_overview();
                 }
 
                 return;

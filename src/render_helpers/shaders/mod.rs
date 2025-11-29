@@ -16,6 +16,7 @@ pub struct Shaders {
     pub shadow: Option<ShaderProgram>,
     pub clipped_surface: Option<GlesTexProgram>,
     pub resize: Option<ShaderProgram>,
+    pub gradient_fade: Option<GlesTexProgram>,
     pub custom_resize: RefCell<Option<ShaderProgram>>,
     pub custom_close: RefCell<Option<ShaderProgram>>,
     pub custom_open: RefCell<Option<ShaderProgram>>,
@@ -99,6 +100,16 @@ impl Shaders {
                 warn!("error compiling resize shader: {err:?}");
             })
             .ok();
+            
+        let gradient_fade = renderer
+            .compile_custom_texture_shader(
+                include_str!("gradient_fade.frag"),
+                &[UniformName::new("cutoff", UniformType::_2f)],
+            )
+            .map_err(|err| {
+                warn!("error compiling gradient fade shader: {err:?}");
+            })
+            .ok();
 
         let blur_finish = renderer
             .compile_custom_texture_shader(
@@ -117,11 +128,13 @@ impl Shaders {
 
         let blur = BlurShaders::compile(renderer).expect("Shader source should always compile!");
 
+
         Self {
             border,
             shadow,
             clipped_surface,
             resize,
+            gradient_fade,
             custom_resize: RefCell::new(None),
             custom_close: RefCell::new(None),
             custom_open: RefCell::new(None),

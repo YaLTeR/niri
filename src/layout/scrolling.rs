@@ -2563,7 +2563,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 if tile.window().id() == id {
                     // In the scrolling layout, we try to position popups horizontally within the
                     // window geometry (so they remain visible even if the window scrolls flush with
-                    // the left/right edge of the screen), and vertically wihin the whole parent
+                    // the left/right edge of the screen), and vertically within the whole parent
                     // working area.
                     let width = tile.window_size().w;
                     let height = self.parent_area.size.h;
@@ -3936,12 +3936,28 @@ impl<W: LayoutElement> Column<W> {
             .default_column_display
             .unwrap_or(options.layout.default_column_display);
 
+        // Try to match width to a preset width. Consider the following case: a terminal (foot)
+        // sizes itself to the terminal grid. We open it with default-column-width 0.5. It shrinks
+        // by a few pixels to evenly match the terminal grid. Then we press
+        // switch-preset-column-width intending to go to proportion 0.667, but the preset width
+        // matching code picks the proportion 0.5 preset because it's the next smallest width after
+        // the current foot's window width. Effectively, this makes the first
+        // switch-preset-column-width press ignored.
+        //
+        // However, here, we do know that width = proportion 0.5 (regardless of what the window
+        // opened with), and we can match it to a preset right away, if one exists.
+        let preset_width_idx = options
+            .layout
+            .preset_column_widths
+            .iter()
+            .position(|preset| width == ColumnWidth::from(*preset));
+
         let mut rv = Self {
             tiles: vec![],
             data: vec![],
             active_tile_idx: 0,
             width,
-            preset_width_idx: None,
+            preset_width_idx,
             is_full_width,
             is_pending_maximized: false,
             is_pending_fullscreen: false,
@@ -4205,7 +4221,7 @@ impl<W: LayoutElement> Column<W> {
         //
         // 2. Unfullscreening a tabbed column with multiple tiles should restore the view offset
         //    correctly. This means waiting for *all* tiles to unfullscreen, because otherwise the
-        //    restored view offset will immediately get overwritted by the still screen-wide column
+        //    restored view offset will immediately get overwritten by the still screen-wide column
         //    (it uses the largest tile's width).
         //
         // 3. Changing a fullscreen tabbed column to normal should probably also restore the view
@@ -5385,7 +5401,8 @@ impl<W: LayoutElement> Column<W> {
                 tile.tile_height_for_window_height(f64::from(requested_size.h));
             let min_tile_height = f64::max(1., tile.min_size_nonfullscreen().h);
 
-            if self.pending_sizing_mode().is_normal()
+            if !is_tabbed
+                && self.pending_sizing_mode().is_normal()
                 && self.scale.round() == self.scale
                 && working_size.h.round() == working_size.h
                 && gaps.round() == gaps

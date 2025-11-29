@@ -97,7 +97,7 @@ layout {
 }
 ```
 
-<sup>Since: next release</sup> You can override these settings for specific [outputs](./Configuration:-Outputs.md#layout-config-overrides) and [named workspaces](./Configuration:-Named-Workspaces.md#layout-config-overrides).
+<sup>Since: 25.11</sup> You can override these settings for specific [outputs](./Configuration:-Outputs.md#layout-config-overrides) and [named workspaces](./Configuration:-Named-Workspaces.md#layout-config-overrides).
 
 ### `gaps`
 
@@ -461,6 +461,7 @@ When `gaps-between-tabs` is zero, only the first and the last tabs have rounded 
 They have the same semantics as the border and focus ring colors and gradients.
 
 Tab colors are picked in this order:
+
 1. Colors from the `tab-indicator` window rule, if set.
 1. Colors from the `tab-indicator` layout options, if set (you're here).
 1. If neither are set, niri picks the color matching the window border or focus ring, whichever one is active.

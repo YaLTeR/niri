@@ -203,7 +203,7 @@ impl State {
 
                     layer.layer_surface().send_configure();
                 }
-                // If we already sent an initial configure, then map.arange() above had just sent
+                // If we already sent an initial configure, then map.arrange() above had just sent
                 // it a new configure, if needed.
             }
         }

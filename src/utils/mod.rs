@@ -38,6 +38,7 @@ pub mod scale;
 pub mod signals;
 pub mod spawning;
 pub mod transaction;
+pub mod vblank_throttle;
 pub mod watcher;
 pub mod xwayland;
 
@@ -171,6 +172,15 @@ pub fn logical_output(output: &Output) -> niri_ipc::LogicalOutput {
         scale: output.current_scale().fractional_scale(),
         transform,
     }
+}
+
+pub struct PanelOrientation(pub Transform);
+pub fn panel_orientation(output: &Output) -> Transform {
+    output
+        .user_data()
+        .get::<PanelOrientation>()
+        .map(|x| x.0)
+        .unwrap_or(Transform::Normal)
 }
 
 pub fn ipc_transform_to_smithay(transform: niri_ipc::Transform) -> Transform {
@@ -461,7 +471,7 @@ pub fn baba_is_float_offset(now: Duration, view_height: f64) -> f64 {
 }
 
 #[cfg(feature = "dbus")]
-pub fn show_screenshot_notification(image_path: Option<PathBuf>) -> anyhow::Result<()> {
+pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result<()> {
     use std::collections::HashMap;
 
     use zbus::zvariant;

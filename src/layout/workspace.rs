@@ -252,8 +252,6 @@ impl<W: LayoutElement> Workspace<W> {
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
 
-        let background_color = options.layout.background_color.to_array_unpremul();
-
         Self {
             scrolling,
             floating,
@@ -264,7 +262,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
-            background_buffer: SolidColorBuffer::new(view_size, background_color),
+            background_buffer: SolidColorBuffer::new(view_size, options.layout.background_color),
             output: Some(output),
             clock,
             base_options,
@@ -318,8 +316,6 @@ impl<W: LayoutElement> Workspace<W> {
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
 
-        let background_color = options.layout.background_color.to_array_unpremul();
-
         Self {
             scrolling,
             floating,
@@ -331,7 +327,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_size,
             working_area,
             shadow: Shadow::new(shadow_config),
-            background_buffer: SolidColorBuffer::new(view_size, background_color),
+            background_buffer: SolidColorBuffer::new(view_size, options.layout.background_color),
             clock,
             base_options,
             options,
@@ -421,8 +417,8 @@ impl<W: LayoutElement> Workspace<W> {
             compute_workspace_shadow_config(options.overview.workspace_shadow, self.view_size);
         self.shadow.update_config(shadow_config);
 
-        let background_color = options.layout.background_color.to_array_unpremul();
-        self.background_buffer.set_color(background_color);
+        self.background_buffer
+            .set_color(options.layout.background_color);
 
         self.base_options = base_options;
         self.options = options;
@@ -1511,14 +1507,18 @@ impl<W: LayoutElement> Workspace<W> {
                 return;
             };
 
-            let working_area_loc = self.floating.working_area().loc;
             let pos = self.floating.stored_or_default_tile_pos(tile);
 
             // If there's no stored floating position, we can only set both components at once, not
             // adjust.
             let pos = pos.or_else(|| {
-                (matches!(x, PositionChange::SetFixed(_))
-                    && matches!(y, PositionChange::SetFixed(_)))
+                (matches!(
+                    x,
+                    PositionChange::SetFixed(_) | PositionChange::SetProportion(_)
+                ) && matches!(
+                    y,
+                    PositionChange::SetFixed(_) | PositionChange::SetProportion(_)
+                ))
                 .then_some(Point::default())
             });
 
@@ -1526,13 +1526,38 @@ impl<W: LayoutElement> Workspace<W> {
                 return;
             };
 
+            let working_area = self.floating.working_area();
+            let available_width = working_area.size.w;
+            let available_height = working_area.size.h;
+            let working_area_loc = working_area.loc;
+
+            const MAX_F: f64 = 10000.;
+
             match x {
                 PositionChange::SetFixed(x) => pos.x = x + working_area_loc.x,
+                PositionChange::SetProportion(prop) => {
+                    let prop = (prop / 100.).clamp(0., MAX_F);
+                    pos.x = available_width * prop + working_area_loc.x;
+                }
                 PositionChange::AdjustFixed(x) => pos.x += x,
+                PositionChange::AdjustProportion(prop) => {
+                    let current_prop = (pos.x - working_area_loc.x) / available_width.max(1.);
+                    let prop = (current_prop + prop / 100.).clamp(0., MAX_F);
+                    pos.x = available_width * prop + working_area_loc.x;
+                }
             }
             match y {
                 PositionChange::SetFixed(y) => pos.y = y + working_area_loc.y,
+                PositionChange::SetProportion(prop) => {
+                    let prop = (prop / 100.).clamp(0., MAX_F);
+                    pos.y = available_height * prop + working_area_loc.y;
+                }
                 PositionChange::AdjustFixed(y) => pos.y += y,
+                PositionChange::AdjustProportion(prop) => {
+                    let current_prop = (pos.y - working_area_loc.y) / available_height.max(1.);
+                    let prop = (current_prop + prop / 100.).clamp(0., MAX_F);
+                    pos.y = available_height * prop + working_area_loc.y;
+                }
             }
 
             let pos = self.floating.logical_to_size_frac(pos);
