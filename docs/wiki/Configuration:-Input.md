@@ -261,7 +261,7 @@ Settings specific to `tablet` and `touch`:
 
 - `calibration-matrix`: set to six floating point numbers to change the calibration matrix. See the [`LIBINPUT_CALIBRATION_MATRIX` documentation](https://wayland.freedesktop.org/libinput/doc/latest/device-configuration-via-udev.html) for examples.
     - <sup>Since: 25.02</sup> for `tablet`
-    - <sup>Since: next release</sup> for `touch`
+    - <sup>Since: 25.11</sup> for `touch`
 
 Tablets and touchscreens are absolute pointing devices that can be mapped to a specific output like so:
 

@@ -33,6 +33,7 @@ struct TestWindowInner {
 pub struct TestWindow {
     id: usize,
     inner: Rc<RefCell<TestWindowInner>>,
+    rules: ResolvedWindowRules,
 }
 
 impl TestWindow {
@@ -54,6 +55,7 @@ impl TestWindow {
                 csd_shadow_width: 0,
                 csd_shadow_buffer: SolidColorBuffer::new((0., 0.), [0., 0., 0., 0.3]),
             })),
+            rules: ResolvedWindowRules::default(),
         }
     }
 
@@ -251,8 +253,7 @@ impl LayoutElement for TestWindow {
     fn refresh(&self) {}
 
     fn rules(&self) -> &ResolvedWindowRules {
-        static EMPTY: ResolvedWindowRules = ResolvedWindowRules::empty();
-        &EMPTY
+        &self.rules
     }
 
     fn take_animation_snapshot(&mut self) -> Option<LayoutElementRenderSnapshot> {

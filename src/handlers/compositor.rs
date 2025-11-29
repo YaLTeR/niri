@@ -135,7 +135,7 @@ impl CompositorHandler for State {
                         // there are in-flight pending configures.
                         debug!("window mapped without proper initial configure");
                         (
-                            ResolvedWindowRules::empty(),
+                            ResolvedWindowRules::default(),
                             None,
                             None,
                             false,

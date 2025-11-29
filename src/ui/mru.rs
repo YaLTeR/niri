@@ -1144,7 +1144,7 @@ impl WindowMruUi {
                     // offscreens showing the same window (possibly in addition to the window
                     // itself).
                     //
-                    // Anyhow, this is not very noticable since Alt-Tab closing happens quickly.
+                    // Anyhow, this is not very noticeable since Alt-Tab closing happens quickly.
                     Some(WindowMruUiRenderElement::Offscreen(elem.with_alpha(alpha)))
                 }
                 Err(err) => {

@@ -246,6 +246,7 @@ jobs:
       - run: cargo build --all
 
   freebsd:
+    if: false  # Waiting for a new version of the pipewire-rs patch.
     runs-on: ubuntu-24.04
     env:
       CARGO_HOME: /home/runner/work/niri/niri/cargo-home
