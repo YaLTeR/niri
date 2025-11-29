@@ -1144,7 +1144,7 @@ impl WindowMruUi {
                     // offscreens showing the same window (possibly in addition to the window
                     // itself).
                     //
-                    // Anyhow, this is not very noticable since Alt-Tab closing happens quickly.
+                    // Anyhow, this is not very noticeable since Alt-Tab closing happens quickly.
                     Some(WindowMruUiRenderElement::Offscreen(elem.with_alpha(alpha)))
                 }
                 Err(err) => {
@@ -1223,6 +1223,16 @@ impl WindowMruUi {
             UiState::Open(inner) => Some(&inner.output),
             _ => None,
         }
+    }
+
+    #[cfg(feature = "dbus")]
+    pub fn a11y_scope_text(&self) -> String {
+        let scope = match self.scope() {
+            MruScope::All => "all",
+            MruScope::Output => "output",
+            MruScope::Workspace => "workspace",
+        };
+        format!("Scope {scope}")
     }
 }
 
@@ -1840,6 +1850,7 @@ fn make_preset_opened_binds() -> Vec<Bind> {
 
     push(Keysym::Escape, Action::MruCancel);
     push(Keysym::Return, Action::MruConfirm);
+    push(Keysym::space, Action::MruConfirm);
     push(Keysym::a, Action::MruSetScope(MruScope::All));
     push(Keysym::o, Action::MruSetScope(MruScope::Output));
     push(Keysym::w, Action::MruSetScope(MruScope::Workspace));

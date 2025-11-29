@@ -29,7 +29,9 @@ use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::RenderTarget;
 use crate::utils::transaction::Transaction;
-use crate::utils::{baba_is_float_offset, round_logical_in_physical};
+use crate::utils::{
+    baba_is_float_offset, round_logical_in_physical, round_logical_in_physical_max1,
+};
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -228,16 +230,20 @@ impl<W: LayoutElement> Tile<W> {
         self.scale = scale;
         self.options = options;
 
+        let round_max1 = |logical| round_logical_in_physical_max1(self.scale, logical);
+
         let rules = self.window.rules();
 
-        let border_config = self.options.layout.border.merged_with(&rules.border);
+        let mut border_config = self.options.layout.border.merged_with(&rules.border);
+        border_config.width = round_max1(border_config.width);
         self.border.update_config(border_config.into());
 
-        let focus_ring_config = self
+        let mut focus_ring_config = self
             .options
             .layout
             .focus_ring
             .merged_with(&rules.focus_ring);
+        focus_ring_config.width = round_max1(focus_ring_config.width);
         self.focus_ring.update_config(focus_ring_config);
 
         let shadow_config = self.options.layout.shadow.merged_with(&rules.shadow);
@@ -373,14 +379,19 @@ impl<W: LayoutElement> Tile<W> {
             }
         }
 
+        let round_max1 = |logical| round_logical_in_physical_max1(self.scale, logical);
+
         let rules = self.window.rules();
-        let border_config = self.options.layout.border.merged_with(&rules.border);
+        let mut border_config = self.options.layout.border.merged_with(&rules.border);
+        border_config.width = round_max1(border_config.width);
         self.border.update_config(border_config.into());
-        let focus_ring_config = self
+
+        let mut focus_ring_config = self
             .options
             .layout
             .focus_ring
             .merged_with(&rules.focus_ring);
+        focus_ring_config.width = round_max1(focus_ring_config.width);
         self.focus_ring.update_config(focus_ring_config);
 
         let shadow_config = self.options.layout.shadow.merged_with(&rules.shadow);

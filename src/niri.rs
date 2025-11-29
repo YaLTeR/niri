@@ -16,7 +16,7 @@ use calloop::futures::Scheduler;
 use niri_config::debug::PreviewRender;
 use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
-    WorkspaceReference, Xkb, DEFAULT_MRU_COMMIT_MS,
+    WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
@@ -1255,11 +1255,13 @@ impl State {
                     // period has gone by without the focus having elsewhere.
                     let stamp = get_monotonic_time();
 
-                    if mapped.get_focus_timestamp().is_none() {
+                    let debounce = self.niri.config.borrow().recent_windows.debounce_ms;
+                    let debounce = Duration::from_millis(u64::from(debounce));
+
+                    if mapped.get_focus_timestamp().is_none() || debounce.is_zero() {
                         mapped.set_focus_timestamp(stamp);
                     } else {
-                        let timer =
-                            Timer::from_duration(Duration::from_millis(DEFAULT_MRU_COMMIT_MS));
+                        let timer = Timer::from_duration(debounce);
 
                         let focus_token = self
                             .niri
