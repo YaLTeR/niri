@@ -5,6 +5,9 @@ Ensure xwayland-satellite >= 0.7 is installed and available in `$PATH`.
 With no further configuration, niri will create X11 sockets on disk, export `$DISPLAY`, and spawn xwayland-satellite on-demand when an X11 client connects.
 If xwayland-satellite dies, niri will automatically restart it.
 
+> [!NOTE]
+> On Void Linux and non-systemd distros, don't forget to launch niri with `dbus-run-session niri --session`.
+
 If you had a custom config which manually started `xwayland-satellite` and set `$DISPLAY`, you should remove those customizations for the automatic integration to work.
 
 To check that the integration works, verify that the niri output says something like `listening on X11 socket: :0`:
