@@ -419,7 +419,7 @@ window-rule {
 
 #### `open-maximized-to-edges`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 Make the window open [maximized to edges](./Fullscreen-and-Maximize.md).
 

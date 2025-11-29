@@ -41,7 +41,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! niri-ipc = "=25.8.0"
+//! niri-ipc = "=25.11.0"
 //! ```
 //!
 //! ## Features
