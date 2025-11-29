@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "25.8.0"
+version = "25.11.0"
 description = "A scrollable-tiling Wayland compositor"
 authors = ["Ivan Molodetskikh <yalterz@gmail.com>"]
 license = "GPL-3.0-or-later"
@@ -77,8 +77,8 @@ keyframe = { version = "1.1.1", default-features = false }
 libc = "0.2.176"
 libdisplay-info = "0.3.0"
 log = { version = "0.4.28", features = ["max_level_trace", "release_max_level_debug"] }
-niri-config = { version = "25.8.0", path = "niri-config" }
-niri-ipc = { version = "25.8.0", path = "niri-ipc", features = ["clap"] }
+niri-config = { version = "25.11.0", path = "niri-config" }
+niri-ipc = { version = "25.11.0", path = "niri-ipc", features = ["clap"] }
 ordered-float = "5.1.0"
 pango = { version = "0.20.12", features = ["v1_44"] }
 pangocairo = "0.20.10"
@@ -161,7 +161,7 @@ insta.opt-level = 3
 similar.opt-level = 3
 
 [package.metadata.generate-rpm]
-version = "25.08"
+version = "25.11"
 assets = [
     { source = "target/release/niri", dest = "/usr/bin/", mode = "755" },
     { source = "resources/niri-session", dest = "/usr/bin/", mode = "755" },
