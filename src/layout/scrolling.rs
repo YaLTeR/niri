@@ -1162,9 +1162,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         anim_config: Option<niri_config::Animation>,
     ) -> Column<W> {
         // Animate movement of the other columns.
-        let movement_config = anim_config.unwrap_or(self.options.animations.window_movement.0);
-        let offset = self.column_x(column_idx + 1) - self.column_x(column_idx);
-        if self.active_column_idx <= column_idx {
+            let movement_config = anim_config.unwrap_or(self.options.animations.window_movement.0);
+            let offset = self.column_x(column_idx + 1) - self.column_x(column_idx);
+        
+            let old_columns_len = self.columns.len();
+            let was_rightmost_column = column_idx == old_columns_len - 1;        if self.active_column_idx <= column_idx {
             for col in &mut self.columns[column_idx + 1..] {
                 col.animate_move_from_with_config(offset, movement_config);
             }
@@ -1176,6 +1178,21 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         let column = self.columns.remove(column_idx);
         self.data.remove(column_idx);
+
+        if was_rightmost_column {
+            let removed_column_width = offset;
+            let current_view_offset = self.view_offset.current();
+            let target_view_offset = current_view_offset - removed_column_width;
+
+            let anim = Animation::new(
+                self.clock.clone(),
+                current_view_offset,
+                target_view_offset,
+                0.0,
+                movement_config,
+            );
+            self.view_offset = ViewOffset::Animation(anim);
+        }
 
         // Stop interactive resize.
         if let Some(resize) = &self.interactive_resize {
@@ -1209,34 +1226,43 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // FIXME: preserve activate_prev_column_on_removal.
             self.active_column_idx -= 1;
             self.activate_prev_column_on_removal = None;
-        } else if column_idx == self.active_column_idx
-            && self.activate_prev_column_on_removal.is_some()
-        {
-            // The active column was removed, and we needed to activate the previous column.
-            if 0 < column_idx {
-                let prev_offset = self.activate_prev_column_on_removal.unwrap();
-
-                self.activate_column_with_anim_config(self.active_column_idx - 1, view_config);
-
-                // Restore the view offset but make sure to scroll the view in case the
-                // previous window had resized.
-                self.animate_view_offset_with_config(
-                    self.active_column_idx,
-                    prev_offset,
-                    view_config,
-                );
-                self.animate_view_offset_to_column_with_config(
-                    None,
-                    self.active_column_idx,
-                    None,
-                    view_config,
-                );
-            }
         } else {
-            self.activate_column_with_anim_config(
-                min(self.active_column_idx, self.columns.len() - 1),
+            // This is the unified logic for removing a column at or to the right of the active one.
+            let old_active_idx = self.active_column_idx;
+            let new_active_idx = if column_idx == old_active_idx {
+                // If we removed the active column, activate the one before it.
+                old_active_idx.saturating_sub(1)
+            } else {
+                // If we removed a column to the right, the active index is still valid.
+                old_active_idx
+            };
+
+            if new_active_idx == old_active_idx {
+                // A column to the right was removed. The active index doesn't change, but
+                // we need to shift the view left to fill the gap. The `offset` calculated
+                // at the start of this function is exactly the width of the removed column.
+                // We apply it directly to the view offset before animating.
+                self.view_offset.offset(offset);
+            }
+
+            // Animate to the final correct position of the new active column.
+            // This handles the case where the active index *did* change, and also
+            // corrects any small errors from the manual offset application above.
+            self.animate_view_offset_to_column_with_config(
+                None,
+                new_active_idx,
+                Some(old_active_idx),
                 view_config,
             );
+
+            if old_active_idx != new_active_idx {
+                self.active_column_idx = new_active_idx;
+                self.interactive_resize = None;
+            }
+
+            // The special "go-back" logic is now the default, so always clear the flag.
+            self.activate_prev_column_on_removal = None;
+            self.view_offset_to_restore = None;
         }
 
         column
