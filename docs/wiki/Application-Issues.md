@@ -22,6 +22,12 @@ If you're having issues with some VSCode hotkeys, try starting `Xwayland` and se
 That is, still running VSCode with the Wayland backend, but with `DISPLAY` set to a running Xwayland instance.
 Apparently, VSCode currently unconditionally queries the X server for a keymap.
 
+### JetBrains IDEs
+
+JetBrains IDEs can run directly on Wayland, but it's not the default.
+
+For JetBrainsRuntime > 17, you can set the flag `-Dawt.toolkit.name=WLToolkit` inside of `help -> edit custom vm options -> add`.
+
 ### WezTerm
 
 > [!NOTE]
