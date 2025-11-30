@@ -18,6 +18,8 @@ debug {
     disable-direct-scanout
     restrict-primary-scanout-to-matching-format
     render-drm-device "/dev/dri/renderD129"
+    ignore-drm-device "/dev/dri/renderD128"
+    ignore-drm-device "/dev/dri/renderD130"
     force-pipewire-invalid-modifier
     dbus-interfaces-in-non-session-instances
     wait-for-frame-completion-before-queueing
@@ -30,7 +32,6 @@ debug {
     honor-xdg-activation-with-invalid-serial
     skip-cursor-only-updates-during-vrr
     deactivate-unfocused-windows
-    keep-max-bpc-unchanged
 }
 
 binds {
@@ -112,6 +113,20 @@ You can set this to make niri use a different primary GPU than the default one.
 ```kdl
 debug {
     render-drm-device "/dev/dri/renderD129"
+}
+```
+
+### `ignore-drm-device`
+
+<sup>Since: 25.11</sup>
+
+List DRM devices that niri will ignore.
+Useful for GPU passthrough when you don't want niri to open a certain device.
+
+```kdl
+debug {
+    ignore-drm-device "/dev/dri/renderD128"
+    ignore-drm-device "/dev/dri/renderD130"
 }
 ```
 
@@ -303,6 +318,10 @@ Restricting bpc to 8 is not a problem since we don't support HDR or color manage
 Apparently, setting max bpc to 8 breaks some displays driven by AMDGPU.
 If this happens to you, set this debug flag, which will prevent niri from changing max bpc.
 AMDGPU bug report: https://gitlab.freedesktop.org/drm/amd/-/issues/4487.
+
+<sup>Since: 25.11</sup>
+This setting is deprecated and does nothing: niri no longer sets max bpc.
+The old niri behavior with this setting enabled matches the new behavior.
 
 ```kdl
 debug {

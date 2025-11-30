@@ -9,10 +9,11 @@ use niri_ipc::{
     ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
 };
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
-use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE};
+use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
 use smithay::input::keyboard::Keysym;
 
-use crate::utils::expect_only_children;
+use crate::recent_windows::{MruDirection, MruFilter, MruScope};
+use crate::utils::{expect_only_children, MergeWith};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Binds(pub Vec<Bind>);
@@ -77,6 +78,18 @@ pub struct SwitchBinds {
     pub tablet_mode_off: Option<SwitchAction>,
 }
 
+impl MergeWith<SwitchBinds> for SwitchBinds {
+    fn merge_with(&mut self, part: &SwitchBinds) {
+        merge_clone_opt!(
+            (self, part),
+            lid_open,
+            lid_close,
+            tablet_mode_on,
+            tablet_mode_off,
+        );
+    }
+}
+
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
 pub struct SwitchAction {
     #[knuffel(child, unwrap(arguments))]
@@ -106,16 +119,27 @@ pub enum Action {
     CancelScreenshot,
     #[knuffel(skip)]
     ScreenshotTogglePointer,
-    Screenshot(#[knuffel(property(name = "show-pointer"), default = true)] bool),
+    Screenshot(
+        #[knuffel(property(name = "show-pointer"), default = true)] bool,
+        // Path; not settable from knuffel
+        Option<String>,
+    ),
     ScreenshotScreen(
         #[knuffel(property(name = "write-to-disk"), default = true)] bool,
         #[knuffel(property(name = "show-pointer"), default = true)] bool,
+        // Path; not settable from knuffel
+        Option<String>,
     ),
-    ScreenshotWindow(#[knuffel(property(name = "write-to-disk"), default = true)] bool),
+    ScreenshotWindow(
+        #[knuffel(property(name = "write-to-disk"), default = true)] bool,
+        // Path; not settable from knuffel
+        Option<String>,
+    ),
     #[knuffel(skip)]
     ScreenshotWindowById {
         id: u64,
         write_to_disk: bool,
+        path: Option<String>,
     },
     ToggleKeyboardShortcutsInhibit,
     CloseWindow,
@@ -291,6 +315,9 @@ pub enum Action {
     #[knuffel(skip)]
     SwitchPresetWindowHeightBackById(u64),
     MaximizeColumn,
+    MaximizeWindowToEdges,
+    #[knuffel(skip)]
+    MaximizeWindowToEdgesById(u64),
     SetColumnWidth(#[knuffel(argument, str)] SizeChange),
     ExpandColumnToAvailableWidth,
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
@@ -338,6 +365,26 @@ pub enum Action {
     UnsetWindowUrgent(u64),
     #[knuffel(skip)]
     LoadConfigFile,
+    #[knuffel(skip)]
+    MruAdvance {
+        direction: MruDirection,
+        scope: Option<MruScope>,
+        filter: Option<MruFilter>,
+    },
+    #[knuffel(skip)]
+    MruConfirm,
+    #[knuffel(skip)]
+    MruCancel,
+    #[knuffel(skip)]
+    MruCloseCurrentWindow,
+    #[knuffel(skip)]
+    MruFirst,
+    #[knuffel(skip)]
+    MruLast,
+    #[knuffel(skip)]
+    MruSetScope(MruScope),
+    #[knuffel(skip)]
+    MruCycleScope,
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -349,19 +396,28 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::Spawn { command } => Self::Spawn(command),
             niri_ipc::Action::SpawnSh { command } => Self::SpawnSh(command),
             niri_ipc::Action::DoScreenTransition { delay_ms } => Self::DoScreenTransition(delay_ms),
-            niri_ipc::Action::Screenshot { show_pointer } => Self::Screenshot(show_pointer),
+            niri_ipc::Action::Screenshot { show_pointer, path } => {
+                Self::Screenshot(show_pointer, path)
+            }
             niri_ipc::Action::ScreenshotScreen {
                 write_to_disk,
                 show_pointer,
-            } => Self::ScreenshotScreen(write_to_disk, show_pointer),
+                path,
+            } => Self::ScreenshotScreen(write_to_disk, show_pointer, path),
             niri_ipc::Action::ScreenshotWindow {
                 id: None,
                 write_to_disk,
-            } => Self::ScreenshotWindow(write_to_disk),
+                path,
+            } => Self::ScreenshotWindow(write_to_disk, path),
             niri_ipc::Action::ScreenshotWindow {
                 id: Some(id),
                 write_to_disk,
-            } => Self::ScreenshotWindowById { id, write_to_disk },
+                path,
+            } => Self::ScreenshotWindowById {
+                id,
+                write_to_disk,
+                path,
+            },
             niri_ipc::Action::ToggleKeyboardShortcutsInhibit {} => {
                 Self::ToggleKeyboardShortcutsInhibit
             }
@@ -556,6 +612,10 @@ impl From<niri_ipc::Action> for Action {
                 Self::SwitchPresetWindowHeightBackById(id)
             }
             niri_ipc::Action::MaximizeColumn {} => Self::MaximizeColumn,
+            niri_ipc::Action::MaximizeWindowToEdges { id: None } => Self::MaximizeWindowToEdges,
+            niri_ipc::Action::MaximizeWindowToEdges { id: Some(id) } => {
+                Self::MaximizeWindowToEdgesById(id)
+            }
             niri_ipc::Action::SetColumnWidth { change } => Self::SetColumnWidth(change),
             niri_ipc::Action::ExpandColumnToAvailableWidth {} => Self::ExpandColumnToAvailableWidth,
             niri_ipc::Action::SwitchLayout { layout } => Self::SwitchLayout(layout),
@@ -945,7 +1005,34 @@ impl FromStr for Key {
         } else if key.eq_ignore_ascii_case("TouchpadScrollRight") {
             Trigger::TouchpadScrollRight
         } else {
-            let keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
+            let mut keysym = keysym_from_name(key, KEYSYM_CASE_INSENSITIVE);
+            // The keyboard event handling code can receive either
+            // XF86ScreenSaver or XF86Screensaver, because there is no
+            // case mapping defined between these keysyms. If we just
+            // use the case-insensitive version of keysym_from_name it
+            // is not possible to bind the uppercase version, because the
+            // case-insensitive match prefers the lowercase version when
+            // there is a choice.
+            //
+            // Therefore, when we match this key with the initial
+            // case-insensitive match we try a further case-sensitive match
+            // (so that either key can be bound). If that fails, we change
+            // to the uppercase version because:
+            //
+            // - A comment in xkb_keysym_from_name (in libxkbcommon) tells us that the uppercase
+            //   version is the "best" of the two. [0]
+            // - The xkbcommon crate only has a constant for ScreenSaver. [1]
+            //
+            // [0]: https://github.com/xkbcommon/libxkbcommon/blob/45a118d5325b051343b4b174f60c1434196fa7d4/src/keysym.c#L276
+            // [1]: https://docs.rs/xkbcommon/latest/xkbcommon/xkb/keysyms/index.html#:~:text=KEY%5FXF86ScreenSaver
+            //
+            // See https://github.com/YaLTeR/niri/issues/1969
+            if keysym == Keysym::XF86_Screensaver {
+                keysym = keysym_from_name(key, KEYSYM_NO_FLAGS);
+                if keysym.raw() == KEY_NoSymbol {
+                    keysym = Keysym::XF86_ScreenSaver;
+                }
+            }
             if keysym.raw() == KEY_NoSymbol {
                 return Err(miette!("invalid key: {key}"));
             }
@@ -959,6 +1046,31 @@ impl FromStr for Key {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_xf86_screensaver() {
+        assert_eq!(
+            "XF86ScreenSaver".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::XF86_ScreenSaver),
+                modifiers: Modifiers::empty(),
+            },
+        );
+        assert_eq!(
+            "XF86Screensaver".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::XF86_Screensaver),
+                modifiers: Modifiers::empty(),
+            }
+        );
+        assert_eq!(
+            "xf86screensaver".parse::<Key>().unwrap(),
+            Key {
+                trigger: Trigger::Keysym(Keysym::XF86_ScreenSaver),
+                modifiers: Modifiers::empty(),
+            }
+        );
+    }
 
     #[test]
     fn parse_iso_level_shifts() {

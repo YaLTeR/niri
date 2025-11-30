@@ -550,6 +550,20 @@ impl ForeignToplevelHandler for State {
             self.niri.layout.set_fullscreen(&window, false);
         }
     }
+
+    fn set_maximized(&mut self, wl_surface: WlSurface) {
+        if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
+            let window = mapped.window.clone();
+            self.niri.layout.set_maximized(&window, true);
+        }
+    }
+
+    fn unset_maximized(&mut self, wl_surface: WlSurface) {
+        if let Some((mapped, _)) = self.niri.layout.find_window_and_output(&wl_surface) {
+            let window = mapped.window.clone();
+            self.niri.layout.set_maximized(&window, false);
+        }
+    }
 }
 delegate_foreign_toplevel!(State);
 
@@ -583,7 +597,7 @@ impl ExtWorkspaceHandler for State {
         if let Some((old_output, old_idx)) = self.niri.find_output_and_workspace_index(reference) {
             self.niri
                 .layout
-                .move_workspace_to_output_by_id(old_idx, old_output, output);
+                .move_workspace_to_output_by_id(old_idx, old_output, &output);
         }
     }
 }

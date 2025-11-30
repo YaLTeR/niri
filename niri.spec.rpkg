@@ -128,6 +128,10 @@ sed -i 's/\[env\]/[env]\nNIRI_BUILD_COMMIT="%{version}"/' .cargo/config.toml
 %build
 %cargo_build
 
+target/rpm/niri completions bash > ./niri
+target/rpm/niri completions fish > ./niri.fish
+target/rpm/niri completions zsh > ./_niri
+
 %install
 %cargo_install
 
@@ -136,6 +140,10 @@ install -Dm644 -t %{buildroot}%{_datadir}/wayland-sessions ./resources/niri.desk
 install -Dm644 -t %{buildroot}%{_datadir}/xdg-desktop-portal ./resources/niri-portals.conf
 install -Dm644 -t %{buildroot}%{_userunitdir} ./resources/niri.service
 install -Dm644 -t %{buildroot}%{_userunitdir} ./resources/niri-shutdown.target
+
+install -Dm644 -t %{buildroot}%{bash_completions_dir} ./niri
+install -Dm644 -t %{buildroot}%{fish_completions_dir} ./niri.fish
+install -Dm644 -t %{buildroot}%{zsh_completions_dir} ./_niri
 
 %if %{with check}
 %check
@@ -154,6 +162,9 @@ install -Dm644 -t %{buildroot}%{_userunitdir} ./resources/niri-shutdown.target
 %{_datadir}/xdg-desktop-portal/niri-portals.conf
 %{_userunitdir}/niri.service
 %{_userunitdir}/niri-shutdown.target
+%{bash_completions_dir}/niri
+%{fish_completions_dir}/niri.fish
+%{zsh_completions_dir}/_niri
 
 %changelog
 {{{ git_dir_changelog }}}

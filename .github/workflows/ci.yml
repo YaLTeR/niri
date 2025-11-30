@@ -246,6 +246,7 @@ jobs:
       - run: cargo build --all
 
   freebsd:
+    if: false  # Waiting for a new version of the pipewire-rs patch.
     runs-on: ubuntu-24.04
     env:
       CARGO_HOME: /home/runner/work/niri/niri/cargo-home
@@ -258,11 +259,6 @@ jobs:
       # Required for the rust-cache action to work.
       - uses: dtolnay/rust-toolchain@stable
 
-      # FIXME: doesn't seem to cache the builds, only the downloads for some unknown reason.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-all-crates: true
-
       # Remove man-db triggers to speed up Ubuntu upgrade by a minute or two during vmactions/freebsd-vm action run.
       - run: |
           sudo rm /var/lib/dpkg/info/man-db.*
@@ -270,6 +266,7 @@ jobs:
       - name: Build
         uses: vmactions/freebsd-vm@966989c456d41351f095a421f60e71342d3bce41  # v1.2.1
         with:
+          copyback: false
           prepare: |
             pkg update -f
             pkg install -y ${{ env.DEPS_PKG }}
@@ -289,6 +286,12 @@ jobs:
   nix:
     runs-on: ubuntu-24.04
     steps:
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          dotnet: false
+          large-packages: false
+        
       - uses: actions/checkout@v4
         with:
           show-progress: false

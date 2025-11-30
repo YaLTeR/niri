@@ -36,6 +36,8 @@ impl Winit {
         config: Rc<RefCell<Config>>,
         event_loop: LoopHandle<State>,
     ) -> Result<Self, winit::Error> {
+        let _span = tracy_client::span!("Winit::new");
+
         let builder = Window::default_attributes()
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             // .with_resizable(false)
@@ -83,6 +85,7 @@ impl Winit {
                     is_preferred: true,
                 }],
                 current_mode: Some(0),
+                is_custom_mode: true,
                 vrr_supported: false,
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),

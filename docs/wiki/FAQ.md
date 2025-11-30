@@ -124,3 +124,26 @@ binds {
     Super+Alt+L allow-when-locked=true { spawn "swaylock"; }
 }
 ```
+
+### How do I change output configuration based on connected monitors?
+
+If you require different output configurations depending on what outputs are connected then you can use [Kanshi](https://gitlab.freedesktop.org/emersion/kanshi).
+
+Kanshi has its own simple configuration and communicates with niri via IPC. You may want to launch kanshi from the niri config.kdl e.g. `spawn-at-startup "/usr/bin/kanshi"`
+
+For example, if you wish to scale your laptop display differently when an external monitor is connected, you might use a Kanshi config like this:
+```
+profile {
+	output eDP-1 enable scale 1.0
+}
+
+profile { 
+	output HDMI-A-1 enable scale 1.0 position 0,0
+	output eDP-1 enable scale 1.25 position 1920,0
+}
+```
+
+### Why does Firefox or Thunderbird have 1 px smaller border?
+
+They draw their own 1 px dark border around the window, which obscures one pixel of niri's border.
+If you don't like this, set the [`clip-to-geometry true` window rule](./Configuration:-Window-Rules.md#clip-to-geometry).

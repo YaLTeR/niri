@@ -20,7 +20,7 @@ use smithay::{delegate_compositor, delegate_shm};
 
 use super::xdg_shell::add_mapped_toplevel_pre_commit_hook;
 use crate::handlers::XDG_ACTIVATION_TOKEN_TIMEOUT;
-use crate::layout::{ActivateWindow, AddWindowTarget};
+use crate::layout::{ActivateWindow, AddWindowTarget, LayoutElement as _};
 use crate::niri::{CastTarget, ClientState, LockState, State};
 use crate::utils::transaction::Transaction;
 use crate::utils::{is_mapped, send_scale_transform};
@@ -91,35 +91,59 @@ impl CompositorHandler for State {
 
                     let toplevel = window.toplevel().expect("no X11 support");
 
-                    let (rules, width, height, is_full_width, output, workspace_id) =
-                        if let InitialConfigureState::Configured {
+                    let (
+                        rules,
+                        width,
+                        height,
+                        is_full_width,
+                        output,
+                        workspace_id,
+                        is_pending_maximized,
+                    ) = if let InitialConfigureState::Configured {
+                        rules,
+                        width,
+                        height,
+                        floating_width: _,
+                        floating_height: _,
+                        is_full_width,
+                        output,
+                        workspace_name,
+                        is_pending_maximized,
+                    } = state
+                    {
+                        // Check that the output is still connected.
+                        let output =
+                            output.filter(|o| self.niri.layout.monitor_for_output(o).is_some());
+
+                        // Check that the workspace still exists.
+                        let workspace_id = workspace_name
+                            .as_deref()
+                            .and_then(|n| self.niri.layout.find_workspace_by_name(n))
+                            .map(|(_, ws)| ws.id());
+
+                        (
                             rules,
                             width,
                             height,
-                            floating_width: _,
-                            floating_height: _,
                             is_full_width,
                             output,
-                            workspace_name,
-                        } = state
-                        {
-                            // Check that the output is still connected.
-                            let output =
-                                output.filter(|o| self.niri.layout.monitor_for_output(o).is_some());
-
-                            // Check that the workspace still exists.
-                            let workspace_id = workspace_name
-                                .as_deref()
-                                .and_then(|n| self.niri.layout.find_workspace_by_name(n))
-                                .map(|(_, ws)| ws.id());
-
-                            (rules, width, height, is_full_width, output, workspace_id)
-                        } else {
-                            // Can happen when a surface unmaps by attaching a null buffer while
-                            // there are in-flight pending configures.
-                            debug!("window mapped without proper initial configure");
-                            (ResolvedWindowRules::empty(), None, None, false, None, None)
-                        };
+                            workspace_id,
+                            is_pending_maximized,
+                        )
+                    } else {
+                        // Can happen when a surface unmaps by attaching a null buffer while
+                        // there are in-flight pending configures.
+                        debug!("window mapped without proper initial configure");
+                        (
+                            ResolvedWindowRules::default(),
+                            None,
+                            None,
+                            false,
+                            None,
+                            None,
+                            false,
+                        )
+                    };
 
                     // The GTK about dialog sets min/max size after the initial configure but
                     // before mapping, so we need to compute open_floating at the last possible
@@ -169,7 +193,7 @@ impl CompositorHandler for State {
                         .map(|(mapped, _)| mapped.window.clone());
 
                     // The mapped pre-commit hook deals with dma-bufs on its own.
-                    self.remove_default_dmabuf_pre_commit_hook(toplevel.wl_surface());
+                    self.remove_default_dmabuf_pre_commit_hook(surface);
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
                     let mapped = Mapped::new(window, rules, hook);
                     let window = mapped.window.clone();
@@ -193,8 +217,21 @@ impl CompositorHandler for State {
                         is_floating,
                         activate,
                     );
+                    let output = output.cloned();
 
-                    if let Some(output) = output.cloned() {
+                    // The window state cannot contain Fullscreen and Maximized at once. Therefore,
+                    // if the window ended up fullscreen, then we only know that it is also
+                    // maximized from the is_pending_maximized variable. Tell the layout about it
+                    // here so that unfullscreening the window makes it maximized.
+                    if let Some((mapped, _)) = self.niri.layout.find_window_and_output(surface) {
+                        if mapped.pending_sizing_mode().is_fullscreen() && is_pending_maximized {
+                            self.niri.layout.set_maximized(&window, true);
+                        }
+                    } else {
+                        error!("layout is missing the window that we just added");
+                    }
+
+                    if let Some(output) = output {
                         self.niri.layout.start_open_animation_for_window(&window);
 
                         let new_focus = self.niri.layout.focus().map(|m| &m.window);
@@ -254,6 +291,7 @@ impl CompositorHandler for State {
                     self.niri
                         .stop_casts_for_target(CastTarget::Window { id: id.get() });
 
+                    self.niri.window_mru_ui.remove_window(id);
                     self.niri.layout.remove_window(&window, transaction.clone());
                     self.add_default_dmabuf_pre_commit_hook(surface);
 
@@ -274,6 +312,7 @@ impl CompositorHandler for State {
 
                     if let Some(output) = output {
                         self.niri.queue_redraw(&output);
+                        self.niri.queue_redraw_mru_output();
                     }
                     return;
                 }
@@ -300,6 +339,7 @@ impl CompositorHandler for State {
                 }
 
                 // The toplevel remains mapped.
+                self.niri.window_mru_ui.update_window(&self.niri.layout, id);
                 self.niri.layout.update_window(&window, serial);
 
                 // Move the toplevel according to the attach offset.
@@ -320,6 +360,7 @@ impl CompositorHandler for State {
 
                 if let Some(output) = output {
                     self.niri.queue_redraw(&output);
+                    self.niri.queue_redraw_mru_output();
                 }
                 return;
             }
@@ -333,9 +374,13 @@ impl CompositorHandler for State {
             let window = mapped.window.clone();
             let output = output.cloned();
             window.on_commit();
+            self.niri
+                .window_mru_ui
+                .update_window(&self.niri.layout, mapped.id());
             self.niri.layout.update_window(&window, None);
             if let Some(output) = output {
                 self.niri.queue_redraw(&output);
+                self.niri.queue_redraw_mru_output();
             }
             return;
         }

@@ -120,6 +120,8 @@ use crate::cursor::{CursorManager, CursorTextureCache, RenderCursor, XCursor};
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_locale1::Locale1ToNiri;
 #[cfg(feature = "dbus")]
+use crate::dbus::freedesktop_login1::Login1ToNiri;
+#[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospect};
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
@@ -163,16 +165,18 @@ use crate::render_helpers::{
 use crate::ui::config_error_notification::ConfigErrorNotification;
 use crate::ui::exit_confirm_dialog::{ExitConfirmDialog, ExitConfirmDialogRenderElement};
 use crate::ui::hotkey_overlay::HotkeyOverlay;
+use crate::ui::mru::{MruCloseRequest, WindowMruUi, WindowMruUiRenderElement};
 use crate::ui::screen_transition::{self, ScreenTransition};
 use crate::ui::screenshot_ui::{OutputScreenshot, ScreenshotUi, ScreenshotUiRenderElement};
 use crate::utils::scale::{closest_representable_scale, guess_monitor_scale};
 use crate::utils::spawning::{CHILD_DISPLAY, CHILD_ENV};
+use crate::utils::vblank_throttle::VBlankThrottle;
 use crate::utils::watcher::Watcher;
 use crate::utils::xwayland::satellite::Satellite;
 use crate::utils::{
     center, center_f64, expand_home, get_monotonic_time, ipc_transform_to_smithay, is_mapped,
-    logical_output, make_screenshot_path, output_matches_name, output_size, send_scale_transform,
-    write_png_rgba8, xwayland,
+    logical_output, make_screenshot_path, output_matches_name, output_size, panel_orientation,
+    send_scale_transform, write_png_rgba8, xwayland,
 };
 use crate::window::mapped::MappedId;
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
@@ -322,7 +326,6 @@ pub struct Niri {
     pub bind_repeat_timer: Option<RegistrationToken>,
     pub keyboard_focus: KeyboardFocus,
     pub layer_shell_on_demand_focus: Option<LayerSurface>,
-    pub previously_focused_window: Option<Window>,
     pub idle_inhibiting_surfaces: HashSet<WlSurface>,
     pub is_fdo_idle_inhibited: Arc<AtomicBool>,
     pub keyboard_shortcuts_inhibiting_surfaces: HashMap<WlSurface, KeyboardShortcutsInhibitor>,
@@ -381,6 +384,9 @@ pub struct Niri {
     pub config_error_notification: ConfigErrorNotification,
     pub hotkey_overlay: HotkeyOverlay,
     pub exit_confirm_dialog: ExitConfirmDialog,
+
+    pub window_mru_ui: WindowMruUi,
+    pub pending_mru_commit: Option<PendingMruCommit>,
 
     pub pick_window: Option<async_channel::Sender<Option<MappedId>>>,
     pub pick_color: Option<async_channel::Sender<Option<niri_ipc::PickedColor>>>,
@@ -454,6 +460,7 @@ pub struct OutputState {
     pub unfinished_animations_remain: bool,
     /// Last sequence received in a vblank event.
     pub last_drm_sequence: Option<u32>,
+    pub vblank_throttle: VBlankThrottle,
     /// Sequence for frame callback throttling.
     ///
     /// We want to send frame callbacks for each surface at most once per monitor refresh cycle.
@@ -474,9 +481,8 @@ pub struct OutputState {
     ///    would occur, based on the last presentation time and output refresh interval. Sequence
     ///    is incremented in that timer, before attempting a redraw or sending frame callbacks.
     pub frame_callback_sequence: u32,
-    /// Solid color buffer for the background that we use instead of clearing to avoid damage
+    /// Solid color buffer for the backdrop that we use instead of clearing to avoid damage
     /// tracking issues and make screenshots easier.
-    pub background_buffer: SolidColorBuffer,
     pub backdrop_buffer: SolidColorBuffer,
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
@@ -519,6 +525,7 @@ pub enum KeyboardFocus {
     ScreenshotUi,
     ExitConfirmDialog,
     Overview,
+    Mru,
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -581,6 +588,14 @@ pub enum CastTarget {
     Window { id: u64 },
 }
 
+/// Pending update to a window's focus timestamp.
+#[derive(Debug)]
+pub struct PendingMruCommit {
+    id: MappedId,
+    token: RegistrationToken,
+    stamp: Duration,
+}
+
 impl RedrawState {
     fn queue_redraw(self) -> Self {
         match self {
@@ -619,6 +634,7 @@ impl KeyboardFocus {
             KeyboardFocus::ScreenshotUi => None,
             KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
+            KeyboardFocus::Mru => None,
         }
     }
 
@@ -630,6 +646,7 @@ impl KeyboardFocus {
             KeyboardFocus::ScreenshotUi => None,
             KeyboardFocus::ExitConfirmDialog => None,
             KeyboardFocus::Overview => None,
+            KeyboardFocus::Mru => None,
         }
     }
 
@@ -725,6 +742,18 @@ impl State {
         self.niri.clock.clear();
         self.niri.pointer_inactivity_timer_got_reset = false;
         self.niri.notified_activity_this_iteration = false;
+    }
+
+    // We monitor both libinput and logind: libinput is always there (including without DBus), but
+    // it misses some switch events (e.g. after unsuspend) on some systems.
+    pub fn set_lid_closed(&mut self, is_closed: bool) {
+        if self.niri.is_lid_closed == is_closed {
+            return;
+        }
+
+        debug!("laptop lid {}", if is_closed { "closed" } else { "opened" });
+        self.niri.is_lid_closed = is_closed;
+        self.backend.on_output_config_changed(&mut self.niri);
     }
 
     fn refresh(&mut self) {
@@ -926,6 +955,12 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    pub fn confirm_mru(&mut self) {
+        if let Some(window) = self.niri.close_mru(MruCloseRequest::Confirm) {
+            self.focus_window(&window);
+        }
+    }
+
     pub fn maybe_warp_cursor_to_focus(&mut self) -> bool {
         let focused = match self.niri.config.borrow().input.warp_mouse_to_focus {
             None => return false,
@@ -1086,6 +1121,8 @@ impl State {
             }
         } else if self.niri.screenshot_ui.is_open() {
             KeyboardFocus::ScreenshotUi
+        } else if self.niri.window_mru_ui.is_open() {
+            KeyboardFocus::Mru
         } else if let Some(output) = self.niri.layout.active_output() {
             let mon = self.niri.layout.monitor_for_output(output).unwrap();
             let layers = layer_map_for_output(output);
@@ -1196,14 +1233,12 @@ impl State {
             );
 
             // Tell the windows their new focus state for window rule purposes.
-            let mut previous_focus = None;
             if let KeyboardFocus::Layout {
                 surface: Some(surface),
             } = &self.niri.keyboard_focus
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(false);
-                    previous_focus = Some(mapped.window.clone());
                 }
             }
             if let KeyboardFocus::Layout {
@@ -1212,32 +1247,41 @@ impl State {
             {
                 if let Some((mapped, _)) = self.niri.layout.find_window_and_output_mut(surface) {
                     mapped.set_is_focused(true);
-                }
-            }
 
-            // Update the previous focus but only when staying focused on the layout.
-            //
-            // Case 1: opening and closing exclusive-keyboard layer-shell (e.g. app launcher). This
-            // involves going from Layout to LayerShell, then from LayerShell to Layout. The
-            // previously focused window should stay unchanged.
-            //
-            //     Case 1.5: opening layer-shell, in the background switching layout focus, closing
-            //     layer-shell. With the current logic, this won't update the previously focused
-            //     window, which is incorrect. But this case should be rare.
-            //
-            // Case 2: switching to an empty workspace, then hitting FocusWindowPrevious. The focus
-            // should go to the window that was just focused. The keyboard focus goes from Layout
-            // (with Some surface) to Layout (with None surface), so we update the previously
-            // focused window.
-            //
-            // FIXME: Ideally this should happen inside Layout itself, then there wouldn't be any
-            // problems with layer-shell, etc. Or a similar problem now with the Overview where we
-            // don't update the previously focused window because the keyboard focus is on the
-            // Overview rather than on the Layout.
-            if matches!(self.niri.keyboard_focus, KeyboardFocus::Layout { .. })
-                && matches!(focus, KeyboardFocus::Layout { .. })
-            {
-                self.niri.previously_focused_window = previous_focus;
+                    // If `mapped` does not have a focus timestamp, then the window is newly
+                    // created/mapped and a timestamp is unconditionally created.
+                    //
+                    // If `mapped` already has a timestamp only update it after the focus lock-in
+                    // period has gone by without the focus having elsewhere.
+                    let stamp = get_monotonic_time();
+
+                    let debounce = self.niri.config.borrow().recent_windows.debounce_ms;
+                    let debounce = Duration::from_millis(u64::from(debounce));
+
+                    if mapped.get_focus_timestamp().is_none() || debounce.is_zero() {
+                        mapped.set_focus_timestamp(stamp);
+                    } else {
+                        let timer = Timer::from_duration(debounce);
+
+                        let focus_token = self
+                            .niri
+                            .event_loop
+                            .insert_source(timer, move |_, _, state| {
+                                state.niri.mru_apply_keyboard_commit();
+                                TimeoutAction::Drop
+                            })
+                            .unwrap();
+                        if let Some(PendingMruCommit { token, .. }) =
+                            self.niri.pending_mru_commit.replace(PendingMruCommit {
+                                id: mapped.id(),
+                                token: focus_token,
+                                stamp,
+                            })
+                        {
+                            self.niri.event_loop.remove(token);
+                        }
+                    }
+                }
             }
 
             if let Some(grab) = self.niri.popup_grab.as_mut() {
@@ -1382,7 +1426,7 @@ impl State {
             self.niri.layout.ensure_named_workspace(ws_config);
         }
 
-        let rate = 1.0 / config.animations.slowdown.0.max(0.001);
+        let rate = 1.0 / config.animations.slowdown.max(0.001);
         self.niri.clock.set_rate(rate);
         self.niri
             .clock
@@ -1398,6 +1442,7 @@ impl State {
         let mut layer_rules_changed = false;
         let mut shaders_changed = false;
         let mut cursor_inactivity_timeout_changed = false;
+        let mut recent_windows_changed = false;
         let mut xwls_changed = false;
         let mut old_config = self.niri.config.borrow_mut();
 
@@ -1435,6 +1480,9 @@ impl State {
             libinput_config_changed = true;
         }
 
+        let ignored_nodes_changed =
+            config.debug.ignored_drm_devices != old_config.debug.ignored_drm_devices;
+
         if config.outputs != self.niri.config_file_output_config {
             output_config_changed = true;
             self.niri
@@ -1446,8 +1494,9 @@ impl State {
             preserved_output_config = Some(mem::take(&mut old_config.outputs));
         }
 
+        let binds_changed = config.binds != old_config.binds;
         let new_mod_key = self.backend.mod_key(&config);
-        if new_mod_key != self.backend.mod_key(&old_config) || config.binds != old_config.binds {
+        if new_mod_key != self.backend.mod_key(&old_config) || binds_changed {
             self.niri
                 .hotkey_overlay
                 .on_hotkey_config_updated(new_mod_key);
@@ -1505,12 +1554,20 @@ impl State {
             output_config_changed = true;
         }
 
+        if config.debug.ignored_drm_devices != old_config.debug.ignored_drm_devices {
+            output_config_changed = true;
+        }
+
         // FIXME: move backdrop rendering into layout::Monitor, then this will become unnecessary.
         if config.overview.backdrop_color != old_config.overview.backdrop_color {
             output_config_changed = true;
         }
         if config.layout.background_color != old_config.layout.background_color {
             output_config_changed = true;
+        }
+
+        if config.recent_windows != old_config.recent_windows {
+            recent_windows_changed = true;
         }
 
         if config.xwayland_satellite != old_config.xwayland_satellite {
@@ -1561,6 +1618,10 @@ impl State {
             }
         }
 
+        if ignored_nodes_changed {
+            self.backend.update_ignored_nodes_config(&mut self.niri);
+        }
+
         if output_config_changed {
             self.reload_output_config();
         }
@@ -1581,6 +1642,14 @@ impl State {
             // Force reset due to timeout change.
             self.niri.pointer_inactivity_timer_got_reset = false;
             self.niri.reset_pointer_inactivity_timer();
+        }
+
+        if binds_changed {
+            self.niri.window_mru_ui.update_binds();
+        }
+
+        if recent_windows_changed {
+            self.niri.window_mru_ui.update_config();
         }
 
         if xwls_changed {
@@ -1634,9 +1703,10 @@ impl State {
                 });
             let scale = closest_representable_scale(scale.clamp(0.1, 10.));
 
-            let mut transform = config
-                .map(|c| ipc_transform_to_smithay(c.transform))
-                .unwrap_or(Transform::Normal);
+            let mut transform = panel_orientation(output)
+                + config
+                    .map(|c| ipc_transform_to_smithay(c.transform))
+                    .unwrap_or(Transform::Normal);
             // FIXME: fix winit damage on other transforms.
             if name.connector == "winit" {
                 transform = Transform::Flipped180;
@@ -1655,12 +1725,6 @@ impl State {
                 resized_outputs.push(output.clone());
             }
 
-            let background_color = config
-                .and_then(|c| c.background_color)
-                .unwrap_or(full_config.layout.background_color)
-                .to_array_unpremul();
-            let background_color = Color32F::from(background_color);
-
             let mut backdrop_color = config
                 .and_then(|c| c.backdrop_color)
                 .unwrap_or(full_config.overview.backdrop_color)
@@ -1669,14 +1733,30 @@ impl State {
             let backdrop_color = Color32F::from(backdrop_color);
 
             if let Some(state) = self.niri.output_state.get_mut(output) {
-                if state.background_buffer.color() != background_color {
-                    state.background_buffer.set_color(background_color);
-                    recolored_outputs.push(output.clone());
-                }
                 if state.backdrop_buffer.color() != backdrop_color {
                     state.backdrop_buffer.set_color(backdrop_color);
                     recolored_outputs.push(output.clone());
                 }
+            }
+
+            for mon in self.niri.layout.monitors_mut() {
+                if mon.output() != output {
+                    continue;
+                }
+
+                let mut layout_config = config.and_then(|c| c.layout.clone());
+                // Support the deprecated non-layout background-color key.
+                if let Some(layout) = &mut layout_config {
+                    if layout.background_color.is_none() {
+                        layout.background_color = config.and_then(|c| c.background_color);
+                    }
+                }
+
+                if mon.update_layout_config(layout_config) {
+                    // Also redraw these; if anything, the background color could've changed.
+                    recolored_outputs.push(output.clone());
+                }
+                break;
             }
         }
 
@@ -1750,8 +1830,44 @@ impl State {
             niri_ipc::OutputAction::Mode { mode } => {
                 config.mode = match mode {
                     niri_ipc::ModeToSet::Automatic => None,
-                    niri_ipc::ModeToSet::Specific(mode) => Some(mode),
-                }
+                    niri_ipc::ModeToSet::Specific(mode) => Some(niri_config::output::Mode {
+                        custom: false,
+                        mode,
+                    }),
+                };
+                config.modeline = None;
+            }
+            niri_ipc::OutputAction::CustomMode { mode } => {
+                config.mode = Some(niri_config::output::Mode { custom: true, mode });
+                config.modeline = None;
+            }
+            niri_ipc::OutputAction::Modeline {
+                clock,
+                hdisplay,
+                hsync_start,
+                hsync_end,
+                htotal,
+                vdisplay,
+                vsync_start,
+                vsync_end,
+                vtotal,
+                hsync_polarity,
+                vsync_polarity,
+            } => {
+                // Do not reset config.mode to None since it's used as a fallback.
+                config.modeline = Some(niri_config::output::Modeline {
+                    clock,
+                    hdisplay,
+                    hsync_start,
+                    hsync_end,
+                    htotal,
+                    vdisplay,
+                    vsync_start,
+                    vsync_end,
+                    vtotal,
+                    hsync_polarity,
+                    vsync_polarity,
+                })
             }
             niri_ipc::OutputAction::Scale { scale } => {
                 config.scale = match scale {
@@ -1808,9 +1924,15 @@ impl State {
         self.niri.output_management_state.notify_changes(new_config);
     }
 
-    pub fn open_screenshot_ui(&mut self, show_pointer: bool) {
+    pub fn open_screenshot_ui(&mut self, show_pointer: bool, path: Option<String>) {
         if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
             return;
+        }
+
+        // Redraw the pointer if hidden through cursor{} options
+        if self.niri.pointer_visibility == PointerVisibility::Hidden {
+            self.niri.pointer_visibility = PointerVisibility::Visible;
+            self.niri.queue_redraw_all();
         }
 
         let default_output = self
@@ -1843,7 +1965,7 @@ impl State {
         self.backend.with_primary_renderer(|renderer| {
             self.niri
                 .screenshot_ui
-                .open(renderer, screenshots, default_output, show_pointer)
+                .open(renderer, screenshots, default_output, show_pointer, path)
         });
 
         self.niri
@@ -1869,14 +1991,15 @@ impl State {
     }
 
     pub fn confirm_screenshot(&mut self, write_to_disk: bool) {
-        if !self.niri.screenshot_ui.is_open() {
+        let ScreenshotUi::Open { path, .. } = &mut self.niri.screenshot_ui else {
             return;
-        }
+        };
+        let path = path.take();
 
         self.backend.with_primary_renderer(|renderer| {
             match self.niri.screenshot_ui.capture(renderer) {
                 Ok((size, pixels)) => {
-                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk) {
+                    if let Err(err) = self.niri.save_screenshot(size, pixels, write_to_disk, path) {
                         warn!("error saving screenshot: {err:?}");
                     }
                 }
@@ -2270,6 +2393,14 @@ impl State {
     }
 
     #[cfg(feature = "dbus")]
+    pub fn on_login1_msg(&mut self, msg: Login1ToNiri) {
+        let Login1ToNiri::LidClosedChanged(is_closed) = msg;
+
+        trace!("login1 lid {}", if is_closed { "closed" } else { "opened" });
+        self.set_lid_closed(is_closed);
+    }
+
+    #[cfg(feature = "dbus")]
     pub fn on_locale1_msg(&mut self, msg: Locale1ToNiri) {
         let Locale1ToNiri::XkbChanged(xkb) = msg;
 
@@ -2311,7 +2442,7 @@ impl Niri {
 
         let mut animation_clock = Clock::default();
 
-        let rate = 1.0 / config_.animations.slowdown.0.max(0.001);
+        let rate = 1.0 / config_.animations.slowdown.max(0.001);
         animation_clock.set_rate(rate);
         animation_clock.set_complete_instantly(config_.animations.off);
 
@@ -2326,7 +2457,7 @@ impl Niri {
         let compositor_state = CompositorState::new_v6::<State>(&display_handle);
         let xdg_shell_state = XdgShellState::new_with_capabilities::<State>(
             &display_handle,
-            [WmCapabilities::Fullscreen],
+            [WmCapabilities::Fullscreen, WmCapabilities::Maximize],
         );
         let xdg_decoration_state =
             XdgDecorationState::new_with_filter::<State, _>(&display_handle, |client| {
@@ -2474,6 +2605,7 @@ impl Niri {
         let mods_with_finger_scroll_binds = mods_with_finger_scroll_binds(mod_key, &config_.binds);
 
         let screenshot_ui = ScreenshotUi::new(animation_clock.clone(), config.clone());
+        let window_mru_ui = WindowMruUi::new(config.clone());
         let config_error_notification =
             ConfigErrorNotification::new(animation_clock.clone(), config.clone());
 
@@ -2639,7 +2771,6 @@ impl Niri {
             seat,
             keyboard_focus: KeyboardFocus::Layout { surface: None },
             layer_shell_on_demand_focus: None,
-            previously_focused_window: None,
             idle_inhibiting_surfaces: HashSet::new(),
             is_fdo_idle_inhibited: Arc::new(AtomicBool::new(false)),
             keyboard_shortcuts_inhibiting_surfaces: HashMap::new(),
@@ -2674,6 +2805,9 @@ impl Niri {
             config_error_notification,
             hotkey_overlay,
             exit_confirm_dialog,
+
+            window_mru_ui,
+            pending_mru_commit: None,
 
             pick_window: None,
             pick_color: None,
@@ -2735,8 +2869,6 @@ impl Niri {
 
     #[cfg(feature = "dbus")]
     pub fn inhibit_power_key(&mut self) -> anyhow::Result<()> {
-        use std::os::fd::{AsRawFd, BorrowedFd};
-
         use smithay::reexports::rustix::io::{fcntl_setfd, FdFlags};
 
         let conn = zbus::blocking::Connection::system()?;
@@ -2752,8 +2884,7 @@ impl Niri {
         let fd: zbus::zvariant::OwnedFd = message.body().deserialize()?;
 
         // Don't leak the fd to child processes.
-        let borrowed = unsafe { BorrowedFd::borrow_raw(fd.as_raw_fd()) };
-        if let Err(err) = fcntl_setfd(borrowed, FdFlags::CLOEXEC) {
+        if let Err(err) = fcntl_setfd(&fd, FdFlags::CLOEXEC) {
             warn!("error setting CLOEXEC on inhibit fd: {err:?}");
         };
 
@@ -2900,14 +3031,9 @@ impl Niri {
         });
         let scale = closest_representable_scale(scale.clamp(0.1, 10.));
 
-        let mut transform = c
-            .map(|c| ipc_transform_to_smithay(c.transform))
-            .unwrap_or(Transform::Normal);
-
-        let background_color = c
-            .and_then(|c| c.background_color)
-            .unwrap_or(config.layout.background_color)
-            .to_array_unpremul();
+        let mut transform = panel_orientation(&output)
+            + c.map(|c| ipc_transform_to_smithay(c.transform))
+                .unwrap_or(Transform::Normal);
 
         let mut backdrop_color = c
             .and_then(|c| c.backdrop_color)
@@ -2919,6 +3045,14 @@ impl Niri {
         if name.connector == "winit" {
             transform = Transform::Flipped180;
         }
+
+        let mut layout_config = c.and_then(|c| c.layout.clone());
+        // Support the deprecated non-layout background-color key.
+        if let Some(layout) = &mut layout_config {
+            if layout.background_color.is_none() {
+                layout.background_color = c.and_then(|c| c.background_color);
+            }
+        }
         drop(config);
 
         // Set scale and transform before adding to the layout since that will read the output size.
@@ -2929,7 +3063,7 @@ impl Niri {
             None,
         );
 
-        self.layout.add_output(output.clone());
+        self.layout.add_output(output.clone(), layout_config);
 
         let lock_render_state = if self.is_locked() {
             // We haven't rendered anything yet so it's as good as locked.
@@ -2946,8 +3080,8 @@ impl Niri {
             unfinished_animations_remain: false,
             frame_clock: FrameClock::new(refresh_interval, vrr),
             last_drm_sequence: None,
+            vblank_throttle: VBlankThrottle::new(self.event_loop.clone(), name.connector.clone()),
             frame_callback_sequence: 0,
-            background_buffer: SolidColorBuffer::new(size, background_color),
             backdrop_buffer: SolidColorBuffer::new(size, backdrop_color),
             lock_render_state,
             lock_surface: None,
@@ -3032,6 +3166,10 @@ impl Niri {
                 .set_cursor_image(CursorImageStatus::default_named());
             self.queue_redraw_all();
         }
+
+        if self.window_mru_ui.output() == Some(output) {
+            self.cancel_mru();
+        }
     }
 
     pub fn output_resized(&mut self, output: &Output) {
@@ -3056,7 +3194,6 @@ impl Niri {
         self.layout.update_output_size(output);
 
         if let Some(state) = self.output_state.get_mut(output) {
-            state.background_buffer.resize(output_size);
             state.backdrop_buffer.resize(output_size);
 
             state.lock_color_buffer.resize(output_size);
@@ -3300,7 +3437,11 @@ impl Niri {
     /// The cursor may be inside the window's activation region, but not within the window's input
     /// region.
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<&Mapped> {
-        if self.exit_confirm_dialog.is_open() || self.is_locked() || self.screenshot_ui.is_open() {
+        if self.exit_confirm_dialog.is_open()
+            || self.is_locked()
+            || self.screenshot_ui.is_open()
+            || self.window_mru_ui.is_open()
+        {
             return None;
         }
 
@@ -3379,7 +3520,7 @@ impl Niri {
             return rv;
         }
 
-        if self.screenshot_ui.is_open() {
+        if self.screenshot_ui.is_open() || self.window_mru_ui.is_open() {
             return rv;
         }
 
@@ -3654,6 +3795,13 @@ impl Niri {
 
         let target_output = target_workspace.current_output();
         Some((target_output.cloned(), target_workspace_index))
+    }
+
+    pub fn find_window_by_id(&self, id: MappedId) -> Option<Window> {
+        self.layout
+            .windows()
+            .find(|(_, m)| m.id() == id)
+            .map(|(_, m)| m.window.clone())
     }
 
     pub fn output_for_tablet(&self) -> Option<&Output> {
@@ -3983,6 +4131,7 @@ impl Niri {
             KeyboardFocus::ScreenshotUi => true,
             KeyboardFocus::ExitConfirmDialog => true,
             KeyboardFocus::Overview => true,
+            KeyboardFocus::Mru => true,
         };
 
         self.layout.refresh(layout_is_active);
@@ -4114,6 +4263,7 @@ impl Niri {
         self.config_error_notification.advance_animations();
         self.exit_confirm_dialog.advance_animations();
         self.screenshot_ui.advance_animations();
+        self.window_mru_ui.advance_animations();
 
         for state in self.output_state.values_mut() {
             if let Some(transition) = &mut state.screen_transition {
@@ -4239,13 +4389,6 @@ impl Niri {
 
         // Prepare the background elements.
         let state = self.output_state.get(output).unwrap();
-        let background_buffer = state.background_buffer.clone();
-        let background = SolidColorRenderElement::from_buffer(
-            &background_buffer,
-            (0., 0.),
-            1.,
-            Kind::Unspecified,
-        );
         let backdrop = SolidColorRenderElement::from_buffer(
             &state.backdrop_buffer,
             (0., 0.),
@@ -4277,6 +4420,15 @@ impl Niri {
             elements.push(element.into());
         }
 
+        // Then, the Alt-Tab switcher.
+        let mru_elements = self
+            .window_mru_ui
+            .render_output(self, output, renderer, target)
+            .into_iter()
+            .flatten()
+            .map(OutputRenderElements::from);
+        elements.extend(mru_elements);
+
         // Don't draw the focus ring on the workspaces while interactively moving above those
         // workspaces, since the interactively-moved window already has a focus ring.
         let focus_ring = !self.layout.interactive_move_is_moving_above_output(output);
@@ -4286,7 +4438,7 @@ impl Niri {
         let zoom = mon.overview_zoom();
         let monitor_elements = Vec::from_iter(
             mon.render_elements(renderer, target, focus_ring)
-                .map(|(geo, iter)| (geo, Vec::from_iter(iter))),
+                .map(|(geo, bg, iter)| (geo, bg, Vec::from_iter(iter))),
         );
         let workspace_shadow_elements = Vec::from_iter(mon.render_workspace_shadows(renderer));
         let insert_hint_elements = mon.render_insert_hint_between_workspaces(renderer);
@@ -4330,17 +4482,24 @@ impl Niri {
                     .into_iter()
                     .map(OutputRenderElements::from),
             );
+
+            let mut ws_background = None;
             elements.extend(
                 monitor_elements
                     .into_iter()
-                    .flat_map(|(_ws_geo, iter)| iter)
+                    .flat_map(|(_ws_geo, ws_bg, iter)| {
+                        ws_background = Some(ws_bg);
+                        iter
+                    })
                     .map(OutputRenderElements::from),
             );
 
             elements.extend(top_layer.into_iter().map(OutputRenderElements::from));
             elements.extend(layer_elems.into_iter().map(OutputRenderElements::from));
 
-            elements.push(OutputRenderElements::from(background));
+            if let Some(ws_background) = ws_background {
+                elements.push(OutputRenderElements::from(ws_background));
+            }
 
             elements.extend(
                 workspace_shadow_elements
@@ -4362,7 +4521,7 @@ impl Niri {
                     .map(OutputRenderElements::from),
             );
 
-            for (ws_geo, ws_elements) in monitor_elements {
+            for (ws_geo, ws_background, ws_elements) in monitor_elements {
                 // Collect all other layer-shell elements.
                 let mut layer_elems = SplitElements::default();
                 extend_from_layer(&mut layer_elems, Layer::Bottom, false);
@@ -4386,11 +4545,7 @@ impl Niri {
                         .map(OutputRenderElements::from),
                 );
 
-                if let Some(elem) =
-                    scale_relocate_crop(background.clone(), output_scale, zoom, ws_geo)
-                {
-                    elements.push(OutputRenderElements::from(elem));
-                }
+                elements.push(OutputRenderElements::from(ws_background));
             }
 
             elements.extend(
@@ -4465,6 +4620,7 @@ impl Niri {
                 self.config_error_notification.are_animations_ongoing();
             state.unfinished_animations_remain |= self.exit_confirm_dialog.are_animations_ongoing();
             state.unfinished_animations_remain |= self.screenshot_ui.are_animations_ongoing();
+            state.unfinished_animations_remain |= self.window_mru_ui.are_animations_ongoing();
             state.unfinished_animations_remain |= state.screen_transition.is_some();
 
             // Also keep redrawing if the current cursor is animated.
@@ -5495,6 +5651,7 @@ impl Niri {
         output: &Output,
         write_to_disk: bool,
         include_pointer: bool,
+        path: Option<String>,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot");
 
@@ -5521,7 +5678,7 @@ impl Niri {
             elements,
         )?;
 
-        self.save_screenshot(size, pixels, write_to_disk)
+        self.save_screenshot(size, pixels, write_to_disk, path)
             .context("error saving screenshot")
     }
 
@@ -5531,15 +5688,17 @@ impl Niri {
         output: &Output,
         mapped: &Mapped,
         write_to_disk: bool,
+        path: Option<String>,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_window");
 
         let scale = Scale::from(output.current_scale().fractional_scale());
-        let alpha = if mapped.is_fullscreen() || mapped.is_ignoring_opacity_window_rule() {
-            1.
-        } else {
-            mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
-        };
+        let alpha =
+            if mapped.sizing_mode().is_fullscreen() || mapped.is_ignoring_opacity_window_rule() {
+                1.
+            } else {
+                mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
+            };
         // FIXME: pointer.
         let elements = mapped.render(
             renderer,
@@ -5561,7 +5720,7 @@ impl Niri {
             elements,
         )?;
 
-        self.save_screenshot(geo.size, pixels, write_to_disk)
+        self.save_screenshot(geo.size, pixels, write_to_disk, path)
             .context("error saving screenshot")
     }
 
@@ -5570,14 +5729,20 @@ impl Niri {
         size: Size<i32, Physical>,
         pixels: Vec<u8>,
         write_to_disk: bool,
+        path_arg: Option<String>,
     ) -> anyhow::Result<()> {
         let path = write_to_disk
-            .then(|| match make_screenshot_path(&self.config.borrow()) {
-                Ok(path) => path,
-                Err(err) => {
-                    warn!("error making screenshot path: {err:?}");
-                    None
-                }
+            .then(|| {
+                // When given an explicit path, don't try to strftime it or create parents.
+                path_arg.map(|p| (PathBuf::from(p), false)).or_else(|| {
+                    match make_screenshot_path(&self.config.borrow()) {
+                        Ok(path) => path.map(|p| (p, true)),
+                        Err(err) => {
+                            warn!("error making screenshot path: {err:?}");
+                            None
+                        }
+                    }
+                })
             })
             .flatten();
 
@@ -5598,6 +5763,17 @@ impl Niri {
             })
             .unwrap();
 
+        // Prepare to send screenshot completion event back to main thread.
+        let (event_tx, event_rx) = calloop::channel::sync_channel::<Option<String>>(1);
+        self.event_loop
+            .insert_source(event_rx, move |event, _, state| match event {
+                calloop::channel::Event::Msg(path) => {
+                    state.ipc_screenshot_taken(path);
+                }
+                calloop::channel::Event::Closed => (),
+            })
+            .unwrap();
+
         // Encode and save the image in a thread as it's slow.
         thread::spawn(move || {
             let mut buf = vec![];
@@ -5613,13 +5789,18 @@ impl Niri {
 
             let mut image_path = None;
 
-            if let Some(path) = path {
+            if let Some((path, create_parent)) = path {
                 debug!("saving screenshot to {path:?}");
 
-                if let Some(parent) = path.parent() {
-                    if let Err(err) = std::fs::create_dir(parent) {
-                        if err.kind() != std::io::ErrorKind::AlreadyExists {
-                            warn!("error creating screenshot directory: {err:?}");
+                if create_parent {
+                    if let Some(parent) = path.parent() {
+                        // Relative paths with one component, i.e. "test.png", have Some("") parent.
+                        if !parent.as_os_str().is_empty() {
+                            if let Err(err) = std::fs::create_dir_all(parent) {
+                                if err.kind() != std::io::ErrorKind::AlreadyExists {
+                                    warn!("error creating screenshot directory: {err:?}");
+                                }
+                            }
                         }
                     }
                 }
@@ -5635,11 +5816,16 @@ impl Niri {
             }
 
             #[cfg(feature = "dbus")]
-            if let Err(err) = crate::utils::show_screenshot_notification(image_path) {
+            if let Err(err) = crate::utils::show_screenshot_notification(image_path.as_deref()) {
                 warn!("error showing screenshot notification: {err:?}");
             }
-            #[cfg(not(feature = "dbus"))]
-            drop(image_path);
+
+            // Send screenshot completion event.
+            let path_string = image_path
+                .as_ref()
+                .and_then(|p| p.to_str())
+                .map(|s| s.to_owned());
+            let _ = event_tx.send(path_string);
         });
 
         Ok(())
@@ -5821,6 +6007,7 @@ impl Niri {
                 self.screenshot_ui.close();
                 self.cursor_manager
                     .set_cursor_image(CursorImageStatus::default_named());
+                self.cancel_mru();
 
                 if self.output_state.is_empty() {
                     // There are no outputs, lock the session right away.
@@ -6079,6 +6266,10 @@ impl Niri {
             return;
         }
 
+        if self.window_mru_ui.is_open() {
+            return;
+        }
+
         // Recompute the current pointer focus because we don't update it during animations.
         let current_focus = self.contents_under(pointer.current_location());
 
@@ -6305,6 +6496,46 @@ impl Niri {
 
         self.notified_activity_this_iteration = true;
     }
+
+    pub fn close_mru(&mut self, close_request: MruCloseRequest) -> Option<Window> {
+        if !self.window_mru_ui.is_open() {
+            return None;
+        }
+        self.queue_redraw_all();
+
+        let id = self.window_mru_ui.close(close_request)?;
+        self.find_window_by_id(id)
+    }
+
+    pub fn cancel_mru(&mut self) {
+        self.close_mru(MruCloseRequest::Cancel);
+    }
+
+    /// Apply a pending MRU commit immediately.
+    ///
+    /// Called for example on keyboard events that reach the active window, which immediately adds
+    /// it to the MRU.
+    pub fn mru_apply_keyboard_commit(&mut self) {
+        let Some(pending) = self.pending_mru_commit.take() else {
+            return;
+        };
+        self.event_loop.remove(pending.token);
+
+        if let Some(window) = self
+            .layout
+            .workspaces_mut()
+            .flat_map(|ws| ws.windows_mut())
+            .find(|w| w.id() == pending.id)
+        {
+            window.set_focus_timestamp(pending.stamp);
+        }
+    }
+
+    pub fn queue_redraw_mru_output(&mut self) {
+        if let Some(output) = self.window_mru_ui.output().cloned() {
+            self.queue_redraw(&output);
+        }
+    }
 }
 
 pub struct NewClient {
@@ -6351,10 +6582,8 @@ niri_render_elements! {
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
         SolidColor = SolidColorRenderElement,
-        RelocatedSolidColor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
-            SolidColorRenderElement
-        >>>,
         ScreenshotUi = ScreenshotUiRenderElement,
+        WindowMruUi = WindowMruUiRenderElement<R>,
         ExitConfirmDialog = ExitConfirmDialogRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
         // Used for the CPU-rendered panels.
