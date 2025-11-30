@@ -27,7 +27,7 @@ Note that if you're using the provided `resources/niri-portals.conf`, you also n
 If you do not want to install `nautilus` (say you use `nemo` instead), you can set `org.freedesktop.impl.portal.FileChooser=gtk;` in `niri-portals.conf` to use the GTK portal for file chooser dialogues.
 
 > [!WARNING]
-> Setting the `GDK_BACKEND` environment variable globally will break the screencast portal.
+> Do not set the `GDK_BACKEND` environment variable globally as this will break the screencast portal.
 
 ### Authentication Agent
 
