@@ -2562,7 +2562,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 if tile.window().id() == id {
                     // In the scrolling layout, we try to position popups horizontally within the
                     // window geometry (so they remain visible even if the window scrolls flush with
-                    // the left/right edge of the screen), and vertically wihin the whole parent
+                    // the left/right edge of the screen), and vertically within the whole parent
                     // working area.
                     let width = tile.window_size().w;
                     let height = self.parent_area.size.h;
@@ -4219,7 +4219,7 @@ impl<W: LayoutElement> Column<W> {
         //
         // 2. Unfullscreening a tabbed column with multiple tiles should restore the view offset
         //    correctly. This means waiting for *all* tiles to unfullscreen, because otherwise the
-        //    restored view offset will immediately get overwritted by the still screen-wide column
+        //    restored view offset will immediately get overwritten by the still screen-wide column
         //    (it uses the largest tile's width).
         //
         // 3. Changing a fullscreen tabbed column to normal should probably also restore the view

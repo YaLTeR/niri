@@ -778,15 +778,20 @@ impl Tty {
             Ok(render_node)
         };
 
-        let render_node = try_initialize_gpu()
-            .inspect_err(|err| {
+        let render_node = match try_initialize_gpu() {
+            Ok(render_node) => {
+                debug!("got render node: {render_node}");
+                Some(render_node)
+            }
+            Err(err) => {
                 debug!("failed to initialize renderer, falling back to primary gpu: {err:?}");
-            })
-            .ok();
+                None
+            }
+        };
 
-        if render_node == Some(self.primary_render_node) {
+        if render_node == Some(self.primary_render_node) && self.dmabuf_global.is_none() {
             let render_node = self.primary_render_node;
-            debug!("this is the primary render node");
+            debug!("initializing the primary renderer");
 
             let mut renderer = self
                 .gpu_manager
@@ -1096,46 +1101,58 @@ impl Tty {
             lease_state.disable_global::<State>();
         }
 
-        if device.render_node == Some(self.primary_render_node) {
-            match self.gpu_manager.single_renderer(&self.primary_render_node) {
-                Ok(mut renderer) => renderer.unbind_wl_display(),
-                Err(err) => {
-                    warn!("error creating renderer during device removal: {err}");
-                }
-            }
+        if let Some(render_node) = device.render_node {
+            // Sometimes (Asahi DisplayLink), multiple primary nodes will correspond to the same
+            // render node. In this case, we want to keep the render node active until the last
+            // primary node that uses it is gone.
+            let was_last = !self
+                .devices
+                .values()
+                .any(|device| device.render_node == Some(render_node));
 
-            // Disable and destroy the dmabuf global.
-            if let Some(global) = self.dmabuf_global.take() {
-                niri.dmabuf_state
-                    .disable_global::<State>(&niri.display_handle, &global);
-                niri.event_loop
-                    .insert_source(
-                        Timer::from_duration(Duration::from_secs(10)),
-                        move |_, _, state| {
-                            state
-                                .niri
-                                .dmabuf_state
-                                .destroy_global::<State>(&state.niri.display_handle, global);
-                            TimeoutAction::Drop
-                        },
-                    )
-                    .unwrap();
+            if was_last && render_node == self.primary_render_node {
+                debug!("destroying the primary renderer");
 
-                // Clear the dmabuf feedbacks for all surfaces.
-                for device in self.devices.values_mut() {
-                    for surface in device.surfaces.values_mut() {
-                        surface.dmabuf_feedback = None;
+                match self.gpu_manager.single_renderer(&self.primary_render_node) {
+                    Ok(mut renderer) => renderer.unbind_wl_display(),
+                    Err(err) => {
+                        warn!("error creating renderer during device removal: {err}");
                     }
                 }
-            } else {
-                error!("dmabuf global was already missing");
-            }
-        }
 
-        if let Some(render_node) = device.render_node {
-            self.gpu_manager.as_mut().remove_node(&render_node);
-            // Trigger re-enumeration in order to remove the device from gpu_manager.
-            let _ = self.gpu_manager.devices();
+                // Disable and destroy the dmabuf global.
+                if let Some(global) = self.dmabuf_global.take() {
+                    niri.dmabuf_state
+                        .disable_global::<State>(&niri.display_handle, &global);
+                    niri.event_loop
+                        .insert_source(
+                            Timer::from_duration(Duration::from_secs(10)),
+                            move |_, _, state| {
+                                state
+                                    .niri
+                                    .dmabuf_state
+                                    .destroy_global::<State>(&state.niri.display_handle, global);
+                                TimeoutAction::Drop
+                            },
+                        )
+                        .unwrap();
+
+                    // Clear the dmabuf feedbacks for all surfaces.
+                    for device in self.devices.values_mut() {
+                        for surface in device.surfaces.values_mut() {
+                            surface.dmabuf_feedback = None;
+                        }
+                    }
+                } else {
+                    error!("dmabuf global was already missing");
+                }
+            }
+
+            if was_last {
+                self.gpu_manager.as_mut().remove_node(&render_node);
+                // Trigger re-enumeration in order to remove the device from gpu_manager.
+                let _ = self.gpu_manager.devices();
+            }
         }
 
         niri.event_loop.remove(device.token);
