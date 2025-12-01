@@ -1,4 +1,4 @@
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 You can include other files at the top level of the config.
 

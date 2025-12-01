@@ -32,7 +32,6 @@ debug {
     honor-xdg-activation-with-invalid-serial
     skip-cursor-only-updates-during-vrr
     deactivate-unfocused-windows
-    keep-max-bpc-unchanged
 }
 
 binds {
@@ -119,7 +118,7 @@ debug {
 
 ### `ignore-drm-device`
 
-<sup>Since: next release</sup>
+<sup>Since: 25.11</sup>
 
 List DRM devices that niri will ignore.
 Useful for GPU passthrough when you don't want niri to open a certain device.
@@ -319,6 +318,10 @@ Restricting bpc to 8 is not a problem since we don't support HDR or color manage
 Apparently, setting max bpc to 8 breaks some displays driven by AMDGPU.
 If this happens to you, set this debug flag, which will prevent niri from changing max bpc.
 AMDGPU bug report: https://gitlab.freedesktop.org/drm/amd/-/issues/4487.
+
+<sup>Since: 25.11</sup>
+This setting is deprecated and does nothing: niri no longer sets max bpc.
+The old niri behavior with this setting enabled matches the new behavior.
 
 ```kdl
 debug {
