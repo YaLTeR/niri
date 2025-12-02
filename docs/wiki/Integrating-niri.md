@@ -11,7 +11,7 @@ When this file is present, niri *will not* automatically create a config at `~/.
 
 Keep in mind that we update the default config in new releases, so if you have a custom `/etc/niri/config.kdl`, you likely want to inspect and apply the relevant changes too.
 
-See [includes](./Configuration:-Include.md) for splitting the niri config file into multiple files using includes.
+You can split the niri config file into multiple files using [`include`](./Configuration:-Include.md).
 
 ### Xwayland
 
