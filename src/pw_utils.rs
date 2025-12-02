@@ -1067,33 +1067,22 @@ impl Cast {
         let bitmap_slice =
             unsafe { slice::from_raw_parts_mut(bitmap_data, CURSOR_BITMAP_SIZE as usize) };
 
-        let render_scale = if size.w <= CURSOR_WIDTH as _ && size.h <= CURSOR_HEIGHT as _ {
-            scale
-        } else {
-            let scale_x = size.w as f64 / pointer_geo.size.w as f64;
-            let scale_y = size.h as f64 / pointer_geo.size.h as f64;
-            let scale = scale_x.min(scale_y);
-            Scale::from((scale, scale))
-        };
-
         let pointer_vec = match render_to_vec(
             renderer,
             size,
-            render_scale,
+            scale,
             Transform::Normal,
             Fourcc::Argb8888,
             pointer_elements.iter(),
         ) {
             Ok(pointer_vec) => pointer_vec,
-            Err(_) => {
-                error!("error rendering cursor");
+            Err(err) => {
+                error!("error rendering cursor: {err:?}");
                 return;
             }
         };
 
-        for i in 0..pointer_vec.len() {
-            bitmap_slice[i] = pointer_vec[i];
-        }
+        bitmap_slice[..pointer_vec.len()].copy_from_slice(&pointer_vec);
     }
 
     pub fn dequeue_buffer_and_render(
@@ -1120,8 +1109,13 @@ impl Cast {
         };
         let damage_tracker = damage_tracker
             .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
-        let cursor_damage_tracker = cursor_damage_tracker
-            .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
+        let cursor_damage_tracker = cursor_damage_tracker.get_or_insert_with(|| {
+            OutputDamageTracker::new(
+                Size::from((CURSOR_WIDTH as _, CURSOR_HEIGHT as _)),
+                scale,
+                Transform::Normal,
+            )
+        });
 
         // Size change will drop the damage tracker, but scale change won't, so check it here.
         let OutputModeSource::Static { scale: t_scale, .. } = damage_tracker.mode() else {
@@ -1129,7 +1123,11 @@ impl Cast {
         };
         if *t_scale != scale {
             *damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
-            *cursor_damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+            *cursor_damage_tracker = OutputDamageTracker::new(
+                Size::from((CURSOR_WIDTH as _, CURSOR_HEIGHT as _)),
+                scale,
+                Transform::Normal,
+            );
         }
 
         let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
@@ -1251,7 +1249,7 @@ fn pw_version_supports_cursor_metadata() -> bool {
         warn!("cursor metadata mode requires PipeWire >= 1.4.8");
         return false;
     }
-    return true;
+    true
 }
 
 fn make_video_params(
