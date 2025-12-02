@@ -5300,7 +5300,7 @@ impl Niri {
             return None;
         }
 
-        let monitor = self.layout.monitor_for_output(output).unwrap();
+        let monitor = self.layout.monitor_for_output(output)?;
         if monitor.are_transitions_ongoing() {
             return None;
         }
@@ -5308,25 +5308,23 @@ impl Niri {
         let (_, _, ws) = self
             .layout
             .workspaces()
-            .find(|(_, _, ws)| ws.has_window(&mapped.window))
-            .unwrap();
+            .find(|(_, _, ws)| ws.has_window(&mapped.window))?;
         let (tile, tile_offset, _) = ws
             .tiles_with_render_positions()
-            .find(|(tile, _, _)| tile.window().id() == mapped.id())
-            .unwrap();
+            .find(|(tile, _, _)| tile.window().id() == mapped.id())?;
 
         let window_bbox = mapped.window.bbox_with_popups().loc.to_f64();
         let window_offset =
             tile_offset + tile.window_loc() + window_bbox + mapped.buf_loc().to_f64();
 
-        let pointer_location = self.seat.get_pointer().unwrap().current_location();
+        let pointer_location = self.seat.get_pointer()?.current_location();
         Some((pointer_location - window_offset).upscale(scale))
     }
 
     fn get_origin_pointer_element<'a>(
         &self,
         scale: Scale<f64>,
-        pointer_element: &'a Vec<OutputRenderElements<GlesRenderer>>,
+        pointer_element: &'a [OutputRenderElements<GlesRenderer>],
     ) -> (
         Vec<RelocateRenderElement<&'a OutputRenderElements<GlesRenderer>>>,
         Option<Point<i32, Physical>>,
@@ -5335,13 +5333,11 @@ impl Niri {
             return (vec![], None);
         }
         let pointer_geo = encompassing_geo(scale, pointer_element.iter());
-        let pointer_hotspot = self
-            .seat
-            .get_pointer()
-            .unwrap()
-            .current_location()
-            .to_physical_precise_round(scale)
-            - pointer_geo.loc;
+        let Some(pointer) = self.seat.get_pointer() else {
+            return (vec![], None);
+        };
+        let pointer_hotspot =
+            pointer.current_location().to_physical_precise_round(scale) - pointer_geo.loc;
         let pointer_elements: Vec<_> = pointer_element
             .iter()
             .rev()
