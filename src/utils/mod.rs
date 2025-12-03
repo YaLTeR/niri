@@ -34,6 +34,7 @@ use crate::handlers::KdeDecorationsModeState;
 use crate::niri::ClientState;
 
 pub mod id;
+pub mod realtime;
 pub mod scale;
 pub mod signals;
 pub mod spawning;
