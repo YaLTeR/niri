@@ -6,6 +6,7 @@ use smithay::backend::renderer::gles::{
     GlesError, GlesFrame, GlesRenderer, GlesTexProgram, Uniform,
 };
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
+use smithay::backend::renderer::buffer_y_inverted;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::damage::ExtraDamage;
@@ -29,12 +30,26 @@ pub struct RoundedCornerDamage {
 }
 
 impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
+    /// Compute whether a render element's buffer is y-inverted.
+    pub fn buffer_y_inverted(
+        elem: &WaylandSurfaceRenderElement<R>,
+        renderer: &mut R,
+    ) -> bool {
+        elem.underlying_storage(renderer)
+            .and_then(|storage| match storage {
+                UnderlyingStorage::Wayland(buffer) => buffer_y_inverted(buffer),
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
     pub fn new(
         elem: WaylandSurfaceRenderElement<R>,
         scale: Scale<f64>,
         geometry: Rectangle<f64, Logical>,
         program: GlesTexProgram,
         corner_radius: CornerRadius,
+        y_inverted: bool,
     ) -> Self {
         let elem_geo = elem.geometry(scale);
 
@@ -63,12 +78,16 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
             * Mat3::from_cols_array(transform.matrix().as_ref())
             * Mat3::from_translation(-Vec2::new(0.5, 0.5));
 
-        // FIXME: y_inverted
         let input_to_geo = transform_matrix * Mat3::from_scale(elem_geo_size / geo_size)
             * Mat3::from_translation((elem_geo_loc - geo_loc) / elem_geo_size)
             // Apply viewporter src.
             * Mat3::from_scale(buf_size / src_size)
-            * Mat3::from_translation(-src_loc / buf_size);
+            * Mat3::from_translation(-src_loc / buf_size)
+            * if y_inverted {
+                Mat3::from_translation(Vec2::new(0.0, 1.0)) * Mat3::from_scale(Vec2::new(1.0, -1.0))
+            } else {
+                Mat3::from_scale(Vec2::new(1.0, 1.0))
+            };
 
         let uniforms = vec![
             Uniform::new("niri_scale", scale.x as f32),
