@@ -90,6 +90,14 @@ When creating pull requests, please keep the following in mind.
 - Remember to document new config options on the wiki.
 - When opening a pull request, ensure "Allow edits from maintainers" is enabled, so I can make final tweaks before merging.
 
+### How to get your pull request reviewed more quickly
+
+- Make it small and self-contained. Avoid mixing several unrelated changes in one PR.
+- Split the PR into small and self-contained commits. This makes it much easier to review.
+- Discuss new features, options, or behavior changes beforehand; make sure there's consensus about the design.
+- When creating the pull request, clearly write what it does, what problem it solves, how to test it.
+- Follow the rest of the advice from this document.
+
 ## AI contributions
 
 If you use LLMs for your contribution (issue, comment, pull request), then it is *your job* to check and clean up its output, just like with any other tool.
