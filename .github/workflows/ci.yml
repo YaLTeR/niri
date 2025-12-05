@@ -22,18 +22,18 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           show-progress: false
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }}
+          sudo apt update -y
+          sudo apt install -y ${{ env.DEPS_APT }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
 
       - name: Build tests
         run: cargo test --no-run --all --exclude niri-visual-tests
@@ -49,18 +49,18 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           show-progress: false
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }}
+          sudo apt update -y
+          sudo apt install -y ${{ env.DEPS_APT }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
 
       - name: Check (no default features)
         run: cargo check --no-default-features
@@ -89,16 +89,16 @@ jobs:
 
     name: alpine musl
     runs-on: ubuntu-24.04
-    container: alpine:3
+    container: alpine:3.22.2@sha256:4b7ce07002c69e8f3d704a9c5d6fd3053be500b7f1c69fc0d80990c2ad8dd412 # https://hub.docker.com/layers/library/alpine/3.22.2/images/sha256-9eec16c5eada75150a82666ba0ad6df76b164a6f8582ba5cb964c0813fa56625
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           show-progress: false
 
       - name: Install Deps
         run: apk add --no-cache ${{ env.DEPS_APK }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
 
       - name: Build
         run: cargo build --no-default-features --features dbus,xdp-gnome-screencast
@@ -121,18 +121,18 @@ jobs:
       PROPTEST_MAX_SHRINK_ITERS: 200000
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           show-progress: false
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }}
+          sudo apt update -y
+          sudo apt install -y ${{ env.DEPS_APT }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
 
       - name: Build tests
         run: cargo test --no-run --all --exclude niri-visual-tests --release
@@ -148,18 +148,18 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           show-progress: false
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+          sudo apt update -y
+          sudo apt install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
 
       - name: Build
         run: cargo build --package niri-visual-tests
@@ -172,18 +172,18 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           show-progress: false
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+          sudo apt update -y
+          sudo apt install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
-      - uses: dtolnay/rust-toolchain@1.80.1
+      - uses: dtolnay/rust-toolchain@a95ba095f1bb34d2845e791825c378683c8c6261 # v1.80.1
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
 
       - run: cargo check --all-targets
 
@@ -195,20 +195,20 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           show-progress: false
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
+          sudo apt update -y
+          sudo apt install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
         with:
           components: clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
 
       - name: Run clippy
         run: cargo clippy --all --all-targets
@@ -217,11 +217,11 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           show-progress: false
 
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
         with:
           components: rustfmt
 
@@ -230,19 +230,17 @@ jobs:
 
   fedora:
     runs-on: ubuntu-24.04
-    container: fedora:41
+    container: fedora:43@sha256:2ad3073554aef41c15b2c52e968ec0540c931bc3dab8c599ca6eb6f32f3f2d14 # https://hub.docker.com/layers/library/fedora/43/images/sha256-b8f499bee9c97c7c1be0ff7b8b6e4ab72af4216c30d2365c9d474ce2d5c5fd9a
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           show-progress: false
 
       - name: Install dependencies
-        run: |
-          sudo dnf update -y
-          sudo dnf install -y ${{ env.DEPS_DNF }} libadwaita-devel
+        run: sudo dnf5 install -y ${{ env.DEPS_DNF }} libadwaita-devel
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
       - run: cargo build --all
 
   freebsd:
@@ -252,19 +250,19 @@ jobs:
       CARGO_HOME: /home/runner/work/niri/niri/cargo-home
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           show-progress: false
 
       # Required for the rust-cache action to work.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
 
       # Remove man-db triggers to speed up Ubuntu upgrade by a minute or two during vmactions/freebsd-vm action run.
       - run: |
           sudo rm /var/lib/dpkg/info/man-db.*
 
       - name: Build
-        uses: vmactions/freebsd-vm@966989c456d41351f095a421f60e71342d3bce41  # v1.2.1
+        uses: vmactions/freebsd-vm@0cd283ca698d48b59cda444a9948f48a30709627 # v1.2.8
         with:
           copyback: false
           prepare: |
@@ -285,23 +283,25 @@ jobs:
 
   nix:
     runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Free Disk Space (Ubuntu)
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: wimpysworld/nothing-but-nix@10c936d9e46521bf923f75458e0cbd4fa309300d # main
         with:
-          dotnet: false
-          large-packages: false
-        
-      - uses: actions/checkout@v4
+          hatchet-protocol: rampage
+
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           show-progress: false
 
       - name: Check flake inputs
-        uses: DeterminateSystems/flake-checker-action@v4
+        uses: DeterminateSystems/flake-checker-action@3164002371bc90729c68af0e24d5aacf20d7c9f6 # v12
         continue-on-error: true
 
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v3
+        uses: DeterminateSystems/nix-installer-action@c5a866b6ab867e88becbed4467b93592bce69f8a # v21
         continue-on-error: true
 
       - run: nix flake check
@@ -315,12 +315,12 @@ jobs:
       contents: write
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           lfs: true
           show-progress: false
 
-      - uses: Andrew-Chen-Wang/github-wiki-action@b7e552d7cb0fa7f83e459012ffc6840fd87bcb83
+      - uses: Andrew-Chen-Wang/github-wiki-action@6448478bd55f1f3f752c93af8ac03207eccc3213 # v5.0.3
         with:
           path: docs/wiki/
 
@@ -332,15 +332,15 @@ jobs:
       contents: write
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           lfs: true
           show-progress: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@1e862dfacbd1d6d858c55d9b792c756523627244 # v7.1.4
         with:
-            enable-cache: true
+          enable-cache: true
 
       - name: Install the project
         run: uv sync --locked --all-extras --dev
@@ -350,7 +350,7 @@ jobs:
         run: uv run mkdocs build
         working-directory: docs/
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6d9817901c499d6b02debbb57edb38d33daa680b # stable
 
       - name: Generate rustdoc documentation
         run: cargo doc --no-deps -p niri-ipc
@@ -361,7 +361,7 @@ jobs:
 
       - name: Deploy documentation
         if: github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./publish
