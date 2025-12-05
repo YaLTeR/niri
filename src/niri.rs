@@ -5762,7 +5762,7 @@ impl Niri {
                 calloop::channel::Event::Closed => (),
             })
             .unwrap();
-
+        let show_notification = !self.config.borrow().screenshot_notification_disable;
         // Prepare to send screenshot completion event back to main thread.
         let (event_tx, event_rx) = calloop::channel::sync_channel::<Option<String>>(1);
         self.event_loop
@@ -5773,6 +5773,7 @@ impl Niri {
                 calloop::channel::Event::Closed => (),
             })
             .unwrap();
+
 
         // Encode and save the image in a thread as it's slow.
         thread::spawn(move || {
@@ -5816,8 +5817,10 @@ impl Niri {
             }
 
             #[cfg(feature = "dbus")]
-            if let Err(err) = crate::utils::show_screenshot_notification(image_path.as_deref()) {
-                warn!("error showing screenshot notification: {err:?}");
+            if show_notification {
+                if let Err(err) = crate::utils::show_screenshot_notification(image_path.as_deref()) {
+                    warn!("error showing screenshot notification: {err:?}");
+                }
             }
 
             // Send screenshot completion event.
