@@ -3273,17 +3273,22 @@ impl Niri {
         let geom = self.global_space.output_geometry(output).unwrap();
         let size = geom.size.to_f64();
 
+        let region_size = Size::new(
+            f64::from(hot_corners.open_region_width.unwrap_or(1)),
+            f64::from(hot_corners.open_region_height.unwrap_or(1)),
+        );
+
         let contains = move |corner: Point<f64, Logical>| {
-            Rectangle::new(corner, Size::new(1., 1.)).contains(pos)
+            Rectangle::new(corner, region_size).contains(pos)
         };
 
-        if hot_corners.top_right && contains(Point::new(size.w - 1., 0.)) {
+        if hot_corners.top_right && contains(Point::new(size.w - region_size.w, 0.)) {
             return true;
         }
-        if hot_corners.bottom_left && contains(Point::new(0., size.h - 1.)) {
+        if hot_corners.bottom_left && contains(Point::new(0., size.h - region_size.h)) {
             return true;
         }
-        if hot_corners.bottom_right && contains(Point::new(size.w - 1., size.h - 1.)) {
+        if hot_corners.bottom_right && contains(Point::new(size.w - region_size.w, size.h - region_size.h)) {
             return true;
         }
 
