@@ -7,7 +7,8 @@ use std::time::Duration;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
-    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
+    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, OutputName, SwitchBinds,
+    Trigger,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -2580,7 +2581,18 @@ impl State {
                 .with_grab(|_, grab| grab_allows_hot_corner(grab))
                 .unwrap_or(true)
         {
-            let timer = Timer::from_duration(Duration::from_millis(1000));
+            let config = self.niri.config.borrow();
+            let hot_corners = under
+                .output
+                .unwrap()
+                .user_data()
+                .get::<OutputName>()
+                .and_then(|name| config.outputs.find(name))
+                .and_then(|c| c.hot_corners)
+                .unwrap_or(config.gestures.hot_corners);
+            let delay = hot_corners.open_delay_ms;
+
+            let timer = Timer::from_duration(Duration::from_millis(u64::from(delay.unwrap_or(0))));
 
             let token = self
                 .niri
@@ -2691,7 +2703,18 @@ impl State {
                 .with_grab(|_, grab| grab_allows_hot_corner(grab))
                 .unwrap_or(true)
         {
-            let timer = Timer::from_duration(Duration::from_millis(1000));
+            let config = self.niri.config.borrow();
+            let hot_corners = under
+                .output
+                .unwrap()
+                .user_data()
+                .get::<OutputName>()
+                .and_then(|name| config.outputs.find(name))
+                .and_then(|c| c.hot_corners)
+                .unwrap_or(config.gestures.hot_corners);
+            let delay = hot_corners.open_delay_ms;
+
+            let timer = Timer::from_duration(Duration::from_millis(u64::from(delay.unwrap_or(0))));
 
             let token = self
                 .niri
