@@ -2378,12 +2378,15 @@ impl State {
     }
 
     fn on_pointer_motion<I: InputBackend>(&mut self, event: I::PointerMotionEvent) {
-        let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
-        // Any of the early returns here mean that the pointer is not inside the hot corner.
-        self.niri.pointer_inside_hot_corner = false;
+        fn cancel_hot_corner_timer(state: &mut State) {
+            if let Some(token) = state.niri.pointer_inside_hot_corner_timer.take() {
+                state.niri.event_loop.remove(token);
+            }
+        }
 
         // We need an output to be able to move the pointer.
         if self.niri.global_space.outputs().next().is_none() {
+            cancel_hot_corner_timer(self);
             return;
         }
 
@@ -2450,6 +2453,7 @@ impl State {
 
                 // I guess a redraw to hide the tablet cursor could be nice? Doesn't matter too
                 // much here I think.
+                cancel_hot_corner_timer(self);
                 return;
             }
         }
@@ -2536,6 +2540,7 @@ impl State {
 
                 pointer.frame(self);
 
+                cancel_hot_corner_timer(self);
                 return;
             }
         }
@@ -2568,15 +2573,29 @@ impl State {
 
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
-        if under.hot_corner && pointer.current_focus().is_none() {
-            if !was_inside_hot_corner
-                && pointer
-                    .with_grab(|_, grab| grab_allows_hot_corner(grab))
-                    .unwrap_or(true)
-            {
-                self.niri.layout.toggle_overview();
-            }
-            self.niri.pointer_inside_hot_corner = true;
+        if under.hot_corner
+            && pointer.current_focus().is_none()
+            && self.niri.pointer_inside_hot_corner_timer.is_none()
+            && pointer
+                .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                .unwrap_or(true)
+        {
+            let timer = Timer::from_duration(Duration::from_millis(1000));
+
+            let token = self
+                .niri
+                .event_loop
+                .insert_source(timer, |_, _, state| {
+                    state.niri.layout.toggle_overview();
+                    TimeoutAction::Drop
+                })
+                .unwrap();
+
+            self.niri.pointer_inside_hot_corner_timer = Some(token);
+        }
+
+        if !under.hot_corner {
+            cancel_hot_corner_timer(self);
         }
 
         // Activate a new confinement if necessary.
@@ -2603,15 +2622,18 @@ impl State {
         &mut self,
         event: I::PointerMotionAbsoluteEvent,
     ) {
-        let was_inside_hot_corner = self.niri.pointer_inside_hot_corner;
-        // Any of the early returns here mean that the pointer is not inside the hot corner.
-        self.niri.pointer_inside_hot_corner = false;
+        fn cancel_hot_corner_timer(state: &mut State) {
+            if let Some(token) = state.niri.pointer_inside_hot_corner_timer.take() {
+                state.niri.event_loop.remove(token);
+            }
+        }
 
         let Some(pos) = self.compute_absolute_location(&event, None).or_else(|| {
             self.global_bounding_rectangle().map(|output_geo| {
                 event.position_transformed(output_geo.size) + output_geo.loc.to_f64()
             })
         }) else {
+            cancel_hot_corner_timer(self);
             return;
         };
 
@@ -2662,15 +2684,29 @@ impl State {
 
         // contents_under() will return no surface when the hot corner should trigger, so
         // pointer.motion() will set the current focus to None.
-        if under.hot_corner && pointer.current_focus().is_none() {
-            if !was_inside_hot_corner
-                && pointer
-                    .with_grab(|_, grab| grab_allows_hot_corner(grab))
-                    .unwrap_or(true)
-            {
-                self.niri.layout.toggle_overview();
-            }
-            self.niri.pointer_inside_hot_corner = true;
+        if under.hot_corner
+            && pointer.current_focus().is_none()
+            && self.niri.pointer_inside_hot_corner_timer.is_none()
+            && pointer
+                .with_grab(|_, grab| grab_allows_hot_corner(grab))
+                .unwrap_or(true)
+        {
+            let timer = Timer::from_duration(Duration::from_millis(1000));
+
+            let token = self
+                .niri
+                .event_loop
+                .insert_source(timer, |_, _, state| {
+                    state.niri.layout.toggle_overview();
+                    TimeoutAction::Drop
+                })
+                .unwrap();
+
+            self.niri.pointer_inside_hot_corner_timer = Some(token);
+        }
+
+        if !under.hot_corner {
+            cancel_hot_corner_timer(self);
         }
 
         self.niri.maybe_activate_pointer_constraint();
