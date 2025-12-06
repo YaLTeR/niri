@@ -19,6 +19,7 @@ use smithay::backend::input::{
     TabletToolTipState, TouchEvent,
 };
 use smithay::backend::libinput::LibinputInputBackend;
+use smithay::input::keyboard::KeyboardHandle;
 use smithay::input::keyboard::{keysyms, FilterResult, Keysym, Layout, ModifiersState};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorIcon, CursorImageStatus, Focus, GestureHoldBeginEvent,
@@ -358,16 +359,18 @@ impl State {
             .is_some_and(KeyboardShortcutsInhibitor::is_active)
     }
 
-    fn on_keyboard<I: InputBackend>(
+    pub fn on_keyboard_real(
         &mut self,
-        event: I::KeyboardKeyEvent,
+        key: Keycode,
+        state: KeyState,
+        time: u32,
+        keyboard: KeyboardHandle<Self>,
         consumed_by_a11y: &mut bool,
     ) {
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
         let serial = SERIAL_COUNTER.next_serial();
-        let time = Event::time_msec(&event);
-        let pressed = event.state() == KeyState::Pressed;
+        let pressed = state == KeyState::Pressed;
 
         // Stop bind key repeat on any release. This won't work 100% correctly in cases like:
         // 1. Press Mod
@@ -395,11 +398,8 @@ impl State {
         // other changes.
         #[cfg(feature = "dbus")]
         let block = {
-            let block = self.a11y_process_key(
-                Duration::from_millis(u64::from(time)),
-                event.key_code(),
-                event.state(),
-            );
+            let block = self.a11y_process_key(Duration::from_millis(u64::from(time)), key, state);
+
             if block != KbMonBlock::Pass {
                 *consumed_by_a11y = true;
             }
@@ -413,14 +413,14 @@ impl State {
         #[cfg(not(feature = "dbus"))]
         let _ = consumed_by_a11y;
 
-        let Some(Some(bind)) = self.niri.seat.get_keyboard().unwrap().input(
+        let Some(Some(bind)) = keyboard.input(
             self,
-            event.key_code(),
-            event.state(),
+            key,
+            state,
             serial,
             time,
             |this, mods, keysym| {
-                let key_code = event.key_code();
+                let key_code = key;
                 let modified = keysym.modified_sym();
                 let raw = keysym.raw_latin_sym_or_raw_current_sym();
                 let modifiers = modifiers_from_state(*mods);
@@ -553,6 +553,19 @@ impl State {
         self.handle_bind(bind.clone());
 
         self.start_key_repeat(bind);
+    }
+    fn on_keyboard<I: InputBackend>(
+        &mut self,
+        event: I::KeyboardKeyEvent,
+        consumed_by_a11y: &mut bool,
+    ) {
+        self.on_keyboard_real(
+            event.key_code(),
+            event.state(),
+            Event::time_msec(&event),
+            self.niri.seat.get_keyboard().unwrap(),
+            consumed_by_a11y,
+        );
     }
 
     fn start_key_repeat(&mut self, bind: Bind) {
