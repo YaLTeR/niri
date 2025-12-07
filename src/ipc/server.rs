@@ -17,8 +17,8 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    Action, Event, Hidden, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request,
+    Response, Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -277,9 +277,25 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let outputs = ipc_outputs.values().cloned().map(|o| (o.name.clone(), o));
             Response::Outputs(outputs.collect())
         }
-        Request::Workspaces => {
+        Request::Workspaces(hidden) => {
             let state = ctx.event_stream_state.borrow();
-            let workspaces = state.workspaces.workspaces.values().cloned().collect();
+            let workspaces = match hidden {
+                Some(Hidden::Include) => state.workspaces.workspaces.values().cloned().collect(),
+                Some(Hidden::Exclusive) => state
+                    .workspaces
+                    .workspaces
+                    .values()
+                    .filter(|workspace| workspace.is_hidden)
+                    .cloned()
+                    .collect(),
+                Some(Hidden::Exclude) | None => state
+                    .workspaces
+                    .workspaces
+                    .values()
+                    .filter(|workspace| !workspace.is_hidden)
+                    .cloned()
+                    .collect(),
+            };
             Response::Workspaces(workspaces)
         }
         Request::Windows => {
@@ -658,6 +674,7 @@ impl State {
                         is_urgent: ws.is_urgent(),
                         is_active: mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx),
                         is_focused: Some(id) == focused_ws_id,
+                        is_hidden: ws.hidden,
                         active_window_id: ws.active_window().map(|win| win.id().get()),
                     }
                 })

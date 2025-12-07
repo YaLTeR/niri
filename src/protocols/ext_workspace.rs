@@ -91,6 +91,9 @@ pub fn refresh(state: &mut State) {
     // Remove workspaces that no longer exist (sending workspace_leave to workspace groups).
     let mut seen_workspaces = HashMap::new();
     for (mon, _, ws) in state.niri.layout.workspaces() {
+        if ws.hidden {
+            continue;
+        }
         let output = mon.map(|mon| mon.output());
         seen_workspaces.insert(ws.id(), output);
     }
@@ -133,6 +136,7 @@ pub fn refresh(state: &mut State) {
 
     // Update existing workspaces and create new ones.
     for (mon, ws_idx, ws) in state.niri.layout.workspaces() {
+        if ws.hidden {continue;}
         changed |= refresh_workspace(protocol_state, mon, ws_idx, ws);
     }
 
@@ -201,9 +205,6 @@ fn refresh_workspace_group(protocol_state: &mut ExtWorkspaceManagerState, output
     for group in &data.instances {
         let manager: &ExtWorkspaceManagerV1 = group.data().unwrap();
         for (_, ws) in protocol_state.workspaces.iter() {
-            if ws.output.as_ref() != Some(output) {
-                continue;
-            }
             for workspace in &ws.instances {
                 if workspace.data() == Some(manager) {
                     group.workspace_enter(workspace);
@@ -387,12 +388,17 @@ fn refresh_workspace(
 
             for manager in protocol_state.instances.keys() {
                 if let Some(client) = manager.client() {
+                    if ws.hidden {
+                        continue;
+                    }
                     data.add_instance::<State>(&protocol_state.display, &client, manager);
                 }
             }
 
             send_workspace_enter_leave(&protocol_state.workspace_groups, &data, true);
-            entry.insert(data);
+            if !ws.hidden {
+                entry.insert(data);
+            }
             true
         }
     }

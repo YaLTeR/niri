@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
-use niri_ipc::{Action, OutputAction};
+use niri_ipc::{Action, OutputAction, Hidden};
 
 use crate::utils::version;
 
@@ -64,7 +64,9 @@ pub enum Msg {
     /// List connected outputs.
     Outputs,
     /// List workspaces.
-    Workspaces,
+    Workspaces {
+        hidden: Option<Hidden>,
+    },
     /// List open windows.
     Windows,
     /// List open layer-shell surfaces.

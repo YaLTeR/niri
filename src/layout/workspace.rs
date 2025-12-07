@@ -110,6 +110,10 @@ pub struct Workspace<W: LayoutElement> {
 
     /// Unique ID of this workspace.
     id: WorkspaceId,
+
+    /// whether we should hide this workspace for indexing
+    pub hidden: bool,
+
 }
 
 #[derive(Debug, Clone)]
@@ -267,6 +271,7 @@ impl<W: LayoutElement> Workspace<W> {
             clock,
             base_options,
             options,
+            hidden: config.as_mut().is_some_and(|c| c.hidden.is_some_and(|hidden| hidden)),
             name: config.map(|c| c.name.0),
             layout_config,
             id: WorkspaceId::next(),
@@ -331,6 +336,7 @@ impl<W: LayoutElement> Workspace<W> {
             clock,
             base_options,
             options,
+            hidden: config.as_mut().is_some_and(|c| c.hidden.is_some_and(|hidden| hidden)),
             name: config.map(|c| c.name.0),
             layout_config,
             id: WorkspaceId::next(),

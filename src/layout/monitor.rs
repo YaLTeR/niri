@@ -982,8 +982,20 @@ impl<W: LayoutElement> Monitor<W> {
                 let current = gesture.current_idx;
                 let new = current.ceil() - 1.;
                 new.clamp(0., (self.workspaces.len() - 1) as f64) as usize
+            },
+            // If the workspace is hidden, we shouldn't switch to it. 
+            _ => {
+                let mut new_idx = self.active_workspace_idx.saturating_sub(1);
+                while new_idx > 0 && self.workspaces[new_idx].hidden {
+                    new_idx = new_idx.saturating_sub(1);
+                }
+                // Don't move if there is only hidden above
+                if self.workspaces[new_idx].hidden {
+                    self.active_workspace_idx
+                } else {
+                    new_idx
+                }
             }
-            _ => self.active_workspace_idx.saturating_sub(1),
         };
 
         self.activate_workspace(new_idx);
@@ -997,7 +1009,19 @@ impl<W: LayoutElement> Monitor<W> {
                 let new = current.floor() + 1.;
                 new.clamp(0., (self.workspaces.len() - 1) as f64) as usize
             }
-            _ => min(self.active_workspace_idx + 1, self.workspaces.len() - 1),
+            // If the workspace is hidden, we shouldn't switch to it. 
+            _ => {
+                let max = self.workspaces.len() - 1;
+                let mut new_idx = min(self.active_workspace_idx + 1, max);
+                while new_idx < max && self.workspaces[new_idx].hidden {
+                    new_idx += 1;
+                }
+                if self.workspaces[new_idx].hidden {
+                    self.active_workspace_idx
+                } else {
+                    new_idx
+                }
+            }
         };
 
         self.activate_workspace(new_idx);
@@ -1503,7 +1527,7 @@ impl<W: LayoutElement> Monitor<W> {
         let geo = self.workspaces_render_geo();
         zip(self.workspaces.iter(), geo)
             // Cull out workspaces outside the output.
-            .filter(move |(_ws, geo)| geo.intersection(output_geo).is_some())
+            .filter(move |(ws, geo)| !ws.hidden && geo.intersection(output_geo).is_some())
     }
 
     pub fn workspaces_with_render_geo_idx(
@@ -1514,7 +1538,7 @@ impl<W: LayoutElement> Monitor<W> {
         let geo = self.workspaces_render_geo();
         zip(self.workspaces.iter().enumerate(), geo)
             // Cull out workspaces outside the output.
-            .filter(move |(_ws, geo)| geo.intersection(output_geo).is_some())
+            .filter(move |(ws, geo)| !ws.1.hidden && geo.intersection(output_geo).is_some())
     }
 
     pub fn workspaces_with_render_geo_mut(
@@ -1526,7 +1550,7 @@ impl<W: LayoutElement> Monitor<W> {
         let geo = self.workspaces_render_geo();
         zip(self.workspaces.iter_mut(), geo)
             // Cull out workspaces outside the output.
-            .filter(move |(_ws, geo)| !cull || geo.intersection(output_geo).is_some())
+            .filter(move |(ws, geo)| !ws.hidden && !cull || geo.intersection(output_geo).is_some())
     }
 
     pub fn workspace_under(

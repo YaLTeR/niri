@@ -70,7 +70,7 @@ pub enum Request {
     /// Request information about connected outputs.
     Outputs,
     /// Request information about workspaces.
-    Workspaces,
+    Workspaces(Option<Hidden>),
     /// Request information about open windows.
     Windows,
     /// Request information about layer-shell surfaces.
@@ -117,6 +117,23 @@ pub enum Request {
     ReturnError,
     /// Request information about the overview.
     OverviewState,
+}
+
+
+/// For Requests that filter out some of its items
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum Hidden {
+    /// Include hidden with normal request
+    #[cfg_attr(feature = "clap", value(name = "include"))]
+    Include,
+    /// Exclude hidden with normal request
+    #[cfg_attr(feature = "clap", value(name = "exclude"))]
+    Exclude,
+    /// Only show hidden
+    #[cfg_attr(feature = "clap", value(name = "exclusive"))]
+    Exclusive,
 }
 
 /// Reply from niri to client.
@@ -1414,6 +1431,8 @@ pub struct Workspace {
     pub is_focused: bool,
     /// Id of the active window on this workspace, if any.
     pub active_window_id: Option<u64>,
+    /// Is this workspace hidden
+    pub is_hidden: bool,
 }
 
 /// Configured keyboard layouts.
