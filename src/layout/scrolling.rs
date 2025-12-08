@@ -991,11 +991,19 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         if activate {
             if was_empty {
-                // For the first window, set view_offset to -anchor_offset so that:
-                // - For left anchor: view_offset = 0, columns appear from the left
-                // - For right anchor: view_offset = -anchor_offset, columns appear from the right
-                self.view_offset = ViewOffset::Static(-self.anchor_offset());
-                self.active_column_idx = idx;
+                // For the first window on an empty workspace.
+                if matches!(self.options.layout.anchor, Anchor::Right) {
+                    // Right anchor: Set view_offset to -anchor_offset so columns appear from the right.
+                    self.view_offset = ViewOffset::Static(-self.anchor_offset());
+                    self.active_column_idx = idx;
+                } else {
+                    // Left anchor: Use standard logic which applies padding.
+                    self.view_offset = ViewOffset::Static(0.);
+                    self.view_offset = ViewOffset::Static(
+                        self.compute_new_view_offset_for_column(None, idx, None),
+                    );
+                    self.active_column_idx = idx;
+                }
             } else if matches!(self.options.layout.anchor, Anchor::Right) {
                 // For right anchor, position the view to show as many columns as possible from the right.
                 // This mirrors left anchor behavior: show all columns if they fit, otherwise align
