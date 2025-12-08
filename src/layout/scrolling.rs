@@ -1006,9 +1006,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     self.active_column_idx = idx;
                 }
             } else if matches!(self.options.layout.anchor, Anchor::Right) {
-                // For right anchor, position the view to show as many columns as possible from the right.
-                // This mirrors left anchor behavior: show all columns if they fit, otherwise align
-                // the newest column to the edge (left for right anchor, right for left anchor).
+                // For right anchor, show as many columns as possible from the right.
                 let working_width = self.working_area.size.w;
                 let total_width = self.total_columns_width();
 
