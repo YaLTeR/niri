@@ -993,7 +993,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             if was_empty {
                 // For the first window on an empty workspace.
                 if matches!(self.options.layout.anchor, Anchor::Right) {
-                    // Right anchor: Set view_offset to -anchor_offset so columns appear from the right.
+                    // Right anchor: Set view_offset to -anchor_offset so columns appear from the
+                    // right.
                     self.view_offset = ViewOffset::Static(-self.anchor_offset());
                     self.active_column_idx = idx;
                 } else {
