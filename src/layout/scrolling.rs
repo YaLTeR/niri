@@ -1018,8 +1018,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 self.active_column_idx = idx;
             } else {
                 // Left anchor - use standard activation logic
-                let prev_offset = (idx == self.active_column_idx + 1)
-                    .then(|| self.view_offset.stationary());
+                let prev_offset =
+                    (idx == self.active_column_idx + 1).then(|| self.view_offset.stationary());
 
                 let anim_config =
                     anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
