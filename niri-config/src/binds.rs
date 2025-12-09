@@ -322,6 +322,7 @@ pub enum Action {
     ExpandColumnToAvailableWidth,
     SwitchLayout(#[knuffel(argument, str)] LayoutSwitchTarget),
     ShowHotkeyOverlay,
+    ToggleWorkspaceVisibility(#[knuffel(argument, str)] WorkspaceReferenceArg),
     MoveWorkspaceToMonitorLeft,
     MoveWorkspaceToMonitorRight,
     MoveWorkspaceToMonitorDown,

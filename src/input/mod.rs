@@ -7,7 +7,7 @@ use std::time::Duration;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
-    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
+    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger, WorkspaceReference,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -2374,6 +2374,12 @@ impl State {
                     self.niri.queue_redraw_mru_output();
                 }
             }
+            Action::ToggleWorkspaceVisibility(workspace_reference_arg) => {
+                let workspace_ref: WorkspaceReference = workspace_reference_arg.into();
+                if let Some(workspace) = self.niri.layout.find_workspace_by_ref(workspace_ref) {
+                    workspace.hidden = !workspace.hidden;
+                }
+            },
         }
     }
 
