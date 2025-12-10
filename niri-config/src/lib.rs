@@ -383,11 +383,11 @@ where
                             }
                         }
                         Err(err) => {
-                            // For optional includes, only skip NotFound errors
-                            // Other errors (permissions, etc.) should still be reported
-                            let should_emit_error = !optional || err.kind() != std::io::ErrorKind::NotFound;
-
-                            if should_emit_error {
+                            if optional && err.kind() == std::io::ErrorKind::NotFound {
+                                // Warn about missing optional includes
+                                warn!("optional include not found: {path:?}");
+                            } else {
+                                // Report all other errors normally
                                 ctx.emit_error(DecodeError::missing(
                                     node,
                                     format!("failed to read included config from {path:?}: {err}"),
