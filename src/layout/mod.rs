@@ -3229,7 +3229,7 @@ impl<W: LayoutElement> Layout<W> {
             }
         }
 
-        if let MonitorSet::Normal {
+        let tracked_window = if let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
             ..
@@ -3294,6 +3294,8 @@ impl<W: LayoutElement> Layout<W> {
 
             removed.tile.stop_move_animations();
 
+            let window_id = removed.tile.window().id().clone();
+
             let mon = &mut monitors[new_idx];
             mon.add_tile(
                 removed.tile,
@@ -3307,6 +3309,8 @@ impl<W: LayoutElement> Layout<W> {
                 removed.is_full_width,
                 removed.is_floating,
             );
+
+
             if activate.map_smart(|| false) {
                 *active_monitor_idx = new_idx;
             }
@@ -3315,6 +3319,14 @@ impl<W: LayoutElement> Layout<W> {
             if mon.workspace_switch.is_none() {
                 monitors[mon_idx].clean_up_workspaces();
             }
+
+            Some(window_id)
+        } else {
+            None
+        };
+
+        if let Some(window_id) = tracked_window {
+            self.start_open_animation_for_window(&window_id);
         }
     }
 
@@ -3335,7 +3347,14 @@ impl<W: LayoutElement> Layout<W> {
                 .position(|mon| &mon.output == output)
                 .unwrap();
 
-            let current = &mut monitors[*active_monitor_idx];
+            let current_idx = *active_monitor_idx;
+
+            // If same monitor, do not
+            if current_idx == new_idx {
+                return;
+            }
+
+            let current = &mut monitors[current_idx];
             let ws = current.active_workspace();
 
             if ws.floating_is_active() {
@@ -3347,10 +3366,19 @@ impl<W: LayoutElement> Layout<W> {
                 return;
             };
 
+            let window_ids: Vec<_> = column
+                .tiles()
+                .map(|(tile, _pos)| tile.window().id().clone())
+                .collect();
+
             let workspace_idx = target_ws_idx
                 .unwrap_or(monitors[new_idx].active_workspace_idx)
                 .min(monitors[new_idx].workspaces.len() - 1);
             self.add_column_by_idx(new_idx, workspace_idx, column, activate);
+
+            for window_id in window_ids {
+                self.start_open_animation_for_window(&window_id);
+            }
         }
     }
 
