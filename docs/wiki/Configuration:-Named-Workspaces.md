@@ -46,6 +46,13 @@ Before, it could only use the connector name.
 This means that named workspaces "stick" to their original output in more cases, reflecting their more permanent nature.
 Explicitly moving a named workspace to a different monitor will still update its original output.
 
+<sup>Since: XX.XX</sup> Named workspaces can be set to hidden.  
+```kdl
+workspace "social-media" {
+  hidden true
+}
+```
+
 ### Layout config overrides
 
 <sup>Since: 25.11</sup>

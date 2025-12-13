@@ -17,8 +17,8 @@ use futures_util::{select_biased, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, Fu
 use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
-    Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    Action, Event, Hidden, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request,
+    Response, Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -279,7 +279,13 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
         }
         Request::Workspaces => {
             let state = ctx.event_stream_state.borrow();
-            let workspaces = state.workspaces.workspaces.values().cloned().collect();
+            let workspaces = state
+                .workspaces
+                .workspaces
+                .values()
+                .filter(|workspace| !workspace.is_hidden)
+                .cloned()
+                .collect();
             Response::Workspaces(workspaces)
         }
         Request::Windows => {
@@ -591,6 +597,9 @@ impl State {
         let mut seen = HashSet::new();
         let mut need_workspaces_changed = false;
         for (mon, ws_idx, ws) in layout.workspaces() {
+            if ws.hidden {
+                continue;
+            }
             let id = ws.id().get();
             seen.insert(id);
 
@@ -648,17 +657,22 @@ impl State {
 
             let workspaces = layout
                 .workspaces()
-                .map(|(mon, ws_idx, ws)| {
-                    let id = ws.id().get();
-                    Workspace {
-                        id,
-                        idx: u8::try_from(ws_idx + 1).unwrap_or(u8::MAX),
-                        name: ws.name().cloned(),
-                        output: mon.map(|mon| mon.output_name().clone()),
-                        is_urgent: ws.is_urgent(),
-                        is_active: mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx),
-                        is_focused: Some(id) == focused_ws_id,
-                        active_window_id: ws.active_window().map(|win| win.id().get()),
+                .filter_map(|(mon, ws_idx, ws)| {
+                    if ws.hidden {
+                        None
+                    } else {
+                        let id = ws.id().get();
+                        Some(Workspace {
+                            id,
+                            idx: u8::try_from(ws_idx + 1).unwrap_or(u8::MAX),
+                            name: ws.name().cloned(),
+                            output: mon.map(|mon| mon.output_name().clone()),
+                            is_urgent: ws.is_urgent(),
+                            is_active: mon.is_some_and(|mon| mon.active_workspace_idx() == ws_idx),
+                            is_focused: Some(id) == focused_ws_id,
+                            is_hidden: ws.hidden,
+                            active_window_id: ws.active_window().map(|win| win.id().get()),
+                        })
                     }
                 })
                 .collect();
