@@ -16,16 +16,16 @@ rust-version = "1.80.1"
 
 [workspace.dependencies]
 anyhow = "1.0.100"
-bitflags = "2.9.4"
-clap = { version = "4.5.48", features = ["derive"] }
-insta = "1.43.2"
+bitflags = "2.10.0"
+clap = { version = "4.5.53", features = ["derive"] }
+insta = "1.44.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
-tracing = { version = "0.1.41", features = ["max_level_trace", "release_max_level_debug"] }
+tracing = { version = "0.1.43", features = ["max_level_trace", "release_max_level_debug"] }
 # 0.3.20 filters out all ANSI codes to "fix a security issue" while also breaking
 # everyone who relied on them for color output, with no fallback available.
 # https://github.com/tokio-rs/tracing/issues/3378
-tracing-subscriber = { version = "=0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "=0.3.22", features = ["env-filter"] }
 tracy-client = { version = "0.18.3", default-features = false }
 
 [workspace.dependencies.smithay]
