@@ -597,6 +597,9 @@ impl State {
         let mut seen = HashSet::new();
         let mut need_workspaces_changed = false;
         for (mon, ws_idx, ws) in layout.workspaces() {
+            if ws.hidden {
+                continue;
+            }
             let id = ws.id().get();
             seen.insert(id);
 
