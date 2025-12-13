@@ -41,7 +41,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
             output: output.clone(),
             action: action.clone(),
         },
-        Msg::Workspaces { hidden } => Request::Workspaces(*hidden),
+        Msg::Workspaces => Request::Workspaces,
         Msg::Windows => Request::Windows,
         Msg::Layers => Request::Layers,
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
@@ -338,7 +338,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!("The change will apply when it is connected.");
             }
         }
-        Msg::Workspaces { hidden: _ } => {
+        Msg::Workspaces => {
             let Response::Workspaces(mut response) = response else {
                 bail!("unexpected response: expected Workspaces, got {response:?}");
             };

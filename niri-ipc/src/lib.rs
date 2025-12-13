@@ -70,7 +70,7 @@ pub enum Request {
     /// Request information about connected outputs.
     Outputs,
     /// Request information about workspaces.
-    Workspaces(Option<Hidden>),
+    Workspaces,
     /// Request information about open windows.
     Windows,
     /// Request information about layer-shell surfaces.

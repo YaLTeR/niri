@@ -277,25 +277,9 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let outputs = ipc_outputs.values().cloned().map(|o| (o.name.clone(), o));
             Response::Outputs(outputs.collect())
         }
-        Request::Workspaces(hidden) => {
+        Request::Workspaces => {
             let state = ctx.event_stream_state.borrow();
-            let workspaces = match hidden {
-                Some(Hidden::Include) => state.workspaces.workspaces.values().cloned().collect(),
-                Some(Hidden::Exclusive) => state
-                    .workspaces
-                    .workspaces
-                    .values()
-                    .filter(|workspace| workspace.is_hidden)
-                    .cloned()
-                    .collect(),
-                Some(Hidden::Exclude) | None => state
-                    .workspaces
-                    .workspaces
-                    .values()
-                    .filter(|workspace| !workspace.is_hidden)
-                    .cloned()
-                    .collect(),
-            };
+            let workspaces = state.workspaces.workspaces.values().filter(|workspace| !workspace.is_hidden).cloned().collect();
             Response::Workspaces(workspaces)
         }
         Request::Windows => {

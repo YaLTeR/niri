@@ -540,7 +540,9 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn update_output_size(&mut self) {
-        let output = self.output.as_ref().unwrap();
+        let Some(output) = self.output.as_ref() else {
+            return;
+        };
         let scale = output.current_scale();
         let transform = output.current_transform();
         let view_size = output_size(output);

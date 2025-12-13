@@ -64,9 +64,7 @@ pub enum Msg {
     /// List connected outputs.
     Outputs,
     /// List workspaces.
-    Workspaces {
-        hidden: Option<Hidden>,
-    },
+    Workspaces,
     /// List open windows.
     Windows,
     /// List open layer-shell surfaces.
