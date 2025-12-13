@@ -291,7 +291,21 @@ where
                 }
 
                 "include" => {
-                    let path: PathBuf = utils::parse_arg_node("include", node, ctx)?;
+                    // Parse the path argument
+                    let mut iter_args = node.arguments.iter();
+                    let path_val = iter_args.next().ok_or_else(|| {
+                        DecodeError::missing(node, "additional argument for include path is required")
+                    })?;
+                    let path: PathBuf = knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
+
+                    // Parse the optional property
+                    let mut optional = false;
+                    for (name, val) in &node.properties {
+                        if &***name == "optional" {
+                            optional = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                        }
+                    }
+
                     let base = ctx.get::<BasePath>().unwrap();
                     let path = base.0.join(path);
 
@@ -369,10 +383,16 @@ where
                             }
                         }
                         Err(err) => {
-                            ctx.emit_error(DecodeError::missing(
-                                node,
-                                format!("failed to read included config from {path:?}: {err}"),
-                            ));
+                            if optional && err.kind() == std::io::ErrorKind::NotFound {
+                                // Warn about missing optional includes
+                                warn!("optional include not found: {path:?}");
+                            } else {
+                                // Report all other errors normally
+                                ctx.emit_error(DecodeError::missing(
+                                    node,
+                                    format!("failed to read included config from {path:?}: {err}"),
+                                ));
+                            }
                         }
                     }
                 }
