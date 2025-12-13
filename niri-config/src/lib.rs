@@ -1343,6 +1343,15 @@ mod tests {
                         },
                     ),
                 },
+                opacity_transition: OpacityTransition {
+                    enabled: false,
+                    duration_ms: 200,
+                    flash: FocusOpacity {
+                        enabled: false,
+                        flash_opacity: 0.8,
+                        disable_on_solo: true,
+                    },
+                },
                 preset_column_widths: [
                     Proportion(
                         0.25,
