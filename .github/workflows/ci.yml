@@ -255,9 +255,6 @@ jobs:
         with:
           show-progress: false
 
-      # Required for the rust-cache action to work.
-      - uses: dtolnay/rust-toolchain@stable
-
       # Remove man-db triggers to speed up Ubuntu upgrade by a minute or two during vmactions/freebsd-vm action run.
       - run: |
           sudo rm /var/lib/dpkg/info/man-db.*
