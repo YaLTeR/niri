@@ -9,6 +9,8 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
+use serde::{Serialize, Deserialize};
+
 use crate::{Event, KeyboardLayouts, Window, Workspace};
 
 /// Part of the state communicated via the event stream.
@@ -30,7 +32,7 @@ pub trait EventStreamStatePart {
 /// just-opened window *after* an [`Event::WorkspaceActiveWindowChanged`] for that window. Between
 /// these two events, the workspace active window id refers to a window that does not yet exist in
 /// the windows state part.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct EventStreamState {
     /// State of workspaces.
     pub workspaces: WorkspacesState,
@@ -49,35 +51,35 @@ pub struct EventStreamState {
 }
 
 /// The workspaces state communicated over the event stream.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct WorkspacesState {
     /// Map from a workspace id to the workspace.
     pub workspaces: HashMap<u64, Workspace>,
 }
 
 /// The windows state communicated over the event stream.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct WindowsState {
     /// Map from a window id to the window.
     pub windows: HashMap<u64, Window>,
 }
 
 /// The keyboard layout state communicated over the event stream.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct KeyboardLayoutsState {
     /// Configured keyboard layouts.
     pub keyboard_layouts: Option<KeyboardLayouts>,
 }
 
 /// The overview state communicated over the event stream.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct OverviewState {
     /// Whether the overview is currently open.
     pub is_open: bool,
 }
 
 /// The config state communicated over the event stream.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct ConfigState {
     /// Whether the last config load attempt had failed.
     pub failed: bool,
