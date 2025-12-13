@@ -44,7 +44,8 @@ use self::spatial_movement_grab::SpatialMovementGrab;
 #[cfg(feature = "dbus")]
 use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
-use crate::layout::{ActivateWindow, LayoutElement as _};
+use crate::layout::workspace::WorkspaceId;
+use crate::layout::{ActivateWindow, LayoutElement as _, monitor};
 use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
@@ -2374,11 +2375,8 @@ impl State {
                     self.niri.queue_redraw_mru_output();
                 }
             }
-            Action::ToggleWorkspaceVisibility(workspace_reference_arg) => {
-                let workspace_ref: WorkspaceReference = workspace_reference_arg.into();
-                if let Some(workspace) = self.niri.layout.find_workspace_by_ref(workspace_ref) {
-                    workspace.hidden = !workspace.hidden;
-                }
+            Action::ToggleWorkspaceVisibility(workspace_name) => {
+                self.niri.layout.toggle_workspace_visibility(workspace_name);
             },
         }
     }

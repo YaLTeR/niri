@@ -111,9 +111,12 @@ pub struct Workspace<W: LayoutElement> {
     /// Unique ID of this workspace.
     id: WorkspaceId,
 
+    /// Hidden workspaces need to track their original idx
+    ///
+    pub original_idx: Option<usize>,
+
     /// whether we should hide this workspace for indexing
     pub hidden: bool,
-
 }
 
 #[derive(Debug, Clone)]
@@ -255,6 +258,9 @@ impl<W: LayoutElement> Workspace<W> {
 
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
+        let is_hidden = config
+            .as_mut()
+            .is_some_and(|c| c.hidden.is_some_and(|hidden| hidden));
 
         Self {
             scrolling,
@@ -271,7 +277,8 @@ impl<W: LayoutElement> Workspace<W> {
             clock,
             base_options,
             options,
-            hidden: config.as_mut().is_some_and(|c| c.hidden.is_some_and(|hidden| hidden)),
+            original_idx: None, // We don't know this yet. 
+            hidden: is_hidden,
             name: config.map(|c| c.name.0),
             layout_config,
             id: WorkspaceId::next(),
@@ -321,6 +328,10 @@ impl<W: LayoutElement> Workspace<W> {
         let shadow_config =
             compute_workspace_shadow_config(options.overview.workspace_shadow, view_size);
 
+        let is_hidden = config
+            .as_mut()
+            .is_some_and(|c| c.hidden.is_some_and(|hidden| hidden));
+
         Self {
             scrolling,
             floating,
@@ -336,7 +347,8 @@ impl<W: LayoutElement> Workspace<W> {
             clock,
             base_options,
             options,
-            hidden: config.as_mut().is_some_and(|c| c.hidden.is_some_and(|hidden| hidden)),
+            original_idx: None,
+            hidden: is_hidden,
             name: config.map(|c| c.name.0),
             layout_config,
             id: WorkspaceId::next(),

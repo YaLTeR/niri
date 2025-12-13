@@ -136,7 +136,9 @@ pub fn refresh(state: &mut State) {
 
     // Update existing workspaces and create new ones.
     for (mon, ws_idx, ws) in state.niri.layout.workspaces() {
-        if ws.hidden {continue;}
+        if ws.hidden {
+            continue;
+        }
         changed |= refresh_workspace(protocol_state, mon, ws_idx, ws);
     }
 
