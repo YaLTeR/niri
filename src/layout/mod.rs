@@ -691,7 +691,6 @@ impl<W: LayoutElement> Layout<W> {
 
         let is_hidden = monitor.workspaces[ws_idx].hidden;
 
-
         if is_hidden {
             let original_idx = monitor.workspaces[ws_idx].original_idx.unwrap_or(ws_idx);
             let mut ws = monitor.remove_workspace_by_idx(ws_idx);
@@ -700,10 +699,7 @@ impl<W: LayoutElement> Layout<W> {
             monitor.insert_workspace(ws, original_idx, false);
         }
         else {
-            let mut ws = monitor.remove_workspace_by_idx(ws_idx);
-            ws.original_idx = Some(ws_idx);
-            ws.hidden = true;
-            monitor.workspaces.push(ws);
+            monitor.move_workspace_to_hidden(ws_idx);
         }
     }
 
