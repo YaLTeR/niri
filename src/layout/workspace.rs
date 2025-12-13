@@ -1151,7 +1151,6 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn align_column_left(&mut self) {
         if self.floating_is_active.get() {
             // TODO: Implement align window left
-            self.floating.center_window(None);
         } else {
             self.scrolling.align_column_left();
         }
@@ -1168,7 +1167,6 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn align_column_right(&mut self) {
         if self.floating_is_active.get() {
             // TODO: Implement align window right
-            self.floating.center_window(None);
         } else {
             self.scrolling.align_column_right();
         }
