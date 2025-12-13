@@ -18,6 +18,7 @@ use solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use self::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use self::texture::{TextureBuffer, TextureRenderElement};
 
+pub mod blur;
 pub mod border;
 pub mod clipped_surface;
 pub mod damage;
@@ -26,6 +27,7 @@ pub mod gradient_fade_texture;
 pub mod memory;
 pub mod offscreen;
 pub mod primary_gpu_texture;
+pub mod render_data;
 pub mod render_elements;
 pub mod renderer;
 pub mod resize;

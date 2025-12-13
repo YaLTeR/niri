@@ -240,6 +240,10 @@ impl LayoutElement for TestWindow {
 
     fn set_floating(&mut self, _floating: bool) {}
 
+    fn is_floating(&self) -> bool {
+        false
+    }
+
     fn sizing_mode(&self) -> SizingMode {
         self.0.sizing_mode.get()
     }
