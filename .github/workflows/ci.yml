@@ -274,7 +274,7 @@ jobs:
 
             cargo fetch
 
-            ( cd $CARGO_HOME/git/checkouts/pipewire-rs-*/*/; patch -p2 < $CARGO_HOME/../patch-pipewire_init; )
+            ( cd $CARGO_HOME/registry/src/index.crates.io-*/; patch -p1 < $CARGO_HOME/../patch-pipewire_init; )
 
             cargo build \
               --offline \
