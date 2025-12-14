@@ -93,7 +93,6 @@ smithay-drm-extras.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
 tracy-client.workspace = true
-url = { version = "2.5.7", optional = true }
 wayland-backend = "0.3.11"
 wayland-scanner = "0.31.7"
 xcursor = "0.3.10"
@@ -130,7 +129,7 @@ xshell = "0.2.7"
 [features]
 default = ["dbus", "systemd", "xdp-gnome-screencast"]
 # Enables D-Bus support (serve various freedesktop and GNOME interfaces, accessibility tree, power button handling).
-dbus = ["dep:zbus", "dep:async-io", "dep:url", "dep:accesskit", "dep:accesskit_unix"]
+dbus = ["dep:zbus", "dep:async-io", "dep:accesskit", "dep:accesskit_unix"]
 # Enables systemd integration (global environment, apps in transient scopes).
 systemd = ["dbus"]
 # Enables screencasting support through xdg-desktop-portal-gnome.
