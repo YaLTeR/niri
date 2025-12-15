@@ -7,7 +7,7 @@ use smithay::desktop::{
     PopupKeyboardGrab, PopupKind, PopupManager, PopupPointerGrab, PopupUngrabStrategy, Window,
     WindowSurfaceType,
 };
-use smithay::input::pointer::Focus;
+use smithay::input::pointer::{CursorIcon, Focus};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_positioner::ConstraintAdjustment;
@@ -134,13 +134,17 @@ impl XdgShellHandler for State {
 
         match &start_data {
             PointerOrTouchStartData::Pointer(_) => {
-                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true) {
+                if let Some(grab) =
+                    MoveGrab::new(self, start_data, window.clone(), true, CursorIcon::Move)
+                {
                     pointer.set_grab(self, grab, serial, Focus::Clear);
                 }
             }
             PointerOrTouchStartData::Touch(_) => {
                 let touch = self.niri.seat.get_touch().unwrap();
-                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true) {
+                if let Some(grab) =
+                    MoveGrab::new(self, start_data, window.clone(), true, CursorIcon::Move)
+                {
                     touch.set_grab(self, grab, serial);
                 }
             }
