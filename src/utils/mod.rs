@@ -474,6 +474,7 @@ pub fn baba_is_float_offset(now: Duration, view_height: f64) -> f64 {
 pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result<()> {
     use std::collections::HashMap;
 
+    use pango::glib;
     use zbus::zvariant;
 
     let conn = zbus::blocking::Connection::session()?;
@@ -482,7 +483,7 @@ pub fn show_screenshot_notification(image_path: Option<&Path>) -> anyhow::Result
     let mut image_url = None;
     if let Some(path) = image_path {
         match path.canonicalize() {
-            Ok(path) => match url::Url::from_file_path(path) {
+            Ok(path) => match glib::filename_to_uri(path, None) {
                 Ok(url) => {
                     image_url = Some(url);
                 }
