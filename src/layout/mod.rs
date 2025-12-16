@@ -681,6 +681,28 @@ impl<W: LayoutElement> Layout<W> {
         }
     }
 
+    pub fn toggle_workspace_visibility(&mut self, workspace_name: String) {
+        let Some(monitor) = self.monitor_for_workspace_mut(&workspace_name) else {
+            return;
+        };
+        let Some(ws_idx) = monitor.find_named_workspace_index(&workspace_name) else {
+            return;
+        };
+
+        let is_hidden = monitor.workspaces[ws_idx].hidden;
+
+        if is_hidden {
+            let original_idx = monitor.workspaces[ws_idx].original_idx.unwrap_or(ws_idx);
+            let mut ws = monitor.remove_workspace_by_idx(ws_idx);
+            ws.hidden = false;
+            ws.original_idx = None;
+            monitor.insert_workspace(ws, original_idx, false);
+            monitor.clean_up_workspaces();
+        } else {
+            monitor.move_workspace_to_hidden(ws_idx);
+        }
+    }
+
     pub fn add_output(&mut self, output: Output, layout_config: Option<LayoutPart>) {
         self.monitor_set = match mem::take(&mut self.monitor_set) {
             MonitorSet::Normal {
@@ -1725,6 +1747,16 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn monitor_for_workspace(&self, workspace_name: &str) -> Option<&Monitor<W>> {
         self.monitors().find(|monitor| {
+            monitor.workspaces.iter().any(|ws| {
+                ws.name
+                    .as_ref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case(workspace_name))
+            })
+        })
+    }
+
+    pub fn monitor_for_workspace_mut(&mut self, workspace_name: &str) -> Option<&mut Monitor<W>> {
+        self.monitors_mut().find(|monitor| {
             monitor.workspaces.iter().any(|ws| {
                 ws.name
                     .as_ref()

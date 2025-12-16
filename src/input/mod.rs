@@ -2374,6 +2374,9 @@ impl State {
                     self.niri.queue_redraw_mru_output();
                 }
             }
+            Action::ToggleWorkspaceVisibility(workspace_name) => {
+                self.niri.layout.toggle_workspace_visibility(workspace_name);
+            },
         }
     }
 
