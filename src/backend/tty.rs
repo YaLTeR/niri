@@ -4,7 +4,7 @@ use std::fmt::Write;
 use std::iter::zip;
 use std::num::NonZeroU64;
 use std::os::fd::{AsFd, OwnedFd};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -460,7 +460,7 @@ impl Tty {
         let (primary_node, primary_render_node) = primary_node_from_config(&config.borrow())
             .ok_or(())
             .or_else(|()| {
-                let primary_gpu_path = udev::primary_gpu(&seat_name)
+                let primary_gpu_path = primary_gpu(&seat_name)
                     .context("error getting the primary GPU")?
                     .context("couldn't find a GPU")?;
                 let primary_node = DrmNode::from_path(primary_gpu_path)
@@ -2701,6 +2701,40 @@ fn primary_node_from_config(config: &Config) -> Option<(DrmNode, DrmNode)> {
     debug!("attempting to use render node from config: {path:?}");
 
     primary_node_from_render_node(path)
+}
+
+// Modified from Smithay
+fn primary_gpu<S: AsRef<str>>(seat: S) -> io::Result<Option<PathBuf>> {
+    let gpus = udev::all_gpus(seat)?;
+
+    fn has_boot_vga(device_path: &Path) -> bool {
+        if let Ok(device) = smithay::reexports::udev::Device::from_syspath(device_path) {
+            if let Ok(Some(pci)) = device.parent_with_subsystem(Path::new("pci")) {
+                if let Some(id) = pci.attribute_value("boot_vga") {
+                    return id == "1";
+                }
+            }
+        }
+        false
+    }
+
+    // 1st priority: GPU with boot_vga=1
+    if let Some(path) = gpus.iter().find(|path| has_boot_vga(path)) {
+        return Ok(Some(path.to_path_buf()));
+    }
+
+    // 2nd priority: GPU with a render node
+    if let Some(path) = gpus.iter().find(|path| {
+        DrmNode::from_path(path)
+            .ok()
+            .and_then(|node| node.node_with_type(NodeType::Render))
+            .is_some_and(|res| res.is_ok())
+    }) {
+        return Ok(Some(path.to_path_buf()));
+    }
+
+    // 3rd priority: first GPU in alphabetical order
+    Ok(gpus.first().map(|path| path.to_path_buf()))
 }
 
 fn ignored_nodes_from_config(config: &Config) -> HashSet<DrmNode> {
