@@ -3423,7 +3423,7 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.7.0"
-source = "git+https://github.com/Smithay/smithay.git#d743e1a317fa0f01d1c4cadd96d277a1ec7b59d9"
+source = "git+https://github.com/Smithay/smithay.git#6329f5b21693c53b0370cc7f62523ea4d0a42073"
 dependencies = [
  "aliasable",
  "appendlist",
@@ -3497,7 +3497,7 @@ dependencies = [
 [[package]]
 name = "smithay-drm-extras"
 version = "0.1.0"
-source = "git+https://github.com/Smithay/smithay.git#d743e1a317fa0f01d1c4cadd96d277a1ec7b59d9"
+source = "git+https://github.com/Smithay/smithay.git#6329f5b21693c53b0370cc7f62523ea4d0a42073"
 dependencies = [
  "drm",
  "libdisplay-info",
