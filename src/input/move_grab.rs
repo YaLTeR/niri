@@ -43,7 +43,7 @@ impl MoveGrab {
         start_data: PointerOrTouchStartData<State>,
         window: Window,
         enable_view_offset: bool,
-        move_icon: CursorIcon,
+        move_icon: Option<CursorIcon>,
     ) -> Option<Self> {
         let (output, pos_within_output) = state.niri.output_under(start_data.location())?;
 
@@ -55,7 +55,8 @@ impl MoveGrab {
             window,
             gesture: GestureState::Recognizing,
             enable_view_offset,
-            move_icon,
+            // Moving windows by their titlebars uses the default cursor by default.
+            move_icon: move_icon.unwrap_or(CursorIcon::Default),
         })
     }
 

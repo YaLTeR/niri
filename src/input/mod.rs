@@ -2859,12 +2859,20 @@ impl State {
                         let start_data = PointerOrTouchStartData::Pointer(start_data);
                         let icon = CursorIcon::Grabbing;
                         if let Some(grab) =
-                            MoveGrab::new(self, start_data, window.clone(), false, icon)
+                            MoveGrab::new(self, start_data, window.clone(), false, Some(icon))
                         {
                             pointer.set_grab(self, grab, serial, Focus::Clear);
-                            self.niri
-                                .cursor_manager
-                                .set_cursor_image(CursorImageStatus::Named(icon));
+
+                            // Set the cursor to Grabbing right away for Mod+LMB since it doesn't
+                            // do any other gesture.
+                            //
+                            // In the overview, we click to activate window and close the overview,
+                            // in this case setting the cursor right away would be distracting.
+                            if !is_overview_open {
+                                self.niri
+                                    .cursor_manager
+                                    .set_cursor_image(CursorImageStatus::Named(icon));
+                            }
                         }
                     }
                 }
@@ -4112,13 +4120,9 @@ impl State {
                         location: pos,
                     };
                     let start_data = PointerOrTouchStartData::Touch(start_data);
-                    let icon = CursorIcon::Grabbing;
-                    if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, icon)
+                    if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None)
                     {
                         handle.set_grab(self, grab, serial);
-                        self.niri
-                            .cursor_manager
-                            .set_cursor_image(CursorImageStatus::Named(icon));
                     }
                 }
 
