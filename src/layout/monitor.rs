@@ -349,7 +349,6 @@ impl<W: LayoutElement> Monitor<W> {
         // Add hidden workspaces at the end
         workspaces.extend(hidden_workspaces);
 
-
         Self {
             output_name: output.name(),
             output,
@@ -1120,7 +1119,17 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn switch_workspace(&mut self, idx: usize) {
-        self.activate_workspace(min(idx, self.workspaces.len() - 1));
+        let mut actual_idx = min(idx, self.workspaces.len() - 1);
+
+        if self.workspaces[actual_idx].hidden {
+            if let Some(visible_idx) = (0..actual_idx).rev().find(|&i| !self.workspaces[i].hidden) {
+                actual_idx = visible_idx;
+            } else {
+                return
+            }
+        }
+
+        self.activate_workspace(actual_idx);
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
