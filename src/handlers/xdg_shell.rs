@@ -134,13 +134,13 @@ impl XdgShellHandler for State {
 
         match &start_data {
             PointerOrTouchStartData::Pointer(_) => {
-                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true) {
+                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None) {
                     pointer.set_grab(self, grab, serial, Focus::Clear);
                 }
             }
             PointerOrTouchStartData::Touch(_) => {
                 let touch = self.niri.seat.get_touch().unwrap();
-                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true) {
+                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None) {
                     touch.set_grab(self, grab, serial);
                 }
             }
