@@ -986,6 +986,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.data.insert(idx, ColumnData::new(&column));
         self.columns.insert(idx, column);
 
+        if !was_empty && idx <= self.active_column_idx {
+            self.active_column_idx += 1;
+        }
+
         if activate {
             // If this is the first window on an empty workspace, remove the effect of whatever
             // view_offset was left over and skip the animation.
@@ -1002,8 +1006,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
             self.activate_column_with_anim_config(idx, anim_config);
             self.activate_prev_column_on_removal = prev_offset;
-        } else if !was_empty && idx <= self.active_column_idx {
-            self.active_column_idx += 1;
         }
 
         // Animate movement of other columns.
