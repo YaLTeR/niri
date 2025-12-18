@@ -25,7 +25,7 @@ tracing = { version = "0.1.43", features = ["max_level_trace", "release_max_leve
 # 0.3.20 filters out all ANSI codes to "fix a security issue" while also breaking
 # everyone who relied on them for color output, with no fallback available.
 # https://github.com/tokio-rs/tracing/issues/3378
-tracing-subscriber = { version = "=0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "=0.3.22", features = ["env-filter"] }
 tracy-client = { version = "0.18.3", default-features = false }
 
 [workspace.dependencies.smithay]
