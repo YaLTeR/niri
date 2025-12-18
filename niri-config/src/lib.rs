@@ -298,12 +298,39 @@ where
                     })?;
                     let path: PathBuf = knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
 
+                    // Check for extra arguments
+                    if let Some(val) = iter_args.next() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &val.literal,
+                            "argument",
+                            "unexpected argument",
+                        ));
+                    }
+
                     // Parse the optional property
                     let mut optional = false;
                     for (name, val) in &node.properties {
-                        if &***name == "optional" {
-                            optional = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                        match &***name {
+                            "optional" => {
+                                optional = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                            }
+                            name_str => {
+                                ctx.emit_error(DecodeError::unexpected(
+                                    name,
+                                    "property",
+                                    format!("unexpected property `{}`", name_str.escape_default()),
+                                ));
+                            }
                         }
+                    }
+
+                    // Check for unexpected children
+                    for child in node.children() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            child,
+                            "node",
+                            format!("unexpected node `{}`", child.node_name.escape_default()),
+                        ));
                     }
 
                     let base = ctx.get::<BasePath>().unwrap();
