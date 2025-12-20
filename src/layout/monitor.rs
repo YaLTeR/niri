@@ -715,7 +715,7 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn unname_workspace(&mut self, id: WorkspaceId) -> bool {
-        self.unhide_workspace_by_id(id);
+        self.unhide_workspace_by_id(id, false);
         let Some(ws) = self.workspaces.iter_mut().find(|ws| ws.id() == id) else {
             return false;
         };
@@ -728,7 +728,7 @@ impl<W: LayoutElement> Monitor<W> {
         true
     }
 
-    pub fn unhide_workspace_by_id(&mut self, id: WorkspaceId) -> bool {
+    pub fn unhide_workspace_by_id(&mut self, id: WorkspaceId, needs_hidden: bool) -> bool {
         let name = self
             .workspaces
             .iter()
@@ -749,6 +749,7 @@ impl<W: LayoutElement> Monitor<W> {
         let original_idx = self.workspaces[idx].original_idx.unwrap_or(idx);
         let mut ws = self.remove_workspace_by_idx(idx);
         ws.hidden = false;
+        ws.needs_hidden = needs_hidden;
         ws.original_idx = None;
         self.insert_workspace(ws, original_idx, false);
         true
@@ -786,6 +787,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         self.workspaces[idx].hidden = true;
+        self.workspaces[idx].needs_hidden = false;
         let mut ws = self.remove_workspace_by_idx(idx);
         ws.original_idx = Some(idx);
         self.workspaces.insert(self.workspaces.len(), ws);
@@ -1117,6 +1119,7 @@ impl<W: LayoutElement> Monitor<W> {
             }
             // If the workspace is hidden, we shouldn't switch to it.
             _ => {
+                self.hide_needs_hidden();
                 let mut new_idx = self.active_workspace_idx.saturating_sub(1);
                 while new_idx > 0 && self.workspaces[new_idx].hidden {
                     new_idx = new_idx.saturating_sub(1);
@@ -1133,6 +1136,14 @@ impl<W: LayoutElement> Monitor<W> {
         self.activate_workspace(new_idx);
     }
 
+    pub fn hide_needs_hidden(&mut self) {
+        let active_workspace_idx = self.active_workspace_idx();
+        let needs_hidden = self.workspaces[active_workspace_idx].needs_hidden;
+        if needs_hidden {
+            self.hide_workspace_by_idx(active_workspace_idx);
+        }
+    }
+
     pub fn switch_workspace_down(&mut self) {
         let new_idx = match &self.workspace_switch {
             // During a DnD scroll, select the next apparent workspace.
@@ -1144,6 +1155,7 @@ impl<W: LayoutElement> Monitor<W> {
             // If the workspace is hidden, we shouldn't switch to it.
             // Instead we need to bump the workspace down
             _ => {
+                self.hide_needs_hidden();
                 let max = self.workspaces.len() - 1;
                 let mut new_idx = min(self.active_workspace_idx + 1, max);
                 while new_idx < max && self.workspaces[new_idx].hidden {
@@ -1165,10 +1177,20 @@ impl<W: LayoutElement> Monitor<W> {
         self.workspaces.iter().position(|w| w.id() == id)
     }
 
-    pub fn switch_workspace(&mut self, idx: usize) {
+    pub fn switch_workspace(&mut self, idx: usize, force_unhide: bool) {
         let mut actual_idx = min(idx, self.workspaces.len() - 1);
 
-        if self.workspaces[actual_idx].hidden {
+        if force_unhide {
+            let ws = &self.workspaces[actual_idx];
+            let Some(original_idx) = ws.original_idx else {
+                return;
+            };
+            // If this workspace was forcefully unhidden by needing focus
+            // also make sure it needs to be hidden later.
+            self.unhide_workspace_by_id(ws.id(), force_unhide);
+            actual_idx = original_idx;
+        }
+        if self.workspaces[actual_idx].hidden && !force_unhide {
             if let Some(visible_idx) = (0..actual_idx).rev().find(|&i| !self.workspaces[i].hidden) {
                 actual_idx = visible_idx;
             } else {
@@ -1184,16 +1206,16 @@ impl<W: LayoutElement> Monitor<W> {
 
         if idx == self.active_workspace_idx {
             if let Some(prev_idx) = self.previous_workspace_idx() {
-                self.switch_workspace(prev_idx);
+                self.switch_workspace(prev_idx, false);
             }
         } else {
-            self.switch_workspace(idx);
+            self.switch_workspace(idx, false);
         }
     }
 
     pub fn switch_workspace_previous(&mut self) {
         if let Some(idx) = self.previous_workspace_idx() {
-            self.switch_workspace(idx);
+            self.switch_workspace(idx, false);
         }
     }
 

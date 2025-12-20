@@ -112,11 +112,13 @@ pub struct Workspace<W: LayoutElement> {
     id: WorkspaceId,
 
     /// Hidden workspaces need to track their original idx
-    ///
     pub original_idx: Option<usize>,
 
     /// whether we should hide this workspace for indexing
     pub hidden: bool,
+
+    /// whether this workspace needs to be hidden
+    pub needs_hidden: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -277,8 +279,9 @@ impl<W: LayoutElement> Workspace<W> {
             clock,
             base_options,
             options,
-            original_idx: None, // We don't know this yet. 
+            original_idx: None, // We don't know this yet.
             hidden: is_hidden,
+            needs_hidden: false,
             name: config.map(|c| c.name.0),
             layout_config,
             id: WorkspaceId::next(),
@@ -349,6 +352,7 @@ impl<W: LayoutElement> Workspace<W> {
             options,
             original_idx: None,
             hidden: is_hidden,
+            needs_hidden: false,
             name: config.map(|c| c.name.0),
             layout_config,
             id: WorkspaceId::next(),

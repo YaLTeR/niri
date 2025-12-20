@@ -1187,7 +1187,7 @@ impl Op {
             Op::CenterVisibleColumns => layout.center_visible_columns(),
             Op::FocusWorkspaceDown => layout.switch_workspace_down(),
             Op::FocusWorkspaceUp => layout.switch_workspace_up(),
-            Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
+            Op::FocusWorkspace(idx) => layout.switch_workspace(idx, false),
             Op::FocusWorkspaceAutoBackAndForth(idx) => {
                 layout.switch_workspace_auto_back_and_forth(idx)
             }

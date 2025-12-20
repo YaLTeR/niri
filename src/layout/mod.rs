@@ -695,7 +695,7 @@ impl<W: LayoutElement> Layout<W> {
             let Some(ws) = monitor.find_named_workspace(&workspace_name) else {
                 return;
             };
-            monitor.unhide_workspace_by_id(ws.id());
+            monitor.unhide_workspace_by_id(ws.id(), false);
             monitor.clean_up_workspaces();
         } else {
             monitor.hide_workspace_by_idx(ws_idx);
@@ -1508,7 +1508,7 @@ impl<W: LayoutElement> Layout<W> {
                         Some(WorkspaceSwitch::Gesture(gesture))
                             if gesture.current_idx.floor() == workspace_idx as f64
                                 || gesture.current_idx.ceil() == workspace_idx as f64 => {}
-                        _ => mon.switch_workspace(workspace_idx),
+                        _ => mon.switch_workspace(workspace_idx, false),
                     }
 
                     return;
@@ -1544,7 +1544,7 @@ impl<W: LayoutElement> Layout<W> {
                         Some(WorkspaceSwitch::Gesture(gesture))
                             if gesture.current_idx.floor() == workspace_idx as f64
                                 || gesture.current_idx.ceil() == workspace_idx as f64 => {}
-                        _ => mon.switch_workspace(workspace_idx),
+                        _ => mon.switch_workspace(workspace_idx, false),
                     }
 
                     return;
@@ -2163,11 +2163,11 @@ impl<W: LayoutElement> Layout<W> {
         monitor.switch_workspace_down();
     }
 
-    pub fn switch_workspace(&mut self, idx: usize) {
+    pub fn switch_workspace(&mut self, idx: usize, force_unhide: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.switch_workspace(idx);
+        monitor.switch_workspace(idx, force_unhide);
     }
 
     pub fn switch_workspace_auto_back_and_forth(&mut self, idx: usize) {
