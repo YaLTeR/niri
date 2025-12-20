@@ -23,6 +23,7 @@ use smithay::wayland::compositor::{
     HookId, SurfaceAttributes,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
+use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::wlr_layer::{self, Layer};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
@@ -363,16 +364,23 @@ impl XdgShellHandler for State {
         let keyboard = seat.get_keyboard().unwrap();
         let pointer = seat.get_pointer().unwrap();
 
-        let can_receive_keyboard_focus = self
-            .niri
-            .layout
-            .active_output()
-            .and_then(|output| {
-                layer_map_for_output(output)
-                    .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)
-                    .map(|layer_surface| layer_surface.can_receive_keyboard_focus())
-            })
-            .unwrap_or(true);
+        // Smithay cannot do overlapping grabs, so if we have an IME keyboard grab, don't overwrite
+        // it with a popup keyboard grab. This makes the popup menu work in Telegram while an IME
+        // is active (otherwise it hits the grab mismatch check below).
+        //
+        // The second check is for layer surfaces that can't receive keyboard focus, without it
+        // popups don't work properly in Waybar (GTK 3).
+        let can_receive_keyboard_focus = !self.niri.seat.input_method().keyboard_grabbed()
+            && self
+                .niri
+                .layout
+                .active_output()
+                .and_then(|output| {
+                    layer_map_for_output(output)
+                        .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)
+                        .map(|layer_surface| layer_surface.can_receive_keyboard_focus())
+                })
+                .unwrap_or(true);
 
         let keyboard_grab_mismatches = keyboard.is_grabbed()
             && !(keyboard.has_grab(serial)
