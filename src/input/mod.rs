@@ -708,12 +708,14 @@ impl State {
             Action::ScreenshotScreen(write_to_disk, show_pointer, path) => {
                 let active = self.niri.layout.active_output().cloned();
                 if let Some(active) = active {
+                    let include_pointer = show_pointer
+                        .unwrap_or(!self.niri.config.borrow().screenshot.hide_pointer_by_default);
                     self.backend.with_primary_renderer(|renderer| {
                         if let Err(err) = self.niri.screenshot(
                             renderer,
                             &active,
                             write_to_disk,
-                            show_pointer,
+                            include_pointer,
                             path,
                         ) {
                             warn!("error taking screenshot: {err:?}");
@@ -740,7 +742,9 @@ impl State {
                 self.niri.queue_redraw_all();
             }
             Action::Screenshot(show_cursor, path) => {
-                self.open_screenshot_ui(show_cursor, path);
+                let show_pointer = show_cursor
+                    .unwrap_or(!self.niri.config.borrow().screenshot.hide_pointer_by_default);
+                self.open_screenshot_ui(show_pointer, path);
                 self.niri.cancel_mru();
             }
             Action::ScreenshotWindow(write_to_disk, path) => {

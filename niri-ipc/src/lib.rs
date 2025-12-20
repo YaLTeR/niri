@@ -218,15 +218,17 @@ pub enum Action {
     },
     /// Open the screenshot UI.
     Screenshot {
-        ///  Whether to show the mouse pointer by default in the screenshot UI.
-        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
-        show_pointer: bool,
+        /// Whether to show the mouse pointer by default in the screenshot UI.
+        ///
+        /// if `None`, it is determined by the `screenshot.hide_pointer_by_default` config setting.
+        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set))]
+        show_pointer: Option<bool>,
 
         /// Path to save the screenshot to.
         ///
         /// The path must be absolute, otherwise an error is returned.
         ///
-        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        /// If `None`, the screenshot is saved according to the `screenshot.path` config setting.
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
         path: Option<String>,
     },
@@ -234,19 +236,21 @@ pub enum Action {
     ScreenshotScreen {
         /// Write the screenshot to disk in addition to putting it in your clipboard.
         ///
-        /// The screenshot is saved according to the `screenshot-path` config setting.
+        /// The screenshot is saved according to the `screenshot.path` config setting.
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
 
         /// Whether to include the mouse pointer in the screenshot.
-        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = true))]
-        show_pointer: bool,
+        ///
+        /// if `None`, it is determined by the `screenshot.hide_pointer_by_default` config setting.
+        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set))]
+        show_pointer: Option<bool>,
 
         /// Path to save the screenshot to.
         ///
         /// The path must be absolute, otherwise an error is returned.
         ///
-        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        /// If `None`, the screenshot is saved according to the `screenshot.path` config setting.
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
         path: Option<String>,
     },
@@ -260,7 +264,7 @@ pub enum Action {
         id: Option<u64>,
         /// Write the screenshot to disk in addition to putting it in your clipboard.
         ///
-        /// The screenshot is saved according to the `screenshot-path` config setting.
+        /// The screenshot is saved according to the `screenshot.path` config setting.
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
 
@@ -268,7 +272,7 @@ pub enum Action {
         ///
         /// The path must be absolute, otherwise an error is returned.
         ///
-        /// If `None`, the screenshot is saved according to the `screenshot-path` config setting.
+        /// If `None`, the screenshot is saved according to the `screenshot.path` config setting.
         #[cfg_attr(feature = "clap", arg(long, action = clap::ArgAction::Set))]
         path: Option<String>,
     },

@@ -9,7 +9,9 @@ spawn-sh-at-startup "qs -c ~/source/qs/MyAwesomeShell"
 
 prefer-no-csd
 
-screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+screenshot {
+    path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+}
 
 environment {
     QT_QPA_PLATFORM "wayland"
@@ -108,7 +110,7 @@ With `prefer-no-csd` set, applications that negotiate server-side decorations th
 prefer-no-csd
 ```
 
-### `screenshot-path`
+### `screenshot`
 
 Set the path where screenshots are saved.
 A `~` at the front will be expanded to the home directory.
@@ -118,13 +120,27 @@ The path is formatted with `strftime(3)` to give you the screenshot date and tim
 Niri will create the last folder of the path if it doesn't exist.
 
 ```kdl
-screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+screenshot {
+    path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+}
 ```
 
 You can also set this option to `null` to disable saving screenshots to disk.
 
 ```kdl
-screenshot-path null
+screenshot {
+    path null
+}
+```
+
+#### `hide-pointer-by-default`
+
+If set, the mouse pointer will be hidden by default in the screenshot UI. You can still override this in keybindings or IPC.
+
+```kdl
+screenshot {
+    hide-pointer-by-default
+}
 ```
 
 ### `environment`

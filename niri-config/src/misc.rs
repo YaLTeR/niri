@@ -53,14 +53,35 @@ impl MergeWith<CursorPart> for Cursor {
     }
 }
 
-#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
-pub struct ScreenshotPath(#[knuffel(argument)] pub Option<String>);
+#[derive(Debug, PartialEq)]
+pub struct Screenshot {
+    pub path: Option<String>,
+    pub hide_pointer_by_default: bool,
+}
 
-impl Default for ScreenshotPath {
+impl Default for Screenshot {
     fn default() -> Self {
-        Self(Some(String::from(
-            "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png",
-        )))
+        Self {
+            path: Some(String::from(
+                "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png",
+            )),
+            hide_pointer_by_default: false,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, PartialEq, Clone)]
+pub struct ScreenshotPart {
+    #[knuffel(child, unwrap(argument))]
+    pub path: Option<Option<String>>,
+    #[knuffel(child)]
+    pub hide_pointer_by_default: Option<Flag>,
+}
+
+impl MergeWith<ScreenshotPart> for Screenshot {
+    fn merge_with(&mut self, part: &ScreenshotPart) {
+        merge_clone!((self, part), path);
+        merge!((self, part), hide_pointer_by_default);
     }
 }
 

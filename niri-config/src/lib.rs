@@ -73,7 +73,7 @@ pub struct Config {
     pub layout: Layout,
     pub prefer_no_csd: bool,
     pub cursor: Cursor,
-    pub screenshot_path: ScreenshotPath,
+    pub screenshot: Screenshot,
     pub clipboard: Clipboard,
     pub hotkey_overlay: HotkeyOverlay,
     pub config_notification: ConfigNotification,
@@ -163,6 +163,7 @@ where
                     | "layer-rule"
                     | "workspace"
                     | "include"
+                    | "screenshot"
             ) && !seen.insert(name)
             {
                 ctx.emit_error(DecodeError::unexpected(
@@ -196,6 +197,7 @@ where
                 "animations" => m_merge!(animations),
                 "gestures" => m_merge!(gestures),
                 "overview" => m_merge!(overview),
+                "screenshot" => m_merge!(screenshot),
                 "xwayland-satellite" => m_merge!(xwayland_satellite),
                 "switch-events" => m_merge!(switch_events),
                 "debug" => m_merge!(debug),
@@ -232,11 +234,6 @@ where
 
                 "prefer-no-csd" => {
                     config.borrow_mut().prefer_no_csd = Flag::decode_node(node, ctx)?.0
-                }
-
-                "screenshot-path" => {
-                    let part = knuffel::Decode::decode_node(node, ctx)?;
-                    config.borrow_mut().screenshot_path = part;
                 }
 
                 "layout" => {
@@ -812,7 +809,10 @@ mod tests {
                 hide-after-inactive-ms 3000
             }
 
-            screenshot-path "~/Screenshots/screenshot.png"
+            screenshot {
+                path "~/Screenshots/screenshot.png"
+                hide-pointer-by-default
+            }
 
             clipboard {
                 disable-primary
@@ -1461,11 +1461,12 @@ mod tests {
                     3000,
                 ),
             },
-            screenshot_path: ScreenshotPath(
-                Some(
+            screenshot: Screenshot {
+                path: Some(
                     "~/Screenshots/screenshot.png",
                 ),
-            ),
+                hide_pointer_by_default: true,
+            },
             clipboard: Clipboard {
                 disable_primary: true,
             },
