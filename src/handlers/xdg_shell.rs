@@ -1453,7 +1453,7 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
                 span.record("serial", format!("{serial:?}"));
             }
 
-            trace!("taking pending transaction");
+            // trace!("taking pending transaction");
             if let Some(transaction) = mapped.take_pending_transaction(serial) {
                 // Transaction can be already completed if it ran past the deadline.
                 let disable = state.niri.config.borrow().debug.disable_transactions;
