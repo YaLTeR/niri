@@ -294,7 +294,10 @@ where
                     // Parse the path argument
                     let mut iter_args = node.arguments.iter();
                     let path_val = iter_args.next().ok_or_else(|| {
-                        DecodeError::missing(node, "additional argument for include path is required")
+                        DecodeError::missing(
+                            node,
+                            "additional argument for include path is required",
+                        )
                     })?;
                     let path: PathBuf = knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
 

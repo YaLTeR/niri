@@ -118,8 +118,8 @@ window-rule {
 
 <sup>Since: next release</sup>
 
-By default, including a nonexistent file will cause an error. You can allow
-nonexistent includes by setting `optional=true`:
+By default, including a nonexistent file will cause an error.
+You can allow nonexistent includes by setting `optional=true`:
 
 ```kdl,must-fail
 // Won't fail if this file doesn't exist.
