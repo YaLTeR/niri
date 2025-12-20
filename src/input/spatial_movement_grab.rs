@@ -60,6 +60,14 @@ impl SpatialMovementGrab {
         }
     }
 
+    pub fn view_offset_output(&self) -> Option<&Output> {
+        (self.gesture == GestureState::ViewOffset).then_some(&self.output)
+    }
+
+    pub fn workspace_switch_output(&self) -> Option<&Output> {
+        (self.gesture == GestureState::WorkspaceSwitch).then_some(&self.output)
+    }
+
     fn on_frame(&mut self, data: &mut State) -> bool {
         let Some(timestamp) = self.event_timestamp.take() else {
             return true;

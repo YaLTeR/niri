@@ -2456,6 +2456,35 @@ impl State {
             }
         }
 
+        // Warp pointer across the screen during the spatial movement grabs.
+        let spatial_grab = pointer.with_grab(|_, grab| {
+            let grab = grab.as_any();
+            if let Some(grab) = grab.downcast_ref::<SpatialMovementGrab>() {
+                if let Some(output) = grab.view_offset_output() {
+                    return Some((output.clone(), true));
+                } else if let Some(output) = grab.workspace_switch_output() {
+                    return Some((output.clone(), false));
+                }
+            } else if let Some(grab) = grab.downcast_ref::<MoveGrab>() {
+                if let Some(output) = grab.view_offset_output() {
+                    return Some((output.clone(), true));
+                }
+            }
+            None
+        });
+        if let Some((output, horizontal)) = spatial_grab.flatten() {
+            if let Some(geo) = self.niri.global_space.output_geometry(&output) {
+                let geo = geo.to_f64();
+                if horizontal {
+                    new_pos.x = (new_pos.x - geo.loc.x).rem_euclid(geo.size.w) + geo.loc.x;
+                    new_pos.y = new_pos.y.clamp(geo.loc.y, geo.loc.y + geo.size.h - 1.);
+                } else {
+                    new_pos.x = new_pos.x.clamp(geo.loc.x, geo.loc.x + geo.size.w - 1.);
+                    new_pos.y = (new_pos.y - geo.loc.y).rem_euclid(geo.size.h) + geo.loc.y;
+                }
+            }
+        }
+
         if self
             .niri
             .global_space

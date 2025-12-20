@@ -74,6 +74,10 @@ impl MoveGrab {
         self.gesture == GestureState::Move
     }
 
+    pub fn view_offset_output(&self) -> Option<&Output> {
+        (self.gesture == GestureState::ViewOffset).then_some(&self.start_output)
+    }
+
     fn on_ungrab(&mut self, data: &mut State) {
         let layout = &mut data.niri.layout;
         match self.gesture {
