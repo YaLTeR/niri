@@ -715,10 +715,10 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     pub fn unname_workspace(&mut self, id: WorkspaceId) -> bool {
+        self.unhide_workspace_by_id(id);
         let Some(ws) = self.workspaces.iter_mut().find(|ws| ws.id() == id) else {
             return false;
         };
-
         ws.unname();
 
         if self.workspace_switch.is_none() {
@@ -726,6 +726,70 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         true
+    }
+
+    pub fn unhide_workspace_by_id(&mut self, id: WorkspaceId) -> bool {
+        let name = self
+            .workspaces
+            .iter()
+            .find(|ws| ws.id() == id)
+            .and_then(|ws| ws.name.clone());
+
+        let Some(name) = name else {
+            return false;
+        };
+
+        let Some(idx) = self.find_named_workspace_index(&name) else {
+            return false;
+        };
+
+        // Hidden workspaces are positioned physically after visible workspaces in their
+        // workspace vec, because of this on unhide we need to position them to match
+        // where they were originally on unhide.
+        let original_idx = self.workspaces[idx].original_idx.unwrap_or(idx);
+        let mut ws = self.remove_workspace_by_idx(idx);
+        ws.hidden = false;
+        ws.original_idx = None;
+        self.insert_workspace(ws, original_idx, false);
+        true
+    }
+
+    pub fn hide_workspace_by_name(&mut self, name: &str) {
+        let Some(idx) = self.find_named_workspace_index(name) else {
+            return;
+        };
+        self.hide_workspace_by_idx(idx);
+    }
+
+    // Currently only named workspaces can be hidden
+    pub fn hide_workspace_by_id(&mut self, id: WorkspaceId) -> bool {
+        let name = self
+            .workspaces
+            .iter()
+            .find(|ws| ws.id() == id)
+            .and_then(|ws| ws.name.clone());
+
+        let Some(name) = name else {
+            return false;
+        };
+
+        self.hide_workspace_by_name(&name);
+        true
+    }
+
+    pub fn hide_workspace_by_idx(&mut self, idx: usize) {
+        if idx == self.workspaces.len() - 1 {
+            return;
+        }
+        if self.options.layout.empty_workspace_above_first && idx == 0 {
+            self.add_workspace_top();
+        }
+
+        self.workspaces[idx].hidden = true;
+        let mut ws = self.remove_workspace_by_idx(idx);
+        ws.original_idx = Some(idx);
+        self.workspaces.insert(self.workspaces.len(), ws);
+        self.ensure_empty_before_hidden();
     }
 
     pub fn remove_workspace_by_idx(&mut self, mut idx: usize) -> Workspace<W> {
@@ -758,21 +822,6 @@ impl<W: LayoutElement> Monitor<W> {
         self.clean_up_workspaces();
 
         ws
-    }
-
-    pub fn move_workspace_to_hidden(&mut self, idx: usize) {
-        if idx == self.workspaces.len() - 1 {
-            return;
-        }
-        if self.options.layout.empty_workspace_above_first && idx == 0 {
-            self.add_workspace_top();
-        }
-
-        self.workspaces[idx].hidden = true;
-        let mut ws = self.remove_workspace_by_idx(idx);
-        ws.original_idx = Some(idx);
-        self.workspaces.insert(self.workspaces.len(), ws);
-        self.ensure_empty_before_hidden();
     }
 
     pub fn insert_workspace(&mut self, mut ws: Workspace<W>, mut idx: usize, activate: bool) {
@@ -1123,7 +1172,7 @@ impl<W: LayoutElement> Monitor<W> {
             if let Some(visible_idx) = (0..actual_idx).rev().find(|&i| !self.workspaces[i].hidden) {
                 actual_idx = visible_idx;
             } else {
-                return
+                return;
             }
         }
 
