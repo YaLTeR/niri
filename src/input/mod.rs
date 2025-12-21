@@ -1454,6 +1454,7 @@ impl State {
                 }
             }
             Action::FocusWorkspace(reference) => {
+                let is_name = matches!(reference, WorkspaceReference::Name(_));
                 if let Some((mut output, index)) =
                     self.niri.find_output_and_workspace_index(reference)
                 {
@@ -1465,7 +1466,7 @@ impl State {
 
                     if let Some(output) = output {
                         self.niri.layout.focus_output(&output);
-                        self.niri.layout.switch_workspace(index, true);
+                        self.niri.layout.switch_workspace(index, is_name);
                         if !self.maybe_warp_cursor_to_focus_centered() {
                             self.move_cursor_to_output(&output);
                         }
@@ -1474,7 +1475,7 @@ impl State {
                         if config.borrow().input.workspace_auto_back_and_forth {
                             self.niri.layout.switch_workspace_auto_back_and_forth(index);
                         } else {
-                            self.niri.layout.switch_workspace(index, true);
+                            self.niri.layout.switch_workspace(index, is_name);
                         }
                         self.maybe_warp_cursor_to_focus();
                     }
