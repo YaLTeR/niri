@@ -469,6 +469,7 @@ impl<W: LayoutElement> Monitor<W> {
         }
 
         let prev_active_idx = self.active_workspace_idx;
+
         self.active_workspace_idx = idx;
 
         let config = config.unwrap_or(self.options.animations.workspace_switch.0);
@@ -492,6 +493,9 @@ impl<W: LayoutElement> Monitor<W> {
                 if prev_active_idx == idx {
                     return;
                 }
+
+                // remove hidden if the previous active workspace was forced unhidden
+                self.hide_needs_hidden(prev_active_idx);
 
                 self.workspace_switch = Some(WorkspaceSwitch::Animation(Animation::new(
                     self.clock.clone(),
@@ -728,7 +732,7 @@ impl<W: LayoutElement> Monitor<W> {
         true
     }
 
-    pub fn unhide_workspace_by_id(&mut self, id: WorkspaceId, needs_hidden: bool) -> bool {
+    pub fn unhide_workspace_by_id(&mut self, id: WorkspaceId, needs_hidden: bool) -> Option<usize> {
         let name = self
             .workspaces
             .iter()
@@ -736,11 +740,11 @@ impl<W: LayoutElement> Monitor<W> {
             .and_then(|ws| ws.name.clone());
 
         let Some(name) = name else {
-            return false;
+            return None;
         };
 
         let Some(idx) = self.find_named_workspace_index(&name) else {
-            return false;
+            return None;
         };
 
         // Hidden workspaces are positioned physically after visible workspaces in their
@@ -752,7 +756,7 @@ impl<W: LayoutElement> Monitor<W> {
         ws.needs_hidden = needs_hidden;
         ws.original_idx = None;
         self.insert_workspace(ws, original_idx, false);
-        true
+        return Some(original_idx);
     }
 
     pub fn hide_workspace_by_name(&mut self, name: &str) {
@@ -1119,7 +1123,6 @@ impl<W: LayoutElement> Monitor<W> {
             }
             // If the workspace is hidden, we shouldn't switch to it.
             _ => {
-                self.hide_needs_hidden();
                 let mut new_idx = self.active_workspace_idx.saturating_sub(1);
                 while new_idx > 0 && self.workspaces[new_idx].hidden {
                     new_idx = new_idx.saturating_sub(1);
@@ -1136,12 +1139,13 @@ impl<W: LayoutElement> Monitor<W> {
         self.activate_workspace(new_idx);
     }
 
-    pub fn hide_needs_hidden(&mut self) {
-        let active_workspace_idx = self.active_workspace_idx();
-        let needs_hidden = self.workspaces[active_workspace_idx].needs_hidden;
+    pub fn hide_needs_hidden(&mut self, idx: usize) -> bool {
+        let needs_hidden = self.workspaces[idx].needs_hidden;
         if needs_hidden {
-            self.hide_workspace_by_idx(active_workspace_idx);
+            self.hide_workspace_by_idx(idx);
+            return true;
         }
+        return false;
     }
 
     pub fn switch_workspace_down(&mut self) {
@@ -1155,7 +1159,6 @@ impl<W: LayoutElement> Monitor<W> {
             // If the workspace is hidden, we shouldn't switch to it.
             // Instead we need to bump the workspace down
             _ => {
-                self.hide_needs_hidden();
                 let max = self.workspaces.len() - 1;
                 let mut new_idx = min(self.active_workspace_idx + 1, max);
                 while new_idx < max && self.workspaces[new_idx].hidden {
@@ -1181,14 +1184,12 @@ impl<W: LayoutElement> Monitor<W> {
         let mut actual_idx = min(idx, self.workspaces.len() - 1);
 
         if force_unhide {
-            let ws = &self.workspaces[actual_idx];
-            let Some(original_idx) = ws.original_idx else {
-                return;
-            };
+            let id = &self.workspaces[actual_idx].id().clone();
             // If this workspace was forcefully unhidden by needing focus
             // also make sure it needs to be hidden later.
-            self.unhide_workspace_by_id(ws.id(), force_unhide);
-            actual_idx = original_idx;
+            if let Some(idx) = self.unhide_workspace_by_id(*id, force_unhide) {
+                actual_idx = idx;
+            }
         }
         if self.workspaces[actual_idx].hidden && !force_unhide {
             if let Some(visible_idx) = (0..actual_idx).rev().find(|&i| !self.workspaces[i].hidden) {
