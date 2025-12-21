@@ -986,6 +986,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.data.insert(idx, ColumnData::new(&column));
         self.columns.insert(idx, column);
 
+        if !was_empty && idx <= self.active_column_idx {
+            self.active_column_idx += 1;
+        }
+
         if activate {
             // If this is the first window on an empty workspace, remove the effect of whatever
             // view_offset was left over and skip the animation.
@@ -1002,8 +1006,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
             self.activate_column_with_anim_config(idx, anim_config);
             self.activate_prev_column_on_removal = prev_offset;
-        } else if !was_empty && idx <= self.active_column_idx {
-            self.active_column_idx += 1;
         }
 
         // Animate movement of other columns.
@@ -1384,11 +1386,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // We might need to move the view to ensure the resized window is still visible. But
             // only do it when the view isn't frozen by an interactive resize or a view gesture.
             if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
-                // Restore the view offset upon unfullscreening if needed.
-                if let Some(prev_offset) = unfullscreen_offset {
-                    self.animate_view_offset(col_idx, prev_offset);
-                }
-
                 // Synchronize the horizontal view movement with the resize so that it looks nice.
                 // This is especially important for always-centered view.
                 let config = if ongoing_resize_anim {
@@ -1396,6 +1393,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 } else {
                     self.options.animations.horizontal_view_movement.0
                 };
+
+                // Restore the view offset upon unfullscreening if needed.
+                if let Some(prev_offset) = unfullscreen_offset {
+                    self.animate_view_offset_with_config(col_idx, prev_offset, config);
+                }
 
                 // FIXME: we will want to skip the animation in some cases here to make continuously
                 // resizing windows not look janky.
@@ -2562,7 +2564,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 if tile.window().id() == id {
                     // In the scrolling layout, we try to position popups horizontally within the
                     // window geometry (so they remain visible even if the window scrolls flush with
-                    // the left/right edge of the screen), and vertically wihin the whole parent
+                    // the left/right edge of the screen), and vertically within the whole parent
                     // working area.
                     let width = tile.window_size().w;
                     let height = self.parent_area.size.h;
@@ -4219,7 +4221,7 @@ impl<W: LayoutElement> Column<W> {
         //
         // 2. Unfullscreening a tabbed column with multiple tiles should restore the view offset
         //    correctly. This means waiting for *all* tiles to unfullscreen, because otherwise the
-        //    restored view offset will immediately get overwritted by the still screen-wide column
+        //    restored view offset will immediately get overwritten by the still screen-wide column
         //    (it uses the largest tile's width).
         //
         // 3. Changing a fullscreen tabbed column to normal should probably also restore the view
@@ -5399,7 +5401,8 @@ impl<W: LayoutElement> Column<W> {
                 tile.tile_height_for_window_height(f64::from(requested_size.h));
             let min_tile_height = f64::max(1., tile.min_size_nonfullscreen().h);
 
-            if self.pending_sizing_mode().is_normal()
+            if !is_tabbed
+                && self.pending_sizing_mode().is_normal()
                 && self.scale.round() == self.scale
                 && working_size.h.round() == working_size.h
                 && gaps.round() == gaps

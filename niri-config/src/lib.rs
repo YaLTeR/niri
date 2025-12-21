@@ -13,7 +13,7 @@
 #[macro_use]
 extern crate tracing;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs::{self, File};
@@ -39,6 +39,7 @@ pub mod layer_rule;
 pub mod layout;
 pub mod misc;
 pub mod output;
+pub mod recent_windows;
 pub mod utils;
 pub mod window_rule;
 pub mod workspace;
@@ -54,6 +55,8 @@ pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
+use crate::recent_windows::RecentWindowsPart;
+pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
 pub use crate::utils::FloatOrInt;
 use crate::utils::{Flag, MergeWith as _};
 pub use crate::window_rule::{FloatingPosition, RelativeTo, WindowRule};
@@ -85,6 +88,7 @@ pub struct Config {
     pub switch_events: SwitchBinds,
     pub debug: Debug,
     pub workspaces: Vec<Workspace>,
+    pub recent_windows: RecentWindows,
 }
 
 #[derive(Debug, Clone)]
@@ -118,6 +122,7 @@ struct IncludeErrors(Vec<knuffel::Error>);
 //
 // We don't *need* it because we have a recursion limit, but it makes for nicer error messages.
 struct IncludeStack(HashSet<PathBuf>);
+struct SawMruBinds(Rc<Cell<bool>>);
 
 // Rather than listing all fields and deriving knuffel::Decode, we implement
 // knuffel::DecodeChildren by hand, since we need custom logic for every field anyway: we want to
@@ -140,6 +145,7 @@ where
         let includes = ctx.get::<Rc<RefCell<Includes>>>().unwrap().clone();
         let include_errors = ctx.get::<Rc<RefCell<IncludeErrors>>>().unwrap().clone();
         let recursion = ctx.get::<Recursion>().unwrap().0;
+        let saw_mru_binds = ctx.get::<SawMruBinds>().unwrap().0.clone();
 
         let mut seen = HashSet::new();
 
@@ -269,8 +275,67 @@ where
                     config.borrow_mut().layout.merge_with(&part);
                 }
 
+                "recent-windows" => {
+                    let part = RecentWindowsPart::decode_node(node, ctx)?;
+
+                    let mut config = config.borrow_mut();
+
+                    // When an MRU binds section is encountered for the first time, clear out the
+                    // default MRU binds.
+                    if !saw_mru_binds.get() && part.binds.is_some() {
+                        saw_mru_binds.set(true);
+                        config.recent_windows.binds.clear();
+                    }
+
+                    config.recent_windows.merge_with(&part);
+                }
+
                 "include" => {
-                    let path: PathBuf = utils::parse_arg_node("include", node, ctx)?;
+                    // Parse the path argument
+                    let mut iter_args = node.arguments.iter();
+                    let path_val = iter_args.next().ok_or_else(|| {
+                        DecodeError::missing(
+                            node,
+                            "additional argument for include path is required",
+                        )
+                    })?;
+                    let path: PathBuf = knuffel::traits::DecodeScalar::decode(path_val, ctx)?;
+
+                    // Check for extra arguments
+                    if let Some(val) = iter_args.next() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            &val.literal,
+                            "argument",
+                            "unexpected argument",
+                        ));
+                    }
+
+                    // Parse the optional property
+                    let mut optional = false;
+                    for (name, val) in &node.properties {
+                        match &***name {
+                            "optional" => {
+                                optional = knuffel::traits::DecodeScalar::decode(val, ctx)?;
+                            }
+                            name_str => {
+                                ctx.emit_error(DecodeError::unexpected(
+                                    name,
+                                    "property",
+                                    format!("unexpected property `{}`", name_str.escape_default()),
+                                ));
+                            }
+                        }
+                    }
+
+                    // Check for unexpected children
+                    for child in node.children() {
+                        ctx.emit_error(DecodeError::unexpected(
+                            child,
+                            "node",
+                            format!("unexpected node `{}`", child.node_name.escape_default()),
+                        ));
+                    }
+
                     let base = ctx.get::<BasePath>().unwrap();
                     let path = base.0.join(path);
 
@@ -331,6 +396,7 @@ where
                                 ctx.set(includes.clone());
                                 ctx.set(include_errors.clone());
                                 ctx.set(IncludeStack(include_stack));
+                                ctx.set(SawMruBinds(saw_mru_binds.clone()));
                                 ctx.set(config.clone());
                             });
 
@@ -347,10 +413,16 @@ where
                             }
                         }
                         Err(err) => {
-                            ctx.emit_error(DecodeError::missing(
-                                node,
-                                format!("failed to read included config from {path:?}: {err}"),
-                            ));
+                            if optional && err.kind() == std::io::ErrorKind::NotFound {
+                                // Warn about missing optional includes
+                                warn!("optional include not found: {path:?}");
+                            } else {
+                                // Report all other errors normally
+                                ctx.emit_error(DecodeError::missing(
+                                    node,
+                                    format!("failed to read included config from {path:?}: {err}"),
+                                ));
+                            }
                         }
                     }
                 }
@@ -424,6 +496,7 @@ impl Config {
                 ctx.set(includes.clone());
                 ctx.set(include_errors.clone());
                 ctx.set(IncludeStack(include_stack));
+                ctx.set(SawMruBinds(Rc::new(Cell::new(false))));
                 ctx.set(config.clone());
             },
         );
@@ -766,6 +839,10 @@ mod tests {
                 window-close {
                     curve "cubic-bezier" 0.05 0.7 0.1 1  
                 }
+
+                recent-windows-close {
+                    off
+                }
             }
 
             gestures {
@@ -848,6 +925,25 @@ mod tests {
             }
             workspace "workspace-2"
             workspace "workspace-3"
+
+            recent-windows {
+                off
+
+                highlight {
+                    padding 15
+                    active-color "#00ff00"
+                }
+
+                previews {
+                    max-height 960
+                }
+
+                binds {
+                    Alt+Tab { next-window; }
+                    Alt+grave { next-window filter="app-id"; }
+                    Super+Tab { next-window scope="output"; }
+                }
+            }
             "##,
         );
 
@@ -1507,6 +1603,18 @@ mod tests {
                         ),
                     },
                 ),
+                recent_windows_close: RecentWindowsCloseAnim(
+                    Animation {
+                        off: true,
+                        kind: Spring(
+                            SpringParams {
+                                damping_ratio: 1.0,
+                                stiffness: 800,
+                                epsilon: 0.001,
+                            },
+                        ),
+                    },
+                ),
             },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
@@ -2076,6 +2184,7 @@ mod tests {
                 disable_direct_scanout: false,
                 keep_max_bpc_unchanged: false,
                 restrict_primary_scanout_to_matching_format: false,
+                force_disable_connectors_on_resume: false,
                 render_drm_device: Some(
                     "/dev/dri/renderD129",
                 ),
@@ -2119,6 +2228,101 @@ mod tests {
                     layout: None,
                 },
             ],
+            recent_windows: RecentWindows {
+                on: false,
+                debounce_ms: 750,
+                open_delay_ms: 150,
+                highlight: MruHighlight {
+                    active_color: Color {
+                        r: 0.0,
+                        g: 1.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    urgent_color: Color {
+                        r: 1.0,
+                        g: 0.6,
+                        b: 0.6,
+                        a: 1.0,
+                    },
+                    padding: 15.0,
+                    corner_radius: 0.0,
+                },
+                previews: MruPreviews {
+                    max_height: 960.0,
+                    max_scale: 0.5,
+                },
+                binds: [
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_Tab,
+                            ),
+                            modifiers: Modifiers(
+                                ALT,
+                            ),
+                        },
+                        action: MruAdvance {
+                            direction: Forward,
+                            scope: None,
+                            filter: Some(
+                                All,
+                            ),
+                        },
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_grave,
+                            ),
+                            modifiers: Modifiers(
+                                ALT,
+                            ),
+                        },
+                        action: MruAdvance {
+                            direction: Forward,
+                            scope: None,
+                            filter: Some(
+                                AppId,
+                            ),
+                        },
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                    Bind {
+                        key: Key {
+                            trigger: Keysym(
+                                XK_Tab,
+                            ),
+                            modifiers: Modifiers(
+                                SUPER,
+                            ),
+                        },
+                        action: MruAdvance {
+                            direction: Forward,
+                            scope: Some(
+                                Output,
+                            ),
+                            filter: Some(
+                                All,
+                            ),
+                        },
+                        repeat: true,
+                        cooldown: None,
+                        allow_when_locked: false,
+                        allow_inhibiting: true,
+                        hotkey_overlay_title: None,
+                    },
+                ],
+            },
         }
         "#);
     }

@@ -24,7 +24,6 @@ use smithay::wayland::compositor::{
 };
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::input_method::InputMethodSeat;
-use smithay::wayland::selection::data_device::DnDGrab;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::wlr_layer::{self, Layer};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
@@ -40,7 +39,6 @@ use tracing::field::Empty;
 
 use crate::input::move_grab::MoveGrab;
 use crate::input::resize_grab::ResizeGrab;
-use crate::input::touch_move_grab::TouchMoveGrab;
 use crate::input::touch_resize_grab::TouchResizeGrab;
 use crate::input::{PointerOrTouchStartData, DOUBLE_CLICK_TIME};
 use crate::layout::ActivateWindow;
@@ -86,7 +84,7 @@ impl XdgShellHandler for State {
                     if focus.id().same_client_as(&wl_surface.id()) {
                         // Deny move requests from DnD grabs to work around
                         // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
-                        let is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
+                        let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
 
                         if !is_dnd_grab {
                             grab_start_data =
@@ -106,7 +104,7 @@ impl XdgShellHandler for State {
                         if focus.id().same_client_as(&wl_surface.id()) {
                             // Deny move requests from DnD grabs to work around
                             // https://gitlab.gnome.org/GNOME/gtk/-/issues/7113
-                            let is_dnd_grab = grab.as_any().is::<DnDGrab<Self>>();
+                            let is_dnd_grab = Self::is_dnd_grab(grab.as_any());
 
                             if !is_dnd_grab {
                                 grab_start_data =
@@ -133,33 +131,17 @@ impl XdgShellHandler for State {
         let window = mapped.window.clone();
         let output = output.clone();
 
-        let output_pos = self
-            .niri
-            .global_space
-            .output_geometry(&output)
-            .unwrap()
-            .loc
-            .to_f64();
-
-        let pos_within_output = start_data.location() - output_pos;
-
-        if !self
-            .niri
-            .layout
-            .interactive_move_begin(window.clone(), &output, pos_within_output)
-        {
-            return;
-        }
-
-        match start_data {
-            PointerOrTouchStartData::Pointer(start_data) => {
-                let grab = MoveGrab::new(start_data, window, false);
-                pointer.set_grab(self, grab, serial, Focus::Clear);
+        match &start_data {
+            PointerOrTouchStartData::Pointer(_) => {
+                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None) {
+                    pointer.set_grab(self, grab, serial, Focus::Clear);
+                }
             }
-            PointerOrTouchStartData::Touch(start_data) => {
+            PointerOrTouchStartData::Touch(_) => {
                 let touch = self.niri.seat.get_touch().unwrap();
-                let grab = TouchMoveGrab::new(start_data, window);
-                touch.set_grab(self, grab, serial);
+                if let Some(grab) = MoveGrab::new(self, start_data, window.clone(), true, None) {
+                    touch.set_grab(self, grab, serial);
+                }
             }
         }
 
@@ -285,15 +267,6 @@ impl XdgShellHandler for State {
     }
 
     fn grab(&mut self, surface: PopupSurface, _seat: WlSeat, serial: Serial) {
-        // HACK: ignore grabs (pretend they work without actually grabbing) if the input method has
-        // a grab. It will likely need refactors in Smithay to support properly since grabs just
-        // replace each other.
-        // FIXME: do this properly.
-        if self.niri.seat.input_method().keyboard_grabbed() {
-            trace!("ignoring popup grab because IME has keyboard grabbed");
-            return;
-        }
-
         let popup = PopupKind::Xdg(surface);
         let Ok(root) = find_popup_root_surface(&popup) else {
             trace!("ignoring popup grab because no root surface");
@@ -391,25 +364,30 @@ impl XdgShellHandler for State {
         let keyboard = seat.get_keyboard().unwrap();
         let pointer = seat.get_pointer().unwrap();
 
-        let can_receive_keyboard_focus = self
-            .niri
-            .layout
-            .active_output()
-            .and_then(|output| {
-                layer_map_for_output(output)
-                    .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)
-                    .map(|layer_surface| layer_surface.can_receive_keyboard_focus())
-            })
-            .unwrap_or(true);
+        // Smithay cannot do overlapping grabs, so if we have an IME keyboard grab, don't overwrite
+        // it with a popup keyboard grab. This makes the popup menu work in Telegram while an IME
+        // is active (otherwise it hits the grab mismatch check below).
+        //
+        // The second check is for layer surfaces that can't receive keyboard focus, without it
+        // popups don't work properly in Waybar (GTK 3).
+        let can_receive_keyboard_focus = !self.niri.seat.input_method().keyboard_grabbed()
+            && self
+                .niri
+                .layout
+                .active_output()
+                .and_then(|output| {
+                    layer_map_for_output(output)
+                        .layer_for_surface(&root, WindowSurfaceType::TOPLEVEL)
+                        .map(|layer_surface| layer_surface.can_receive_keyboard_focus())
+                })
+                .unwrap_or(true);
 
         let keyboard_grab_mismatches = keyboard.is_grabbed()
             && !(keyboard.has_grab(serial)
-                || grab
-                    .previous_serial()
-                    .map_or(true, |s| keyboard.has_grab(s)));
+                || grab.previous_serial().is_none_or(|s| keyboard.has_grab(s)));
         let pointer_grab_mismatches = pointer.is_grabbed()
             && !(pointer.has_grab(serial)
-                || grab.previous_serial().map_or(true, |s| pointer.has_grab(s)));
+                || grab.previous_serial().is_none_or(|s| pointer.has_grab(s)));
         if (can_receive_keyboard_focus && keyboard_grab_mismatches) || pointer_grab_mismatches {
             trace!("ignoring popup grab because of current grab mismatch");
             grab.ungrab(PopupUngrabStrategy::All);
@@ -864,9 +842,9 @@ impl XdgShellHandler for State {
         let window = mapped.window.clone();
         let output = output.cloned();
 
-        self.niri.stop_casts_for_target(CastTarget::Window {
-            id: mapped.id().get(),
-        });
+        let id = mapped.id();
+        self.niri
+            .stop_casts_for_target(CastTarget::Window { id: id.get() });
 
         self.backend.with_primary_renderer(|renderer| {
             self.niri.layout.store_unmap_snapshot(renderer, &window);
@@ -883,6 +861,7 @@ impl XdgShellHandler for State {
         let active_window = self.niri.layout.focus().map(|m| &m.window);
         let was_active = active_window == Some(&window);
 
+        self.niri.window_mru_ui.remove_window(id);
         self.niri.layout.remove_window(&window, transaction.clone());
         self.add_default_dmabuf_pre_commit_hook(surface.wl_surface());
 
@@ -898,6 +877,7 @@ impl XdgShellHandler for State {
 
         if let Some(output) = output {
             self.niri.queue_redraw(&output);
+            self.niri.queue_redraw_mru_output();
         }
     }
 
@@ -1481,7 +1461,7 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
                 span.record("serial", format!("{serial:?}"));
             }
 
-            trace!("taking pending transaction");
+            // trace!("taking pending transaction");
             if let Some(transaction) = mapped.take_pending_transaction(serial) {
                 // Transaction can be already completed if it ran past the deadline.
                 let disable = state.niri.config.borrow().debug.disable_transactions;

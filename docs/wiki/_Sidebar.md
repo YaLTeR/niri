@@ -33,6 +33,7 @@
 * [Layer Rules](./Configuration:-Layer-Rules.md)
 * [Animations](./Configuration:-Animations.md)
 * [Gestures](./Configuration:-Gestures.md)
+* [Recent Windows](./Configuration:-Recent-Windows.md)
 * [Debug Options](./Configuration:-Debug-Options.md)
 * [Include](./Configuration:-Include.md)
 

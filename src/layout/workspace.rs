@@ -1386,7 +1386,7 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn toggle_window_floating(&mut self, id: Option<&W::Id>) {
         let active_id = self.active_window().map(|win| win.id().clone());
-        let target_is_active = id.map_or(true, |id| Some(id) == active_id.as_ref());
+        let target_is_active = id.is_none_or(|id| Some(id) == active_id.as_ref());
         let Some(id) = id.cloned().or(active_id) else {
             return;
         };

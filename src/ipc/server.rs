@@ -18,7 +18,7 @@ use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
     Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    WindowLayout, Workspace,
+    Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -514,6 +514,7 @@ fn make_ipc_window(
         is_floating: mapped.is_floating(),
         is_urgent: mapped.is_urgent(),
         layout,
+        focus_timestamp: mapped.get_focus_timestamp().map(Timestamp::from),
     })
 }
 
@@ -723,6 +724,14 @@ impl State {
 
             if mapped.is_focused() && !ipc_win.is_focused {
                 events.push(Event::WindowFocusChanged { id: Some(id) });
+            }
+
+            let focus_timestamp = mapped.get_focus_timestamp().map(Timestamp::from);
+            if focus_timestamp != ipc_win.focus_timestamp {
+                events.push(Event::WindowFocusTimestampChanged {
+                    id,
+                    focus_timestamp,
+                });
             }
 
             let urgent = mapped.is_urgent();

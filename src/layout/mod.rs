@@ -618,12 +618,7 @@ impl Options {
     }
 
     fn adjusted_for_scale(mut self, scale: f64) -> Self {
-        let round = |logical: f64| round_logical_in_physical_max1(scale, logical);
-
-        self.layout.gaps = round(self.layout.gaps);
-        self.layout.focus_ring.width = round(self.layout.focus_ring.width);
-        self.layout.border.width = round(self.layout.border.width);
-
+        self.layout.gaps = round_logical_in_physical_max1(scale, self.layout.gaps);
         self
     }
 }
@@ -2679,13 +2674,13 @@ impl<W: LayoutElement> Layout<W> {
     pub fn are_animations_ongoing(&self, output: Option<&Output>) -> bool {
         // Keep advancing animations if we might need to scroll the view.
         if let Some(dnd) = &self.dnd {
-            if output.map_or(true, |output| *output == dnd.output) {
+            if output.is_none_or(|output| *output == dnd.output) {
                 return true;
             }
         }
 
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
-            if output.map_or(true, |output| *output == move_.output) {
+            if output.is_none_or(|output| *output == move_.output) {
                 if move_.tile.are_animations_ongoing() {
                     return true;
                 }
@@ -2725,7 +2720,7 @@ impl<W: LayoutElement> Layout<W> {
 
         let zoom = self.overview_zoom();
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            if output.map_or(true, |output| move_.output == *output) {
+            if output.is_none_or(|output| move_.output == *output) {
                 let pos_within_output = move_.tile_render_location(zoom);
                 let view_rect =
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output));
@@ -2746,7 +2741,7 @@ impl<W: LayoutElement> Layout<W> {
         };
 
         for (idx, mon) in monitors.iter_mut().enumerate() {
-            if output.map_or(true, |output| mon.output == *output) {
+            if output.is_none_or(|output| mon.output == *output) {
                 let is_active = self.is_active
                     && idx == *active_monitor_idx
                     && !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_)));
@@ -3276,7 +3271,7 @@ impl<W: LayoutElement> Layout<W> {
 
             let mon = &mut monitors[mon_idx];
             let activate = activate.map_smart(|| {
-                window.map_or(true, |win| {
+                window.is_none_or(|win| {
                     mon_idx == *active_monitor_idx
                         && mon.active_window().map(|win| win.id()) == Some(win)
                 })
@@ -4040,16 +4035,12 @@ impl<W: LayoutElement> Layout<W> {
                     mon.dnd_scroll_gesture_end();
                 }
 
-                let mut ws_id = None;
                 for ws in self.workspaces_mut() {
-                    let id = ws.id();
                     if let Some(tile) = ws.tiles_mut().find(|tile| *tile.window().id() == window_id)
                     {
                         let offset = tile.interactive_move_offset;
                         tile.interactive_move_offset = Point::from((0., 0.));
                         tile.animate_move_from(offset);
-
-                        ws_id = Some(id);
                     }
 
                     // Unlock the view on the workspaces, but if the moved window was active,
@@ -4062,32 +4053,6 @@ impl<W: LayoutElement> Layout<W> {
                     if moved_tile_was_active {
                         ws.activate_window(&window_id);
                     }
-                }
-
-                // In the overview, we want to click on a window to focus it, and also to
-                // click-and-drag to move the window. The way we handle this is by always starting
-                // the interactive move (to get frozen view), then, when in the overview, *not*
-                // calling interactive_move_update() until the cursor moves far enough. This means
-                // that if we "just click" then we end up in this branch with state == Starting.
-                // Close the overview in this case.
-                if self.overview_open {
-                    let ws_id = ws_id.unwrap();
-                    if let MonitorSet::Normal { monitors, .. } = &mut self.monitor_set {
-                        for mon in monitors {
-                            if let Some(ws_idx) =
-                                mon.workspaces.iter().position(|ws| ws.id() == ws_id)
-                            {
-                                mon.activate_workspace_with_anim_config(
-                                    ws_idx,
-                                    Some(self.options.animations.overview_open_close.0),
-                                );
-                                break;
-                            }
-                        }
-                    }
-
-                    self.activate_window(&window_id);
-                    self.close_overview();
                 }
 
                 return;
