@@ -1652,11 +1652,56 @@ impl<W: LayoutElement> Workspace<W> {
         (floating, scrolling)
     }
 
+    pub fn render_push_scrolling<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        target: RenderTarget,
+        focus_ring: bool,
+        push: &mut dyn FnMut(WorkspaceRenderElement<R>),
+    ) {
+        let scrolling_focus_ring = focus_ring && !self.floating_is_active();
+        self.scrolling
+            .render_push(renderer, target, scrolling_focus_ring, &mut |elem| {
+                push(elem.into())
+            });
+    }
+
+    pub fn render_push_floating<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        target: RenderTarget,
+        focus_ring: bool,
+        push: &mut dyn FnMut(WorkspaceRenderElement<R>),
+    ) {
+        if !self.is_floating_visible() {
+            return;
+        }
+
+        let view_rect = Rectangle::from_size(self.view_size);
+        let floating_focus_ring = focus_ring && self.floating_is_active();
+        self.floating.render_push(
+            renderer,
+            view_rect,
+            target,
+            floating_focus_ring,
+            &mut |elem| push(elem.into()),
+        );
+    }
+
     pub fn render_shadow<R: NiriRenderer>(
         &self,
         renderer: &mut R,
     ) -> impl Iterator<Item = ShadowRenderElement> + '_ {
         self.shadow.render(renderer, Point::from((0., 0.)))
+    }
+
+    pub fn render_push_shadow<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        push: &mut dyn FnMut(ShadowRenderElement),
+    ) {
+        self.shadow
+            .render_push(renderer, Point::from((0., 0.)), push);
     }
 
     pub fn render_background(&self) -> SolidColorRenderElement {

@@ -181,4 +181,24 @@ impl Shadow {
 
         Some(rv).into_iter().flatten()
     }
+
+    pub fn render_push(
+        &self,
+        renderer: &mut impl NiriRenderer,
+        location: Point<f64, Logical>,
+        push: &mut dyn FnMut(ShadowRenderElement),
+    ) {
+        if !self.config.on {
+            return;
+        }
+
+        let has_shadow_shader = ShadowRenderElement::has_shader(renderer);
+        if !has_shadow_shader {
+            return;
+        }
+
+        for (shader, rect) in zip(&self.shaders, &self.shader_rects) {
+            push(shader.clone().with_location(location + rect.loc));
+        }
+    }
 }

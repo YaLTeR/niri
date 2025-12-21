@@ -173,6 +173,18 @@ pub trait LayoutElement {
         self.render(renderer, location, scale, alpha, target).normal
     }
 
+    /// Renders the non-popup parts of the element.
+    fn render_push_normal<R: NiriRenderer>(
+        &self,
+        _renderer: &mut R,
+        _location: Point<f64, Logical>,
+        _scale: Scale<f64>,
+        _alpha: f32,
+        _target: RenderTarget,
+        _push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
+    }
+
     /// Renders the popups of the element.
     fn render_popups<R: NiriRenderer>(
         &self,
@@ -183,6 +195,18 @@ pub trait LayoutElement {
         target: RenderTarget,
     ) -> Vec<LayoutElementRenderElement<R>> {
         self.render(renderer, location, scale, alpha, target).popups
+    }
+
+    /// Renders the popups of the element.
+    fn render_push_popups<R: NiriRenderer>(
+        &self,
+        _renderer: &mut R,
+        _location: Point<f64, Logical>,
+        _scale: Scale<f64>,
+        _alpha: f32,
+        _target: RenderTarget,
+        _push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
     }
 
     /// Requests the element to change its size.
@@ -4745,6 +4769,39 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         rv.into_iter().flatten()
+    }
+
+    pub fn render_push_interactive_move_for_output<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        output: &Output,
+        target: RenderTarget,
+        push: &mut dyn FnMut(RescaleRenderElement<TileRenderElement<R>>),
+    ) {
+        if self.update_render_elements_time != self.clock.now() {
+            error!("clock moved between updating render elements and rendering");
+        }
+
+        let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move else {
+            return;
+        };
+
+        if &move_.output != output {
+            return;
+        }
+
+        let scale = Scale::from(move_.output.current_scale().fractional_scale());
+        let zoom = self.overview_zoom();
+        let location = move_.tile_render_location(zoom);
+        move_
+            .tile
+            .render_push(renderer, location, true, target, &mut |elem| {
+                push(RescaleRenderElement::from_element(
+                    elem,
+                    location.to_physical_precise_round(scale),
+                    zoom,
+                ));
+            });
     }
 
     pub fn refresh(&mut self, is_active: bool) {

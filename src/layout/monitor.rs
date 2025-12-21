@@ -1659,6 +1659,31 @@ impl<W: LayoutElement> Monitor<W> {
         })
     }
 
+    pub fn render_push_insert_hint_between_workspaces<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        push: &mut dyn FnMut(MonitorRenderElement<R>),
+    ) {
+        if self.options.layout.insert_hint.off {
+            return;
+        }
+        let Some(render_loc) = self.insert_hint_render_loc else {
+            return;
+        };
+        let InsertWorkspace::NewAt(_) = render_loc.workspace else {
+            return;
+        };
+
+        self.insert_hint_element
+            .render_push(renderer, render_loc.location, &mut |elem| {
+                let elem = MonitorInnerRenderElement::UncroppedInsertHint(elem);
+                let elem = RescaleRenderElement::from_element(elem, Point::default(), 1.);
+                let elem =
+                    RelocateRenderElement::from_element(elem, Point::default(), Relocate::Relative);
+                push(elem);
+            });
+    }
+
     pub fn render_elements<'a, R: NiriRenderer>(
         &'a self,
         renderer: &'a mut R,
@@ -1762,6 +1787,86 @@ impl<W: LayoutElement> Monitor<W> {
         })
     }
 
+    pub fn render_workspaces<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        target: RenderTarget,
+        focus_ring: bool,
+        push: &mut dyn FnMut(MonitorRenderElement<R>),
+    ) {
+        let _span = tracy_client::span!("Monitor::render_workspaces");
+
+        let scale = self.scale.fractional_scale();
+        // Ceil the height in physical pixels.
+        let height = (self.view_size.h * scale).ceil() as i32;
+
+        // Crop the elements to prevent them overflowing, currently visible during a workspace
+        // switch.
+        //
+        // HACK: crop to infinite bounds at least horizontally where we
+        // know there's no workspace joining or monitor bounds, otherwise
+        // it will cut pixel shaders and mess up the coordinate space.
+        // There's also a damage tracking bug which causes glitched
+        // rendering for maximized GTK windows.
+        //
+        // FIXME: use proper bounds after fixing the Crop element.
+        let crop_bounds = if self.workspace_switch.is_some() || self.overview_progress.is_some() {
+            Rectangle::new(
+                Point::from((-i32::MAX / 2, 0)),
+                Size::from((i32::MAX, height)),
+            )
+        } else {
+            Rectangle::new(
+                Point::from((-i32::MAX / 2, -i32::MAX / 2)),
+                Size::from((i32::MAX, i32::MAX)),
+            )
+        };
+
+        let zoom = self.overview_zoom();
+
+        let insert_hint_render_loc = self
+            .insert_hint_render_loc
+            .filter(|_| !self.options.layout.insert_hint.off);
+
+        let scale_relocate = move |geo: Rectangle<f64, Logical>, elem| {
+            let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
+            RelocateRenderElement::from_element(
+                elem,
+                // The offset we get from workspaces_with_render_geo() is already
+                // rounded to physical pixels, but it's in the logical coordinate
+                // space, so we need to convert it to physical.
+                geo.loc.to_physical_precise_round(scale),
+                Relocate::Relative,
+            )
+        };
+
+        for (ws, geo) in self.workspaces_with_render_geo() {
+            // Macro instead of closure because ws and insert hint have different elem types.
+            macro_rules! push {
+                () => {{
+                    &mut |elem| {
+                        let elem = CropRenderElement::from_element(elem, scale, crop_bounds);
+                        if let Some(elem) = elem {
+                            let elem = MonitorInnerRenderElement::from(elem);
+                            push(scale_relocate(geo, elem));
+                        }
+                    }
+                }};
+            }
+
+            ws.render_push_floating(renderer, target, focus_ring, push!());
+
+            if let Some(loc) = insert_hint_render_loc {
+                if loc.workspace == InsertWorkspace::Existing(ws.id()) {
+                    self.insert_hint_element
+                        .render_push(renderer, loc.location, push!());
+                }
+            }
+
+            ws.render_push_scrolling(renderer, target, focus_ring, push!());
+        }
+    }
+
     pub fn render_workspace_shadows<'a, R: NiriRenderer>(
         &'a self,
         renderer: &'a mut R,
@@ -1790,6 +1895,36 @@ impl<W: LayoutElement> Monitor<W> {
                     )
                 })
             })
+    }
+
+    pub fn render_push_workspace_shadows<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        push: &mut dyn FnMut(MonitorRenderElement<R>),
+    ) {
+        let Some(progress) = self.overview_progress.as_ref().map(|p| p.clamped_value()) else {
+            return;
+        };
+        let alpha = progress.clamp(0., 1.) as f32;
+
+        let _span = tracy_client::span!("Monitor::render_push_workspace_shadows");
+
+        let scale = self.scale.fractional_scale();
+        let zoom = self.overview_zoom();
+
+        for (ws, geo) in self.workspaces_with_render_geo() {
+            ws.render_push_shadow(renderer, &mut |elem| {
+                let elem = elem.with_alpha(alpha);
+                let elem = MonitorInnerRenderElement::Shadow(elem);
+                let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
+                let elem = RelocateRenderElement::from_element(
+                    elem,
+                    geo.loc.to_physical_precise_round(scale),
+                    Relocate::Relative,
+                );
+                push(elem);
+            });
+        }
     }
 
     pub fn workspace_switch_gesture_begin(&mut self, is_touchpad: bool) {

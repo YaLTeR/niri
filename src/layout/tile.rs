@@ -1290,6 +1290,284 @@ impl<W: LayoutElement> Tile<W> {
         rv.chain(elem.into_iter().flatten())
     }
 
+    fn render_push_inner<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        focus_ring: bool,
+        target: RenderTarget,
+        push: &mut dyn FnMut(TileRenderElement<R>),
+    ) {
+        let _span = tracy_client::span!("Tile::render_push_inner");
+
+        let scale = Scale::from(self.scale);
+        let fullscreen_progress = self.fullscreen_progress();
+        let expanded_progress = self.expanded_progress();
+
+        let win_alpha = if self.window.is_ignoring_opacity_window_rule() {
+            1.
+        } else {
+            let alpha = self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.);
+
+            // Interpolate towards alpha = 1. at fullscreen.
+            let p = fullscreen_progress as f32;
+            alpha * (1. - p) + 1. * p
+        };
+
+        // This is here rather than in render_offset() because render_offset() is currently assumed
+        // by the code to be temporary. So, for example, interactive move will try to "grab" the
+        // tile at its current render offset and reset the render offset to zero by cancelling the
+        // tile move animations. On the other hand, bob_offset() is not resettable, so adding it in
+        // render_offset() would cause obvious animation glitches.
+        //
+        // This isn't to say that adding it here is perfect; indeed, it kind of breaks view_rect
+        // passed to update_render_elements(). But, it works well enough for what it is.
+        let location = location + self.bob_offset();
+
+        let window_loc = self.window_loc();
+        let window_size = self.window_size().to_f64();
+        let animated_window_size = self.animated_window_size();
+        let window_render_loc = location + window_loc;
+        let area = Rectangle::new(window_render_loc, animated_window_size);
+
+        let rules = self.window.rules();
+
+        // Clip to geometry including during the fullscreen animation to help with buggy clients
+        // that submit a full-sized buffer before acking the fullscreen state (Firefox).
+        let clip_to_geometry = fullscreen_progress < 1. && rules.clip_to_geometry == Some(true);
+        let radius = rules
+            .geometry_corner_radius
+            .unwrap_or_default()
+            .scaled_by(1. - expanded_progress as f32);
+
+        // Popups go on top, whether it's resize or not.
+        self.window.render_push_popups(
+            renderer,
+            window_render_loc,
+            scale,
+            win_alpha,
+            target,
+            &mut |elem| push(elem.into()),
+        );
+
+        // If we're resizing, try to render a shader, or a fallback.
+        let mut pushed_resize = false;
+        if let Some(resize) = &self.resize_animation {
+            if ResizeRenderElement::has_shader(renderer) {
+                let gles_renderer = renderer.as_gles_renderer();
+
+                if let Some(texture_from) = resize.snapshot.texture(gles_renderer, scale, target) {
+                    let mut window_elements = Vec::new();
+                    self.window.render_push_normal(
+                        gles_renderer,
+                        Point::from((0., 0.)),
+                        scale,
+                        1.,
+                        target,
+                        &mut |elem| window_elements.push(elem),
+                    );
+
+                    let current = resize
+                        .offscreen
+                        .render(gles_renderer, scale, &window_elements)
+                        .map_err(|err| warn!("error rendering window to texture: {err:?}"))
+                        .ok();
+
+                    // Clip blocked-out resizes unconditionally because they use solid color render
+                    // elements.
+                    let clip_to_geometry = if target
+                        .should_block_out(resize.snapshot.block_out_from)
+                        && target.should_block_out(rules.block_out_from)
+                    {
+                        true
+                    } else {
+                        clip_to_geometry
+                    };
+
+                    if let Some((elem_current, _sync_point, mut data)) = current {
+                        let texture_current = elem_current.texture().clone();
+                        // The offset and size are computed in physical pixels and converted to
+                        // logical with the same `scale`, so converting them back with rounding
+                        // inside the geometry() call gives us the same physical result back.
+                        let texture_current_geo = elem_current.geometry(scale);
+
+                        let elem = ResizeRenderElement::new(
+                            area,
+                            scale,
+                            texture_from.clone(),
+                            resize.snapshot.size,
+                            (texture_current, texture_current_geo),
+                            window_size,
+                            resize.anim.value() as f32,
+                            resize.anim.clamped_value().clamp(0., 1.) as f32,
+                            radius,
+                            clip_to_geometry,
+                            win_alpha,
+                        );
+
+                        // We're drawing the resize shader, not the offscreen directly.
+                        data.id = elem.id().clone();
+
+                        // This is not a problem for split popups as the code will look for them by
+                        // original id when it doesn't find them on the offscreen.
+                        self.window.set_offscreen_data(Some(data));
+                        push(elem.into());
+                        pushed_resize = true;
+                    }
+                }
+            }
+
+            if !pushed_resize {
+                let fallback_buffer = SolidColorBuffer::new(area.size, [1., 0., 0., 1.]);
+                let elem = SolidColorRenderElement::from_buffer(
+                    &fallback_buffer,
+                    area.loc,
+                    win_alpha,
+                    Kind::Unspecified,
+                );
+                push(elem.into());
+                pushed_resize = true;
+            }
+        }
+
+        // If we're not resizing, render the window itself.
+        let has_border_shader = BorderRenderElement::has_shader(renderer);
+        if !pushed_resize {
+            let geo = Rectangle::new(window_render_loc, window_size);
+            let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
+
+            let clip_shader = ClippedSurfaceRenderElement::shader(renderer).cloned();
+            let clip = |elem| match elem {
+                LayoutElementRenderElement::Wayland(elem) => {
+                    // If we should clip to geometry, render a clipped window.
+                    if clip_to_geometry {
+                        if let Some(shader) = clip_shader.clone() {
+                            if ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius) {
+                                return ClippedSurfaceRenderElement::new(
+                                    elem,
+                                    scale,
+                                    geo,
+                                    shader.clone(),
+                                    radius,
+                                )
+                                .into();
+                            }
+                        }
+                    }
+
+                    // Otherwise, render it normally.
+                    LayoutElementRenderElement::Wayland(elem).into()
+                }
+                LayoutElementRenderElement::SolidColor(elem) => {
+                    // In this branch we're rendering a blocked-out window with a solid
+                    // color. We need to render it with a rounded corner shader even if
+                    // clip_to_geometry is false, because in this case we're assuming that
+                    // the unclipped window CSD already has corners rounded to the
+                    // user-provided radius, so our blocked-out rendering should match that
+                    // radius.
+                    if radius != CornerRadius::default() && has_border_shader {
+                        return BorderRenderElement::new(
+                            geo.size,
+                            Rectangle::from_size(geo.size),
+                            GradientInterpolation::default(),
+                            Color::from_color32f(elem.color()),
+                            Color::from_color32f(elem.color()),
+                            0.,
+                            Rectangle::from_size(geo.size),
+                            0.,
+                            radius,
+                            scale.x as f32,
+                            1.,
+                        )
+                        .with_location(geo.loc)
+                        .into();
+                    }
+
+                    // Otherwise, render the solid color as is.
+                    LayoutElementRenderElement::SolidColor(elem).into()
+                }
+            };
+
+            if clip_to_geometry && clip_shader.is_some() {
+                let damage = self.rounded_corner_damage.element();
+                push(damage.with_location(window_render_loc).into());
+            }
+
+            self.window.render_push_normal(
+                renderer,
+                window_render_loc,
+                scale,
+                win_alpha,
+                target,
+                &mut |elem| push(clip(elem)),
+            );
+        }
+
+        if fullscreen_progress > 0. {
+            let alpha = fullscreen_progress as f32;
+
+            // During the un/fullscreen animation, render a border element in order to use the
+            // animated corner radius.
+            if fullscreen_progress < 1. && has_border_shader {
+                let border_width = self.visual_border_width().unwrap_or(0.);
+                let radius = rules
+                    .geometry_corner_radius
+                    .map_or(CornerRadius::default(), |radius| {
+                        radius.expanded_by(border_width as f32)
+                    })
+                    .scaled_by(1. - expanded_progress as f32);
+
+                let size = self.fullscreen_backdrop.size();
+                let color = self.fullscreen_backdrop.color();
+                let elem = BorderRenderElement::new(
+                    size,
+                    Rectangle::from_size(size),
+                    GradientInterpolation::default(),
+                    Color::from_color32f(color),
+                    Color::from_color32f(color),
+                    0.,
+                    Rectangle::from_size(size),
+                    0.,
+                    radius,
+                    scale.x as f32,
+                    alpha,
+                )
+                .with_location(location);
+                push(elem.into());
+            } else {
+                let elem = SolidColorRenderElement::from_buffer(
+                    &self.fullscreen_backdrop,
+                    location,
+                    alpha,
+                    Kind::Unspecified,
+                );
+                push(elem.into());
+            }
+        }
+
+        if let Some(width) = self.visual_border_width() {
+            self.border.render_push(
+                renderer,
+                location + Point::from((width, width)),
+                &mut |elem| push(elem.into()),
+            );
+        }
+
+        // Hide the focus ring when maximized/fullscreened. It's not normally visible anyway due to
+        // being outside the monitor or obscured by a solid colored bar, but it is visible under
+        // semitransparent bars in maximized state (which is a bit weird) and in the overview (also
+        // a bit weird).
+        if focus_ring && expanded_progress < 1. {
+            self.focus_ring
+                .render_push(renderer, location, &mut |elem| push(elem.into()));
+        }
+
+        if expanded_progress < 1. {
+            self.shadow
+                .render_push(renderer, location, &mut |elem| push(elem.into()));
+        }
+    }
+
     pub fn render<'a, R: NiriRenderer + 'a>(
         &'a self,
         renderer: &mut R,
@@ -1358,6 +1636,85 @@ impl<W: LayoutElement> Tile<W> {
             .into_iter()
             .chain(alpha_anim_elem)
             .chain(window_elems.into_iter().flatten())
+    }
+
+    pub fn render_push<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        focus_ring: bool,
+        target: RenderTarget,
+        push: &mut dyn FnMut(TileRenderElement<R>),
+    ) {
+        let _span = tracy_client::span!("Tile::render_push");
+
+        let scale = Scale::from(self.scale);
+
+        let tile_alpha = self
+            .alpha_animation
+            .as_ref()
+            .map_or(1., |alpha| alpha.anim.clamped_value()) as f32;
+
+        let mut pushed = false;
+        self.window().set_offscreen_data(None);
+
+        if let Some(open) = &self.open_animation {
+            let renderer = renderer.as_gles_renderer();
+            let mut elements = Vec::new();
+            self.render_push_inner(
+                renderer,
+                Point::from((0., 0.)),
+                focus_ring,
+                target,
+                &mut |elem| elements.push(elem),
+            );
+            match open.render(
+                renderer,
+                &elements,
+                self.animated_tile_size(),
+                location,
+                scale,
+                tile_alpha,
+            ) {
+                Ok((elem, data)) => {
+                    self.window().set_offscreen_data(Some(data));
+                    push(elem.into());
+                    pushed = true;
+                }
+                Err(err) => {
+                    warn!("error rendering window opening animation: {err:?}");
+                }
+            }
+        } else if let Some(alpha) = &self.alpha_animation {
+            let renderer = renderer.as_gles_renderer();
+            let mut elements = Vec::new();
+            self.render_push_inner(
+                renderer,
+                Point::from((0., 0.)),
+                focus_ring,
+                target,
+                &mut |elem| elements.push(elem),
+            );
+            match alpha.offscreen.render(renderer, scale, &elements) {
+                Ok((elem, _sync, data)) => {
+                    let offset = elem.offset();
+                    let elem = elem.with_alpha(tile_alpha).with_offset(location + offset);
+
+                    self.window().set_offscreen_data(Some(data));
+                    push(elem.into());
+                    pushed = true;
+                }
+                Err(err) => {
+                    warn!("error rendering tile to offscreen for alpha animation: {err:?}");
+                }
+            }
+        }
+
+        if !pushed {
+            self.render_push_inner(renderer, location, focus_ring, target, &mut |elem| {
+                push(elem)
+            });
+        }
     }
 
     pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer) {

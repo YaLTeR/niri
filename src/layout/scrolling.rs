@@ -2965,6 +2965,71 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         rv
     }
 
+    pub fn render_push<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        target: RenderTarget,
+        focus_ring: bool,
+        push: &mut dyn FnMut(ScrollingSpaceRenderElement<R>),
+    ) {
+        let scale = Scale::from(self.scale);
+
+        // Draw the closing windows on top of the other windows.
+        let view_rect = Rectangle::new(Point::from((self.view_pos(), 0.)), self.view_size);
+        for closing in self.closing_windows.iter().rev() {
+            let elem = closing.render(renderer.as_gles_renderer(), view_rect, scale, target);
+            push(elem.into());
+        }
+
+        if self.columns.is_empty() {
+            return;
+        }
+
+        let mut first = true;
+
+        // This matches self.tiles_in_render_order().
+        let view_off = Point::from((-self.view_pos(), 0.));
+        for (col, col_x) in self.columns_in_render_order() {
+            let col_off = Point::from((col_x, 0.));
+            let col_render_off = col.render_offset();
+
+            // Draw the tab indicator on top.
+            {
+                let pos = view_off + col_off + col_render_off;
+                let pos = pos.to_physical_precise_round(scale).to_logical(scale);
+                col.tab_indicator
+                    .render_push(renderer, pos, &mut |elem| push(elem.into()));
+            }
+
+            for (tile, tile_off, visible) in col.tiles_in_render_order() {
+                let tile_pos =
+                    view_off + col_off + col_render_off + tile_off + tile.render_offset();
+                // Round to physical pixels.
+                let tile_pos = tile_pos.to_physical_precise_round(scale).to_logical(scale);
+
+                // And now the drawing logic.
+
+                // For the active tile (which comes first), draw the focus ring.
+                let focus_ring = focus_ring && first;
+                first = false;
+
+                // In the scrolling layout, we currently use visible only for hidden tabs in the
+                // tabbed mode. We want to animate their opacity when going in and out of tabbed
+                // mode, so we don't want to apply "visible" immediately. However, "visible" is
+                // also used for input handling, and there we *do* want to apply it immediately.
+                // So, let's just selectively ignore "visible" here when animating alpha.
+                let visible = visible || tile.alpha_animation.is_some();
+                if !visible {
+                    continue;
+                }
+
+                tile.render_push(renderer, tile_pos, focus_ring, target, &mut |elem| {
+                    push(elem.into())
+                });
+            }
+        }
+    }
+
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
         // This matches self.tiles_with_render_positions().
         let scale = self.scale;

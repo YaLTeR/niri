@@ -2,7 +2,7 @@ use std::any::Any;
 use std::cmp::min;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
@@ -1636,6 +1636,56 @@ impl State {
                 self.niri.layout.center_visible_columns();
                 // FIXME: granular
                 self.niri.queue_redraw_all();
+
+                let output = self.niri.layout.active_output().unwrap();
+                let output = output.clone();
+                self.niri.update_render_elements(Some(&output));
+
+                self.backend.with_primary_renderer(|renderer| {
+                    // let mon = self.niri.layout.monitor_for_output(output).unwrap();
+
+                    let N = 5000;
+                    let mut total = 0;
+                    let mut total_len = 0;
+                    let start = Instant::now();
+                    for _ in 0..N {
+                        let _span = tracy_client::span!("prev render");
+                        let elements = self.niri.render_prev(
+                            renderer,
+                            &output,
+                            true,
+                            crate::render_helpers::RenderTarget::Output,
+                        );
+                        total += elements.capacity();
+                        total_len += elements.len();
+                    }
+                    let elapsed = start.elapsed();
+                    warn!(
+                        "prev capacity: {total}, len: {total_len}, mean time: {:.3} ms",
+                        elapsed.as_secs_f64() / N as f64 * 1000.
+                    );
+
+                    total = 0;
+                    total_len = 0;
+                    let start = Instant::now();
+                    for _ in 0..N {
+                        let _span = tracy_client::span!("new render");
+                        let elements = self.niri.render(
+                            renderer,
+                            &output,
+                            true,
+                            crate::render_helpers::RenderTarget::Output,
+                        );
+                        total += elements.capacity();
+                        total_len += elements.len();
+                    }
+                    let elapsed = start.elapsed();
+
+                    warn!(
+                        " new capacity: {total}, len: {total_len}, mean time: {:.3} ms",
+                        elapsed.as_secs_f64() / N as f64 * 1000.
+                    );
+                });
             }
             Action::MaximizeColumn => {
                 self.niri.layout.toggle_full_width();

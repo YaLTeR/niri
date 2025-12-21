@@ -262,6 +262,49 @@ impl FocusRing {
         rv.into_iter()
     }
 
+    pub fn render_push(
+        &self,
+        renderer: &mut impl NiriRenderer,
+        location: Point<f64, Logical>,
+        push: &mut dyn FnMut(FocusRingRenderElement),
+    ) {
+        if self.config.off {
+            return;
+        }
+
+        let border_width = -self.locations[0].y;
+
+        // If drawing as a border with width = 0, then there's nothing to draw.
+        if self.is_border && border_width == 0. {
+            return;
+        }
+
+        let has_border_shader = BorderRenderElement::has_shader(renderer);
+
+        let mut push = |buffer, border: &BorderRenderElement, location: Point<f64, Logical>| {
+            let elem = if self.use_border_shader && has_border_shader {
+                border.clone().with_location(location).into()
+            } else {
+                let alpha = border.alpha();
+                SolidColorRenderElement::from_buffer(buffer, location, alpha, Kind::Unspecified)
+                    .into()
+            };
+            push(elem);
+        };
+
+        if self.is_border {
+            for ((buf, border), loc) in zip(zip(&self.buffers, &self.borders), self.locations) {
+                push(buf, border, location + loc);
+            }
+        } else {
+            push(
+                &self.buffers[0],
+                &self.borders[0],
+                location + self.locations[0],
+            );
+        }
+    }
+
     pub fn width(&self) -> f64 {
         self.config.width
     }

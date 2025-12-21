@@ -15,6 +15,7 @@ use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
+use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::{RenderTarget, SplitElements};
 use crate::utils::{baba_is_float_offset, round_logical_in_physical};
 
@@ -214,5 +215,84 @@ impl MappedLayer {
             .extend(self.shadow.render(renderer, location).map(Into::into));
 
         rv
+    }
+
+    pub fn render_push_normal<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        target: RenderTarget,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
+        let scale = Scale::from(self.scale);
+        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
+        let location = location + self.bob_offset();
+
+        if target.should_block_out(self.rules.block_out_from) {
+            // Round to physical pixels.
+            let location = location.to_physical_precise_round(scale).to_logical(scale);
+
+            // FIXME: take geometry-corner-radius into account.
+            let elem = SolidColorRenderElement::from_buffer(
+                &self.block_out_buffer,
+                location,
+                alpha,
+                Kind::Unspecified,
+            );
+            push(elem.into());
+        } else {
+            // Layer surfaces don't have extra geometry like windows.
+            let buf_pos = location;
+
+            let surface = self.surface.wl_surface();
+            push_elements_from_surface_tree(
+                renderer,
+                surface,
+                buf_pos.to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::ScanoutCandidate,
+                &mut |elem| push(elem.into()),
+            );
+        }
+
+        let location = location.to_physical_precise_round(scale).to_logical(scale);
+        self.shadow
+            .render_push(renderer, location, &mut |elem| push(elem.into()));
+    }
+
+    pub fn render_push_popups<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        target: RenderTarget,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
+        let scale = Scale::from(self.scale);
+        let alpha = self.rules.opacity.unwrap_or(1.).clamp(0., 1.);
+        let location = location + self.bob_offset();
+
+        if target.should_block_out(self.rules.block_out_from) {
+            return;
+        }
+
+        // Layer surfaces don't have extra geometry like windows.
+        let buf_pos = location;
+
+        let surface = self.surface.wl_surface();
+        for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
+            // Layer surfaces don't have extra geometry like windows.
+            let offset = popup_offset - popup.geometry().loc;
+
+            push_elements_from_surface_tree(
+                renderer,
+                popup.wl_surface(),
+                (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::ScanoutCandidate,
+                &mut |elem| push(elem.into()),
+            );
+        }
     }
 }

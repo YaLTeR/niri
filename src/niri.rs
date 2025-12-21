@@ -157,6 +157,7 @@ use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
+use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::{
     encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
@@ -4294,14 +4295,14 @@ impl Niri {
         }
     }
 
-    pub fn render<R: NiriRenderer>(
+    pub fn render_prev<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         output: &Output,
         include_pointer: bool,
         mut target: RenderTarget,
     ) -> Vec<OutputRenderElements<R>> {
-        let _span = tracy_client::span!("Niri::render");
+        let _span = tracy_client::span!("Niri::render_prev");
 
         if target == RenderTarget::Output {
             if let Some(preview) = self.config.borrow().debug.preview_render {
@@ -4554,6 +4555,252 @@ impl Niri {
         elements
     }
 
+    pub fn render<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        output: &Output,
+        include_pointer: bool,
+        mut target: RenderTarget,
+    ) -> Vec<OutputRenderElements<R>> {
+        let _span = tracy_client::span!("Niri::render");
+
+        if target == RenderTarget::Output {
+            if let Some(preview) = self.config.borrow().debug.preview_render {
+                target = match preview {
+                    PreviewRender::Screencast => RenderTarget::Screencast,
+                    PreviewRender::ScreenCapture => RenderTarget::ScreenCapture,
+                };
+            }
+        }
+
+        let output_scale = Scale::from(output.current_scale().fractional_scale());
+
+        // The pointer goes on the top.
+        let mut elements = vec![];
+        if include_pointer {
+            elements = self.pointer_element(renderer, output);
+        }
+
+        // Next, the screen transition texture.
+        {
+            let state = self.output_state.get(output).unwrap();
+            if let Some(transition) = &state.screen_transition {
+                elements.push(transition.render(target).into());
+            }
+        }
+
+        // Next, the exit confirm dialog.
+        self.exit_confirm_dialog
+            .render_push(renderer, output, &mut |elem| elements.push(elem.into()));
+
+        // Next, the config error notification too.
+        if let Some(element) = self.config_error_notification.render(renderer, output) {
+            elements.push(element.into());
+        }
+
+        // If the session is locked, draw the lock surface.
+        if self.is_locked() {
+            let state = self.output_state.get(output).unwrap();
+            if let Some(surface) = state.lock_surface.as_ref() {
+                push_elements_from_surface_tree(
+                    renderer,
+                    surface.wl_surface(),
+                    Point::new(0, 0),
+                    output_scale,
+                    1.,
+                    Kind::ScanoutCandidate,
+                    &mut |elem| elements.push(elem.into()),
+                );
+            }
+
+            // Draw the solid color background.
+            elements.push(
+                SolidColorRenderElement::from_buffer(
+                    &state.lock_color_buffer,
+                    (0., 0.),
+                    1.,
+                    Kind::Unspecified,
+                )
+                .into(),
+            );
+
+            if self.debug_draw_opaque_regions {
+                draw_opaque_regions(&mut elements, output_scale);
+            }
+            return elements;
+        }
+
+        // Prepare the background elements.
+        let state = self.output_state.get(output).unwrap();
+        let backdrop = SolidColorRenderElement::from_buffer(
+            &state.backdrop_buffer,
+            (0., 0.),
+            1.,
+            Kind::Unspecified,
+        )
+        .into();
+
+        // If the screenshot UI is open, draw it.
+        if self.screenshot_ui.is_open() {
+            self.screenshot_ui
+                .render_push_output(output, target, &mut |elem| elements.push(elem.into()));
+
+            // Add the backdrop for outputs that were connected while the screenshot UI was open.
+            elements.push(backdrop);
+
+            if self.debug_draw_opaque_regions {
+                draw_opaque_regions(&mut elements, output_scale);
+            }
+            return elements;
+        }
+
+        // Draw the hotkey overlay on top.
+        if let Some(element) = self.hotkey_overlay.render(renderer, output) {
+            elements.push(element.into());
+        }
+
+        // Then, the Alt-Tab switcher.
+        self.window_mru_ui
+            .render_push_output(self, output, renderer, target, &mut |elem| {
+                elements.push(elem.into())
+            });
+
+        // Don't draw the focus ring on the workspaces while interactively moving above those
+        // workspaces, since the interactively-moved window already has a focus ring.
+        let focus_ring = !self.layout.interactive_move_is_moving_above_output(output);
+
+        // Get monitor elements.
+        let mon = self.layout.monitor_for_output(output).unwrap();
+        let zoom = mon.overview_zoom();
+
+        // Get layer-shell elements.
+        let layer_map = layer_map_for_output(output);
+
+        // We use macros instead of closures to avoid borrowing issues (renderer and elements go
+        // into different functions).
+        macro_rules! push_popups_from_layer {
+            ($layer:expr, $backdrop:expr, $push:expr) => {{
+                self.render_layer_popups(renderer, target, &layer_map, $layer, $backdrop, $push);
+            }};
+            ($layer:expr, true) => {{
+                push_popups_from_layer!($layer, true, &mut |elem| elements.push(elem.into()));
+            }};
+            ($layer:expr, $push:expr) => {{
+                push_popups_from_layer!($layer, false, $push);
+            }};
+            ($layer:expr) => {{
+                push_popups_from_layer!($layer, false, &mut |elem| elements.push(elem.into()));
+            }};
+        }
+        macro_rules! push_normal_from_layer {
+            ($layer:expr, $backdrop:expr, $push:expr) => {{
+                self.render_layer_normal(renderer, target, &layer_map, $layer, $backdrop, $push);
+            }};
+            ($layer:expr, true) => {{
+                push_normal_from_layer!($layer, true, &mut |elem| elements.push(elem.into()));
+            }};
+            ($layer:expr, $push:expr) => {{
+                push_normal_from_layer!($layer, false, $push);
+            }};
+            ($layer:expr) => {{
+                push_normal_from_layer!($layer, false, &mut |elem| elements.push(elem.into()));
+            }};
+        }
+
+        // The overlay layer elements go next.
+        push_popups_from_layer!(Layer::Overlay);
+        push_normal_from_layer!(Layer::Overlay);
+
+        // When rendering above the top layer, we put the regular monitor elements first.
+        // Otherwise, we will render all layer-shell pop-ups and the top layer on top.
+        if mon.render_above_top_layer() {
+            self.layout.render_push_interactive_move_for_output(
+                renderer,
+                output,
+                target,
+                &mut |elem| elements.push(elem.into()),
+            );
+
+            mon.render_push_insert_hint_between_workspaces(renderer, &mut |elem| {
+                elements.push(elem.into())
+            });
+
+            mon.render_workspaces(renderer, target, focus_ring, &mut |elem| {
+                elements.push(elem.into())
+            });
+
+            push_popups_from_layer!(Layer::Top);
+            push_normal_from_layer!(Layer::Top);
+
+            push_popups_from_layer!(Layer::Bottom);
+            push_popups_from_layer!(Layer::Background);
+            push_normal_from_layer!(Layer::Bottom);
+            push_normal_from_layer!(Layer::Background);
+
+            if let Some((ws, geo)) = mon.workspaces_with_render_geo().next() {
+                let elem = ws.render_background();
+                if let Some(elem) = scale_relocate_crop(elem, output_scale, zoom, geo) {
+                    elements.push(OutputRenderElements::from(elem));
+                }
+            }
+        } else {
+            push_popups_from_layer!(Layer::Top);
+            push_normal_from_layer!(Layer::Top);
+
+            self.layout.render_push_interactive_move_for_output(
+                renderer,
+                output,
+                target,
+                &mut |elem| elements.push(elem.into()),
+            );
+
+            mon.render_push_insert_hint_between_workspaces(renderer, &mut |elem| {
+                elements.push(elem.into())
+            });
+
+            // Macro instead of closure to avoid borrowing elements.
+            macro_rules! process {
+                ($geo:expr) => {{
+                    &mut |elem| {
+                        if let Some(elem) = scale_relocate_crop(elem, output_scale, zoom, $geo) {
+                            elements.push(elem.into());
+                        }
+                    }
+                }};
+            }
+
+            for (_ws, geo) in mon.workspaces_with_render_geo() {
+                push_popups_from_layer!(Layer::Bottom, process!(geo));
+                push_popups_from_layer!(Layer::Background, process!(geo));
+            }
+
+            mon.render_workspaces(renderer, target, focus_ring, &mut |elem| {
+                elements.push(elem.into())
+            });
+
+            for (ws, geo) in mon.workspaces_with_render_geo() {
+                push_normal_from_layer!(Layer::Bottom, process!(geo));
+                push_normal_from_layer!(Layer::Background, process!(geo));
+
+                process!(geo)(ws.render_background());
+            }
+        }
+
+        mon.render_push_workspace_shadows(renderer, &mut |elem| elements.push(elem.into()));
+
+        // Then the backdrop.
+        push_popups_from_layer!(Layer::Background, true);
+        push_normal_from_layer!(Layer::Background, true);
+
+        elements.push(backdrop);
+
+        if self.debug_draw_opaque_regions {
+            draw_opaque_regions(&mut elements, output_scale);
+        }
+
+        elements
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn render_layer<R: NiriRenderer>(
         &self,
@@ -4577,6 +4824,53 @@ impl Niri {
         });
         for (mapped, geo) in iter {
             elements.extend(mapped.render(renderer, geo.loc.to_f64(), target));
+        }
+    }
+
+    fn layers_in_render_order<'a>(
+        &'a self,
+        layer_map: &'a LayerMap,
+        layer: Layer,
+        for_backdrop: bool,
+    ) -> impl Iterator<Item = (&'a MappedLayer, Rectangle<i32, Logical>)> {
+        // LayerMap returns layers in reverse stacking order.
+        layer_map.layers_on(layer).rev().filter_map(move |surface| {
+            let mapped = self.mapped_layer_surfaces.get(surface)?;
+
+            if for_backdrop != mapped.place_within_backdrop() {
+                return None;
+            }
+
+            let geo = layer_map.layer_geometry(surface)?;
+            Some((mapped, geo))
+        })
+    }
+
+    fn render_layer_normal<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        target: RenderTarget,
+        layer_map: &LayerMap,
+        layer: Layer,
+        for_backdrop: bool,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
+        for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
+            mapped.render_push_normal(renderer, geo.loc.to_f64(), target, push);
+        }
+    }
+
+    fn render_layer_popups<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        target: RenderTarget,
+        layer_map: &LayerMap,
+        layer: Layer,
+        for_backdrop: bool,
+        push: &mut dyn FnMut(LayerSurfaceRenderElement<R>),
+    ) {
+        for (mapped, geo) in self.layers_in_render_order(layer_map, layer, for_backdrop) {
+            mapped.render_push_popups(renderer, geo.loc.to_f64(), target, push);
         }
     }
 
@@ -6563,6 +6857,9 @@ niri_render_elements! {
         LayerSurface = LayerSurfaceRenderElement<R>,
         RelocatedLayerSurface = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
             LayerSurfaceRenderElement<R>
+        >>>,
+        RelocatedColor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            SolidColorRenderElement
         >>>,
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,

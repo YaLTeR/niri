@@ -698,6 +698,81 @@ impl ScreenshotUi {
         elements
     }
 
+    pub fn render_push_output(
+        &self,
+        output: &Output,
+        target: RenderTarget,
+        push: &mut dyn FnMut(ScreenshotUiRenderElement),
+    ) {
+        let _span = tracy_client::span!("ScreenshotUi::render_push_output");
+
+        let Self::Open {
+            output_data,
+            show_pointer,
+            button,
+            open_anim,
+            ..
+        } = self
+        else {
+            panic!("screenshot UI must be open to render it");
+        };
+
+        let Some(output_data) = output_data.get(output) else {
+            return;
+        };
+
+        let scale = output_data.scale;
+        let progress = open_anim.clamped_value().clamp(0., 1.) as f32;
+
+        // The help panel goes on top.
+        if let Some((show, hide)) = &output_data.panel {
+            let buffer = if *show_pointer { hide } else { show };
+            let alpha = if button.is_dragging_selection() {
+                0.3
+            } else {
+                0.9
+            };
+            let location = panel_location(output_data, buffer.texture().size())
+                .to_f64()
+                .to_logical(scale);
+
+            let elem = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                buffer.clone(),
+                location,
+                alpha * progress,
+                None,
+                None,
+                Kind::Unspecified,
+            ));
+            push(elem.into());
+        }
+
+        for (buffer, loc) in zip(&output_data.buffers, &output_data.locations) {
+            let elem = SolidColorRenderElement::from_buffer(
+                buffer,
+                loc.to_f64().to_logical(scale),
+                progress,
+                Kind::Unspecified,
+            );
+            push(elem.into());
+        }
+
+        // The screenshot itself goes last.
+        let index = match target {
+            RenderTarget::Output => 0,
+            RenderTarget::Screencast => 1,
+            RenderTarget::ScreenCapture => 2,
+        };
+        let screenshot = &output_data.screenshot[index];
+
+        if *show_pointer {
+            if let Some(pointer) = screenshot.pointer.clone() {
+                push(pointer.into());
+            }
+        }
+        push(screenshot.buffer.clone().into());
+    }
+
     pub fn capture(
         &self,
         renderer: &mut GlesRenderer,

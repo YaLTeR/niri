@@ -307,6 +307,23 @@ impl TabIndicator {
         Some(rv).into_iter().flatten()
     }
 
+    pub fn render_push(
+        &self,
+        renderer: &mut impl NiriRenderer,
+        pos: Point<f64, Logical>,
+        push: &mut dyn FnMut(TabIndicatorRenderElement),
+    ) {
+        let has_border_shader = BorderRenderElement::has_shader(renderer);
+        if !has_border_shader {
+            return;
+        }
+
+        for (shader, loc) in zip(&self.shaders, &self.shader_locs) {
+            let elem = shader.clone().with_location(pos + *loc);
+            push(TabIndicatorRenderElement::from(elem));
+        }
+    }
+
     /// Extra size occupied by the tab indicator.
     pub fn extra_size(&self, tab_count: usize, scale: f64) -> Size<f64, Logical> {
         if self.config.off

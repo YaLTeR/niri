@@ -564,6 +564,241 @@ impl Thumbnail {
 
         elems.chain(title_elems).chain(background_elems)
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_push<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        config: &niri_config::RecentWindows,
+        mapped: &Mapped,
+        preview_geo: Rectangle<f64, Logical>,
+        scale: f64,
+        is_active: bool,
+        bob_y: f64,
+        target: RenderTarget,
+        push: &mut dyn FnMut(WindowMruUiRenderElement<R>),
+    ) {
+        let _span = tracy_client::span!("Thumbnail::render_push");
+
+        let round = move |logical: f64| round_logical_in_physical(scale, logical);
+        let padding = round(config.highlight.padding);
+        let title_gap = round(TITLE_GAP);
+
+        let s = Scale::from(scale);
+
+        let preview_alpha = self
+            .open_animation
+            .as_ref()
+            .map_or(1., |a| a.clamped_value() as f32)
+            .clamp(0., 1.);
+
+        let bob_y = if mapped.rules().baba_is_float == Some(true) {
+            bob_y
+        } else {
+            0.
+        };
+        let bob_offset = Point::new(0., bob_y);
+
+        // Clip thumbnails to their geometry.
+        let radius = if mapped.sizing_mode().is_normal() {
+            mapped.rules().geometry_corner_radius
+        } else {
+            None
+        }
+        .unwrap_or_default();
+
+        let has_border_shader = BorderRenderElement::has_shader(renderer);
+        let clip_shader = ClippedSurfaceRenderElement::shader(renderer).cloned();
+        let geo = Rectangle::from_size(self.size.to_f64());
+        // FIXME: deduplicate code with Tile::render_inner()
+        let clip = move |elem| match elem {
+            LayoutElementRenderElement::Wayland(elem) => {
+                if let Some(shader) = clip_shader.clone() {
+                    if ClippedSurfaceRenderElement::will_clip(&elem, s, geo, radius) {
+                        let elem =
+                            ClippedSurfaceRenderElement::new(elem, s, geo, shader.clone(), radius);
+                        return ThumbnailRenderElement::ClippedSurface(elem);
+                    }
+                }
+
+                // If we don't have the shader, render it normally.
+                let elem = LayoutElementRenderElement::Wayland(elem);
+                ThumbnailRenderElement::LayoutElement(elem)
+            }
+            LayoutElementRenderElement::SolidColor(elem) => {
+                // In this branch we're rendering a blocked-out window with a solid
+                // color. We need to render it with a rounded corner shader even if
+                // clip_to_geometry is false, because in this case we're assuming that
+                // the unclipped window CSD already has corners rounded to the
+                // user-provided radius, so our blocked-out rendering should match that
+                // radius.
+                if radius != CornerRadius::default() && has_border_shader {
+                    return BorderRenderElement::new(
+                        geo.size,
+                        Rectangle::from_size(geo.size),
+                        GradientInterpolation::default(),
+                        Color::from_color32f(elem.color()),
+                        Color::from_color32f(elem.color()),
+                        0.,
+                        Rectangle::from_size(geo.size),
+                        0.,
+                        radius,
+                        scale as f32,
+                        1.,
+                    )
+                    .into();
+                }
+
+                // Otherwise, render the solid color as is.
+                LayoutElementRenderElement::SolidColor(elem).into()
+            }
+        };
+
+        let downscale = move |elem| {
+            let thumb_scale = Scale {
+                x: preview_geo.size.w / geo.size.w,
+                y: preview_geo.size.h / geo.size.h,
+            };
+            let offset = Point::new(
+                preview_geo.size.w - (geo.size.w * thumb_scale.x),
+                preview_geo.size.h - (geo.size.h * thumb_scale.y),
+            )
+            .downscale(2.);
+            let elem = RescaleRenderElement::from_element(elem, Point::new(0, 0), thumb_scale);
+            let elem = RelocateRenderElement::from_element(
+                elem,
+                (preview_geo.loc + offset + bob_offset).to_physical_precise_round(scale),
+                Relocate::Relative,
+            );
+            WindowMruUiRenderElement::Thumbnail(elem)
+        };
+
+        // FIXME: this could use mipmaps, for that it should be rendered through an offscreen.
+        mapped.render_push_normal(
+            renderer,
+            Point::new(0., 0.),
+            s,
+            preview_alpha,
+            target,
+            &mut |elem| {
+                let elem = clip(elem);
+                let elem = downscale(elem);
+                push(elem)
+            },
+        );
+
+        let mut title_size = None;
+        let title_texture = self.title_texture(renderer.as_gles_renderer(), mapped, scale);
+        let title_texture = title_texture.map(|texture| {
+            let mut size = texture.logical_size();
+            size.w = f64::min(size.w, preview_geo.size.w);
+            title_size = Some(size);
+            (texture, size)
+        });
+
+        // Hide title for blocked-out windows, but only after computing the title size. This way,
+        // the background and the border won't have to oscillate in size between normal and
+        // screencast renders, causing excessive damage.
+        let should_block_out = target.should_block_out(mapped.rules().block_out_from);
+        let title_texture = title_texture.filter(|_| !should_block_out);
+
+        if let Some((texture, size)) = title_texture {
+            // Clip from the right if it doesn't fit.
+            let src = Rectangle::from_size(size);
+
+            let loc = preview_geo.loc
+                + Point::new(
+                    (preview_geo.size.w - size.w) / 2.,
+                    preview_geo.size.h + title_gap,
+                );
+            let loc = loc.to_physical_precise_round(scale).to_logical(scale);
+            let texture = TextureRenderElement::from_texture_buffer(
+                texture,
+                loc,
+                preview_alpha,
+                Some(src),
+                None,
+                Kind::Unspecified,
+            );
+
+            let renderer = renderer.as_gles_renderer();
+            if let Some(program) = GradientFadeTextureRenderElement::shader(renderer) {
+                let elem = GradientFadeTextureRenderElement::new(texture, program);
+                push(WindowMruUiRenderElement::GradientFadeElem(elem));
+            } else {
+                let elem = PrimaryGpuTextureRenderElement(texture);
+                push(WindowMruUiRenderElement::TextureElement(elem));
+            }
+        }
+
+        let is_urgent = mapped.is_urgent();
+        if is_active || is_urgent {
+            let padding = Point::new(padding, padding);
+
+            let mut size = preview_geo.size;
+            size += padding.to_size().upscale(2.);
+
+            if let Some(title_size) = title_size {
+                size.h += title_gap + title_size.h;
+                // Subtract half the padding so it looks more balanced visually.
+                size.h -= round(padding.y / 2.);
+            }
+
+            // FIXME: gradient support (will require passing down correct view_rect).
+            let mut color = if is_urgent {
+                config.highlight.urgent_color
+            } else {
+                config.highlight.active_color
+            };
+            if !is_active {
+                color *= 0.4;
+            }
+
+            let radius = CornerRadius::from(config.highlight.corner_radius as f32);
+
+            let loc = preview_geo.loc - padding;
+
+            let mut background = self.background.borrow_mut();
+            let mut config = *background.config();
+            config.active_color = color;
+            background.update_config(config);
+            background.update_render_elements(
+                size,
+                true,
+                false,
+                false,
+                Rectangle::default(),
+                radius,
+                scale,
+                0.5,
+            );
+            background.render_push(renderer, loc, &mut |elem| {
+                push(WindowMruUiRenderElement::FocusRing(elem))
+            });
+
+            let mut border = self.border.borrow_mut();
+            let mut config = *border.config();
+            config.off = !is_active;
+            config.width = round(BORDER);
+            config.active_color = color;
+            border.update_config(config);
+            border.set_thicken_corners(false);
+            border.update_render_elements(
+                size,
+                true,
+                true,
+                false,
+                Rectangle::default(),
+                radius.expanded_by(config.width as f32),
+                scale,
+                1.,
+            );
+
+            border.render_push(renderer, loc, &mut |elem| {
+                push(WindowMruUiRenderElement::FocusRing(elem))
+            });
+        }
+    }
 }
 
 impl WindowMru {
@@ -1184,6 +1419,91 @@ impl WindowMruUi {
         )
     }
 
+    pub fn render_push_output<R: NiriRenderer>(
+        &self,
+        niri: &Niri,
+        output: &Output,
+        renderer: &mut R,
+        target: RenderTarget,
+        push: &mut dyn FnMut(WindowMruUiRenderElement<R>),
+    ) {
+        let (inner, progress) = match &self.state {
+            UiState::Closed { .. } => return,
+            UiState::Closing { inner, anim } => (inner, anim.clamped_value()),
+            UiState::Open(inner) => {
+                if inner.is_fully_open() {
+                    (inner, 1.)
+                } else {
+                    return;
+                }
+            }
+        };
+
+        let _span = tracy_client::span!("mru render push");
+
+        let alpha = progress.clamp(0., 1.) as f32;
+
+        // Put a backdrop above the current desktop view to contrast the thumbnails.
+        let mut buffers = inner.backdrop_buffers.borrow_mut();
+        let buffer = buffers.entry(output.clone()).or_default();
+        buffer.resize(output_size(output));
+        buffer.set_color(BACKDROP_COLOR);
+        let render_backdrop = |alpha| {
+            SolidColorRenderElement::from_buffer(
+                buffer,
+                Point::new(0., 0.),
+                alpha,
+                Kind::Unspecified,
+            )
+            // Can't wrap into WindowMruUiRenderElement::SolidColor() right here since we have
+            // different <R> generic in offscreen vs. normal path.
+        };
+
+        // During the closing fade, use an offscreen to avoid transparent compositing artifacts.
+        let mut pushed_offscreen = false;
+        if *output == inner.output && alpha < 1. {
+            let renderer = renderer.as_gles_renderer();
+
+            let mut elems = Vec::new();
+            inner.render_push(niri, renderer, target, &mut |elem| elems.push(elem));
+            elems.push(WindowMruUiRenderElement::SolidColor(render_backdrop(1.)));
+
+            let scale = output.current_scale().fractional_scale();
+            match inner.offscreen.render(renderer, Scale::from(scale), &elems) {
+                Ok((elem, _sync, _data)) => {
+                    // FIXME: would be good to passthrough offscreen data to visible windows here.
+                    // As is, during the closing fade, windows from other workspaces stop receiving
+                    // frame callbacks.
+                    //
+                    // However, we need to refactor our offscreen data a bit to make this nicer.
+                    // Currently it supports a stack of offscreens, but not a several unrelated
+                    // offscreens showing the same window (possibly in addition to the window
+                    // itself).
+                    //
+                    // Anyhow, this is not very noticeable since Alt-Tab closing happens quickly.
+                    push(WindowMruUiRenderElement::Offscreen(elem.with_alpha(alpha)));
+                    pushed_offscreen = true;
+                }
+                Err(err) => {
+                    warn!("error rendering MRU to offscreen for fade-out: {err:?}");
+                }
+            }
+        }
+
+        // When alpha is 1., render everything directly, without an offscreen.
+        //
+        // This is not used as fallback when offscreen fails to render because it looks better to
+        // hide the previews immediately than to render them with alpha = 1. during a fade-out.
+        if *output == inner.output && alpha == 1. {
+            inner.render_push(niri, renderer, target, &mut |elem| push(elem));
+        }
+
+        // This is used for both normal elems and for other outputs.
+        if !pushed_offscreen {
+            push(WindowMruUiRenderElement::SolidColor(render_backdrop(alpha)));
+        }
+    }
+
     pub fn are_animations_ongoing(&self) -> bool {
         match &self.state {
             UiState::Open(inner) => inner.are_animations_ongoing(),
@@ -1611,6 +1931,59 @@ impl Inner {
         let thumbnails = thumbnails.flatten();
 
         panel.chain(thumbnails)
+    }
+
+    fn render_push<R: NiriRenderer>(
+        &self,
+        niri: &Niri,
+        renderer: &mut R,
+        target: RenderTarget,
+        push: &mut dyn FnMut(WindowMruUiRenderElement<R>),
+    ) {
+        let output_size = output_size(&self.output);
+        let scale = self.output.current_scale().fractional_scale();
+
+        let panel_texture =
+            self.scope_panel
+                .borrow_mut()
+                .get(renderer.as_gles_renderer(), scale, self.wmru.scope);
+        if let Some(texture) = panel_texture {
+            let padding = round_logical_in_physical(scale, f64::from(PANEL_PADDING));
+
+            let size = texture.logical_size();
+            let location = Point::new((output_size.w - size.w) / 2., padding * 2.);
+            let elem = PrimaryGpuTextureRenderElement(TextureRenderElement::from_texture_buffer(
+                texture.clone(),
+                location,
+                1.,
+                None,
+                None,
+                Kind::Unspecified,
+            ));
+            push(WindowMruUiRenderElement::TextureElement(elem));
+        }
+
+        let current_id = self.wmru.current_id;
+
+        let bob_y = baba_is_float_offset(self.clock.now(), output_size.h);
+        let bob_y = round_logical_in_physical(scale, bob_y);
+
+        let config = self.config.borrow();
+
+        for (thumbnail, geo) in self.thumbnails_in_view_render() {
+            let id = thumbnail.id;
+            let Some((_, mapped)) = niri.layout.windows().find(|(_, m)| m.id() == id) else {
+                error!("window in the MRU must be present in the layout");
+                continue;
+            };
+
+            let config = &config.recent_windows;
+
+            let is_active = Some(id) == current_id;
+            thumbnail.render_push(
+                renderer, config, mapped, geo, scale, is_active, bob_y, target, push,
+            );
+        }
     }
 
     fn thumbnail_under(&self, pos: Point<f64, Logical>) -> Option<MappedId> {

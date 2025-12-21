@@ -2,7 +2,9 @@ use std::cell::{Cell, Ref, RefCell};
 use std::time::Duration;
 
 use niri_config::{Color, CornerRadius, GradientInterpolation, WindowRule};
-use smithay::backend::renderer::element::surface::render_elements_from_surface_tree;
+use smithay::backend::renderer::element::surface::{
+    render_elements_from_surface_tree, WaylandSurfaceRenderElement,
+};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::space::SpaceElement as _;
@@ -33,7 +35,9 @@ use crate::render_helpers::offscreen::OffscreenData;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use crate::render_helpers::surface::render_snapshot_from_surface_tree;
+use crate::render_helpers::surface::{
+    push_elements_from_surface_tree, render_snapshot_from_surface_tree,
+};
 use crate::render_helpers::{BakedBuffer, RenderTarget, SplitElements};
 use crate::utils::id::IdCounter;
 use crate::utils::transaction::Transaction;
@@ -675,6 +679,37 @@ impl LayoutElement for Mapped {
         }
     }
 
+    fn render_push_normal<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        scale: Scale<f64>,
+        alpha: f32,
+        target: RenderTarget,
+        push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
+        if target.should_block_out(self.rules.block_out_from) {
+            let mut buffer = self.block_out_buffer.borrow_mut();
+            buffer.resize(self.window.geometry().size.to_f64());
+            let elem =
+                SolidColorRenderElement::from_buffer(&buffer, location, alpha, Kind::Unspecified);
+            push(elem.into());
+        } else {
+            let buf_pos = location - self.window.geometry().loc.to_f64();
+            let surface = self.toplevel().wl_surface();
+            let mut push = |elem: WaylandSurfaceRenderElement<R>| push(elem.into());
+            push_elements_from_surface_tree(
+                renderer,
+                surface,
+                buf_pos.to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::ScanoutCandidate,
+                &mut push,
+            )
+        }
+    }
+
     fn render_popups<R: NiriRenderer>(
         &self,
         renderer: &mut R,
@@ -704,6 +739,37 @@ impl LayoutElement for Mapped {
             }
 
             rv
+        }
+    }
+
+    fn render_push_popups<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        location: Point<f64, Logical>,
+        scale: Scale<f64>,
+        alpha: f32,
+        target: RenderTarget,
+        push: &mut dyn FnMut(LayoutElementRenderElement<R>),
+    ) {
+        if target.should_block_out(self.rules.block_out_from) {
+            return;
+        }
+
+        let buf_pos = location - self.window.geometry().loc.to_f64();
+        let surface = self.toplevel().wl_surface();
+        let mut push = |elem: WaylandSurfaceRenderElement<R>| push(elem.into());
+        for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
+            let offset = self.window.geometry().loc + popup_offset - popup.geometry().loc;
+
+            push_elements_from_surface_tree(
+                renderer,
+                popup.wl_surface(),
+                (buf_pos + offset.to_f64()).to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::ScanoutCandidate,
+                &mut push,
+            );
         }
     }
 
