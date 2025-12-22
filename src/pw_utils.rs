@@ -1053,6 +1053,11 @@ impl Cast {
         let bitmap_meta = unsafe { bitmap_meta_ptr.as_mut().unwrap() };
 
         let pointer_geo = encompassing_geo(scale, pointer_elements.iter());
+        if pointer_geo.size.is_empty() {
+            // No cursor elements to render.
+            cursor_meta.id = 0;
+            return;
+        }
         let size: Size<i32, Physical> = Size::from((
             std::cmp::min(pointer_geo.size.w, CURSOR_WIDTH as _),
             std::cmp::min(pointer_geo.size.h, CURSOR_HEIGHT as _),
