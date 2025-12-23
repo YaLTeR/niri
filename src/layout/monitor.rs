@@ -282,6 +282,7 @@ impl From<&super::OverviewProgress> for OverviewProgress {
         match value {
             super::OverviewProgress::Animation(anim) => Self::Animation(anim.clone()),
             super::OverviewProgress::Gesture(gesture) => Self::Value(gesture.value),
+            super::OverviewProgress::Open => Self::Value(1.),
         }
     }
 }
