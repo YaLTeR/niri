@@ -1212,6 +1212,7 @@ impl State {
         };
 
         let keyboard = self.niri.seat.get_keyboard().unwrap();
+        let current_focus = keyboard.current_focus();
         if self.niri.keyboard_focus != focus {
             trace!(
                 "keyboard focus changed from {:?} to {:?}",
@@ -1330,6 +1331,9 @@ impl State {
 
             // FIXME: can be more granular.
             self.niri.queue_redraw_all();
+        } else if current_focus.as_ref() != focus.surface() {
+            debug!("resyncing keyboard focus");
+            keyboard.set_focus(self, focus.into_surface(), SERIAL_COUNTER.next_serial());
         }
     }
 
