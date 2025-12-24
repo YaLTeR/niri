@@ -1091,7 +1091,7 @@ impl<W: LayoutElement> Tile<W> {
                     // elements.
                     let clip_to_geometry = if target
                         .should_block_out(resize.snapshot.block_out_from)
-                        && target.should_block_out(rules.block_out_from)
+                        && target.should_block_out(self.window.block_out_from())
                     {
                         true
                     } else {
@@ -1384,7 +1384,7 @@ impl<W: LayoutElement> Tile<W> {
         RenderSnapshot {
             contents: contents.collect(),
             blocked_out_contents: blocked_out_contents.collect(),
-            block_out_from: self.window.rules().block_out_from,
+            block_out_from: self.window.block_out_from(),
             size: self.animated_tile_size(),
             texture: Default::default(),
             blocked_out_texture: Default::default(),
