@@ -336,8 +336,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn update_shaders(&mut self) {
-        for tile in self.tiles_mut() {
-            tile.update_shaders();
+        for col in &mut self.columns {
+            col.update_shaders();
         }
     }
 
@@ -4054,6 +4054,14 @@ impl<W: LayoutElement> Column<W> {
         if update_sizes {
             self.update_tile_sizes(false);
         }
+    }
+
+    pub fn update_shaders(&mut self) {
+        for tile in &mut self.tiles {
+            tile.update_shaders();
+        }
+
+        self.tab_indicator.update_shaders();
     }
 
     pub fn advance_animations(&mut self) {
