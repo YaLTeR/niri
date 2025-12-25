@@ -72,6 +72,10 @@ pub struct WindowRule {
     pub scroll_factor: Option<FloatOrInt<0, 100>>,
     #[knuffel(child, unwrap(argument))]
     pub tiled_state: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub force_render: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
+    pub force_render_fps: Option<u16>,
 }
 
 #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
