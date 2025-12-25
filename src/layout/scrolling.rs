@@ -2897,25 +2897,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .is_fullscreen()
     }
 
-    pub fn render_elements<R: NiriRenderer>(
+    pub fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         target: RenderTarget,
         focus_ring: bool,
-    ) -> Vec<ScrollingSpaceRenderElement<R>> {
-        let mut rv = vec![];
-
+        push: &mut dyn FnMut(ScrollingSpaceRenderElement<R>),
+    ) {
         let scale = Scale::from(self.scale);
 
         // Draw the closing windows on top of the other windows.
         let view_rect = Rectangle::new(Point::from((self.view_pos(), 0.)), self.view_size);
         for closing in self.closing_windows.iter().rev() {
             let elem = closing.render(renderer.as_gles_renderer(), view_rect, scale, target);
-            rv.push(elem.into());
+            push(elem.into());
         }
 
         if self.columns.is_empty() {
-            return rv;
+            return;
         }
 
         let mut first = true;
@@ -2930,7 +2929,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             {
                 let pos = view_off + col_off + col_render_off;
                 let pos = pos.to_physical_precise_round(scale).to_logical(scale);
-                rv.extend(col.tab_indicator.render(renderer, pos).map(Into::into));
+                col.tab_indicator
+                    .render(renderer, pos, &mut |elem| push(elem.into()));
             }
 
             for (tile, tile_off, visible) in col.tiles_in_render_order() {
@@ -2955,14 +2955,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     continue;
                 }
 
-                rv.extend(
-                    tile.render(renderer, tile_pos, focus_ring, target)
-                        .map(Into::into),
-                );
+                tile.render(renderer, tile_pos, focus_ring, target, &mut |elem| {
+                    push(elem.into())
+                });
             }
         }
-
-        rv
     }
 
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
