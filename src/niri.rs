@@ -942,7 +942,6 @@ impl State {
         self.niri.layout.activate_window(window);
 
         let new_active = self.niri.layout.active_output().cloned();
-        #[allow(clippy::collapsible_if)]
         if new_active != active_output {
             if !self.maybe_warp_cursor_to_focus_centered() {
                 self.move_cursor_to_output(&new_active.unwrap());
