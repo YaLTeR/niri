@@ -84,6 +84,7 @@ pub fn render_snapshot_from_surface_tree(
 pub fn push_elements_from_surface_tree<R>(
     renderer: &mut R,
     surface: &WlSurface,
+    // Fractional scale expects surface buffers to be aligned to physical pixels.
     location: Point<i32, Physical>,
     scale: Scale<f64>,
     alpha: f32,

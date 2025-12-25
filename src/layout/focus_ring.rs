@@ -1,6 +1,5 @@
 use std::iter::zip;
 
-use arrayvec::ArrayVec;
 use niri_config::{CornerRadius, Gradient, GradientRelativeTo};
 use smithay::backend::renderer::element::{Element as _, Kind};
 use smithay::utils::{Logical, Point, Rectangle, Size};
@@ -217,52 +216,6 @@ impl FocusRing {
     }
 
     pub fn render(
-        &self,
-        renderer: &mut impl NiriRenderer,
-        location: Point<f64, Logical>,
-    ) -> impl Iterator<Item = FocusRingRenderElement> {
-        let mut rv = ArrayVec::<_, 8>::new();
-
-        if self.config.off {
-            return rv.into_iter();
-        }
-
-        let border_width = -self.locations[0].y;
-
-        // If drawing as a border with width = 0, then there's nothing to draw.
-        if self.is_border && border_width == 0. {
-            return rv.into_iter();
-        }
-
-        let has_border_shader = BorderRenderElement::has_shader(renderer);
-
-        let mut push = |buffer, border: &BorderRenderElement, location: Point<f64, Logical>| {
-            let elem = if self.use_border_shader && has_border_shader {
-                border.clone().with_location(location).into()
-            } else {
-                let alpha = border.alpha();
-                SolidColorRenderElement::from_buffer(buffer, location, alpha, Kind::Unspecified)
-                    .into()
-            };
-            rv.push(elem);
-        };
-
-        if self.is_border {
-            for ((buf, border), loc) in zip(zip(&self.buffers, &self.borders), self.locations) {
-                push(buf, border, location + loc);
-            }
-        } else {
-            push(
-                &self.buffers[0],
-                &self.borders[0],
-                location + self.locations[0],
-            );
-        }
-
-        rv.into_iter()
-    }
-
-    pub fn render_push(
         &self,
         renderer: &mut impl NiriRenderer,
         location: Point<f64, Logical>,

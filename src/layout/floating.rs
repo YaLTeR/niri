@@ -1053,40 +1053,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         true
     }
 
-    pub fn render_elements<R: NiriRenderer>(
-        &self,
-        renderer: &mut R,
-        view_rect: Rectangle<f64, Logical>,
-        target: RenderTarget,
-        focus_ring: bool,
-    ) -> Vec<FloatingSpaceRenderElement<R>> {
-        let mut rv = Vec::new();
-
-        let scale = Scale::from(self.scale);
-
-        // Draw the closing windows on top of the other windows.
-        //
-        // FIXME: I guess this should rather preserve the stacking order when the window is closed.
-        for closing in self.closing_windows.iter().rev() {
-            let elem = closing.render(renderer.as_gles_renderer(), view_rect, scale, target);
-            rv.push(elem.into());
-        }
-
-        let active = self.active_window_id.clone();
-        for (tile, tile_pos) in self.tiles_with_render_positions() {
-            // For the active tile, draw the focus ring.
-            let focus_ring = focus_ring && Some(tile.window().id()) == active.as_ref();
-
-            rv.extend(
-                tile.render(renderer, tile_pos, focus_ring, target)
-                    .map(Into::into),
-            );
-        }
-
-        rv
-    }
-
-    pub fn render_push<R: NiriRenderer>(
+    pub fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         view_rect: Rectangle<f64, Logical>,
@@ -1109,7 +1076,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             // For the active tile, draw the focus ring.
             let focus_ring = focus_ring && Some(tile.window().id()) == active.as_ref();
 
-            tile.render_push(renderer, tile_pos, focus_ring, target, &mut |elem| {
+            tile.render(renderer, tile_pos, focus_ring, target, &mut |elem| {
                 push(elem.into())
             });
         }

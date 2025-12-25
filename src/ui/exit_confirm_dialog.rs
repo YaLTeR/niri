@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Mutex;
 
-use arrayvec::ArrayVec;
 use niri_config::Config;
 use ordered_float::NotNan;
 use pangocairo::cairo::{self, ImageSurface};
@@ -151,82 +150,6 @@ impl ExitConfirmDialog {
         &self,
         renderer: &mut R,
         output: &Output,
-    ) -> ArrayVec<ExitConfirmDialogRenderElement, 2> {
-        let mut rv = ArrayVec::new();
-
-        let (value, clamped_value) = match &self.state {
-            State::Hidden => return rv,
-            State::Showing(anim) | State::Hiding(anim) => (anim.value(), anim.clamped_value()),
-            State::Visible => (1., 1.),
-        };
-        // Can be out of range when starting from past 0. or 1. from a spring bounce.
-        let clamped_value = clamped_value.clamp(0., 1.);
-
-        let scale = output.current_scale().fractional_scale();
-        let output_size = output_size(output);
-
-        let mut buffers = self.buffers.borrow_mut();
-        let Some(fallback) = buffers[&NotNan::new(1.).unwrap()].clone() else {
-            error!("exit confirm dialog opened without fallback buffer");
-            return rv;
-        };
-
-        let buffer = buffers
-            .entry(NotNan::new(scale).unwrap())
-            .or_insert_with(|| render(scale).ok());
-        let buffer = buffer.as_ref().unwrap_or(&fallback);
-
-        let size = buffer.logical_size();
-        let Ok(buffer) = TextureBuffer::from_memory_buffer(renderer.as_gles_renderer(), buffer)
-        else {
-            return rv;
-        };
-
-        let location = (output_size.to_point() - size.to_point()).downscale(2.);
-        let mut location = location.to_physical_precise_round(scale).to_logical(scale);
-        location.x = f64::max(0., location.x);
-        location.y = f64::max(0., location.y);
-
-        let elem = TextureRenderElement::from_texture_buffer(
-            buffer,
-            location,
-            clamped_value as f32,
-            None,
-            None,
-            Kind::Unspecified,
-        );
-        let elem = PrimaryGpuTextureRenderElement(elem);
-        let elem = RescaleRenderElement::from_element(
-            elem,
-            (location + size.downscale(2.)).to_physical_precise_round(scale),
-            value.max(0.) * 0.2 + 0.8,
-        );
-        rv.push(ExitConfirmDialogRenderElement::Texture(elem));
-
-        // Backdrop.
-        let data = output.user_data().get_or_insert(|| {
-            Mutex::new(OutputData {
-                backdrop: SolidColorBuffer::new(output_size, BACKDROP_COLOR),
-            })
-        });
-        let mut data = data.lock().unwrap();
-        data.backdrop.resize(output_size);
-
-        let elem = SolidColorRenderElement::from_buffer(
-            &data.backdrop,
-            Point::new(0., 0.),
-            clamped_value as f32,
-            Kind::Unspecified,
-        );
-        rv.push(ExitConfirmDialogRenderElement::SolidColor(elem));
-
-        rv
-    }
-
-    pub fn render_push<R: NiriRenderer>(
-        &self,
-        renderer: &mut R,
-        output: &Output,
         push: &mut dyn FnMut(ExitConfirmDialogRenderElement),
     ) {
         let (value, clamped_value) = match &self.state {
@@ -234,7 +157,7 @@ impl ExitConfirmDialog {
             State::Showing(anim) | State::Hiding(anim) => (anim.value(), anim.clamped_value()),
             State::Visible => (1., 1.),
         };
-        let _span = tracy_client::span!("ExitConfirmDialog::render_push");
+        let _span = tracy_client::span!("ExitConfirmDialog::render");
 
         // Can be out of range when starting from past 0. or 1. from a spring bounce.
         let clamped_value = clamped_value.clamp(0., 1.);

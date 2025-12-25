@@ -1624,35 +1624,7 @@ impl<W: LayoutElement> Workspace<W> {
         }
     }
 
-    pub fn render_elements<R: NiriRenderer>(
-        &self,
-        renderer: &mut R,
-        target: RenderTarget,
-        focus_ring: bool,
-    ) -> (
-        impl Iterator<Item = WorkspaceRenderElement<R>>,
-        impl Iterator<Item = WorkspaceRenderElement<R>>,
-    ) {
-        let scrolling_focus_ring = focus_ring && !self.floating_is_active();
-        let scrolling = self
-            .scrolling
-            .render_elements(renderer, target, scrolling_focus_ring);
-        let scrolling = scrolling.into_iter().map(WorkspaceRenderElement::from);
-
-        let floating_focus_ring = focus_ring && self.floating_is_active();
-        let floating = self.is_floating_visible().then(|| {
-            let view_rect = Rectangle::from_size(self.view_size);
-            let floating =
-                self.floating
-                    .render_elements(renderer, view_rect, target, floating_focus_ring);
-            floating.into_iter().map(WorkspaceRenderElement::from)
-        });
-        let floating = floating.into_iter().flatten();
-
-        (floating, scrolling)
-    }
-
-    pub fn render_push_scrolling<R: NiriRenderer>(
+    pub fn render_scrolling<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         target: RenderTarget,
@@ -1661,12 +1633,12 @@ impl<W: LayoutElement> Workspace<W> {
     ) {
         let scrolling_focus_ring = focus_ring && !self.floating_is_active();
         self.scrolling
-            .render_push(renderer, target, scrolling_focus_ring, &mut |elem| {
+            .render(renderer, target, scrolling_focus_ring, &mut |elem| {
                 push(elem.into())
             });
     }
 
-    pub fn render_push_floating<R: NiriRenderer>(
+    pub fn render_floating<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         target: RenderTarget,
@@ -1679,7 +1651,7 @@ impl<W: LayoutElement> Workspace<W> {
 
         let view_rect = Rectangle::from_size(self.view_size);
         let floating_focus_ring = focus_ring && self.floating_is_active();
-        self.floating.render_push(
+        self.floating.render(
             renderer,
             view_rect,
             target,
@@ -1691,17 +1663,9 @@ impl<W: LayoutElement> Workspace<W> {
     pub fn render_shadow<R: NiriRenderer>(
         &self,
         renderer: &mut R,
-    ) -> impl Iterator<Item = ShadowRenderElement> + '_ {
-        self.shadow.render(renderer, Point::from((0., 0.)))
-    }
-
-    pub fn render_push_shadow<R: NiriRenderer>(
-        &self,
-        renderer: &mut R,
         push: &mut dyn FnMut(ShadowRenderElement),
     ) {
-        self.shadow
-            .render_push(renderer, Point::from((0., 0.)), push);
+        self.shadow.render(renderer, Point::from((0., 0.)), push);
     }
 
     pub fn render_background(&self) -> SolidColorRenderElement {

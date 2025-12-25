@@ -294,23 +294,6 @@ impl TabIndicator {
         &self,
         renderer: &mut impl NiriRenderer,
         pos: Point<f64, Logical>,
-    ) -> impl Iterator<Item = TabIndicatorRenderElement> + '_ {
-        let has_border_shader = BorderRenderElement::has_shader(renderer);
-        if !has_border_shader {
-            return None.into_iter().flatten();
-        }
-
-        let rv = zip(&self.shaders, &self.shader_locs)
-            .map(move |(shader, loc)| shader.clone().with_location(pos + *loc))
-            .map(TabIndicatorRenderElement::from);
-
-        Some(rv).into_iter().flatten()
-    }
-
-    pub fn render_push(
-        &self,
-        renderer: &mut impl NiriRenderer,
-        pos: Point<f64, Logical>,
         push: &mut dyn FnMut(TabIndicatorRenderElement),
     ) {
         let has_border_shader = BorderRenderElement::has_shader(renderer);

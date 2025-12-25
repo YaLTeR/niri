@@ -59,16 +59,8 @@ impl InsertHintElement {
         &self,
         renderer: &mut impl NiriRenderer,
         location: Point<f64, Logical>,
-    ) -> impl Iterator<Item = FocusRingRenderElement> {
-        self.inner.render(renderer, location)
-    }
-
-    pub fn render_push(
-        &self,
-        renderer: &mut impl NiriRenderer,
-        location: Point<f64, Logical>,
         push: &mut dyn FnMut(FocusRingRenderElement),
     ) {
-        self.inner.render_push(renderer, location, push)
+        self.inner.render(renderer, location, push)
     }
 }

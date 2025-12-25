@@ -166,26 +166,6 @@ impl Shadow {
         &self,
         renderer: &mut impl NiriRenderer,
         location: Point<f64, Logical>,
-    ) -> impl Iterator<Item = ShadowRenderElement> + '_ {
-        if !self.config.on {
-            return None.into_iter().flatten();
-        }
-
-        let has_shadow_shader = ShadowRenderElement::has_shader(renderer);
-        if !has_shadow_shader {
-            return None.into_iter().flatten();
-        }
-
-        let rv = zip(&self.shaders, &self.shader_rects)
-            .map(move |(shader, rect)| shader.clone().with_location(location + rect.loc));
-
-        Some(rv).into_iter().flatten()
-    }
-
-    pub fn render_push(
-        &self,
-        renderer: &mut impl NiriRenderer,
-        location: Point<f64, Logical>,
         push: &mut dyn FnMut(ShadowRenderElement),
     ) {
         if !self.config.on {
