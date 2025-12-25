@@ -126,7 +126,7 @@ use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospe
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 #[cfg(feature = "xdp-gnome-screencast")]
-use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri};
+use crate::dbus::mutter_screen_cast::{self, CursorMode, ScreenCastToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
 use crate::input::pick_color_grab::PickColorGrab;
@@ -2079,7 +2079,16 @@ impl State {
                         .render_for_screen_cast(renderer, scale)
                         .collect::<Vec<_>>();
 
-                    if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
+                    let pointer_elements: Vec<OutputRenderElements<GlesRenderer>> = vec![];
+                    if cast.dequeue_buffer_and_render(
+                        renderer,
+                        &elements,
+                        &pointer_elements,
+                        bbox.size,
+                        scale,
+                        None,
+                        None,
+                    ) {
                         cast.last_frame_time = get_monotonic_time();
                     }
                 });
@@ -5228,12 +5237,28 @@ impl Niri {
                 continue;
             }
 
-            // FIXME: Hidden / embedded / metadata cursor
+            let embedded_cursor = matches!(cast.cursor_mode, CursorMode::Embedded);
             let elements = elements.get_or_insert_with(|| {
-                self.render(renderer, output, true, RenderTarget::Screencast)
+                self.render(renderer, output, embedded_cursor, RenderTarget::Screencast)
             });
 
-            if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
+            let pointer_element = match cast.cursor_mode {
+                CursorMode::Metadata => self.pointer_element(renderer, output),
+                _ => vec![],
+            };
+
+            let (relocated_pointer_elements, pointer_hotspot) =
+                self.get_origin_pointer_element(scale, &pointer_element);
+
+            if cast.dequeue_buffer_and_render(
+                renderer,
+                elements,
+                &relocated_pointer_elements,
+                size,
+                scale,
+                Some(self.seat.get_pointer().unwrap().current_location()),
+                pointer_hotspot,
+            ) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
@@ -5242,6 +5267,74 @@ impl Niri {
         for id in casts_to_stop {
             self.stop_cast(id);
         }
+    }
+
+    fn get_window_pointer_location(
+        &self,
+        mapped: &Mapped,
+        output: &Output,
+        scale: Scale<f64>,
+    ) -> Option<Point<f64, Logical>> {
+        if self.layout.is_overview_open() {
+            return None;
+        }
+        let Some(pointer_window) = self.pointer_contents.window.as_ref() else {
+            return None;
+        };
+        if pointer_window.0 != mapped.window {
+            return None;
+        }
+
+        let monitor = self.layout.monitor_for_output(output)?;
+        if monitor.are_transitions_ongoing() {
+            return None;
+        }
+
+        let (_, _, ws) = self
+            .layout
+            .workspaces()
+            .find(|(_, _, ws)| ws.has_window(&mapped.window))?;
+        let (tile, tile_offset, _) = ws
+            .tiles_with_render_positions()
+            .find(|(tile, _, _)| tile.window().id() == mapped.id())?;
+
+        let window_bbox = mapped.window.bbox_with_popups().loc.to_f64();
+        let window_offset =
+            tile_offset + tile.window_loc() + window_bbox + mapped.buf_loc().to_f64();
+
+        let pointer_location = self.seat.get_pointer()?.current_location();
+        Some((pointer_location - window_offset).upscale(scale))
+    }
+
+    fn get_origin_pointer_element<'a>(
+        &self,
+        scale: Scale<f64>,
+        pointer_element: &'a [OutputRenderElements<GlesRenderer>],
+    ) -> (
+        Vec<RelocateRenderElement<&'a OutputRenderElements<GlesRenderer>>>,
+        Option<Point<i32, Physical>>,
+    ) {
+        if pointer_element.is_empty() {
+            return (vec![], None);
+        }
+        let pointer_geo = encompassing_geo(scale, pointer_element.iter());
+        let Some(pointer) = self.seat.get_pointer() else {
+            return (vec![], None);
+        };
+        let pointer_hotspot =
+            pointer.current_location().to_physical_precise_round(scale) - pointer_geo.loc;
+        let pointer_elements: Vec<_> = pointer_element
+            .iter()
+            .rev()
+            .map(|ele| {
+                RelocateRenderElement::from_element(
+                    ele,
+                    pointer_geo.loc.upscale(-1),
+                    Relocate::Relative,
+                )
+            })
+            .collect();
+        (pointer_elements, Some(pointer_hotspot))
     }
 
     #[cfg(feature = "xdp-gnome-screencast")]
@@ -5290,10 +5383,28 @@ impl Niri {
                 continue;
             }
 
-            // FIXME: pointer.
             let elements: Vec<_> = mapped.render_for_screen_cast(renderer, scale).collect();
+            // FIXME: embedded cursor
+            let (window_pointer_location, pointer_element) = match cast.cursor_mode {
+                CursorMode::Metadata => (
+                    self.get_window_pointer_location(mapped, output, scale),
+                    self.pointer_element(renderer, output),
+                ),
+                _ => (None, vec![]),
+            };
 
-            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
+            let (relocated_pointer_elements, pointer_hotspot) =
+                self.get_origin_pointer_element(scale, &pointer_element);
+
+            if cast.dequeue_buffer_and_render(
+                renderer,
+                &elements,
+                &relocated_pointer_elements,
+                bbox.size,
+                scale,
+                window_pointer_location,
+                pointer_hotspot,
+            ) {
                 cast.last_frame_time = target_presentation_time;
             }
         }

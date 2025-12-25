@@ -2,11 +2,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::iter::zip;
-use std::mem;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::ptr::NonNull;
 use std::rc::Rc;
 use std::time::Duration;
+use std::{mem, slice};
 
 use anyhow::Context as _;
 use calloop::timer::{TimeoutAction, Timer};
@@ -29,7 +29,7 @@ use pipewire::spa::utils::{
 };
 use pipewire::spa::{self};
 use pipewire::stream::{Stream, StreamFlags, StreamListener, StreamRc, StreamState};
-use pipewire::sys::{pw_buffer, pw_stream_queue_buffer};
+use pipewire::sys::{pw_buffer, pw_check_library_version, pw_stream_queue_buffer};
 use smithay::backend::allocator::dmabuf::{AsDmabuf, Dmabuf};
 use smithay::backend::allocator::format::FormatSet;
 use smithay::backend::allocator::gbm::{GbmBuffer, GbmBufferFlags, GbmDevice};
@@ -43,16 +43,22 @@ use smithay::output::{Output, OutputModeSource};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 use smithay::reexports::gbm::Modifier;
-use smithay::utils::{Physical, Scale, Size, Transform};
+use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 use zbus::object_server::SignalEmitter;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode};
 use crate::niri::{CastTarget, State};
-use crate::render_helpers::{clear_dmabuf, render_to_dmabuf};
+use crate::render_helpers::{clear_dmabuf, encompassing_geo, render_to_dmabuf, render_to_vec};
 use crate::utils::get_monotonic_time;
 
 // Give a 0.1 ms allowance for presentation time errors.
 const CAST_DELAY_ALLOWANCE: Duration = Duration::from_micros(100);
+
+const CURSOR_FORMAT: spa_video_format = SPA_VIDEO_FORMAT_ARGB;
+const CURSOR_BPP: u32 = 4;
+const CURSOR_WIDTH: u32 = 255;
+const CURSOR_HEIGHT: u32 = 255;
+const CURSOR_BITMAP_SIZE: usize = (CURSOR_WIDTH * CURSOR_HEIGHT * CURSOR_BPP) as usize;
 
 pub struct PipeWire {
     _context: ContextRc,
@@ -123,6 +129,8 @@ enum CastState {
         plane_count: i32,
         // Lazily-initialized to keep the initialization to a single place.
         damage_tracker: Option<OutputDamageTracker>,
+        cursor_damage_tracker: Option<OutputDamageTracker>,
+        last_pointer_location: Option<Point<f64, Logical>>,
     },
 }
 
@@ -476,11 +484,16 @@ impl PipeWire {
                             let modifier = *modifier;
                             let plane_count = *plane_count;
 
-                            let damage_tracker =
-                                if let CastState::Ready { damage_tracker, .. } = &mut *state {
-                                    damage_tracker.take()
+                            let (damage_tracker, cursor_damage_tracker) =
+                                if let CastState::Ready {
+                                    damage_tracker,
+                                    cursor_damage_tracker,
+                                    ..
+                                } = &mut *state
+                                {
+                                    (damage_tracker.take(), cursor_damage_tracker.take())
                                 } else {
-                                    None
+                                    (None, None)
                                 };
 
                             debug!(stream_id, "pw stream: moving to ready state");
@@ -491,6 +504,8 @@ impl PipeWire {
                                 modifier,
                                 plane_count,
                                 damage_tracker,
+                                cursor_damage_tracker,
+                                last_pointer_location: None,
                             };
 
                             plane_count
@@ -525,6 +540,8 @@ impl PipeWire {
                                 modifier,
                                 plane_count: plane_count as i32,
                                 damage_tracker: None,
+                                cursor_damage_tracker: None,
+                                last_pointer_location: None,
                             };
 
                             plane_count as i32
@@ -578,7 +595,30 @@ impl PipeWire {
                     );
                     let mut b1 = vec![];
                     let mut b2 = vec![];
-                    let mut params = [make_pod(&mut b1, o1), make_pod(&mut b2, o2)];
+                    let mut params = vec![make_pod(&mut b1, o1), make_pod(&mut b2, o2)];
+
+                    let mut b_cursor = vec![];
+                    match cursor_mode {
+                        CursorMode::Metadata if pw_version_supports_cursor_metadata() => {
+                            let cursor_meta_size = mem::size_of::<spa_meta_cursor>()
+                                + mem::size_of::<spa_meta_bitmap>()
+                                + CURSOR_BITMAP_SIZE;
+                            let o_cursor = pod::object!(
+                                SpaTypes::ObjectParamMeta,
+                                ParamType::Meta,
+                                Property::new(
+                                    SPA_PARAM_META_type,
+                                    pod::Value::Id(spa::utils::Id(SPA_META_Cursor))
+                                ),
+                                Property::new(
+                                    SPA_PARAM_META_size,
+                                    pod::Value::Int(cursor_meta_size as i32)
+                                ),
+                            );
+                            params.push(make_pod(&mut b_cursor, o_cursor));
+                        }
+                        _ => {}
+                    }
 
                     if let Err(err) = stream.update_params(&mut params) {
                         warn!(stream_id, "error updating stream params: {err:?}");
@@ -960,21 +1000,127 @@ impl Cast {
         }
     }
 
+    fn add_cursor_metadata(
+        renderer: &mut GlesRenderer,
+        spa_buffer: *mut spa_buffer,
+        scale: Scale<f64>,
+        pointer_elements: &[impl RenderElement<GlesRenderer>],
+        pointer_location: &Option<Point<f64, Logical>>,
+        pointer_hotspot: &Option<Point<i32, Physical>>,
+    ) {
+        let cursor_meta_ptr: *mut spa_meta_cursor = unsafe {
+            spa_buffer_find_meta_data(
+                spa_buffer,
+                SPA_META_Cursor,
+                mem::size_of::<spa_meta_cursor>(),
+            )
+        }
+        .cast();
+
+        if cursor_meta_ptr.is_null() {
+            trace!("no cursor metadata found in buffer");
+            return;
+        }
+        let cursor_meta: &mut spa_meta_cursor = unsafe { &mut *cursor_meta_ptr };
+
+        trace!("writing cursor metadata");
+        let Some(pointer_location) = pointer_location else {
+            cursor_meta.id = 0;
+            return;
+        };
+
+        cursor_meta.id = 1;
+        cursor_meta.position.x = pointer_location.x.round() as i32;
+        cursor_meta.position.y = pointer_location.y.round() as i32;
+
+        let pointer_hotspot = pointer_hotspot.unwrap_or(Point::from((0, 0)));
+        cursor_meta.hotspot.x = pointer_hotspot.x;
+        cursor_meta.hotspot.y = pointer_hotspot.y;
+
+        cursor_meta.bitmap_offset = mem::size_of::<spa_meta_cursor>() as _;
+
+        let bitmap_meta_ptr = unsafe {
+            cursor_meta_ptr
+                .cast::<u8>()
+                .offset(cursor_meta.bitmap_offset as _)
+                .cast::<spa_meta_bitmap>()
+        };
+        if bitmap_meta_ptr.is_null() {
+            cursor_meta.id = 0;
+            warn!("no cursor bitmap metadata found in buffer");
+            return;
+        };
+        let bitmap_meta = unsafe { bitmap_meta_ptr.as_mut().unwrap() };
+
+        let pointer_geo = encompassing_geo(scale, pointer_elements.iter());
+        if pointer_geo.size.is_empty() {
+            // No cursor elements to render.
+            cursor_meta.id = 0;
+            return;
+        }
+        let size: Size<i32, Physical> = Size::from((
+            std::cmp::min(pointer_geo.size.w, CURSOR_WIDTH as _),
+            std::cmp::min(pointer_geo.size.h, CURSOR_HEIGHT as _),
+        ));
+        bitmap_meta.size.width = size.w as _;
+        bitmap_meta.size.height = size.h as _;
+        bitmap_meta.stride = (bitmap_meta.size.width * CURSOR_BPP) as _;
+        bitmap_meta.format = CURSOR_FORMAT;
+        bitmap_meta.offset = mem::size_of::<spa_meta_bitmap>() as _;
+
+        let bitmap_data = unsafe { bitmap_meta_ptr.cast::<u8>().offset(bitmap_meta.offset as _) };
+        let bitmap_slice =
+            unsafe { slice::from_raw_parts_mut(bitmap_data, CURSOR_BITMAP_SIZE as usize) };
+
+        let pointer_vec = match render_to_vec(
+            renderer,
+            size,
+            scale,
+            Transform::Normal,
+            Fourcc::Argb8888,
+            pointer_elements.iter(),
+        ) {
+            Ok(pointer_vec) => pointer_vec,
+            Err(err) => {
+                error!("error rendering cursor: {err:?}");
+                return;
+            }
+        };
+
+        bitmap_slice[..pointer_vec.len()].copy_from_slice(&pointer_vec);
+    }
+
     pub fn dequeue_buffer_and_render(
         &mut self,
         renderer: &mut GlesRenderer,
         elements: &[impl RenderElement<GlesRenderer>],
+        pointer_elements: &[impl RenderElement<GlesRenderer>],
         size: Size<i32, Physical>,
         scale: Scale<f64>,
+        pointer_location: Option<Point<f64, Logical>>,
+        pointer_hotspot: Option<Point<i32, Physical>>,
     ) -> bool {
         let mut inner = self.inner.borrow_mut();
 
-        let CastState::Ready { damage_tracker, .. } = &mut inner.state else {
+        let CastState::Ready {
+            damage_tracker,
+            cursor_damage_tracker,
+            last_pointer_location,
+            ..
+        } = &mut inner.state
+        else {
             error!("cast must be in Ready state to render");
             return false;
         };
         let damage_tracker = damage_tracker
             .get_or_insert_with(|| OutputDamageTracker::new(size, scale, Transform::Normal));
+        let cursor_damage_tracker = cursor_damage_tracker.get_or_insert_with(|| {
+            OutputDamageTracker::new(
+                Size::from((CURSOR_WIDTH as _, CURSOR_HEIGHT as _)),
+                scale,
+                Transform::Normal,
+            )
+        });
 
         // Size change will drop the damage tracker, but scale change won't, so check it here.
         let OutputModeSource::Static { scale: t_scale, .. } = damage_tracker.mode() else {
@@ -982,13 +1128,23 @@ impl Cast {
         };
         if *t_scale != scale {
             *damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+            *cursor_damage_tracker = OutputDamageTracker::new(
+                Size::from((CURSOR_WIDTH as _, CURSOR_HEIGHT as _)),
+                scale,
+                Transform::Normal,
+            );
         }
 
         let (damage, _states) = damage_tracker.damage_output(1, elements).unwrap();
-        if damage.is_none() {
+        let (cursor_damage, _states) = cursor_damage_tracker
+            .damage_output(1, pointer_elements)
+            .unwrap();
+        if damage.is_none() && cursor_damage.is_none() && *last_pointer_location == pointer_location
+        {
             trace!("no damage, skipping frame");
             return false;
         }
+        *last_pointer_location = pointer_location;
         drop(inner);
 
         let Some(pw_buffer) = self.dequeue_available_buffer() else {
@@ -999,6 +1155,16 @@ impl Cast {
 
         unsafe {
             let spa_buffer = (*buffer).buffer;
+            if matches!(self.cursor_mode, CursorMode::Metadata) {
+                Self::add_cursor_metadata(
+                    renderer,
+                    spa_buffer,
+                    scale,
+                    pointer_elements,
+                    &pointer_location,
+                    &pointer_hotspot,
+                );
+            }
 
             let fd = (*(*spa_buffer).datas).fd;
             let dmabuf = self.inner.borrow().dmabufs[&fd].clone();
@@ -1080,6 +1246,15 @@ impl CastState {
             CastState::Ready { size, .. } => *size,
         }
     }
+}
+
+fn pw_version_supports_cursor_metadata() -> bool {
+    if !unsafe { pw_check_library_version(1, 4, 8) } {
+        // https://gitlab.freedesktop.org/pipewire/pipewire/-/merge_requests/2538
+        warn!("cursor metadata mode requires PipeWire >= 1.4.8");
+        return false;
+    }
+    true
 }
 
 fn make_video_params(
