@@ -2078,7 +2078,6 @@ impl State {
                     // FIXME: pointer.
                     let elements = mapped
                         .render_for_screen_cast(renderer, scale)
-                        .rev()
                         .collect::<Vec<_>>();
 
                     if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
