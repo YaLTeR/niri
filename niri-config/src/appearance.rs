@@ -680,6 +680,100 @@ pub struct TabIndicatorRule {
     pub urgent_gradient: Option<Gradient>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FocusOpacity {
+    pub enabled: bool,
+    pub flash_opacity: f32,
+    pub disable_on_solo: bool,
+}
+
+impl Default for FocusOpacity {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            flash_opacity: 0.8, // Valid range: [0.0, 1.0]
+            disable_on_solo: false,
+        }
+    }
+}
+
+impl MergeWith<FocusOpacityPart> for FocusOpacity {
+    fn merge_with(&mut self, part: &FocusOpacityPart) {
+        if part.off {
+            self.enabled = false;
+        } else if part.on {
+            self.enabled = true;
+        }
+
+        if let Some(flash_opacity) = part.flash_opacity {
+            // Clamp flash opacity to valid range [0.0, 1.0]
+            self.flash_opacity = (flash_opacity.0 as f32).clamp(0.0, 1.0);
+        }
+        if let Some(disable_on_solo) = part.disable_on_solo {
+            self.disable_on_solo = disable_on_solo.0;
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct FocusOpacityPart {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub flash_opacity: Option<FloatOrInt<0, 1>>,
+    #[knuffel(child)]
+    pub disable_on_solo: Option<Flag>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OpacityTransition {
+    pub enabled: bool,
+    pub duration_ms: u32,
+    pub flash: FocusOpacity,
+}
+
+impl Default for OpacityTransition {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            duration_ms: 200,
+            flash: FocusOpacity::default(),
+        }
+    }
+}
+
+impl MergeWith<OpacityTransitionPart> for OpacityTransition {
+    fn merge_with(&mut self, part: &OpacityTransitionPart) {
+        if part.off {
+            self.enabled = false;
+        } else if part.on {
+            self.enabled = true;
+        }
+
+        if let Some(duration_ms) = part.duration_ms {
+            self.duration_ms = duration_ms.0.max(10.0).round().max(10.0) as u32;
+        }
+
+        if let Some(flash) = &part.flash {
+            self.flash.merge_with(flash);
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct OpacityTransitionPart {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub duration_ms: Option<FloatOrInt<0, { i32::MAX }>>,
+    #[knuffel(child)]
+    pub flash: Option<FocusOpacityPart>,
+}
+
 impl MergeWith<Self> for BorderRule {
     fn merge_with(&mut self, part: &Self) {
         merge_on_off!((self, part));
@@ -1251,5 +1345,33 @@ mod tests {
         )
         "
         );
+    }
+
+    #[test]
+    fn opacity_transition_parsing() {
+        let config = r#"
+            opacity-transition {
+                on
+                duration-ms 300
+                flash {
+                    on
+                    flash-opacity 0.5
+                }
+            }
+        "#;
+        let parsed: OpacityTransitionPart = knuffel::parse("test", config).unwrap();
+        assert_eq!(parsed.on, true);
+        assert_eq!(parsed.duration_ms.unwrap().0, 300.0);
+
+        let flash = parsed.flash.unwrap();
+        assert_eq!(flash.on, true);
+        assert_eq!(flash.flash_opacity.unwrap().0, 0.5);
+
+        let mut transition = OpacityTransition::default();
+        transition.merge_with(&parsed);
+        assert_eq!(transition.enabled, true);
+        assert_eq!(transition.duration_ms, 300);
+        assert_eq!(transition.flash.enabled, true);
+        assert_eq!(transition.flash.flash_opacity, 0.5);
     }
 }
