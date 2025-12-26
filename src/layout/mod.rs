@@ -2902,7 +2902,11 @@ impl<W: LayoutElement> Layout<W> {
                     clock,
                     options,
                 );
-                mon.insert_workspace(ws, 0, false);
+                if ws.hidden {
+                    mon.insert_hidden_workspace(ws);
+                } else {
+                    mon.insert_workspace(ws, 0, false);
+                }
             }
             MonitorSet::NoOutputs { workspaces } => {
                 let ws =
