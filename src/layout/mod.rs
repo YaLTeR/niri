@@ -2903,7 +2903,7 @@ impl<W: LayoutElement> Layout<W> {
                     options,
                 );
                 if ws.hidden {
-                    mon.insert_hidden_workspace(ws);
+                    mon.insert_hidden_workspace(ws, 0);
                 } else {
                     mon.insert_workspace(ws, 0, false);
                 }

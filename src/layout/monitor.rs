@@ -831,10 +831,20 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     // Hidden workspaces always want to be at then end of the vec, even
-    // when they are newly added.
-    pub fn insert_hidden_workspace(&mut self, mut ws: Workspace<W>) {
+    // when they are newly added. Their original idx should instead be set to
+    // where they would have gone if they were not hidden so when we toggle visibility
+    // they appear in an intuitive spot.
+    pub fn insert_hidden_workspace(&mut self, mut ws: Workspace<W>, mut idx: usize) {
         ws.set_output(Some(self.output.clone()));
         ws.update_config(self.options.clone());
+
+        if idx == self.workspaces.len() {
+            idx -= 1;
+        }
+        if idx == 0 && self.options.layout.empty_workspace_above_first {
+            idx += 1;
+        }
+        ws.original_idx = Some(idx);
 
         let idx = self.workspaces.len();
         self.workspaces.insert(idx, ws);
