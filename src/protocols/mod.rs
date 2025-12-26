@@ -6,4 +6,5 @@ pub mod output_management;
 pub mod screencopy;
 pub mod virtual_pointer;
 
+pub mod kde_appmenu;
 pub mod raw;
