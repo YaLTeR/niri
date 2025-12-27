@@ -40,8 +40,6 @@ impl OpenAnimation {
         }
     }
 
-    pub fn advance_animations(&mut self) {}
-
     pub fn is_done(&self) -> bool {
         self.anim.is_done()
     }

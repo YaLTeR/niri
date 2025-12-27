@@ -166,17 +166,6 @@ impl LayoutElement for TestWindow {
         false
     }
 
-    fn render<R: NiriRenderer>(
-        &self,
-        _renderer: &mut R,
-        _location: Point<f64, Logical>,
-        _scale: Scale<f64>,
-        _alpha: f32,
-        _target: RenderTarget,
-    ) -> SplitElements<LayoutElementRenderElement<R>> {
-        SplitElements::default()
-    }
-
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,

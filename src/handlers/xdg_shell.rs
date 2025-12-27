@@ -1251,7 +1251,7 @@ impl State {
         let mut target = self.niri.layout.popup_target_rect(window);
         target.loc -= get_popup_toplevel_coords(popup).to_f64();
 
-        self.position_popup_within_rect(popup, target);
+        self.position_popup_within_rect(popup, target, true);
     }
 
     pub fn unconstrain_layer_shell_popup(
@@ -1285,14 +1285,26 @@ impl State {
         target.loc -= layer_geo.loc;
         target.loc -= get_popup_toplevel_coords(popup);
 
-        self.position_popup_within_rect(popup, target.to_f64());
+        // Don't add padding to layer-shell popups. It's not really needed, and it's unexpected.
+        self.position_popup_within_rect(popup, target.to_f64(), false);
     }
 
-    fn position_popup_within_rect(&self, popup: &PopupKind, target: Rectangle<f64, Logical>) {
+    fn position_popup_within_rect(
+        &self,
+        popup: &PopupKind,
+        target: Rectangle<f64, Logical>,
+        padding: bool,
+    ) {
         match popup {
             PopupKind::Xdg(popup) => {
                 popup.with_pending_state(|state| {
-                    state.geometry = unconstrain_with_padding(state.positioner, target);
+                    state.geometry = if padding {
+                        unconstrain_with_padding(state.positioner, target)
+                    } else {
+                        state
+                            .positioner
+                            .get_unconstrained_geometry(target.to_i32_round())
+                    };
                 });
             }
             PopupKind::InputMethod(popup) => {
