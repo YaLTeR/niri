@@ -420,7 +420,7 @@ pub struct Niri {
     /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
     #[cfg(feature = "xdp-gnome-screencast")]
     pub dynamic_cast_id_for_portal: MappedId,
-    force_render_state: RefCell<HashMap<u32, ForceRenderState>>,
+    pub force_render_state: RefCell<HashMap<u32, ForceRenderState>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -574,15 +574,17 @@ struct SurfaceFrameThrottlingState {
 }
 
 struct ForceRenderState {
-    last_time: Duration,
-    is_delay: bool,
+    // To calculate time diff between current frame_callback_time and last render time.
+    last_render_time: Duration,
+    // To check if a force render frame is waiting to be rendered.
+    is_waiting_for_render: bool,
 }
 
 impl Default for ForceRenderState {
     fn default() -> Self {
         Self {
-            last_time: Duration::ZERO,
-            is_delay: false,
+            last_render_time: Duration::ZERO,
+            is_waiting_for_render: false,
         }
     }
 }
@@ -4997,9 +4999,9 @@ impl Niri {
             .entry(surface.id().protocol_id())
             .or_default();
 
-        // reset the delay state
-        force_render_state.last_time = frame_callback_time;
-        force_render_state.is_delay = false;
+        // Reset the delay state.
+        force_render_state.last_render_time = frame_callback_time;
+        force_render_state.is_waiting_for_render = false;
 
         debug!("Sending frame callback for surface");
 
@@ -5053,20 +5055,23 @@ impl Niri {
 
         let frame_callback_time = get_monotonic_time();
 
-        // Collect delayed surfaces
+        // Collect delayed surfaces.
         let delayed_surfaces = RefCell::new(HashMap::new());
 
         for mapped in self.layout.windows_for_output_mut(output) {
-            // Check if the surface should be forced to render
+            // Check if the surface should be forced to render.
             if mapped.rules().force_render == Some(true) || mapped.is_window_cast_target() {
-                // Calculate delay time
+                // Calculate delay time.
                 let interval = if let Some(force_render_fps) = mapped.rules().force_render_fps {
-                    Duration::from_secs_f64(1.0 / force_render_fps as f64)
+                    if force_render_fps == 0 {
+                        Duration::ZERO
+                    } else {
+                        Duration::from_secs_f64(1.0 / force_render_fps as f64)
+                    }
                 } else {
                     Duration::ZERO
                 };
 
-                // Check if the surface should be forced to render
                 let should_force_render = |surface: &WlSurface, states: &SurfaceData| {
                     // Check if the surface is on the primary output.
                     let mut on_primary = true;
@@ -5078,33 +5083,33 @@ impl Niri {
                     let mut force_render_state_borrow = self.force_render_state.borrow_mut();
 
                     if !on_primary && !interval.is_zero() {
-                        //fps limited branch
+                        //Fps limited branch.
                         let force_render_state = force_render_state_borrow
                             .entry(surface.id().protocol_id())
                             .or_default();
 
-                        if !force_render_state.is_delay {
-                            // Time diff since last frame callback
+                        if !force_render_state.is_waiting_for_render {
+                            // Time diff since last frame callback.
                             let time_diff: Duration =
-                                frame_callback_time.saturating_sub(force_render_state.last_time);
+                                frame_callback_time.saturating_sub(force_render_state.last_render_time);
 
-                            // Calculate next frame callback time and push needed data to delayed_surfaces
+                            // Calculate next frame callback time and push needed data to delayed_surfaces.
                             let delay_time = interval.saturating_sub(time_diff);
                             let mut delayed = delayed_surfaces.borrow_mut();
                             delayed
                                 .entry(surface.id())
                                 .or_insert((surface.clone(), delay_time));
 
-                            // Set force render state
-                            force_render_state.is_delay = true;
+                            // Set force render state.
+                            force_render_state.is_waiting_for_render = true;
                         }
                         return None;
                     } else {
-                        // Remove force render state if not on primary output
+                        // Remove force render state if not on primary output.
                         if on_primary {
                             force_render_state_borrow.remove(&surface.id().protocol_id());
                         }
-                        //fps unlimited branch
+                        //Fps unlimited branch.
                         let frame_throttling_state = states
                             .data_map
                             .get_or_insert(SurfaceFrameThrottlingState::default);
