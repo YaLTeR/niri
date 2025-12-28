@@ -31,6 +31,7 @@ tracy-client = { version = "0.18.3", default-features = false }
 [workspace.dependencies.smithay]
 # version = "0.4.1"
 git = "https://github.com/Smithay/smithay.git"
+rev = "f603c24250f39c0428de44489d729de30854517a"
 # path = "../smithay"
 default-features = false
 
@@ -140,7 +141,7 @@ xdp-gnome-screencast = ["dbus", "pipewire"]
 # Enables the Tracy profiler instrumentation.
 profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]
 # Enables the on-demand Tracy profiler instrumentation.
-profile-with-tracy-ondemand = ["profile-with-tracy", "tracy-client/ondemand", "tracy-client/manual-lifetime"]
+profile-with-tracy-ondemand = ["profile-with-tracy", "smithay/tracy_gpu_profiling", "tracy-client/ondemand", "tracy-client/manual-lifetime"]
 # Enables Tracy allocation profiling.
 profile-with-tracy-allocations = ["profile-with-tracy"]
 # Enables dinit integration (global environment).
