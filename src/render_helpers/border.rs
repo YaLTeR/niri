@@ -14,6 +14,7 @@ use super::renderer::NiriRenderer;
 use super::shader_element::ShaderRenderElement;
 use super::shaders::{mat3_uniform, ProgramType, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
+use crate::render_helpers::renderer::AsGlesFrame as _;
 
 /// Renders a wide variety of borders and border parts.
 ///
@@ -284,6 +285,7 @@ impl RenderElement<GlesRenderer> for BorderRenderElement {
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
+        let _span = tracy_client::span!("BorderRenderElement::draw");
         RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage, opaque_regions)
     }
 
@@ -301,7 +303,9 @@ impl<'render> RenderElement<TtyRenderer<'render>> for BorderRenderElement {
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
-        RenderElement::<TtyRenderer<'_>>::draw(&self.inner, frame, src, dst, damage, opaque_regions)
+        let frame = frame.as_gles_frame();
+        RenderElement::<GlesRenderer>::draw(self, frame, src, dst, damage, opaque_regions)?;
+        Ok(())
     }
 
     fn underlying_storage(
