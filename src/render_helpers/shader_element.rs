@@ -294,6 +294,8 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
         damage: &[Rectangle<i32, Physical>],
         _opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
+        let _span = tracy_client::span!("ShaderRenderElement::draw");
+
         let frame = frame.as_gles_frame();
 
         let Some(shader) = Shaders::get_from_frame(frame).program(self.program) else {
