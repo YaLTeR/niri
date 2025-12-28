@@ -6,6 +6,7 @@ use niri_config::{Color, CornerRadius};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
+use smithay::gpu_span_location;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::renderer::NiriRenderer;
@@ -247,7 +248,16 @@ impl RenderElement<GlesRenderer> for ShadowRenderElement {
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         let _span = tracy_client::span!("ShadowRenderElement::draw");
-        RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage, opaque_regions)
+        frame.with_gpu_span(gpu_span_location!("ShadowRenderElement::draw"), |frame| {
+            RenderElement::<GlesRenderer>::draw(
+                &self.inner,
+                frame,
+                src,
+                dst,
+                damage,
+                opaque_regions,
+            )
+        })
     }
 
     fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {

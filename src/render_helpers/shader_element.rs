@@ -375,7 +375,8 @@ impl RenderElement<GlesRenderer> for ShaderRenderElement {
         let has_tint = frame.debug_flags().contains(DebugFlags::TINT);
 
         // render
-        frame.with_context(move |gl| -> Result<(), GlesError> {
+        let span_loc = smithay::gpu_span_location!("draw shader");
+        frame.with_profiled_context(span_loc, move |gl| -> Result<(), GlesError> {
             let program = if has_debug {
                 &shader.0.debug
             } else {

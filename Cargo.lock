@@ -3429,6 +3429,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.17",
  "tracing",
+ "tracy-client",
  "udev",
  "wayland-backend",
  "wayland-client",
