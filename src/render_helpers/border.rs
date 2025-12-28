@@ -286,8 +286,17 @@ impl RenderElement<GlesRenderer> for BorderRenderElement {
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
         let _span = tracy_client::span!("BorderRenderElement::draw");
-        RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage, opaque_regions)?;
-        Ok(())
+        let span = frame.enter_gpu_span(smithay::gpu_span_location!("BorderRenderElement::draw"));
+        let rv = RenderElement::<GlesRenderer>::draw(
+            &self.inner,
+            frame,
+            src,
+            dst,
+            damage,
+            opaque_regions,
+        );
+        frame.exit_gpu_span(span);
+        rv
     }
 
     fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {

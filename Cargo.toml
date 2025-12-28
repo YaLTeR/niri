@@ -31,6 +31,7 @@ tracy-client = { version = "0.18.3", default-features = false }
 [workspace.dependencies.smithay]
 # version = "0.4.1"
 git = "https://github.com/Smithay/smithay.git"
+rev = "6bfc98185c6de53740b637b75d2f887f45b2dce4"
 # path = "../smithay"
 default-features = false
 
@@ -138,7 +139,7 @@ systemd = ["dbus"]
 # Enables screencasting support through xdg-desktop-portal-gnome.
 xdp-gnome-screencast = ["dbus", "pipewire"]
 # Enables the Tracy profiler instrumentation.
-profile-with-tracy = ["profiling/profile-with-tracy", "tracy-client/default"]
+profile-with-tracy = ["profiling/profile-with-tracy", "smithay/tracy_gpu_profiling", "tracy-client/default"]
 # Enables the on-demand Tracy profiler instrumentation.
 profile-with-tracy-ondemand = ["profile-with-tracy", "tracy-client/ondemand", "tracy-client/manual-lifetime"]
 # Enables Tracy allocation profiling.
@@ -186,3 +187,7 @@ assets = [
     ["resources/niri.service", "/usr/lib/systemd/user/", "644"],
     ["resources/niri-shutdown.target", "/usr/lib/systemd/user/", "644"],
 ]
+
+[patch.crates-io.tracy-client]
+git = "https://github.com/YaLTeR/rust_tracy_client.git"
+rev = "c036be22be81b32febc4a4f4ecdbfc02b1e43ac8"

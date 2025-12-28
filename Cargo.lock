@@ -3424,7 +3424,7 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 [[package]]
 name = "smithay"
 version = "0.7.0"
-source = "git+https://github.com/Smithay/smithay.git#ca932e042fa9ad150605c150a86275b85f9ad5b3"
+source = "git+https://github.com/Smithay/smithay.git?rev=6bfc98185c6de53740b637b75d2f887f45b2dce4#6bfc98185c6de53740b637b75d2f887f45b2dce4"
 dependencies = [
  "aliasable",
  "appendlist",
@@ -3456,6 +3456,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.17",
  "tracing",
+ "tracy-client",
  "udev",
  "wayland-backend",
  "wayland-client",
@@ -3793,8 +3794,7 @@ dependencies = [
 [[package]]
 name = "tracy-client"
 version = "0.18.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91d722a05fe49b31fef971c4732a7d4aa6a18283d9ba46abddab35f484872947"
+source = "git+https://github.com/YaLTeR/rust_tracy_client.git?rev=c036be22be81b32febc4a4f4ecdbfc02b1e43ac8#c036be22be81b32febc4a4f4ecdbfc02b1e43ac8"
 dependencies = [
  "loom",
  "once_cell",
@@ -3804,8 +3804,7 @@ dependencies = [
 [[package]]
 name = "tracy-client-sys"
 version = "0.27.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fb391ac70462b3097a755618fbf9c8f95ecc1eb379a414f7b46f202ed10db1f"
+source = "git+https://github.com/YaLTeR/rust_tracy_client.git?rev=c036be22be81b32febc4a4f4ecdbfc02b1e43ac8#c036be22be81b32febc4a4f4ecdbfc02b1e43ac8"
 dependencies = [
  "cc",
  "windows-targets 0.52.6",
