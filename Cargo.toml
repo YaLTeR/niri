@@ -126,6 +126,9 @@ rayon = "1.11.0"
 wayland-client = "0.31.11"
 xshell = "0.2.7"
 
+[build-dependencies]
+pkg-config = "0.3.32"
+
 [features]
 default = ["dbus", "systemd", "xdp-gnome-screencast"]
 # Enables D-Bus support (serve various freedesktop and GNOME interfaces, accessibility tree, power button handling).
