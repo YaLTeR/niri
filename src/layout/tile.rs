@@ -6,7 +6,6 @@ use niri_config::{Color, CornerRadius, GradientInterpolation};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::Color32F;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
@@ -228,10 +227,8 @@ impl<W: LayoutElement> Tile<W> {
             self.floating_preset_height_idx = None;
         }
         // Update backdrop colour
-        let new_color = Color32F::from(options.layout.fullscreen_backdrop_color);
-        if new_color != self.fullscreen_backdrop.color() {
-            self.fullscreen_backdrop.set_color(new_color);
-        }
+        self.fullscreen_backdrop
+            .set_color(options.layout.fullscreen_backdrop_color);
 
         self.view_size = view_size;
         self.scale = scale;
