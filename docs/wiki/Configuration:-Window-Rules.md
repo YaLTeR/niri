@@ -48,6 +48,7 @@ window-rule {
     open-fullscreen true
     open-floating true
     open-focused false
+    open-play-animation true
 
     // Properties that apply continuously.
     draw-border-with-background false
@@ -508,6 +509,19 @@ window-rule {
     match app-id=r#"^org\.keepassxc\.KeePassXC$"# title="^Unlock Database - KeePassXC$"
 
     open-focused true
+}
+```
+
+#### `open-play-animation`
+
+Enable/disable the opening animation of a window.
+
+```kdl
+// The animation is enabled by default, this example disables it for Rio.
+window-rule {
+    match app-id="^rio"
+
+    open-play-animation false
 }
 ```
 
