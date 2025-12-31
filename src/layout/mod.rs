@@ -2696,7 +2696,7 @@ impl<W: LayoutElement> Layout<W> {
                 }
 
                 // Keep advancing animations if we might need to scroll the view.
-                if !move_.is_floating {
+                if !move_.is_floating || self.overview_open {
                     return true;
                 }
             }
