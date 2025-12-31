@@ -192,6 +192,8 @@ impl CompositorHandler for State {
                         })
                         .map(|(mapped, _)| mapped.window.clone());
 
+                    let play_animation = rules.open_play_animation.unwrap_or(true);
+
                     // The mapped pre-commit hook deals with dma-bufs on its own.
                     self.remove_default_dmabuf_pre_commit_hook(surface);
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
@@ -232,7 +234,9 @@ impl CompositorHandler for State {
                     }
 
                     if let Some(output) = output {
-                        self.niri.layout.start_open_animation_for_window(&window);
+                        if play_animation {
+                            self.niri.layout.start_open_animation_for_window(&window);
+                        }
 
                         let new_focus = self.niri.layout.focus().map(|m| &m.window);
                         if new_focus == Some(&window) {

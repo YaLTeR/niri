@@ -73,6 +73,9 @@ pub struct ResolvedWindowRules {
     /// Whether the window should open focused.
     pub open_focused: Option<bool>,
 
+    /// Whether the window should play its open animation.
+    pub open_play_animation: Option<bool>,
+
     /// Extra bound on the minimum window width.
     pub min_width: Option<u16>,
     /// Extra bound on the minimum window height.
@@ -249,6 +252,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_focused {
                     resolved.open_focused = Some(x);
+                }
+
+                if let Some(x) = rule.open_play_animation {
+                    resolved.open_play_animation = Some(x);
                 }
 
                 if let Some(x) = rule.min_width {
