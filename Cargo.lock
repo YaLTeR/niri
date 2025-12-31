@@ -2207,6 +2207,7 @@ dependencies = [
  "pango",
  "pangocairo",
  "pipewire",
+ "pkg-config",
  "png",
  "portable-atomic",
  "profiling",
