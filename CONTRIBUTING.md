@@ -90,6 +90,24 @@ When creating pull requests, please keep the following in mind.
 - Remember to document new config options on the wiki.
 - When opening a pull request, ensure "Allow edits from maintainers" is enabled, so I can make final tweaks before merging.
 
+### How to get your pull request reviewed more quickly
+
+- Make it small and self-contained. Avoid mixing several unrelated changes in one PR.
+- Split the PR into small and self-contained commits. This makes it much easier to review.
+- Discuss new features, options, or behavior changes beforehand; make sure there's consensus about the design.
+- When creating the pull request, clearly write what it does, what problem it solves, how to test it.
+- Follow the rest of the advice from this document.
+
+## AI contributions
+
+If you use LLMs for your contribution (issue, comment, pull request), then it is *your job* to check and clean up its output, just like with any other tool.
+*You* have to spend the time doing this.
+Particularly:
+
+- If I can tell that a pull request is mostly LLM-generated, then very likely this pull request will take *significantly more time and effort* than usual to review and finish. This is based on my prior review experience. Therefore, I'm not interested in such pull requests—there's always plenty of human-written ones which take priority.
+- When using an LLM to prepare an issue, the text usually has a lot of unnecessary wording and irrelevant details. Anyone looking at such an issue will quickly lose interest in reading through it (myself certainly). Clean up the text and keep only those details that actually matter.
+- When using an LLM to comment on an issue, *you* have to verify that the comment makes sense, contributes something useful, and doesn't have unnecessary repetition.
+
 
 [cosmic-comp]: https://github.com/pop-os/cosmic-comp
 [anvil]: https://github.com/Smithay/smithay/tree/master/anvil

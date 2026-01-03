@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use glam::{Mat3, Vec2};
 use niri_config::{Color, CornerRadius};
@@ -153,7 +154,7 @@ impl ShadowRenderElement {
             None,
             scale,
             alpha,
-            vec![
+            Rc::new([
                 Uniform::new("shadow_color", color.to_array_premul()),
                 Uniform::new("sigma", sigma),
                 mat3_uniform("input_to_geo", input_to_geo),
@@ -165,7 +166,7 @@ impl ShadowRenderElement {
                     "window_corner_radius",
                     <[f32; 4]>::from(window_corner_radius),
                 ),
-            ],
+            ]),
             HashMap::new(),
         );
     }

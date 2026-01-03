@@ -85,6 +85,9 @@ BuildRequires:  mesa-libEGL
 Requires:       mesa-dri-drivers
 Requires:       mesa-libEGL
 
+# Loaded through dlopen
+Requires:       libwayland-server
+
 # Integrated Xwayland support. Not packaged on EPEL
 %if 0%{?fedora}
 Requires:       xwayland-satellite >= 0.7

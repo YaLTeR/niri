@@ -436,6 +436,7 @@ impl Tty {
             .unwrap();
 
         let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
+        unsafe { init_libinput_plugin_system(&libinput) };
         {
             let _span = tracy_client::span!("Libinput::udev_assign_seat");
             libinput.udev_assign_seat(&seat_name)
@@ -648,7 +649,16 @@ impl Tty {
 
                     // It hasn't been removed, update its state as usual.
                     let device = self.devices.get_mut(&node).unwrap();
-                    if let Err(err) = device.drm.activate(false) {
+
+                    // Someone on an old device hit what seems to be a driver bug without this:
+                    // https://github.com/YaLTeR/niri/issues/3048
+                    let force_disable = self
+                        .config
+                        .borrow()
+                        .debug
+                        .force_disable_connectors_on_resume;
+
+                    if let Err(err) = device.drm.activate(force_disable) {
                         warn!("error activating DRM device: {err:?}");
                     }
                     if let Some(lease_state) = &mut device.drm_lease_state {
@@ -1058,6 +1068,7 @@ impl Tty {
                 if let Err(err) = surface.compositor.reset_state() {
                     warn!("error resetting DrmCompositor state: {err:?}");
                 }
+                surface.compositor.reset_buffers();
             }
         }
 
@@ -3329,6 +3340,50 @@ fn make_output_name(
         model: info.as_ref().and_then(|info| info.model()),
         serial: info.as_ref().and_then(|info| info.serial()),
     }
+}
+
+/// Initializes the libinput plugin system.
+///
+/// # Safety
+///
+/// This function must be called before libinput iterates through the devices, i.e. before
+/// libinput_udev_assign_seat() or the first call to libinput_path_add_device().
+unsafe fn init_libinput_plugin_system(libinput: &Libinput) {
+    #[cfg(have_libinput_plugin_system)]
+    unsafe {
+        use std::ffi::{c_char, c_int, CString};
+        use std::os::unix::ffi::OsStringExt;
+
+        use directories::BaseDirs;
+        use input::ffi::libinput;
+        use input::AsRaw as _;
+
+        extern "C" {
+            fn libinput_plugin_system_append_path(libinput: *const libinput, path: *const c_char);
+            fn libinput_plugin_system_append_default_paths(libinput: *const libinput);
+            fn libinput_plugin_system_load_plugins(
+                libinput: *const libinput,
+                flags: c_int,
+            ) -> c_int;
+        }
+        const LIBINPUT_PLUGIN_SYSTEM_FLAG_NONE: c_int = 0;
+        let libinput = libinput.as_raw();
+
+        // Also load plugins from $XDG_CONFIG_HOME/libinput/plugins.
+        if let Some(dirs) = BaseDirs::new() {
+            let mut plugins_dir = dirs.config_dir().to_path_buf();
+            plugins_dir.push("libinput");
+            plugins_dir.push("plugins");
+            if let Ok(plugins_dir) = CString::new(plugins_dir.into_os_string().into_vec()) {
+                libinput_plugin_system_append_path(libinput, plugins_dir.as_ptr());
+            }
+        }
+
+        libinput_plugin_system_append_default_paths(libinput);
+        libinput_plugin_system_load_plugins(libinput, LIBINPUT_PLUGIN_SYSTEM_FLAG_NONE);
+    }
+    #[cfg(not(have_libinput_plugin_system))]
+    let _ = libinput;
 }
 
 #[cfg(test)]
