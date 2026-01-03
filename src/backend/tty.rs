@@ -14,7 +14,7 @@ use anyhow::{anyhow, bail, ensure, Context};
 use bytemuck::cast_slice_mut;
 use drm_ffi::drm_mode_modeinfo;
 use libc::dev_t;
-use niri_config::output::Modeline;
+use niri_config::output::{Bpc, Modeline};
 use niri_config::{Config, OutputName};
 use niri_ipc::{HSyncPolarity, VSyncPolarity};
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -70,7 +70,18 @@ use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
 
-const SUPPORTED_COLOR_FORMATS: [Fourcc; 4] = [
+const COLOR_FORMATS_8: [Fourcc; 4] = [
+    Fourcc::Xrgb8888,
+    Fourcc::Xbgr8888,
+    Fourcc::Argb8888,
+    Fourcc::Abgr8888,
+];
+
+const COLOR_FORMATS_10: [Fourcc; 8] = [
+    Fourcc::Xrgb2101010,
+    Fourcc::Xbgr2101010,
+    Fourcc::Argb2101010,
+    Fourcc::Abgr2101010,
     Fourcc::Xrgb8888,
     Fourcc::Xbgr8888,
     Fourcc::Argb8888,
@@ -672,6 +683,19 @@ impl Tty {
                         if let Ok(props) =
                             ConnectorProperties::try_new(&device.drm, surface.connector)
                         {
+                            if let Some(bpc) = self
+                                .config
+                                .borrow()
+                                .outputs
+                                .find(&surface.name)
+                                .and_then(|o| o.bpc)
+                            {
+                                match set_max_bpc(&props, bpc as u64) {
+                                    Ok(_) => (),
+                                    Err(err) => debug!("couldn't set max bpc: {err:?}"),
+                                }
+                            }
+
                             match reset_hdr(&props) {
                                 Ok(()) => (),
                                 Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
@@ -1260,6 +1284,13 @@ impl Tty {
 
         let mut orientation = None;
         if let Ok(props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
+            if let Some(bpc) = config.bpc {
+                match set_max_bpc(&props, bpc as u64) {
+                    Ok(_) => (),
+                    Err(err) => debug!("couldn't set max bpc: {err:?}"),
+                }
+            }
+
             match reset_hdr(&props) {
                 Ok(()) => (),
                 Err(err) => debug!("couldn't reset HDR properties: {err:?}"),
@@ -1391,6 +1422,11 @@ impl Tty {
             })
             .collect::<FormatSet>();
 
+        let color_formats: &[Fourcc] = match config.bpc.unwrap_or_default() {
+            Bpc::_8 => &COLOR_FORMATS_8,
+            Bpc::_10 => &COLOR_FORMATS_10,
+        };
+
         // Create the compositor.
         let res = DrmCompositor::new(
             OutputModeSource::Auto(output.clone()),
@@ -1398,7 +1434,7 @@ impl Tty {
             None,
             device.allocator.clone(),
             GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
-            SUPPORTED_COLOR_FORMATS,
+            color_formats.iter().copied(),
             // This is only used to pick a good internal format, so it can use the surface's render
             // formats, even though we only ever render on the primary GPU.
             render_formats.clone(),
@@ -1428,7 +1464,7 @@ impl Tty {
                     None,
                     device.allocator.clone(),
                     GbmFramebufferExporter::new(device.gbm.clone(), device.render_node.into()),
-                    SUPPORTED_COLOR_FORMATS,
+                    color_formats.iter().copied(),
                     render_formats,
                     device.drm.cursor_size(),
                     Some(device.gbm.clone()),
@@ -2147,6 +2183,17 @@ impl Tty {
                     OutputId::next()
                 });
 
+                let props = ConnectorProperties::try_new(&device.drm, connector.handle()).ok();
+                let max_bpc = props.as_ref().and_then(|p| p.find(c"max bpc").ok());
+                let max_bpc = max_bpc.and_then(|(info, value)| {
+                    info.value_type()
+                        .convert_value(*value)
+                        .as_unsigned_range()
+                        .map(|v| v as u8)
+                });
+
+                let format = surface.map(|s| s.compositor.format().to_string());
+
                 let ipc_output = niri_ipc::Output {
                     name: connector_name,
                     make: output_name.make.unwrap_or_else(|| "Unknown".into()),
@@ -2159,6 +2206,8 @@ impl Tty {
                     vrr_supported,
                     vrr_enabled,
                     logical,
+                    max_bpc,
+                    format,
                 };
 
                 ipc_outputs.insert(id, ipc_output);
@@ -3241,6 +3290,33 @@ fn reset_hdr(props: &ConnectorProperties) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn set_max_bpc(props: &ConnectorProperties, bpc: u64) -> anyhow::Result<u64> {
+    let (info, value) = props.find(c"max bpc")?;
+
+    let property::ValueType::UnsignedRange(min, max) = info.value_type() else {
+        bail!("wrong property type")
+    };
+
+    let bpc = bpc.clamp(min, max);
+
+    let property::Value::UnsignedRange(value) = info.value_type().convert_value(*value) else {
+        bail!("wrong property type")
+    };
+
+    if value != bpc {
+        props
+            .device
+            .set_property(
+                props.connector,
+                info.handle(),
+                property::Value::UnsignedRange(bpc).into(),
+            )
+            .context("error setting property")?;
+    }
+
+    Ok(bpc)
 }
 
 fn is_vrr_capable(device: &DrmDevice, connector: connector::Handle) -> Option<bool> {
