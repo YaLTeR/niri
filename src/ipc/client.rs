@@ -470,6 +470,9 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowLayoutsChanged { changes } => {
                         println!("Window layouts changed: {changes:?}");
                     }
+                    Event::WindowStackingOrdersChanged { changes } => {
+                        println!("Window stacking orders changed: {changes:?}");
+                    }
                     Event::KeyboardLayoutsChanged { keyboard_layouts } => {
                         println!("Keyboard layouts changed: {keyboard_layouts:?}");
                     }

@@ -41,7 +41,7 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{
     Config, CornerRadius, LayoutPart, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
 };
-use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
+use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, StackingOrder, WindowLayout};
 use scrolling::{Column, ColumnWidth};
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
@@ -1624,28 +1624,34 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn with_windows(
         &self,
-        mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>, WindowLayout),
+        mut f: impl FnMut(&W, Option<&Output>, Option<WorkspaceId>, WindowLayout, Option<StackingOrder>),
     ) {
         if let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move {
             // We don't fill any positions for interactively moved windows.
             let layout = move_.tile.ipc_layout_template();
-            f(move_.tile.window(), Some(&move_.output), None, layout);
+            f(move_.tile.window(), Some(&move_.output), None, layout, None);
         }
 
         match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 for mon in monitors {
                     for ws in &mon.workspaces {
-                        for (tile, layout) in ws.tiles_with_ipc_layouts() {
-                            f(tile.window(), Some(&mon.output), Some(ws.id()), layout);
+                        for (tile, layout, stacking_order) in ws.tiles_ipc() {
+                            f(
+                                tile.window(),
+                                Some(&mon.output),
+                                Some(ws.id()),
+                                layout,
+                                stacking_order,
+                            );
                         }
                     }
                 }
             }
             MonitorSet::NoOutputs { workspaces } => {
                 for ws in workspaces {
-                    for (tile, layout) in ws.tiles_with_ipc_layouts() {
-                        f(tile.window(), None, Some(ws.id()), layout);
+                    for (tile, layout, stacking_order) in ws.tiles_ipc() {
+                        f(tile.window(), None, Some(ws.id()), layout, stacking_order);
                     }
                 }
             }
