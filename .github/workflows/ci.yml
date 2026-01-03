@@ -298,7 +298,6 @@ jobs:
         continue-on-error: true
 
       - run: nix flake check
-        continue-on-error: true
 
   publish-wiki:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
