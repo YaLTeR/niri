@@ -79,6 +79,10 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) overview_open: bool,
     /// Progress of the overview zoom animation, 1 is fully in overview.
     overview_progress: Option<OverviewProgress>,
+    /// Current overview zoom level (runtime, may differ from config default).
+    overview_zoom: f64,
+    /// Current index in zoom presets for cycling.
+    overview_zoom_preset_idx: usize,
     /// Clock for driving animations.
     pub(super) clock: Clock,
     /// Configurable properties of the layout as received from the parent layout.
@@ -340,6 +344,8 @@ impl<W: LayoutElement> Monitor<W> {
             insert_hint_render_loc: None,
             overview_open: false,
             overview_progress: None,
+            overview_zoom: options.overview.zoom,
+            overview_zoom_preset_idx: 0,
             workspace_switch: None,
             clock,
             base_options,
@@ -1371,7 +1377,40 @@ impl<W: LayoutElement> Monitor<W> {
 
     pub fn overview_zoom(&self) -> f64 {
         let progress = self.overview_progress.as_ref().map(|p| p.value());
-        compute_overview_zoom(&self.options, progress)
+        compute_overview_zoom(self.overview_zoom, progress)
+    }
+
+    /// Get the current target overview zoom level (before animation interpolation).
+    pub fn overview_zoom_target(&self) -> f64 {
+        self.overview_zoom
+    }
+
+    /// Reset zoom to config default - call when overview closes.
+    pub fn reset_overview_zoom(&mut self, default_zoom: f64) {
+        self.overview_zoom = default_zoom;
+        self.overview_zoom_preset_idx = 0;
+    }
+
+    /// Cycle to next zoom preset (instant, no animation).
+    pub fn cycle_overview_zoom(&mut self, presets: &[f64]) {
+        if presets.is_empty() {
+            return;
+        }
+        self.overview_zoom_preset_idx = (self.overview_zoom_preset_idx + 1) % presets.len();
+        self.overview_zoom = presets[self.overview_zoom_preset_idx];
+    }
+
+    /// Adjust zoom by delta, clamped to bounds (instant).
+    pub fn adjust_overview_zoom(&mut self, delta: f64, min: f64, max: f64) {
+        self.overview_zoom = (self.overview_zoom + delta).clamp(min, max);
+        // Reset preset index since we're now at a custom level.
+        self.overview_zoom_preset_idx = 0;
+    }
+
+    /// Set specific zoom level, clamped to bounds (instant).
+    pub fn set_overview_zoom(&mut self, level: f64, min: f64, max: f64) {
+        self.overview_zoom = level.clamp(min, max);
+        self.overview_zoom_preset_idx = 0;
     }
 
     pub(super) fn set_overview_progress(&mut self, progress: Option<&super::OverviewProgress>) {
@@ -1450,7 +1489,7 @@ impl<W: LayoutElement> Monitor<W> {
                 // - first_y = to * from_height - switch_anim.value() * from_height - to * current_height
                 // - first_y = -switch_anim.value() * from_height + to * (from_height - current_height)
                 let from = progress_anim.from();
-                let from_zoom = compute_overview_zoom(&self.options, Some(from));
+                let from_zoom = compute_overview_zoom(self.options.overview.zoom, Some(from));
                 let from_ws_height_with_gap = self.workspace_size_with_gap(from_zoom).h;
 
                 let zoom = self.overview_zoom();

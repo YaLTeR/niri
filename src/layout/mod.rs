@@ -2321,7 +2321,7 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn overview_zoom(&self) -> f64 {
         let progress = self.overview_progress.as_ref().map(|p| p.value());
-        compute_overview_zoom(&self.options, progress)
+        compute_overview_zoom(self.options.overview.zoom, progress)
     }
 
     #[cfg(test)]
@@ -4923,9 +4923,9 @@ impl<W: LayoutElement> Default for MonitorSet<W> {
     }
 }
 
-fn compute_overview_zoom(options: &Options, overview_progress: Option<f64>) -> f64 {
+fn compute_overview_zoom(target_zoom: f64, overview_progress: Option<f64>) -> f64 {
     // Clamp to some sane values.
-    let zoom = options.overview.zoom.clamp(0.0001, 0.75);
+    let zoom = target_zoom.clamp(0.0001, 0.75);
 
     if let Some(p) = overview_progress {
         (1. - p * (1. - zoom)).max(0.0001)
