@@ -2253,6 +2253,72 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::OverviewZoomCycle => {
+                if !self.niri.layout.is_overview_open() {
+                    return;
+                }
+
+                let presets = match &self.niri.config.borrow().overview.zoom_presets {
+                    Some(p) if !p.is_empty() => p.clone(),
+                    _ => return,
+                };
+
+                for monitor in self.niri.layout.monitors_mut() {
+                    monitor.cycle_overview_zoom(&presets);
+                }
+
+                self.niri.queue_redraw_all();
+            }
+            Action::OverviewZoomIn(step) => {
+                if !self.niri.layout.is_overview_open() {
+                    return;
+                }
+
+                let config = self.niri.config.borrow();
+                let step = step.unwrap_or(config.overview.zoom_step);
+                let min = config.overview.min_zoom;
+                let max = config.overview.max_zoom;
+                drop(config);
+
+                for monitor in self.niri.layout.monitors_mut() {
+                    monitor.adjust_overview_zoom(step, min, max);
+                }
+
+                self.niri.queue_redraw_all();
+            }
+            Action::OverviewZoomOut(step) => {
+                if !self.niri.layout.is_overview_open() {
+                    return;
+                }
+
+                let config = self.niri.config.borrow();
+                let step = step.unwrap_or(config.overview.zoom_step);
+                let min = config.overview.min_zoom;
+                let max = config.overview.max_zoom;
+                drop(config);
+
+                for monitor in self.niri.layout.monitors_mut() {
+                    monitor.adjust_overview_zoom(-step, min, max);
+                }
+
+                self.niri.queue_redraw_all();
+            }
+            Action::OverviewSetZoom(level) => {
+                if !self.niri.layout.is_overview_open() {
+                    return;
+                }
+
+                let config = self.niri.config.borrow();
+                let min = config.overview.min_zoom;
+                let max = config.overview.max_zoom;
+                drop(config);
+
+                for monitor in self.niri.layout.monitors_mut() {
+                    monitor.set_overview_zoom(level, min, max);
+                }
+
+                self.niri.queue_redraw_all();
+            }
             Action::ToggleWindowUrgent(id) => {
                 let window = self
                     .niri
