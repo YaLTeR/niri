@@ -357,6 +357,10 @@ pub enum Action {
     ToggleOverview,
     OpenOverview,
     CloseOverview,
+    OverviewZoomCycle,
+    OverviewZoomIn(#[knuffel(argument)] Option<f64>),
+    OverviewZoomOut(#[knuffel(argument)] Option<f64>),
+    OverviewSetZoom(#[knuffel(argument)] f64),
     #[knuffel(skip)]
     ToggleWindowUrgent(u64),
     #[knuffel(skip)]
@@ -688,6 +692,10 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleOverview {} => Self::ToggleOverview,
             niri_ipc::Action::OpenOverview {} => Self::OpenOverview,
             niri_ipc::Action::CloseOverview {} => Self::CloseOverview,
+            niri_ipc::Action::OverviewZoomCycle {} => Self::OverviewZoomCycle,
+            niri_ipc::Action::OverviewZoomIn { step } => Self::OverviewZoomIn(step),
+            niri_ipc::Action::OverviewZoomOut { step } => Self::OverviewZoomOut(step),
+            niri_ipc::Action::OverviewSetZoom { level } => Self::OverviewSetZoom(level),
             niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
