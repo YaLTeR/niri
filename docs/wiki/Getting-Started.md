@@ -7,7 +7,6 @@ Fedora:
 sudo dnf copr enable avengemedia/dms
 sudo dnf install niri dms
 systemctl --user add-wants niri.service dms
-dms setup
 ```
 
 Arch Linux (via [paru](https://github.com/morganamilo/paru)):
@@ -15,7 +14,6 @@ Arch Linux (via [paru](https://github.com/morganamilo/paru)):
 sudo pacman -Syu niri xwayland-satellite xdg-desktop-portal-gnome xdg-desktop-portal-gtk alacritty
 paru -S dms-shell-bin matugen wl-clipboard cliphist cava qt6-multimedia-ffmpeg
 systemctl --user add-wants niri.service dms
-dms setup
 ```
 
 Ubuntu 25.10 and above:
@@ -23,19 +21,18 @@ Ubuntu 25.10 and above:
 sudo add-apt-repository ppa:avengemedia/danklinux
 sudo add-apt-repository ppa:avengemedia/dms
 sudo apt install niri dms
-dms setup
 ```
-
-The `dms setup` command at the end will prompt you for your compositor, 
-make sure to select Niri as the compositor. This step will ensure that
-Niri config gets updated to utilise various out-of-the-box features of DankMaterialShell
-like the application launcher among other things.
 
 After running these commands, log out, choose Niri in your display manager, and log back in.
 Or, if not using a display manager, run `niri-session` on a TTY.
 
 The default niri config will run Waybar, so you might get two bars on screen.
 To fix this, stop Waybar with `pkill waybar` command, then open `~/.config/niri/config.kdl` and delete the `spawn-at-startup "waybar"` line.
+
+The default niri config will use Fuzzel as the application finder (Super+D),
+to replace it with DankMaterialShell's default, Spotlight, and enable other out-of-the-box integrations run `dms setup` command.
+When the command prompts you for a compositor, ensure you select Niri. For a detailed walkthrough,
+refer to the [DMS Setup page](https://danklinux.com/docs/dankmaterialshell/compositors#niri-configuration).
 
 ## Slower and more considered start
 
