@@ -29,6 +29,8 @@ Or, if not using a display manager, run `niri-session` on a TTY.
 The default niri config will run Waybar, so you might get two bars on screen.
 To fix this, stop Waybar with `pkill waybar` command, then open `~/.config/niri/config.kdl` and delete the `spawn-at-startup "waybar"` line.
 
+Check the DankMaterialShell's [compositor setup page](https://danklinux.com/docs/dankmaterialshell/compositors#niri-configuration) to learn how to configure DMS-specific binds and other niri integrations.
+
 ## Slower and more considered start
 
 The easiest way to get niri is to install one of the distribution packages.
