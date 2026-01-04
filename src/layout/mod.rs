@@ -4542,6 +4542,14 @@ impl<W: LayoutElement> Layout<W> {
     pub fn toggle_overview(&mut self) {
         self.overview_open = !self.overview_open;
 
+        // Reset zoom to config default when closing overview.
+        if !self.overview_open {
+            let default_zoom = self.options.overview.zoom;
+            for monitor in self.monitors_mut() {
+                monitor.reset_overview_zoom(default_zoom);
+            }
+        }
+
         let from = self.overview_progress.take().map_or(0., |p| p.value());
         let to = if self.overview_open { 1. } else { 0. };
 
