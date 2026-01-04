@@ -223,7 +223,7 @@ This defaults to `/usr/bin/niri`.
 | `resources/niri.service` (systemd) | `/etc/systemd/user/` |
 | `resources/niri-shutdown.target` (systemd) | `/etc/systemd/user/` |
 | `resources/dinit/niri` (dinit) | `/etc/dinit.d/user/` |
-| `resources/dinit/niri-shutdown` (dinit) | `/etc/dinit.d/user/` |
+| `resources/dinit/niri.target` (dinit) | `/etc/dinit.d/user/` |
 
 [Alacritty]: https://github.com/alacritty/alacritty
 [fuzzel]: https://codeberg.org/dnkl/fuzzel
