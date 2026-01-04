@@ -64,7 +64,7 @@
           postPatch = ''
             patchShebangs resources/niri-session
             substituteInPlace resources/niri.service \
-              --replace-fail '/usr/bin' "$out/bin"
+              --replace-fail 'ExecStart=niri' "ExecStart=$out/bin/niri"
           '';
 
           cargoLock = {
