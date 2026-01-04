@@ -1489,7 +1489,7 @@ impl<W: LayoutElement> Monitor<W> {
                 // - first_y = to * from_height - switch_anim.value() * from_height - to * current_height
                 // - first_y = -switch_anim.value() * from_height + to * (from_height - current_height)
                 let from = progress_anim.from();
-                let from_zoom = compute_overview_zoom(self.options.overview.zoom, Some(from));
+                let from_zoom = compute_overview_zoom(self.overview_zoom, Some(from));
                 let from_ws_height_with_gap = self.workspace_size_with_gap(from_zoom).h;
 
                 let zoom = self.overview_zoom();

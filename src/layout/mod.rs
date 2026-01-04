@@ -2321,7 +2321,12 @@ impl<W: LayoutElement> Layout<W> {
 
     pub fn overview_zoom(&self) -> f64 {
         let progress = self.overview_progress.as_ref().map(|p| p.value());
-        compute_overview_zoom(self.options.overview.zoom, progress)
+        // Use runtime zoom from active monitor, falling back to config default
+        let target_zoom = self
+            .active_monitor_ref()
+            .map(|m| m.overview_zoom_target())
+            .unwrap_or(self.options.overview.zoom);
+        compute_overview_zoom(target_zoom, progress)
     }
 
     #[cfg(test)]
