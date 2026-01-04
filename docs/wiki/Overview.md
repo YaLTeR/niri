@@ -54,6 +54,36 @@ overview {
 }
 ```
 
+### Dynamic Zoom
+
+You can dynamically adjust the zoom level while in the overview using key bindings or scroll actions.
+This lets you zoom in to focus on specific workspaces, or zoom out to get a broader view.
+
+Zoom changes apply instantly and reset to the config default when the overview closes.
+
+```kdl
+overview {
+    zoom 0.5
+
+    // Optional: preset levels for cycling
+    zoom-presets 0.5 0.25 0.1
+
+    // Optional: bounds for scroll-based zoom
+    min-zoom 0.05
+    max-zoom 0.75
+    zoom-step 0.1
+}
+
+binds {
+    // Cycle through zoom presets
+    Mod+Z { overview-zoom-cycle; }
+
+    // Scroll to adjust zoom (use Ctrl since Shift is reserved for horizontal scroll)
+    Ctrl+WheelScrollUp   cooldown-ms=150 { overview-zoom-in; }
+    Ctrl+WheelScrollDown cooldown-ms=150 { overview-zoom-out; }
+}
+```
+
 To change the color behind the workspaces, use the `backdrop-color` setting:
 
 ```kdl

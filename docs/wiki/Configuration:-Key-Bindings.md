@@ -405,3 +405,34 @@ binds {
     Super+Alt+L allow-inhibiting=false { spawn "swaylock"; }
 }
 ```
+
+#### `overview-zoom-cycle`, `overview-zoom-in`, `overview-zoom-out`, `overview-set-zoom`
+
+Actions for dynamically adjusting the zoom level while in the [Overview](./Overview.md).
+These actions have no effect when the overview is closed.
+
+- `overview-zoom-cycle`: Cycle through the zoom levels defined in [`zoom-presets`](./Configuration:-Miscellaneous.md#zoom-presets). Does nothing if no presets are configured.
+- `overview-zoom-in`: Increase the zoom level (show workspaces larger) by `zoom-step`.
+- `overview-zoom-out`: Decrease the zoom level (show workspaces smaller) by `zoom-step`.
+- `overview-set-zoom`: Set a specific zoom level.
+
+Zoom changes apply instantly and reset to the config default when the overview closes.
+
+```kdl
+binds {
+    // Cycle through preset zoom levels
+    Mod+Z { overview-zoom-cycle; }
+
+    // Scroll to adjust zoom (Ctrl+Wheel, since Shift+Wheel scrolls horizontally)
+    Ctrl+WheelScrollUp   cooldown-ms=150 { overview-zoom-in; }
+    Ctrl+WheelScrollDown cooldown-ms=150 { overview-zoom-out; }
+
+    // Custom step size
+    Mod+Plus  { overview-zoom-in step=0.05; }
+    Mod+Minus { overview-zoom-out step=0.05; }
+
+    // Set a specific zoom level
+    Mod+1 { overview-set-zoom level=0.5; }
+    Mod+2 { overview-set-zoom level=0.25; }
+}
+```
