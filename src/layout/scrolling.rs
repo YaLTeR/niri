@@ -989,6 +989,16 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.data.insert(idx, ColumnData::new(&column));
         self.columns.insert(idx, column);
 
+        // Adjust active_column_idx if a column was inserted before or at it.
+        // This must be done before the activation logic so that activate_column_with_anim_config
+        // can correctly detect whether we're activating a different column.
+        if !was_empty && idx <= self.active_column_idx {
+            self.active_column_idx += 1;
+            // When the active column index shifts, clear view_offset_to_restore since it's no
+            // longer valid for the new active column index.
+            self.view_offset_to_restore = None;
+        }
+
         if activate {
             if was_empty {
                 // For the first window on an empty workspace.
@@ -1022,19 +1032,23 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 };
 
                 self.view_offset = ViewOffset::Static(target_view_pos - self.column_x(idx));
+                // Clear view_offset_to_restore when changing active column.
+                self.view_offset_to_restore = None;
                 self.active_column_idx = idx;
             } else {
                 // Left anchor - use standard activation logic
-                let prev_offset =
-                    (idx == self.active_column_idx + 1).then(|| self.view_offset.stationary());
+                // Note: active_column_idx may have been incremented above if idx <= active_column_idx.
+                // In that case, we're inserting at or to the left of what was the active column.
+                // The original check was `idx == self.active_column_idx + 1` before the increment,
+                // which becomes `idx == self.active_column_idx - 1` after the increment.
+                let prev_offset = (self.active_column_idx > 0 && idx == self.active_column_idx - 1)
+                    .then(|| self.view_offset.stationary());
 
                 let anim_config =
                     anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
                 self.activate_column_with_anim_config(idx, anim_config);
                 self.activate_prev_column_on_removal = prev_offset;
             }
-        } else if !was_empty && idx <= self.active_column_idx {
-            self.active_column_idx += 1;
         }
 
         // Animate movement of other columns.
