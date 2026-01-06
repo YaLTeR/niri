@@ -14,6 +14,7 @@ use smithay::wayland::compositor::{
     SurfaceAttributes,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
+use smithay::wayland::drm_syncobj::DrmSyncobjCachedState;
 use smithay::wayland::shell::xdg::ToplevelCachedState;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::{delegate_compositor, delegate_shm};
@@ -293,12 +294,14 @@ impl CompositorHandler for State {
 
                     self.niri.window_mru_ui.remove_window(id);
                     self.niri.layout.remove_window(&window, transaction.clone());
-                    self.add_default_dmabuf_pre_commit_hook(surface);
 
                     // If this is the only instance, then this transaction will complete
                     // immediately, so no need to set the timer.
                     if !transaction.is_last() {
-                        transaction.register_deadline_timer(&self.niri.event_loop);
+                        transaction.register_deadline_timer(
+                            &self.niri.event_loop,
+                            &self.niri.display_handle,
+                        );
                     }
 
                     if was_active {
@@ -518,8 +521,22 @@ delegate_shm!(State);
 impl State {
     pub fn add_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
         let hook = add_pre_commit_hook::<Self, _>(surface, move |state, _dh, surface| {
-            let maybe_dmabuf = with_states(surface, |surface_data| {
-                surface_data
+            let Some(client) = surface.client() else {
+                return;
+            };
+
+            // Extract acquire point and dmabuf from surface state
+            let (acquire_point, maybe_dmabuf) = with_states(surface, |surface_data| {
+                // Get explicit sync acquire point if present
+                let acquire_point = surface_data
+                    .cached_state
+                    .get::<DrmSyncobjCachedState>()
+                    .pending()
+                    .acquire_point
+                    .clone();
+
+                // Get dmabuf if buffer is being attached
+                let dmabuf = surface_data
                     .cached_state
                     .get::<SurfaceAttributes>()
                     .pending()
@@ -528,27 +545,51 @@ impl State {
                     .and_then(|assignment| match assignment {
                         BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).cloned().ok(),
                         _ => None,
-                    })
+                    });
+
+                (acquire_point, dmabuf)
             });
-            if let Some(dmabuf) = maybe_dmabuf {
-                if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
-                    if let Some(client) = surface.client() {
-                        let res =
+
+            let Some(dmabuf) = maybe_dmabuf else {
+                return;
+            };
+
+            // Priority 1: Use explicit sync acquire point if available
+            if let Some(acquire_point) = acquire_point {
+                if let Ok((blocker, source)) = acquire_point.generate_blocker() {
+                    let res = state.niri.event_loop.insert_source(source, {
+                        let client = client.clone();
+                        move |_, _, state| {
+                            let display_handle = state.niri.display_handle.clone();
                             state
-                                .niri
-                                .event_loop
-                                .insert_source(source, move |_, _, state| {
-                                    let display_handle = state.niri.display_handle.clone();
-                                    state
-                                        .client_compositor_state(&client)
-                                        .blocker_cleared(state, &display_handle);
-                                    Ok(())
-                                });
-                        if res.is_ok() {
-                            add_blocker(surface, blocker);
-                            trace!("added default dmabuf blocker");
+                                .client_compositor_state(&client)
+                                .blocker_cleared(state, &display_handle);
+                            Ok(())
                         }
+                    });
+                    if res.is_ok() {
+                        add_blocker(surface, blocker);
+                        trace!("added explicit sync acquire point blocker");
+                        return; // Skip dmabuf blocker
                     }
+                }
+            }
+
+            // Fallback: Use implicit sync via dmabuf polling
+            if let Ok((blocker, source)) = dmabuf.generate_blocker(Interest::READ) {
+                let res = state
+                    .niri
+                    .event_loop
+                    .insert_source(source, move |_, _, state| {
+                        let display_handle = state.niri.display_handle.clone();
+                        state
+                            .client_compositor_state(&client)
+                            .blocker_cleared(state, &display_handle);
+                        Ok(())
+                    });
+                if res.is_ok() {
+                    add_blocker(surface, blocker);
+                    trace!("added implicit sync dmabuf blocker");
                 }
             }
         });
@@ -563,8 +604,6 @@ impl State {
     pub fn remove_default_dmabuf_pre_commit_hook(&mut self, surface: &WlSurface) {
         if let Some(hook) = self.niri.dmabuf_pre_commit_hook.remove(surface) {
             remove_pre_commit_hook(surface, hook);
-        } else {
-            error!("tried to remove dmabuf pre-commit hook but there was none");
         }
     }
 }

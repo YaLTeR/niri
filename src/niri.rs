@@ -67,15 +67,17 @@ use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource};
 use smithay::utils::{
-    ClockSource, IsAlive as _, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size,
-    Transform, SERIAL_COUNTER,
+    Clock as SmithayMonotonicClock, ClockSource, IsAlive as _, Logical, Monotonic, Physical, Point,
+    Rectangle, Scale, Size, Transform, SERIAL_COUNTER,
 };
+use smithay::wayland::commit_timing::{CommitTimerBarrierStateUserData, CommitTimingManagerState};
 use smithay::wayland::compositor::{
     with_states, with_surface_tree_downward, CompositorClientState, CompositorHandler,
     CompositorState, HookId, SurfaceData, TraversalAction,
 };
 use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::DmabufState;
+use smithay::wayland::fifo::{FifoBarrierCachedState, FifoManagerState};
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
@@ -305,6 +307,10 @@ pub struct Niri {
     pub gamma_control_manager_state: GammaControlManagerState,
     pub activation_state: XdgActivationState,
     pub mutter_x11_interop_state: MutterX11InteropManagerState,
+    pub fifo_manager_state: FifoManagerState,
+    pub commit_timing_manager_state: CommitTimingManagerState,
+    pub presentation_clock: SmithayMonotonicClock<Monotonic>,
+    pub commit_timing_trigger_token: Option<RegistrationToken>,
 
     // This will not work as is outside of tests, so it is gated with #[cfg(test)] for now. In
     // particular, shaders will need to learn about the single pixel buffer. Also, it must be
@@ -715,7 +721,8 @@ impl State {
         // build up (the 1 second frame callback timer will call this line).
         self.niri.advance_animations();
 
-        self.niri.redraw_queued_outputs(&mut self.backend);
+        self.niri
+            .redraw_queued_outputs_with_timing(&mut self.backend);
 
         {
             let _span = tracy_client::span!("flush_clients");
@@ -2262,6 +2269,11 @@ impl Niri {
         let mutter_x11_interop_state =
             MutterX11InteropManagerState::new::<State, _>(&display_handle, move |_| true);
 
+        let fifo_manager_state = FifoManagerState::new::<State>(&display_handle);
+
+        let commit_timing_manager_state = CommitTimingManagerState::new::<State>(&display_handle);
+        let presentation_clock = SmithayMonotonicClock::<Monotonic>::new();
+
         #[cfg(test)]
         let single_pixel_buffer_state = SinglePixelBufferState::new::<State>(&display_handle);
 
@@ -2454,6 +2466,10 @@ impl Niri {
             gamma_control_manager_state,
             activation_state,
             mutter_x11_interop_state,
+            fifo_manager_state,
+            commit_timing_manager_state,
+            presentation_clock,
+            commit_timing_trigger_token: None,
             #[cfg(test)]
             single_pixel_buffer_state,
 
@@ -3545,18 +3561,203 @@ impl Niri {
         state.redraw_state = mem::take(&mut state.redraw_state).queue_redraw();
     }
 
-    pub fn redraw_queued_outputs(&mut self, backend: &mut Backend) {
-        let _span = tracy_client::span!("Niri::redraw_queued_outputs");
+    /// Signal FIFO barriers for all surfaces on an output after frame presentation.
+    /// This unblocks clients that are waiting for their previous frame to be presented.
+    pub fn signal_fifo(&mut self, output: &Output) {
+        let dominated = self.layout.windows_for_output(output);
+        let mut fifo_barriers = Vec::new();
 
-        while let Some((output, _)) = self.output_state.iter().find(|(_, state)| {
-            matches!(
-                state.redraw_state,
-                RedrawState::Queued | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
-            )
+        for mapped in dominated {
+            if let Some(toplevel) = mapped.window.toplevel() {
+                let wl_surface = toplevel.wl_surface();
+
+                with_surface_tree_downward(
+                    wl_surface,
+                    (),
+                    |surface, _, _| {
+                        with_states(surface, |states| {
+                            if let Some(barrier) = states
+                                .cached_state
+                                .get::<FifoBarrierCachedState>()
+                                .current()
+                                .barrier
+                                .take()
+                            {
+                                fifo_barriers.push(barrier);
+                            }
+                        });
+                        TraversalAction::DoChildren(())
+                    },
+                    |_, _, _| {},
+                    |_, _, _| true,
+                );
+            }
+        }
+
+        for barrier in fifo_barriers {
+            barrier.signal();
+        }
+    }
+
+    /// Signal commit timing barriers for surfaces on an output up to the target presentation time.
+    /// Returns the next deadline if there are pending commit timers.
+    pub fn signal_commit_timing(
+        &mut self,
+        output: &Output,
+        target_presentation_time: Duration,
+    ) -> Option<Duration> {
+        use smithay::utils::Time;
+        use smithay::wayland::commit_timing::Timestamp;
+
+        let target_time: Time<Monotonic> = target_presentation_time.into();
+        let target_timestamp: Timestamp = target_time.into();
+        let dominated = self.layout.windows_for_output(output);
+        let mut min_next_deadline: Option<Timestamp> = None;
+
+        for mapped in dominated {
+            if let Some(toplevel) = mapped.window.toplevel() {
+                let wl_surface = toplevel.wl_surface();
+
+                with_surface_tree_downward(
+                    wl_surface,
+                    (),
+                    |surface, _, _| {
+                        with_states(surface, |states| {
+                            if let Some(commit_timer_state) =
+                                states.data_map.get::<CommitTimerBarrierStateUserData>()
+                            {
+                                let mut guard = commit_timer_state.lock().unwrap();
+                                guard.signal_until(target_timestamp);
+
+                                if let Some(next_deadline) = guard.next_deadline() {
+                                    min_next_deadline = Some(
+                                        min_next_deadline
+                                            .map(|d| d.min(next_deadline))
+                                            .unwrap_or(next_deadline),
+                                    );
+                                }
+                            }
+                        });
+                        TraversalAction::DoChildren(())
+                    },
+                    |_, _, _| {},
+                    |_, _, _| true,
+                );
+            }
+        }
+
+        min_next_deadline.map(|timestamp| {
+            let time: Time<Monotonic> = timestamp.into();
+            time.into()
+        })
+    }
+
+    pub fn queued_outputs(&self) -> Vec<(Output, Duration, bool)> {
+        self.output_state
+            .iter()
+            .filter_map(|(output, state)| match &state.redraw_state {
+                RedrawState::Queued => {
+                    let target = state.frame_clock.next_presentation_time();
+                    Some((output.clone(), target, false))
+                }
+                RedrawState::WaitingForEstimatedVBlankAndQueued(_) => {
+                    let target = state.frame_clock.next_presentation_time();
+                    Some((output.clone(), target, true))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn is_queued(&self, output: &Output) -> bool {
+        self.output_state
+            .get(output)
+            .map(|state| {
+                matches!(
+                    state.redraw_state,
+                    RedrawState::Queued | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
+                )
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn redraw_queued_outputs_with_timing(&mut self, backend: &mut Backend) {
+        let _span = tracy_client::span!("Niri::redraw_queued_outputs_with_timing");
+
+        let mut min_next_schedule: Option<Duration> = None;
+
+        // Keep processing until no more outputs are queued, similar to redraw_queued_outputs().
+        // Outputs may get re-queued during redraw (e.g., via frame callbacks).
+        loop {
+            let mut queued_outputs = self.queued_outputs();
+            if queued_outputs.is_empty() {
+                break;
+            }
+            queued_outputs.sort_by_key(|(_, target_time, _)| *target_time);
+
+            for (output, target_presentation_time, _) in queued_outputs {
+                // Redraw the output immediately if it's headless, as those don't have proper
+                // timing.
+                if matches!(backend, Backend::Headless(_)) {
+                    self.redraw(backend, &output);
+                    break;
+                }
+                if let Some(next_deadline) =
+                    self.signal_commit_timing(&output, target_presentation_time)
+                {
+                    min_next_schedule = Some(
+                        min_next_schedule
+                            .map(|s| s.min(next_deadline))
+                            .unwrap_or(next_deadline),
+                    );
+                }
+
+                self.signal_fifo(&output);
+                self.redraw(backend, &output);
+            }
+        }
+
+        if let Some(next_schedule) = min_next_schedule {
+            self.schedule_commit_timing_trigger(next_schedule);
+        }
+    }
+
+    pub fn schedule_commit_timing_trigger(&mut self, deadline: Duration) {
+        if let Some(token) = self.commit_timing_trigger_token.take() {
+            self.event_loop.remove(token);
+        }
+
+        let now: Duration = self.presentation_clock.now().into();
+        let delay = deadline.saturating_sub(now);
+
+        if delay.is_zero() {
+            return;
+        }
+
+        let timer = Timer::from_duration(delay);
+        match self.event_loop.insert_source(timer, move |_, _, state| {
+            state.niri.commit_timing_trigger_token = None;
+
+            let queued = state.niri.queued_outputs();
+            for (output, target_time, _) in queued {
+                let _ = state.niri.signal_commit_timing(&output, target_time);
+            }
+
+            state.niri.queue_redraw_all();
+            TimeoutAction::Drop
         }) {
-            trace!("redrawing output");
-            let output = output.clone();
-            self.redraw(backend, &output);
+            Ok(token) => {
+                self.commit_timing_trigger_token = Some(token);
+            }
+            Err(e) => {
+                warn!("failed to schedule commit timing trigger: {}", e);
+            }
+        }
+    }
+
+    pub fn cancel_commit_timing_trigger(&mut self) {
+        if let Some(token) = self.commit_timing_trigger_token.take() {
+            self.event_loop.remove(token);
         }
     }
 

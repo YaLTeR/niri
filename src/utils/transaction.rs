@@ -6,11 +6,13 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use atomic::Ordering;
-use calloop::ping::{make_ping, Ping};
+use calloop::ping::make_ping;
+use calloop::ping::Ping;
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::LoopHandle;
-use smithay::reexports::wayland_server::Client;
-use smithay::wayland::compositor::{Blocker, BlockerState};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::reexports::wayland_server::{Client, DisplayHandle};
+use smithay::wayland::compositor::{add_blocker, Blocker, BlockerState, CompositorHandler};
 
 /// Default time limit, after which the transaction completes.
 ///
@@ -65,6 +67,16 @@ impl Transaction {
         }
     }
 
+    pub fn register_surface<T: CompositorHandler + 'static>(
+        &self,
+        surface: &WlSurface,
+        _event_loop: &LoopHandle<'static, T>,
+        _dh: &DisplayHandle,
+    ) {
+        trace!(transaction = ?Arc::as_ptr(&self.inner), "generating blocker");
+        add_blocker(surface, TransactionBlocker(Arc::downgrade(&self.inner)));
+    }
+
     /// Gets a blocker for this transaction.
     pub fn blocker(&self) -> TransactionBlocker {
         trace!(transaction = ?Arc::as_ptr(&self.inner), "generating blocker");
@@ -83,25 +95,24 @@ impl Transaction {
     }
 
     /// Registers this transaction's deadline timer on an event loop.
-    pub fn register_deadline_timer<T: 'static>(&self, event_loop: &LoopHandle<'static, T>) {
+    pub fn register_deadline_timer<T: CompositorHandler + 'static>(
+        &self,
+        event_loop: &LoopHandle<'static, T>,
+        _dh: &DisplayHandle,
+    ) {
         let mut cell = self.deadline.borrow_mut();
         if let Deadline::NotRegistered(deadline) = *cell {
             let timer = Timer::from_deadline(deadline);
             let inner = Arc::downgrade(&self.inner);
             let token = event_loop
-                .insert_source(timer, move |_, _, _| {
+                .insert_source(timer, move |_, _, _state| {
                     let _span = trace_span!("deadline timer", transaction = ?Weak::as_ptr(&inner))
                         .entered();
 
-                    // FIXME: come up with some way to control the deadline timer from tests.
-                    #[cfg(not(test))]
                     if let Some(inner) = inner.upgrade() {
                         trace!("deadline reached, completing transaction");
                         inner.complete();
                     } else {
-                        // We should remove the timer automatically. But this callback can still
-                        // just happen to run while the ping callback is scheduled, leading to this
-                        // branch being legitimately taken.
                         trace!("transaction completed without removing the timer");
                     }
 
@@ -158,7 +169,7 @@ impl TransactionBlocker {
 
 impl Blocker for TransactionBlocker {
     fn state(&self) -> BlockerState {
-        if self.0.upgrade().is_none_or(|x| x.is_completed()) {
+        if self.0.upgrade().map_or(true, |x| x.is_completed()) {
             BlockerState::Released
         } else {
             BlockerState::Pending
