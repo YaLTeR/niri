@@ -3951,21 +3951,6 @@ impl Niri {
         })
     }
 
-    pub fn redraw_queued_outputs(&mut self, backend: &mut Backend) {
-        let _span = tracy_client::span!("Niri::redraw_queued_outputs");
-
-        while let Some((output, _)) = self.output_state.iter().find(|(_, state)| {
-            matches!(
-                state.redraw_state,
-                RedrawState::Queued | RedrawState::WaitingForEstimatedVBlankAndQueued(_)
-            )
-        }) {
-            trace!("redrawing output");
-            let output = output.clone();
-            self.redraw(backend, &output);
-        }
-    }
-
     pub fn queued_outputs(&self) -> Vec<(Output, Duration, bool)> {
         self.output_state
             .iter()
@@ -3998,24 +3983,36 @@ impl Niri {
     pub fn redraw_queued_outputs_with_timing(&mut self, backend: &mut Backend) {
         let _span = tracy_client::span!("Niri::redraw_queued_outputs_with_timing");
 
-        let mut queued_outputs = self.queued_outputs();
-        queued_outputs.sort_by_key(|(_, target_time, _)| *target_time);
-
         let mut min_next_schedule: Option<Duration> = None;
 
-        for (output, target_presentation_time, _) in queued_outputs {
-            if let Some(next_deadline) =
-                self.signal_commit_timing(&output, target_presentation_time)
-            {
-                min_next_schedule = Some(
-                    min_next_schedule
-                        .map(|s| s.min(next_deadline))
-                        .unwrap_or(next_deadline),
-                );
+        // Keep processing until no more outputs are queued, similar to redraw_queued_outputs().
+        // Outputs may get re-queued during redraw (e.g., via frame callbacks).
+        loop {
+            let mut queued_outputs = self.queued_outputs();
+            if queued_outputs.is_empty() {
+                break;
             }
+            queued_outputs.sort_by_key(|(_, target_time, _)| *target_time);
 
-            self.signal_fifo(&output);
-            self.redraw(backend, &output);
+            for (output, target_presentation_time, _) in queued_outputs {
+                // Redraw the output immediately if it's headless, as those don't have proper timing.
+                if matches!(backend, Backend::Headless(_)) {
+                    self.redraw(backend, &output);
+                    break;
+                }
+                if let Some(next_deadline) =
+                    self.signal_commit_timing(&output, target_presentation_time)
+                {
+                    min_next_schedule = Some(
+                        min_next_schedule
+                            .map(|s| s.min(next_deadline))
+                            .unwrap_or(next_deadline),
+                    );
+                }
+
+                self.signal_fifo(&output);
+                self.redraw(backend, &output);
+            }
         }
 
         if let Some(next_schedule) = min_next_schedule {
