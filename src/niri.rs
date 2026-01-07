@@ -139,7 +139,9 @@ use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::{Workspace, WorkspaceId};
-use crate::layout::{HitType, Layout, LayoutElement as _, MonitorRenderElement};
+use crate::layout::{
+    HitType, Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement,
+};
 use crate::niri_render_elements;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
@@ -1912,12 +1914,6 @@ impl State {
     pub fn open_screenshot_ui(&mut self, show_pointer: bool, path: Option<String>) {
         if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
             return;
-        }
-
-        // Redraw the pointer if hidden through cursor{} options
-        if self.niri.pointer_visibility == PointerVisibility::Hidden {
-            self.niri.pointer_visibility = PointerVisibility::Visible;
-            self.niri.queue_redraw_all();
         }
 
         let default_output = self
@@ -3869,11 +3865,7 @@ impl Niri {
         output: &Output,
         push: &mut dyn FnMut(PointerRenderElements<R>),
     ) {
-        if !self.pointer_visibility.is_visible() {
-            return;
-        }
-
-        let _span = tracy_client::span!("Niri::pointer_element");
+        let _span = tracy_client::span!("Niri::render_pointer");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
 
@@ -4308,7 +4300,7 @@ impl Niri {
 
         // The pointer goes on the top.
         let mut elements = vec![];
-        if include_pointer {
+        if include_pointer && self.pointer_visibility.is_visible() {
             self.render_pointer(renderer, output, &mut |elem| elements.push(elem.into()));
         }
 
@@ -5589,7 +5581,14 @@ impl Niri {
                 let res_output = res.ok();
 
                 let mut pointer = Vec::new();
-                self.render_pointer(renderer, &output, &mut |elem| pointer.push(elem));
+
+                // We check the pointer visibility for Disabled (and not .is_visible()) in order to
+                // show the pointer even when it's hidden through cursor {} options. The user can
+                // then toggle it in the screenshot UI as needed.
+                if self.pointer_visibility != PointerVisibility::Disabled {
+                    self.render_pointer(renderer, &output, &mut |elem| pointer.push(elem));
+                }
+
                 let res_pointer = if pointer.is_empty() {
                     None
                 } else {
@@ -5668,6 +5667,7 @@ impl Niri {
         output: &Output,
         mapped: &Mapped,
         write_to_disk: bool,
+        show_pointer: bool,
         path: Option<String>,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_window");
@@ -5679,17 +5679,73 @@ impl Niri {
             } else {
                 mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
             };
-        // FIXME: pointer.
-        let mut elements = Vec::new();
+
+        let mut elements: Vec<WindowScreenshotRenderElement<GlesRenderer>> = Vec::new();
+
+        // Add pointer if requested and it's over this window.
+        if show_pointer {
+            if let Some((w, HitType::Input { win_pos })) = &self.pointer_contents.window {
+                if w == &mapped.window {
+                    // Grabs can modify the pointer focus, making it different from
+                    // pointer_contents. Notably, gestures like Mod+MMB will remove the pointer
+                    // focus, and ClickGrab will keep pointer focus on the clicked window even
+                    // while it's moving over a different window.
+                    //
+                    // So, double-check that current_focus() (after grabs) also matches the pointer
+                    // contents.
+                    let pointer = self.seat.get_pointer().unwrap();
+
+                    // The DnD grab is a bit special because it has its own focus (data device)
+                    // while the pointer focus is cleared. That focus is not currently exposed from
+                    // Smithay, and showing DnD icons on window screenshots seems useful, so let's
+                    // just allow it during DnD grabs.
+                    let is_dnd_grab = pointer
+                        .with_grab(|_, grab| State::is_dnd_grab(grab.as_any()))
+                        .unwrap_or(false);
+
+                    let current_focus_matches = is_dnd_grab
+                        || pointer
+                            .current_focus()
+                            .map(|focused| self.find_root_shell_surface(&focused))
+                            .is_some_and(|focused| mapped.is_wl_surface(&focused));
+                    if current_focus_matches {
+                        // win_pos is the window buffer position in output-local logical coords.
+                        let win_pos = win_pos.to_physical_precise_round(scale);
+
+                        // We don't check for pointer visibility because it can only be Visible or
+                        // Hidden, and never Disabled (then it wouldn't have focus). Even when the
+                        // pointer is Hidden, we want to render it, since the user explicitly
+                        // requested show_pointer = true, and otherwise there's no easy way to
+                        // screenshot a window with pointer with hide-when-typing because pressing
+                        // the screenshot bind will hide the pointer.
+                        self.render_pointer(renderer, output, &mut |elem| {
+                            // Pointer elements are at output-local physical coords.
+                            // Relocate by -win_pos to make them window-relative.
+                            let elem = RelocateRenderElement::from_element(
+                                elem,
+                                win_pos.upscale(-1),
+                                Relocate::Relative,
+                            );
+                            elements.push(elem.into());
+                        });
+                    }
+                }
+            }
+        }
+        let pointer_count = elements.len();
+
         mapped.render(
             renderer,
             mapped.window.geometry().loc.to_f64(),
             scale,
             alpha,
             RenderTarget::ScreenCapture,
-            &mut |elem| elements.push(elem),
+            &mut |elem| elements.push(elem.into()),
         );
-        let geo = encompassing_geo(scale, elements.iter());
+
+        // The pointer is not included in encompassing_geo because we don't want it to expand the
+        // screenshot size.
+        let geo = encompassing_geo(scale, elements.iter().skip(pointer_count));
         let elements = elements.iter().rev().map(|elem| {
             RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
         });
@@ -6557,6 +6613,13 @@ niri_render_elements! {
     PointerRenderElements<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
+    }
+}
+
+niri_render_elements! {
+    WindowScreenshotRenderElement<R> => {
+        Layout = LayoutElementRenderElement<R>,
+        Pointer = RelocateRenderElement<PointerRenderElements<R>>,
     }
 }
 

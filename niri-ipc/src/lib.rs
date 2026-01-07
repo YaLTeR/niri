@@ -264,6 +264,13 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(short = 'd', long, action = clap::ArgAction::Set, default_value_t = true))]
         write_to_disk: bool,
 
+        /// Whether to include the mouse pointer in the screenshot.
+        ///
+        /// The pointer will be included only if the window is currently receiving pointer input
+        /// (usually this means the pointer is on top of the window).
+        #[cfg_attr(feature = "clap", arg(short = 'p', long, action = clap::ArgAction::Set, default_value_t = false))]
+        show_pointer: bool,
+
         /// Path to save the screenshot to.
         ///
         /// The path must be absolute, otherwise an error is returned.
