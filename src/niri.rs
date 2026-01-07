@@ -3873,7 +3873,7 @@ impl Niri {
             return;
         }
 
-        let _span = tracy_client::span!("Niri::pointer_element");
+        let _span = tracy_client::span!("Niri::render_pointer");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
 
