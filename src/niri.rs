@@ -1914,12 +1914,6 @@ impl State {
             return;
         }
 
-        // Redraw the pointer if hidden through cursor{} options
-        if self.niri.pointer_visibility == PointerVisibility::Hidden {
-            self.niri.pointer_visibility = PointerVisibility::Visible;
-            self.niri.queue_redraw_all();
-        }
-
         let default_output = self
             .niri
             .output_under_cursor()
@@ -3869,10 +3863,6 @@ impl Niri {
         output: &Output,
         push: &mut dyn FnMut(PointerRenderElements<R>),
     ) {
-        if !self.pointer_visibility.is_visible() {
-            return;
-        }
-
         let _span = tracy_client::span!("Niri::render_pointer");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
@@ -4308,7 +4298,7 @@ impl Niri {
 
         // The pointer goes on the top.
         let mut elements = vec![];
-        if include_pointer {
+        if include_pointer && self.pointer_visibility.is_visible() {
             self.render_pointer(renderer, output, &mut |elem| elements.push(elem.into()));
         }
 
@@ -5589,7 +5579,14 @@ impl Niri {
                 let res_output = res.ok();
 
                 let mut pointer = Vec::new();
-                self.render_pointer(renderer, &output, &mut |elem| pointer.push(elem));
+
+                // We check the pointer visibility for Disabled (and not .is_visible()) in order to
+                // show the pointer even when it's hidden through cursor {} options. The user can
+                // then toggle it in the screenshot UI as needed.
+                if self.pointer_visibility != PointerVisibility::Disabled {
+                    self.render_pointer(renderer, &output, &mut |elem| pointer.push(elem));
+                }
+
                 let res_pointer = if pointer.is_empty() {
                     None
                 } else {
