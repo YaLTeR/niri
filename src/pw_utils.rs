@@ -72,6 +72,7 @@ pub struct Cast {
     event_loop: LoopHandle<'static, State>,
     pub session_id: usize,
     pub stream_id: usize,
+    // Listener is dropped before Stream to prevent a use-after-free.
     _listener: StreamListener<()>,
     pub stream: StreamRc,
     pub target: CastTarget,
