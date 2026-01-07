@@ -1,4 +1,3 @@
-use smithay::wayland::drm_syncobj::DrmSyncobjHandler;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -57,7 +56,7 @@ use smithay::wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlob
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
-use smithay::wayland::drm_syncobj::{supports_syncobj_eventfd, DrmSyncobjState};
+use smithay::wayland::drm_syncobj::{supports_syncobj_eventfd, DrmSyncobjHandler, DrmSyncobjState};
 use smithay::wayland::presentation::Refresh;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
@@ -2690,11 +2689,13 @@ impl GammaProps {
 
 impl DrmSyncobjHandler for State {
     fn drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
-        Some(self.backend
-                    .tty()
-                    .syncobj_state
-                    .as_mut()
-                    .expect("drm_syncobj_state called but syncobj not initialized"))
+        Some(
+            self.backend
+                .tty()
+                .syncobj_state
+                .as_mut()
+                .expect("drm_syncobj_state called but syncobj not initialized"),
+        )
     }
 }
 
