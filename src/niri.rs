@@ -152,7 +152,7 @@ use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManag
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::pw_utils::{Cast, PipeWire};
 #[cfg(feature = "xdp-gnome-screencast")]
-use crate::pw_utils::{CastSizeChange, PwToNiri};
+use crate::pw_utils::{CastSizeChange, CursorData, PwToNiri};
 use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -179,7 +179,7 @@ use crate::utils::{
     logical_output, make_screenshot_path, output_matches_name, output_size, panel_orientation,
     send_scale_transform, write_png_rgba8, xwayland,
 };
-use crate::window::mapped::MappedId;
+use crate::window::mapped::{MappedId, WindowCastRenderElements};
 use crate::window::{InitialConfigureState, Mapped, ResolvedWindowRules, Unmapped, WindowRef};
 
 const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
@@ -2020,64 +2020,109 @@ impl State {
         let _span = tracy_client::span!("State::redraw_cast");
 
         let casts = &mut self.niri.casts;
-        let Some(cast) = casts.iter_mut().find(|cast| cast.stream_id == stream_id) else {
+        let Some(idx) = casts.iter().position(|cast| cast.stream_id == stream_id) else {
             warn!("cast to redraw is missing");
             return;
         };
+        let cast = &mut casts[idx];
 
-        match &cast.target {
+        let id = match &cast.target {
             CastTarget::Nothing => {
                 self.backend.with_primary_renderer(|renderer| {
                     if cast.dequeue_buffer_and_clear(renderer) {
                         cast.last_frame_time = get_monotonic_time();
                     }
                 });
+                return;
             }
             CastTarget::Output(weak) => {
                 if let Some(output) = weak.upgrade() {
                     self.niri.queue_redraw(&output);
                 }
+                return;
             }
-            CastTarget::Window { id } => {
-                let mut windows = self.niri.layout.windows();
-                let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == *id) else {
-                    return;
-                };
+            CastTarget::Window { id } => *id,
+        };
 
-                // Use the cached output since it will be present even if the output was
-                // currently disconnected.
-                let Some(output) = self.niri.mapped_cast_output.get(&mapped.window) else {
-                    return;
-                };
+        // Lack of partial borrowing strikes again...
+        let mut casts = mem::take(&mut self.niri.casts);
+        let cast = &mut casts[idx];
+        let mut stop = false;
+        // Use a loop {} so we can break instead of early-return.
+        #[allow(clippy::never_loop)]
+        loop {
+            let mut windows = self.niri.layout.windows();
+            let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == id) else {
+                break;
+            };
 
-                let scale = Scale::from(output.current_scale().fractional_scale());
-                let bbox = mapped
-                    .window
-                    .bbox_with_popups()
-                    .to_physical_precise_up(scale);
+            // Use the cached output since it will be present even if the output was
+            // currently disconnected.
+            let Some(output) = self.niri.mapped_cast_output.get(&mapped.window) else {
+                break;
+            };
 
-                match cast.ensure_size(bbox.size) {
-                    Ok(CastSizeChange::Ready) => (),
-                    Ok(CastSizeChange::Pending) => return,
-                    Err(err) => {
-                        warn!("error updating stream size, stopping screencast: {err:?}");
-                        drop(windows);
-                        let session_id = cast.session_id;
-                        self.niri.stop_cast(session_id);
-                        return;
-                    }
+            let scale = Scale::from(output.current_scale().fractional_scale());
+            let bbox = mapped
+                .window
+                .bbox_with_popups()
+                .to_physical_precise_up(scale);
+
+            match cast.ensure_size(bbox.size) {
+                Ok(CastSizeChange::Ready) => (),
+                Ok(CastSizeChange::Pending) => break,
+                Err(err) => {
+                    warn!("error updating stream size, stopping screencast: {err:?}");
+                    stop = true;
+                    break;
                 }
-
-                self.backend.with_primary_renderer(|renderer| {
-                    // FIXME: pointer.
-                    let mut elements = Vec::new();
-                    mapped.render_for_screen_cast(renderer, scale, &mut |elem| elements.push(elem));
-
-                    if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
-                        cast.last_frame_time = get_monotonic_time();
-                    }
-                });
             }
+
+            self.backend.with_primary_renderer(|renderer| {
+                let mut elements = Vec::new();
+                mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+                    elements.push(CastRenderElement::from(elem))
+                });
+
+                let mut pointer_elements = Vec::new();
+                let mut pointer_location = Point::default();
+                if let Some((pointer_pos, win_pos)) = self.niri.pointer_pos_for_window_cast(mapped)
+                {
+                    // Pointer location must be relative to the screencast buffer.
+                    // - win_pos is the position of the main window surface in output-local
+                    //   coordinates
+                    // - bbox.loc moves us relative to the screencast buffer
+                    let buf_pos = win_pos + bbox.loc.to_f64().to_logical(scale);
+                    let output_pos = self.niri.global_space.output_geometry(output).unwrap().loc;
+                    pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
+
+                    let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
+                    self.niri.render_pointer(renderer, output, &mut |elem| {
+                        let elem =
+                            RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
+                        pointer_elements.push(CastRenderElement::from(elem));
+                    });
+                }
+                let cursor_data = CursorData::compute(&pointer_elements, pointer_location, scale);
+
+                if cast.dequeue_buffer_and_render(
+                    renderer,
+                    &elements,
+                    &cursor_data,
+                    bbox.size,
+                    scale,
+                ) {
+                    cast.last_frame_time = get_monotonic_time();
+                }
+            });
+
+            break;
+        }
+        let session_id = cast.session_id;
+        self.niri.casts = casts;
+
+        if stop {
+            self.niri.stop_cast(session_id);
         }
     }
 
@@ -5247,7 +5292,10 @@ impl Niri {
 
         let scale = Scale::from(output.current_scale().fractional_scale());
 
-        let mut elements = None;
+        let mut elements = Vec::new();
+        let mut pointer = Vec::new();
+        let mut cursor_data = None;
+
         let mut casts_to_stop = vec![];
 
         let mut casts = mem::take(&mut self.casts);
@@ -5273,12 +5321,29 @@ impl Niri {
                 continue;
             }
 
-            // FIXME: Hidden / embedded / metadata cursor
-            let elements = elements.get_or_insert_with(|| {
-                self.render(renderer, output, true, RenderTarget::Screencast)
-            });
+            if cursor_data.is_none() {
+                // FIXME: support debug draw opaque regions.
+                self.render_inner(
+                    renderer,
+                    output,
+                    false,
+                    RenderTarget::Screencast,
+                    &mut |elem| elements.push(elem.into()),
+                );
 
-            if cast.dequeue_buffer_and_render(renderer, elements, size, scale) {
+                self.render_pointer(renderer, output, &mut |elem| pointer.push(elem.into()));
+
+                let output_pos = self.global_space.output_geometry(output).unwrap().loc;
+                let pointer_pos = self
+                    .tablet_cursor_location
+                    .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
+                let pointer_pos = pointer_pos - output_pos.to_f64();
+
+                cursor_data = Some(CursorData::compute(&pointer, pointer_pos, scale));
+            }
+            let cursor_data = cursor_data.as_ref().unwrap();
+
+            if cast.dequeue_buffer_and_render(renderer, &elements, cursor_data, size, scale) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
@@ -5335,11 +5400,30 @@ impl Niri {
                 continue;
             }
 
-            // FIXME: pointer.
             let mut elements = Vec::new();
-            mapped.render_for_screen_cast(renderer, scale, &mut |elem| elements.push(elem));
+            mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+                elements.push(CastRenderElement::from(elem))
+            });
 
-            if cast.dequeue_buffer_and_render(renderer, &elements, bbox.size, scale) {
+            let mut pointer_elements = Vec::new();
+            let mut pointer_location = Point::default();
+            if let Some((pointer_pos, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
+                // Pointer location must be relative to the screencast buffer.
+                // - win_pos is the position of the main window surface in output-local coordinates
+                // - bbox.loc moves us relative to the screencast buffer
+                let buf_pos = win_pos + bbox.loc.to_f64().to_logical(scale);
+                let output_pos = self.global_space.output_geometry(output).unwrap().loc;
+                pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
+
+                let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
+                self.render_pointer(renderer, output, &mut |elem| {
+                    let elem = RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
+                    pointer_elements.push(CastRenderElement::from(elem));
+                });
+            }
+            let cursor_data = CursorData::compute(&pointer_elements, pointer_location, scale);
+
+            if cast.dequeue_buffer_and_render(renderer, &elements, &cursor_data, bbox.size, scale) {
                 cast.last_frame_time = target_presentation_time;
             }
         }
@@ -6642,6 +6726,15 @@ niri_render_elements! {
     WindowScreenshotRenderElement<R> => {
         Layout = LayoutElementRenderElement<R>,
         Pointer = RelocateRenderElement<PointerRenderElements<R>>,
+    }
+}
+
+niri_render_elements! {
+    CastRenderElement<R> => {
+        Output = OutputRenderElements<R>,
+        Window = WindowCastRenderElements<R>,
+        Pointer = PointerRenderElements<R>,
+        RelocatedPointer = RelocateRenderElement<PointerRenderElements<R>>,
     }
 }
 

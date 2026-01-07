@@ -30,7 +30,7 @@ pub struct Session {
     stopped: Arc<AtomicBool>,
 }
 
-#[derive(Debug, Default, Deserialize, Type, Clone, Copy)]
+#[derive(Debug, Default, Deserialize, Type, Clone, Copy, PartialEq, Eq)]
 pub enum CursorMode {
     #[default]
     Hidden = 0,
