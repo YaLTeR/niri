@@ -3940,6 +3940,66 @@ impl Niri {
         }
     }
 
+    /// Checks if the pointer should be included on a window cast or screenshot.
+    ///
+    /// Returns `(cursor_global_pos, win_pos)` if the pointer should be included, or `None`
+    /// otherwise.
+    pub fn pointer_pos_for_window_cast(
+        &self,
+        mapped: &Mapped,
+    ) -> Option<(Point<f64, Logical>, Point<f64, Logical>)> {
+        // Tablet cursor.
+        if let Some(tablet_pos) = self.tablet_cursor_location {
+            let contents = self.contents_under(tablet_pos);
+            if let Some((w, HitType::Input { win_pos })) = contents.window {
+                if w == mapped.window {
+                    // Tablet tools don't currently expose current focus, and don't currently
+                    // have grabs. When those are implemented, this branch should be adjusted
+                    // to look more similar to the branch below.
+                    return Some((tablet_pos, win_pos));
+                }
+            }
+        }
+        // Regular cursor.
+        else if let Some((w, HitType::Input { win_pos })) = &self.pointer_contents.window {
+            if w == &mapped.window {
+                // Grabs can modify the pointer focus, making it different from
+                // pointer_contents. Notably, gestures like Mod+MMB will remove the pointer
+                // focus, and ClickGrab will keep pointer focus on the clicked window even
+                // while it's moving over a different window.
+                //
+                // So, double-check that current_focus() (after grabs) also matches the pointer
+                // contents.
+                let pointer = self.seat.get_pointer().unwrap();
+
+                // The DnD grab is a bit special because it has its own focus (data device)
+                // while the pointer focus is cleared. That focus is not currently exposed from
+                // Smithay, and showing DnD icons on window screenshots seems useful, so let's
+                // just allow it during DnD grabs.
+                let is_dnd_grab = pointer
+                    .with_grab(|_, grab| State::is_dnd_grab(grab.as_any()))
+                    .unwrap_or(false);
+
+                let current_focus_matches = is_dnd_grab
+                    || pointer
+                        .current_focus()
+                        .map(|focused| self.find_root_shell_surface(&focused))
+                        .is_some_and(|focused| mapped.is_wl_surface(&focused));
+                if current_focus_matches {
+                    // We don't check for pointer visibility because it can only be Visible or
+                    // Hidden, and never Disabled (then it wouldn't have focus). Even when the
+                    // pointer is Hidden, we want to render it, since the user explicitly
+                    // requested show_pointer = true, and otherwise there's no easy way to
+                    // screenshot a window with pointer with hide-when-typing because pressing
+                    // the screenshot bind will hide the pointer.
+                    return Some((pointer.current_location(), *win_pos));
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn refresh_pointer_outputs(&mut self) {
         if !self.pointer_visibility.is_visible() {
             return;
@@ -5684,7 +5744,7 @@ impl Niri {
 
         // Add pointer if requested and it's over this window.
         if show_pointer {
-            let mut render = |win_pos: Point<f64, Logical>| {
+            if let Some((_, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
                 // Pointer elements are at output-local physical coords.
                 // Relocate by -win_pos to make them window-relative.
                 let pos = win_pos.to_physical_precise_round(scale).upscale(-1);
@@ -5692,55 +5752,6 @@ impl Niri {
                     let elem = RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
                     elements.push(elem.into());
                 });
-            };
-
-            // Tablet cursor.
-            if let Some(tablet_pos) = self.tablet_cursor_location {
-                let contents = self.contents_under(tablet_pos);
-                if let Some((w, HitType::Input { win_pos })) = contents.window {
-                    if w == mapped.window {
-                        // Tablet tools don't currently expose current focus, and don't currently
-                        // have grabs. When those are implemented, this branch should be adjusted
-                        // to look more similar to the branch below.
-                        render(win_pos);
-                    }
-                }
-            }
-            // Regular cursor.
-            else if let Some((w, HitType::Input { win_pos })) = &self.pointer_contents.window {
-                if w == &mapped.window {
-                    // Grabs can modify the pointer focus, making it different from
-                    // pointer_contents. Notably, gestures like Mod+MMB will remove the pointer
-                    // focus, and ClickGrab will keep pointer focus on the clicked window even
-                    // while it's moving over a different window.
-                    //
-                    // So, double-check that current_focus() (after grabs) also matches the pointer
-                    // contents.
-                    let pointer = self.seat.get_pointer().unwrap();
-
-                    // The DnD grab is a bit special because it has its own focus (data device)
-                    // while the pointer focus is cleared. That focus is not currently exposed from
-                    // Smithay, and showing DnD icons on window screenshots seems useful, so let's
-                    // just allow it during DnD grabs.
-                    let is_dnd_grab = pointer
-                        .with_grab(|_, grab| State::is_dnd_grab(grab.as_any()))
-                        .unwrap_or(false);
-
-                    let current_focus_matches = is_dnd_grab
-                        || pointer
-                            .current_focus()
-                            .map(|focused| self.find_root_shell_surface(&focused))
-                            .is_some_and(|focused| mapped.is_wl_surface(&focused));
-                    if current_focus_matches {
-                        // We don't check for pointer visibility because it can only be Visible or
-                        // Hidden, and never Disabled (then it wouldn't have focus). Even when the
-                        // pointer is Hidden, we want to render it, since the user explicitly
-                        // requested show_pointer = true, and otherwise there's no easy way to
-                        // screenshot a window with pointer with hide-when-typing because pressing
-                        // the screenshot bind will hide the pointer.
-                        render(*win_pos);
-                    }
-                }
             }
         }
         let pointer_count = elements.len();
