@@ -5684,7 +5684,30 @@ impl Niri {
 
         // Add pointer if requested and it's over this window.
         if show_pointer {
-            if let Some((w, HitType::Input { win_pos })) = &self.pointer_contents.window {
+            let mut render = |win_pos: Point<f64, Logical>| {
+                // Pointer elements are at output-local physical coords.
+                // Relocate by -win_pos to make them window-relative.
+                let pos = win_pos.to_physical_precise_round(scale).upscale(-1);
+                self.render_pointer(renderer, output, &mut |elem| {
+                    let elem = RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
+                    elements.push(elem.into());
+                });
+            };
+
+            // Tablet cursor.
+            if let Some(tablet_pos) = self.tablet_cursor_location {
+                let contents = self.contents_under(tablet_pos);
+                if let Some((w, HitType::Input { win_pos })) = contents.window {
+                    if w == mapped.window {
+                        // Tablet tools don't currently expose current focus, and don't currently
+                        // have grabs. When those are implemented, this branch should be adjusted
+                        // to look more similar to the branch below.
+                        render(win_pos);
+                    }
+                }
+            }
+            // Regular cursor.
+            else if let Some((w, HitType::Input { win_pos })) = &self.pointer_contents.window {
                 if w == &mapped.window {
                     // Grabs can modify the pointer focus, making it different from
                     // pointer_contents. Notably, gestures like Mod+MMB will remove the pointer
@@ -5709,25 +5732,13 @@ impl Niri {
                             .map(|focused| self.find_root_shell_surface(&focused))
                             .is_some_and(|focused| mapped.is_wl_surface(&focused));
                     if current_focus_matches {
-                        // win_pos is the window buffer position in output-local logical coords.
-                        let win_pos = win_pos.to_physical_precise_round(scale);
-
                         // We don't check for pointer visibility because it can only be Visible or
                         // Hidden, and never Disabled (then it wouldn't have focus). Even when the
                         // pointer is Hidden, we want to render it, since the user explicitly
                         // requested show_pointer = true, and otherwise there's no easy way to
                         // screenshot a window with pointer with hide-when-typing because pressing
                         // the screenshot bind will hide the pointer.
-                        self.render_pointer(renderer, output, &mut |elem| {
-                            // Pointer elements are at output-local physical coords.
-                            // Relocate by -win_pos to make them window-relative.
-                            let elem = RelocateRenderElement::from_element(
-                                elem,
-                                win_pos.upscale(-1),
-                                Relocate::Relative,
-                            );
-                            elements.push(elem.into());
-                        });
+                        render(*win_pos);
                     }
                 }
             }
