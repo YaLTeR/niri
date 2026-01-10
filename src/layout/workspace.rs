@@ -1633,7 +1633,7 @@ impl<W: LayoutElement> Workspace<W> {
     ) {
         let scrolling_focus_ring = focus_ring && !self.floating_is_active();
         self.scrolling
-            .render(renderer, target, scrolling_focus_ring, &mut |elem| {
+            .render(renderer, target, scrolling_focus_ring, self.current_output().unwrap(), &mut |elem| {
                 push(elem.into())
             });
     }
@@ -1656,6 +1656,7 @@ impl<W: LayoutElement> Workspace<W> {
             view_rect,
             target,
             floating_focus_ring,
+            self.current_output().unwrap(),
             &mut |elem| push(elem.into()),
         );
     }
