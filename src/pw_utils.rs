@@ -275,7 +275,7 @@ impl PipeWire {
         size: Size<i32, Physical>,
         refresh: u32,
         alpha: bool,
-        cursor_mode: CursorMode,
+        mut cursor_mode: CursorMode,
         signal_ctx: SignalEmitter<'static>,
     ) -> anyhow::Result<Cast> {
         let _span = tracy_client::span!("PipeWire::start_cast");
@@ -300,6 +300,14 @@ impl PipeWire {
             PropertiesBox::new(),
         )
         .context("error creating Stream")?;
+
+        if cursor_mode == CursorMode::Metadata && !pw_version_supports_cursor_metadata() {
+            debug!(
+                "metadata cursor mode requested, but PipeWire is too old (need >= 1.4.8); \
+                 switching to embedded cursor"
+            );
+            cursor_mode = CursorMode::Embedded;
+        }
 
         let pending_size = Size::from((size.w as u32, size.h as u32));
 
@@ -649,8 +657,7 @@ impl PipeWire {
                     let mut params = vec![make_pod(&mut b1, o1), make_pod(&mut b2, o2)];
 
                     let mut b_cursor = vec![];
-                    if cursor_mode == CursorMode::Metadata && pw_version_supports_cursor_metadata()
-                    {
+                    if cursor_mode == CursorMode::Metadata {
                         let o_cursor = pod::object!(
                             SpaTypes::ObjectParamMeta,
                             ParamType::Meta,
