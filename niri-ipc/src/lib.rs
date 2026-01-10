@@ -1314,6 +1314,30 @@ pub struct Window {
     ///
     /// The timestamp comes from the monotonic clock.
     pub focus_timestamp: Option<Timestamp>,
+    /// Stacking order of the window, if applicable.
+    pub stacking_order: Option<StackingOrder>,
+}
+
+/// Stacking order group of a [`Window`].
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum StackingOrderGroup {
+    /// Normal floating windows.
+    Floating,
+}
+
+/// Stacking order of a [`Window`].
+///
+/// This struct is totally ordered. Windows with a greater [`StackingOrderGroup`] are always stacked
+/// above windows with a lower group. Within each group, windows with a greater index are stacked
+/// above windows with a lower index.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct StackingOrder {
+    /// Group of the window.
+    pub group: StackingOrderGroup,
+    /// Index within the group.
+    pub index: usize,
 }
 
 /// A moment in time.
@@ -1561,6 +1585,11 @@ pub enum Event {
     WindowLayoutsChanged {
         /// Pairs consisting of a window id and new layout information for the window.
         changes: Vec<(u64, WindowLayout)>,
+    },
+    /// The stacking order of one or more windows has changed.
+    WindowStackingOrdersChanged {
+        /// Pairs consisting of a window id and new stacking order for the window.
+        changes: Vec<(u64, StackingOrder)>,
     },
     /// The configured keyboard layouts have changed.
     KeyboardLayoutsChanged {
