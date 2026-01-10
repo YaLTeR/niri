@@ -240,6 +240,50 @@ overview {
 }
 ```
 
+#### `zoom-presets`
+
+Define a list of zoom levels to cycle through using the `overview-zoom-cycle` action.
+If not set or empty, the cycle action does nothing.
+
+```kdl
+overview {
+    zoom-presets 0.5 0.25 0.1
+}
+```
+
+#### `min-zoom`
+
+Minimum zoom level for `overview-zoom-out`.
+Defaults to `0.05`.
+
+```kdl
+overview {
+    min-zoom 0.05
+}
+```
+
+#### `max-zoom`
+
+Maximum zoom level for `overview-zoom-in`.
+Defaults to `0.75`.
+
+```kdl
+overview {
+    max-zoom 0.75
+}
+```
+
+#### `zoom-step`
+
+Amount to adjust zoom by when using `overview-zoom-in` or `overview-zoom-out`.
+Defaults to `0.1`.
+
+```kdl
+overview {
+    zoom-step 0.1
+}
+```
+
 ### `xwayland-satellite`
 
 <sup>Since: 25.08</sup>
