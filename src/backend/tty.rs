@@ -56,6 +56,7 @@ use smithay::wayland::dmabuf::{DmabufFeedback, DmabufFeedbackBuilder, DmabufGlob
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
+use smithay::wayland::drm_syncobj::{supports_syncobj_eventfd, DrmSyncobjHandler, DrmSyncobjState};
 use smithay::wayland::presentation::Refresh;
 use smithay_drm_extras::drm_scanner::{DrmScanEvent, DrmScanner};
 use wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags;
@@ -95,7 +96,10 @@ pub struct Tty {
     // The dma-buf global corresponds to the output device (the primary GPU). It is only `Some()`
     // if we have a device corresponding to the primary GPU.
     dmabuf_global: Option<DmabufGlobal>,
-    // The output config had changed, but the session is paused, so we need to update it on resume.
+    // DRM syncobj state for explicit sync protocol support.
+    /// Only populated when primary GPU supports syncobj eventfd.
+    syncobj_state: Option<DrmSyncobjState>,
+    // The output config had changed, but session is paused, so we need to update it on resume.
     update_output_config_on_resume: bool,
     // The ignored nodes have changed, but the session is paused, so we need to update it on
     // resume.
@@ -503,6 +507,7 @@ impl Tty {
             ignored_nodes,
             devices: HashMap::new(),
             dmabuf_global: None,
+            syncobj_state: None,
             update_output_config_on_resume: false,
             update_ignored_nodes_on_resume: false,
             debug_tint: false,
@@ -760,7 +765,7 @@ impl Tty {
         }?;
         let gbm = {
             let _span = tracy_client::span!("GbmDevice::new");
-            GbmDevice::new(device_fd)
+            GbmDevice::new(device_fd.clone())
         }?;
 
         let mut try_initialize_gpu = || {
@@ -843,6 +848,16 @@ impl Tty {
                     &default_feedback,
                 );
             assert!(self.dmabuf_global.replace(dmabuf_global).is_none());
+
+            // Initialize syncobj protocol if supported by primary GPU
+            if supports_syncobj_eventfd(&device_fd) {
+                let syncobj_state =
+                    DrmSyncobjState::new::<State>(&niri.display_handle, device_fd.clone());
+                assert!(self.syncobj_state.replace(syncobj_state).is_none());
+                debug!("explicit sync (linux-drm-syncobj-v1) enabled for primary GPU");
+            } else {
+                debug!("explicit sync not supported by primary GPU (syncobj eventfd unavailable)");
+            }
 
             // Update the dmabuf feedbacks for all surfaces.
             for (node, device) in self.devices.iter_mut() {
@@ -2669,6 +2684,18 @@ impl GammaProps {
             .context("error setting GAMMA_LUT")?;
 
         Ok(())
+    }
+}
+
+impl DrmSyncobjHandler for State {
+    fn drm_syncobj_state(&mut self) -> Option<&mut DrmSyncobjState> {
+        Some(
+            self.backend
+                .tty()
+                .syncobj_state
+                .as_mut()
+                .expect("drm_syncobj_state called but syncobj not initialized"),
+        )
     }
 }
 

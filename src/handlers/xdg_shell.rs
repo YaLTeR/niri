@@ -23,6 +23,7 @@ use smithay::wayland::compositor::{
     HookId, SurfaceAttributes,
 };
 use smithay::wayland::dmabuf::get_dmabuf;
+use smithay::wayland::drm_syncobj::DrmSyncobjCachedState;
 use smithay::wayland::input_method::InputMethodSeat;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::wlr_layer::{self, Layer};
@@ -1442,7 +1443,7 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
             return;
         };
 
-        let (got_unmapped, dmabuf, commit_serial) = with_states(surface, |states| {
+        let (got_unmapped, dmabuf, acquire_point, commit_serial) = with_states(surface, |states| {
             let (got_unmapped, dmabuf) = {
                 let mut guard = states.cached_state.get::<SurfaceAttributes>();
                 match guard.pending().buffer.as_ref() {
@@ -1455,6 +1456,14 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
                 }
             };
 
+            // Get explicit sync acquire point if present
+            let acquire_point = states
+                .cached_state
+                .get::<DrmSyncobjCachedState>()
+                .pending()
+                .acquire_point
+                .clone();
+
             let role = states
                 .data_map
                 .get::<XdgToplevelSurfaceData>()
@@ -1463,7 +1472,7 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
                 .unwrap();
             let serial = role.last_acked.as_ref().map(|c| c.serial);
 
-            (got_unmapped, dmabuf, serial)
+            (got_unmapped, dmabuf, acquire_point, serial)
         });
 
         let mut transaction_for_dmabuf = None;
@@ -1512,7 +1521,29 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
             error!("commit on a mapped surface without a configured serial");
         };
 
-        if let Some((blocker, source)) =
+        // Priority 1: Use explicit sync acquire point if available
+        if let Some(acquire_point) = acquire_point {
+            if let Ok((blocker, source)) = acquire_point.generate_blocker() {
+                if let Some(client) = surface.client() {
+                    let res = state
+                        .niri
+                        .event_loop
+                        .insert_source(source, move |_, _, state| {
+                            drop(transaction_for_dmabuf.take());
+
+                            let display_handle = state.niri.display_handle.clone();
+                            state
+                                .client_compositor_state(&client)
+                                .blocker_cleared(state, &display_handle);
+                            Ok(())
+                        });
+                    if res.is_ok() {
+                        add_blocker(surface, blocker);
+                        trace!("added explicit sync acquire point blocker");
+                    }
+                }
+            }
+        } else if let Some((blocker, source)) =
             dmabuf.and_then(|dmabuf| dmabuf.generate_blocker(Interest::READ).ok())
         {
             if let Some(client) = surface.client() {
@@ -1532,7 +1563,7 @@ pub fn add_mapped_toplevel_pre_commit_hook(toplevel: &ToplevelSurface) -> HookId
                     });
                 if res.is_ok() {
                     add_blocker(surface, blocker);
-                    trace!("added dmabuf blocker");
+                    trace!("added implicit sync dmabuf blocker");
                 }
             }
         }
