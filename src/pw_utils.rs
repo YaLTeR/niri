@@ -1452,9 +1452,25 @@ unsafe fn add_invisible_cursor(spa_buffer: *mut spa_buffer) {
             .cast::<spa_meta_bitmap>();
         let bitmap_meta = &mut *bitmap_meta_ptr;
 
-        bitmap_meta.offset = 0;
-        bitmap_meta.size.width = 0;
-        bitmap_meta.size.height = 0;
+        // HACK: PipeWire docs say offset = 0 means invisible.
+        //
+        // Unfortunately, OBS doesn't actually check that, instead it checks that size isn't zero:
+        // https://github.com/obsproject/obs-studio/blob/f4aaa5f0417c5ec40a3799551e125129fce1e007/plugins/linux-pipewire/pipewire.c#L900
+        //
+        // Unfortunately, libwebrtc, on top of ignoring offset, also treats size = 0 as "preserve
+        // previous cursor":
+        // https://webrtc.googlesource.com/src/+/97b46e12582606a238d4f0c8524365cf5bdcb411/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc#765
+        //
+        // So, send a 1x1 transparent pixel instead...
+        bitmap_meta.offset = BITMAP_DATA_OFFSET as _;
+        bitmap_meta.size.width = 1;
+        bitmap_meta.size.height = 1;
+        bitmap_meta.stride = CURSOR_BPP as i32;
+        bitmap_meta.format = CURSOR_FORMAT;
+
+        let bitmap_data = bitmap_meta_ptr.cast::<u8>().add(BITMAP_DATA_OFFSET);
+        let bitmap_slice = slice::from_raw_parts_mut(bitmap_data, CURSOR_BITMAP_SIZE);
+        bitmap_slice[..4].copy_from_slice(&[0, 0, 0, 0]);
     }
 }
 
@@ -1494,14 +1510,16 @@ unsafe fn add_cursor_metadata(
             .cast::<spa_meta_bitmap>();
         let bitmap_meta = &mut *bitmap_meta_ptr;
 
-        // Clear metadata for an empty cursor.
-        bitmap_meta.offset = 0;
-        // PipeWire docs say offset = 0 means invisible, but OBS doesn't actually check that,
-        // instead it checks the size.
-        //
-        // https://github.com/obsproject/obs-studio/blob/f4aaa5f0417c5ec40a3799551e125129fce1e007/plugins/linux-pipewire/pipewire.c#L900
-        bitmap_meta.size.width = 0;
-        bitmap_meta.size.height = 0;
+        // Start with a 1x1 transparent pixel; see comment in add_invisible_cursor().
+        bitmap_meta.offset = BITMAP_DATA_OFFSET as _;
+        bitmap_meta.size.width = 1;
+        bitmap_meta.size.height = 1;
+        bitmap_meta.stride = CURSOR_BPP as i32;
+        bitmap_meta.format = CURSOR_FORMAT;
+
+        let bitmap_data = bitmap_meta_ptr.cast::<u8>().add(BITMAP_DATA_OFFSET);
+        let bitmap_slice = slice::from_raw_parts_mut(bitmap_data, CURSOR_BITMAP_SIZE);
+        bitmap_slice[..4].copy_from_slice(&[0, 0, 0, 0]);
 
         let size = Size::new(
             min(cursor_data.size.w, CURSOR_WIDTH as i32),
@@ -1511,12 +1529,6 @@ unsafe fn add_cursor_metadata(
             trace!("cursor is invisible, skipping rendering");
             return;
         }
-
-        bitmap_meta.stride = size.w * CURSOR_BPP as i32;
-        bitmap_meta.format = CURSOR_FORMAT;
-
-        let bitmap_data = bitmap_meta_ptr.cast::<u8>().add(BITMAP_DATA_OFFSET);
-        let bitmap_slice = slice::from_raw_parts_mut(bitmap_data, CURSOR_BITMAP_SIZE);
 
         let _span = tracy_client::span!("add_cursor_metadata render cursor");
 
@@ -1554,6 +1566,6 @@ unsafe fn add_cursor_metadata(
         // Fill the metadata now that everything succeeded.
         bitmap_meta.size.width = size.w as _;
         bitmap_meta.size.height = size.h as _;
-        bitmap_meta.offset = BITMAP_DATA_OFFSET as _;
+        bitmap_meta.stride = size.w * CURSOR_BPP as i32;
     }
 }
