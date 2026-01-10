@@ -387,6 +387,11 @@ pub enum Action {
     MruSetScope(MruScope),
     #[knuffel(skip)]
     MruCycleScope,
+    #[knuffel(skip)]
+    ViewOffset {
+        id: Option<u64>,
+        offset: f64,
+    },
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -697,6 +702,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
             niri_ipc::Action::LoadConfigFile {} => Self::LoadConfigFile,
+            niri_ipc::Action::ViewOffset { id, offset } => Self::ViewOffset { id, offset },
         }
     }
 }
