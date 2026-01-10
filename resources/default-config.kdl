@@ -249,6 +249,23 @@ layout {
         color "#0007"
     }
 
+    // Enable focus flash effect for windows.
+    // This will make newly focused windows flash by briefly lowering their opacity.
+    focus-opacity {
+        // Uncomment this line to enable focus flash.
+        // on
+
+        // Opacity to flash to when window gains focus (0.0 to 1.0).
+        // The window will briefly change to this opacity, then return to its normal opacity.
+        flash-opacity 0.8
+
+        // Animation duration in milliseconds for the complete flash cycle.
+        animation-duration-ms 150
+
+        // Disable focus flash when there's only one window.
+        disable-on-solo true
+    }
+
     // Struts shrink the area occupied by windows, similarly to layer-shell panels.
     // You can think of them as a kind of outer gaps. They are set in logical pixels.
     // Left and right struts will cause the next window to the side to always be visible.
