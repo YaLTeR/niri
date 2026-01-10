@@ -8,6 +8,7 @@ use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
+    WorkspaceReference,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -1456,6 +1457,7 @@ impl State {
                 }
             }
             Action::FocusWorkspace(reference) => {
+                let is_name = matches!(reference, WorkspaceReference::Name(_));
                 if let Some((mut output, index)) =
                     self.niri.find_output_and_workspace_index(reference)
                 {
@@ -1467,7 +1469,7 @@ impl State {
 
                     if let Some(output) = output {
                         self.niri.layout.focus_output(&output);
-                        self.niri.layout.switch_workspace(index);
+                        self.niri.layout.switch_workspace(index, is_name);
                         if !self.maybe_warp_cursor_to_focus_centered() {
                             self.move_cursor_to_output(&output);
                         }
@@ -1476,7 +1478,7 @@ impl State {
                         if config.borrow().input.workspace_auto_back_and_forth {
                             self.niri.layout.switch_workspace_auto_back_and_forth(index);
                         } else {
-                            self.niri.layout.switch_workspace(index);
+                            self.niri.layout.switch_workspace(index, is_name);
                         }
                         self.maybe_warp_cursor_to_focus();
                     }
@@ -2378,6 +2380,9 @@ impl State {
                     self.niri.window_mru_ui.cycle_scope();
                     self.niri.queue_redraw_mru_output();
                 }
+            }
+            Action::ToggleWorkspaceVisibility(workspace_name) => {
+                self.niri.layout.toggle_workspace_visibility(workspace_name);
             }
         }
     }
