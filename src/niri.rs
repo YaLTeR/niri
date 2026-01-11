@@ -19,7 +19,7 @@ use niri_config::{
     WorkspaceReference, Xkb,
 };
 use smithay::backend::allocator::Fourcc;
-use smithay::backend::input::Keycode;
+use smithay::backend::input::{KeyState, Keycode};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
@@ -44,6 +44,8 @@ use smithay::desktop::{
     find_popup_root_surface, layer_map_for_output, LayerMap, LayerSurface, PopupGrab, PopupManager,
     PopupUngrabStrategy, Space, Window, WindowSurfaceType,
 };
+use smithay::input::keyboard::xkb::ModMask;
+use smithay::input::keyboard::KeyboardHandle;
 use smithay::input::keyboard::{Layout as KeyboardLayout, XkbConfig};
 use smithay::input::pointer::{
     CursorIcon, CursorImageStatus, CursorImageSurfaceData, Focus,
@@ -105,7 +107,7 @@ use smithay::wayland::socket::ListeningSocketSource;
 use smithay::wayland::tablet_manager::TabletManagerState;
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
-use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
+use smithay::wayland::virtual_keyboard::{VirtualKeyboardHandler, VirtualKeyboardManagerState};
 use smithay::wayland::xdg_activation::XdgActivationState;
 use smithay::wayland::xdg_foreign::XdgForeignState;
 
@@ -1358,7 +1360,7 @@ impl State {
         }
     }
 
-    fn set_xkb_config(&mut self, xkb: XkbConfig) {
+    pub fn set_xkb_config(&mut self, xkb: XkbConfig) {
         let keyboard = self.niri.seat.get_keyboard().unwrap();
         let num_lock = keyboard.modifier_state().num_lock;
         if let Err(err) = keyboard.set_xkb_config(self, xkb) {
@@ -6618,6 +6620,60 @@ fn scale_relocate_crop<E: Element>(
     let elem = RescaleRenderElement::from_element(elem, Point::from((0, 0)), zoom);
     let elem = RelocateRenderElement::from_element(elem, ws_geo.loc, Relocate::Relative);
     CropRenderElement::from_element(elem, output_scale, ws_geo)
+}
+
+impl VirtualKeyboardHandler for State {
+    fn on_keyboard_event(
+        &mut self,
+        keycode: Keycode,
+        state: KeyState,
+        time: u32,
+        keyboard: KeyboardHandle<Self>,
+    ) {
+        // Make sure some logic like workspace clean-up has a chance to run before doing actions.
+        self.niri.advance_animations();
+
+        if self.niri.monitors_active {
+            // Notify the idle-notifier of activity.
+            self.niri.notify_activity();
+        } else {
+            // Power on monitors if they were off.
+            self.niri.activate_monitors(&mut self.backend);
+
+            // Notify the idle-notifier of activity only if we're also powering on the
+            // monitors.
+            self.niri.notify_activity();
+        }
+        let mut consumed_by_a11y = false;
+
+        self.on_keyboard_real(keycode, state, time, keyboard, &mut consumed_by_a11y);
+
+        let hide_hotkey_overlay = self.niri.hotkey_overlay.is_open();
+
+        let hide_exit_confirm_dialog = self.niri.exit_confirm_dialog.is_open();
+        if consumed_by_a11y {
+            return;
+        }
+
+        // Do this last so that screenshot still gets it.
+        if hide_hotkey_overlay && self.niri.hotkey_overlay.hide() {
+            self.niri.queue_redraw_all();
+        }
+
+        if hide_exit_confirm_dialog && self.niri.exit_confirm_dialog.hide() {
+            self.niri.queue_redraw_all();
+        }
+    }
+
+    /// We handle modifiers when the key event is sent
+    fn on_keyboard_modifiers(
+        &mut self,
+        _depressed_mods: ModMask,
+        _latched_mods: ModMask,
+        _locked_mods: ModMask,
+        _keyboard: KeyboardHandle<Self>,
+    ) {
+    }
 }
 
 niri_render_elements! {
