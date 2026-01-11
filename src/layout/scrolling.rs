@@ -2416,7 +2416,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             })
     }
 
-    pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
+    pub fn tiles_ipc(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
         self.columns
             .iter()
             .enumerate()

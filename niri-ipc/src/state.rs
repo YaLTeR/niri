@@ -219,6 +219,13 @@ impl EventStreamStatePart for WindowsState {
                     win.layout = update;
                 }
             }
+            Event::WindowStackingOrdersChanged { changes } => {
+                for (id, update) in changes.iter().copied() {
+                    let win = self.windows.get_mut(&id);
+                    let win = win.expect("changed window was missing from the map");
+                    win.stacking_order = Some(update);
+                }
+            }
             event => return Some(event),
         }
         None

@@ -323,7 +323,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         })
     }
 
-    pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
+    pub fn tiles_ipc(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
         let scale = self.scale;
         self.tiles_with_offsets().map(move |(tile, offset)| {
             // Do not include animated render offset here to avoid IPC spam.

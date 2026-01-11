@@ -18,7 +18,7 @@ use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
     Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    StackingOrder, Timestamp, WindowLayout, Workspace,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -503,6 +503,7 @@ fn make_ipc_window(
     mapped: &Mapped,
     workspace_id: Option<WorkspaceId>,
     layout: WindowLayout,
+    stacking_order: Option<StackingOrder>,
 ) -> niri_ipc::Window {
     with_toplevel_role(mapped.toplevel(), |role| niri_ipc::Window {
         id: mapped.id().get(),
@@ -515,6 +516,7 @@ fn make_ipc_window(
         is_urgent: mapped.is_urgent(),
         layout,
         focus_timestamp: mapped.get_focus_timestamp().map(Timestamp::from),
+        stacking_order,
     })
 }
 
@@ -686,11 +688,12 @@ impl State {
         let layout = &self.niri.layout;
 
         let mut batch_change_layouts: Vec<(u64, WindowLayout)> = Vec::new();
+        let mut batch_change_stacking_orders: Vec<(u64, StackingOrder)> = Vec::new();
 
         // Check for window changes.
         let mut seen = HashSet::new();
         let mut focused_id = None;
-        layout.with_windows(|mapped, _, ws_id, window_layout| {
+        layout.with_windows(|mapped, _, ws_id, window_layout, stacking_order| {
             let id = mapped.id().get();
             seen.insert(id);
 
@@ -699,7 +702,7 @@ impl State {
             }
 
             let Some(ipc_win) = state.windows.get(&id) else {
-                let window = make_ipc_window(mapped, ws_id, window_layout);
+                let window = make_ipc_window(mapped, ws_id, window_layout, stacking_order);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
             };
@@ -713,7 +716,7 @@ impl State {
             });
 
             if changed {
-                let window = make_ipc_window(mapped, ws_id, window_layout);
+                let window = make_ipc_window(mapped, ws_id, window_layout, stacking_order);
                 events.push(Event::WindowOpenedOrChanged { window });
                 return;
             }
@@ -738,6 +741,12 @@ impl State {
             if urgent != ipc_win.is_urgent {
                 events.push(Event::WindowUrgencyChanged { id, urgent })
             }
+
+            if ipc_win.stacking_order.is_some() && ipc_win.stacking_order != stacking_order {
+                if let Some(stacking_order) = stacking_order {
+                    batch_change_stacking_orders.push((id, stacking_order));
+                }
+            }
         });
 
         // It might make sense to push layout changes after closed windows (since windows about to
@@ -748,6 +757,12 @@ impl State {
         if !batch_change_layouts.is_empty() {
             events.push(Event::WindowLayoutsChanged {
                 changes: batch_change_layouts,
+            });
+        }
+
+        if !batch_change_stacking_orders.is_empty() {
+            events.push(Event::WindowStackingOrdersChanged {
+                changes: batch_change_stacking_orders,
             });
         }
 

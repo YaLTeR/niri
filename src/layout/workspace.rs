@@ -6,7 +6,9 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{
     CenterFocusedColumn, CornerRadius, OutputName, PresetSize, Workspace as WorkspaceConfig,
 };
-use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
+use niri_ipc::{
+    ColumnDisplay, PositionChange, SizeChange, StackingOrder, StackingOrderGroup, WindowLayout,
+};
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::{layer_map_for_output, Window};
@@ -1602,9 +1604,20 @@ impl<W: LayoutElement> Workspace<W> {
         floating.chain(scrolling)
     }
 
-    pub fn tiles_with_ipc_layouts(&self) -> impl Iterator<Item = (&Tile<W>, WindowLayout)> {
-        let scrolling = self.scrolling.tiles_with_ipc_layouts();
-        let floating = self.floating.tiles_with_ipc_layouts();
+    pub fn tiles_ipc(
+        &self,
+    ) -> impl Iterator<Item = (&Tile<W>, WindowLayout, Option<StackingOrder>)> {
+        let scrolling = self.scrolling.tiles_ipc().map(|(t, l)| (t, l, None));
+        let floating = self.floating.tiles_ipc().enumerate().map(|(i, (t, l))| {
+            (
+                t,
+                l,
+                Some(StackingOrder {
+                    group: StackingOrderGroup::Floating,
+                    index: usize::MAX - i,
+                }),
+            )
+        });
         floating.chain(scrolling)
     }
 
