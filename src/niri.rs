@@ -139,7 +139,9 @@ use crate::layer::mapped::LayerSurfaceRenderElement;
 use crate::layer::MappedLayer;
 use crate::layout::tile::TileRenderElement;
 use crate::layout::workspace::{Workspace, WorkspaceId};
-use crate::layout::{HitType, Layout, LayoutElement as _, MonitorRenderElement};
+use crate::layout::{
+    HitType, Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement,
+};
 use crate::niri_render_elements;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
@@ -1912,12 +1914,6 @@ impl State {
     pub fn open_screenshot_ui(&mut self, show_pointer: bool, path: Option<String>) {
         if self.niri.is_locked() || self.niri.screenshot_ui.is_open() {
             return;
-        }
-
-        // Redraw the pointer if hidden through cursor{} options
-        if self.niri.pointer_visibility == PointerVisibility::Hidden {
-            self.niri.pointer_visibility = PointerVisibility::Visible;
-            self.niri.queue_redraw_all();
         }
 
         let default_output = self
@@ -3869,11 +3865,7 @@ impl Niri {
         output: &Output,
         push: &mut dyn FnMut(PointerRenderElements<R>),
     ) {
-        if !self.pointer_visibility.is_visible() {
-            return;
-        }
-
-        let _span = tracy_client::span!("Niri::pointer_element");
+        let _span = tracy_client::span!("Niri::render_pointer");
         let output_scale = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
 
@@ -4291,8 +4283,29 @@ impl Niri {
         renderer: &mut R,
         output: &Output,
         include_pointer: bool,
-        mut target: RenderTarget,
+        target: RenderTarget,
     ) -> Vec<OutputRenderElements<R>> {
+        let mut elements = Vec::new();
+        self.render_inner(renderer, output, include_pointer, target, &mut |elem| {
+            elements.push(elem)
+        });
+
+        if self.debug_draw_opaque_regions {
+            let output_scale = Scale::from(output.current_scale().fractional_scale());
+            draw_opaque_regions(&mut elements, output_scale);
+        }
+
+        elements
+    }
+
+    pub fn render_inner<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        output: &Output,
+        include_pointer: bool,
+        mut target: RenderTarget,
+        push: &mut dyn FnMut(OutputRenderElements<R>),
+    ) {
         let _span = tracy_client::span!("Niri::render");
 
         if target == RenderTarget::Output {
@@ -4307,26 +4320,25 @@ impl Niri {
         let output_scale = Scale::from(output.current_scale().fractional_scale());
 
         // The pointer goes on the top.
-        let mut elements = vec![];
-        if include_pointer {
-            self.render_pointer(renderer, output, &mut |elem| elements.push(elem.into()));
+        if include_pointer && self.pointer_visibility.is_visible() {
+            self.render_pointer(renderer, output, &mut |elem| push(elem.into()));
         }
 
         // Next, the screen transition texture.
         {
             let state = self.output_state.get(output).unwrap();
             if let Some(transition) = &state.screen_transition {
-                elements.push(transition.render(target).into());
+                push(transition.render(target).into());
             }
         }
 
         // Next, the exit confirm dialog.
         self.exit_confirm_dialog
-            .render(renderer, output, &mut |elem| elements.push(elem.into()));
+            .render(renderer, output, &mut |elem| push(elem.into()));
 
         // Next, the config error notification too.
         if let Some(element) = self.config_error_notification.render(renderer, output) {
-            elements.push(element.into());
+            push(element.into());
         }
 
         // If the session is locked, draw the lock surface.
@@ -4340,12 +4352,12 @@ impl Niri {
                     output_scale,
                     1.,
                     Kind::ScanoutCandidate,
-                    &mut |elem| elements.push(elem.into()),
+                    &mut |elem| push(elem.into()),
                 );
             }
 
             // Draw the solid color background.
-            elements.push(
+            push(
                 SolidColorRenderElement::from_buffer(
                     &state.lock_color_buffer,
                     (0., 0.),
@@ -4355,10 +4367,7 @@ impl Niri {
                 .into(),
             );
 
-            if self.debug_draw_opaque_regions {
-                draw_opaque_regions(&mut elements, output_scale);
-            }
-            return elements;
+            return;
         }
 
         // Prepare the background elements.
@@ -4374,26 +4383,23 @@ impl Niri {
         // If the screenshot UI is open, draw it.
         if self.screenshot_ui.is_open() {
             self.screenshot_ui
-                .render_output(output, target, &mut |elem| elements.push(elem.into()));
+                .render_output(output, target, &mut |elem| push(elem.into()));
 
             // Add the backdrop for outputs that were connected while the screenshot UI was open.
-            elements.push(backdrop);
+            push(backdrop);
 
-            if self.debug_draw_opaque_regions {
-                draw_opaque_regions(&mut elements, output_scale);
-            }
-            return elements;
+            return;
         }
 
         // Draw the hotkey overlay on top.
         if let Some(element) = self.hotkey_overlay.render(renderer, output) {
-            elements.push(element.into());
+            push(element.into());
         }
 
         // Then, the Alt-Tab switcher.
         self.window_mru_ui
             .render_output(self, output, renderer, target, &mut |elem| {
-                elements.push(elem.into())
+                push(elem.into())
             });
 
         // Don't draw the focus ring on the workspaces while interactively moving above those
@@ -4407,20 +4413,20 @@ impl Niri {
         // Get layer-shell elements.
         let layer_map = layer_map_for_output(output);
 
-        // We use macros instead of closures to avoid borrowing issues (renderer and elements go
+        // We use macros instead of closures to avoid borrowing issues (renderer and push() go
         // into different functions).
         macro_rules! push_popups_from_layer {
             ($layer:expr, $backdrop:expr, $push:expr) => {{
                 self.render_layer_popups(renderer, target, &layer_map, $layer, $backdrop, $push);
             }};
             ($layer:expr, true) => {{
-                push_popups_from_layer!($layer, true, &mut |elem| elements.push(elem.into()));
+                push_popups_from_layer!($layer, true, &mut |elem| push(elem.into()));
             }};
             ($layer:expr, $push:expr) => {{
                 push_popups_from_layer!($layer, false, $push);
             }};
             ($layer:expr) => {{
-                push_popups_from_layer!($layer, false, &mut |elem| elements.push(elem.into()));
+                push_popups_from_layer!($layer, false, &mut |elem| push(elem.into()));
             }};
         }
         macro_rules! push_normal_from_layer {
@@ -4428,13 +4434,13 @@ impl Niri {
                 self.render_layer_normal(renderer, target, &layer_map, $layer, $backdrop, $push);
             }};
             ($layer:expr, true) => {{
-                push_normal_from_layer!($layer, true, &mut |elem| elements.push(elem.into()));
+                push_normal_from_layer!($layer, true, &mut |elem| push(elem.into()));
             }};
             ($layer:expr, $push:expr) => {{
                 push_normal_from_layer!($layer, false, $push);
             }};
             ($layer:expr) => {{
-                push_normal_from_layer!($layer, false, &mut |elem| elements.push(elem.into()));
+                push_normal_from_layer!($layer, false, &mut |elem| push(elem.into()));
             }};
         }
 
@@ -4447,16 +4453,12 @@ impl Niri {
         if mon.render_above_top_layer() {
             self.layout
                 .render_interactive_move_for_output(renderer, output, target, &mut |elem| {
-                    elements.push(elem.into())
+                    push(elem.into())
                 });
 
-            mon.render_insert_hint_between_workspaces(renderer, &mut |elem| {
-                elements.push(elem.into())
-            });
+            mon.render_insert_hint_between_workspaces(renderer, &mut |elem| push(elem.into()));
 
-            mon.render_workspaces(renderer, target, focus_ring, &mut |elem| {
-                elements.push(elem.into())
-            });
+            mon.render_workspaces(renderer, target, focus_ring, &mut |elem| push(elem.into()));
 
             push_popups_from_layer!(Layer::Top);
             push_normal_from_layer!(Layer::Top);
@@ -4468,7 +4470,7 @@ impl Niri {
 
             // We don't expect more than one workspace when render_above_top_layer().
             if let Some((ws, _geo)) = mon.workspaces_with_render_geo().next() {
-                elements.push(ws.render_background().into());
+                push(ws.render_background().into());
             }
         } else {
             push_popups_from_layer!(Layer::Top);
@@ -4476,19 +4478,17 @@ impl Niri {
 
             self.layout
                 .render_interactive_move_for_output(renderer, output, target, &mut |elem| {
-                    elements.push(elem.into())
+                    push(elem.into())
                 });
 
-            mon.render_insert_hint_between_workspaces(renderer, &mut |elem| {
-                elements.push(elem.into())
-            });
+            mon.render_insert_hint_between_workspaces(renderer, &mut |elem| push(elem.into()));
 
-            // Macro instead of closure to avoid borrowing elements.
+            // Macro instead of closure to avoid borrowing push().
             macro_rules! process {
                 ($geo:expr) => {{
                     &mut |elem| {
                         if let Some(elem) = scale_relocate_crop(elem, output_scale, zoom, $geo) {
-                            elements.push(elem.into());
+                            push(elem.into());
                         }
                     }
                 }};
@@ -4499,9 +4499,7 @@ impl Niri {
                 push_popups_from_layer!(Layer::Background, process!(geo));
             }
 
-            mon.render_workspaces(renderer, target, focus_ring, &mut |elem| {
-                elements.push(elem.into())
-            });
+            mon.render_workspaces(renderer, target, focus_ring, &mut |elem| push(elem.into()));
 
             for (ws, geo) in mon.workspaces_with_render_geo() {
                 push_normal_from_layer!(Layer::Bottom, process!(geo));
@@ -4511,19 +4509,13 @@ impl Niri {
             }
         }
 
-        mon.render_workspace_shadows(renderer, &mut |elem| elements.push(elem.into()));
+        mon.render_workspace_shadows(renderer, &mut |elem| push(elem.into()));
 
         // Then the backdrop.
         push_popups_from_layer!(Layer::Background, true);
         push_normal_from_layer!(Layer::Background, true);
 
-        elements.push(backdrop);
-
-        if self.debug_draw_opaque_regions {
-            draw_opaque_regions(&mut elements, output_scale);
-        }
-
-        elements
+        push(backdrop);
     }
 
     fn layers_in_render_order<'a>(
@@ -5589,7 +5581,14 @@ impl Niri {
                 let res_output = res.ok();
 
                 let mut pointer = Vec::new();
-                self.render_pointer(renderer, &output, &mut |elem| pointer.push(elem));
+
+                // We check the pointer visibility for Disabled (and not .is_visible()) in order to
+                // show the pointer even when it's hidden through cursor {} options. The user can
+                // then toggle it in the screenshot UI as needed.
+                if self.pointer_visibility != PointerVisibility::Disabled {
+                    self.render_pointer(renderer, &output, &mut |elem| pointer.push(elem));
+                }
+
                 let res_pointer = if pointer.is_empty() {
                     None
                 } else {
@@ -5668,6 +5667,7 @@ impl Niri {
         output: &Output,
         mapped: &Mapped,
         write_to_disk: bool,
+        show_pointer: bool,
         path: Option<String>,
     ) -> anyhow::Result<()> {
         let _span = tracy_client::span!("Niri::screenshot_window");
@@ -5679,17 +5679,84 @@ impl Niri {
             } else {
                 mapped.rules().opacity.unwrap_or(1.).clamp(0., 1.)
             };
-        // FIXME: pointer.
-        let mut elements = Vec::new();
+
+        let mut elements: Vec<WindowScreenshotRenderElement<GlesRenderer>> = Vec::new();
+
+        // Add pointer if requested and it's over this window.
+        if show_pointer {
+            let mut render = |win_pos: Point<f64, Logical>| {
+                // Pointer elements are at output-local physical coords.
+                // Relocate by -win_pos to make them window-relative.
+                let pos = win_pos.to_physical_precise_round(scale).upscale(-1);
+                self.render_pointer(renderer, output, &mut |elem| {
+                    let elem = RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
+                    elements.push(elem.into());
+                });
+            };
+
+            // Tablet cursor.
+            if let Some(tablet_pos) = self.tablet_cursor_location {
+                let contents = self.contents_under(tablet_pos);
+                if let Some((w, HitType::Input { win_pos })) = contents.window {
+                    if w == mapped.window {
+                        // Tablet tools don't currently expose current focus, and don't currently
+                        // have grabs. When those are implemented, this branch should be adjusted
+                        // to look more similar to the branch below.
+                        render(win_pos);
+                    }
+                }
+            }
+            // Regular cursor.
+            else if let Some((w, HitType::Input { win_pos })) = &self.pointer_contents.window {
+                if w == &mapped.window {
+                    // Grabs can modify the pointer focus, making it different from
+                    // pointer_contents. Notably, gestures like Mod+MMB will remove the pointer
+                    // focus, and ClickGrab will keep pointer focus on the clicked window even
+                    // while it's moving over a different window.
+                    //
+                    // So, double-check that current_focus() (after grabs) also matches the pointer
+                    // contents.
+                    let pointer = self.seat.get_pointer().unwrap();
+
+                    // The DnD grab is a bit special because it has its own focus (data device)
+                    // while the pointer focus is cleared. That focus is not currently exposed from
+                    // Smithay, and showing DnD icons on window screenshots seems useful, so let's
+                    // just allow it during DnD grabs.
+                    let is_dnd_grab = pointer
+                        .with_grab(|_, grab| State::is_dnd_grab(grab.as_any()))
+                        .unwrap_or(false);
+
+                    let current_focus_matches = is_dnd_grab
+                        || pointer
+                            .current_focus()
+                            .map(|focused| self.find_root_shell_surface(&focused))
+                            .is_some_and(|focused| mapped.is_wl_surface(&focused));
+                    if current_focus_matches {
+                        // We don't check for pointer visibility because it can only be Visible or
+                        // Hidden, and never Disabled (then it wouldn't have focus). Even when the
+                        // pointer is Hidden, we want to render it, since the user explicitly
+                        // requested show_pointer = true, and otherwise there's no easy way to
+                        // screenshot a window with pointer with hide-when-typing because pressing
+                        // the screenshot bind will hide the pointer.
+                        render(*win_pos);
+                    }
+                }
+            }
+        }
+        let pointer_count = elements.len();
+
         mapped.render(
             renderer,
             mapped.window.geometry().loc.to_f64(),
             scale,
             alpha,
             RenderTarget::ScreenCapture,
-            &mut |elem| elements.push(elem),
+            &mut |elem| elements.push(elem.into()),
         );
-        let geo = encompassing_geo(scale, elements.iter());
+
+        // The pointer is not included in encompassing_geo because we don't want it to expand the
+        // screenshot size.
+        let geo = encompassing_geo(scale, elements.iter().skip(pointer_count));
         let elements = elements.iter().rev().map(|elem| {
             RelocateRenderElement::from_element(elem, geo.loc.upscale(-1), Relocate::Relative)
         });
@@ -6557,6 +6624,13 @@ niri_render_elements! {
     PointerRenderElements<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
+    }
+}
+
+niri_render_elements! {
+    WindowScreenshotRenderElement<R> => {
+        Layout = LayoutElementRenderElement<R>,
+        Pointer = RelocateRenderElement<PointerRenderElements<R>>,
     }
 }
 

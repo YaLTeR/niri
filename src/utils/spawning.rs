@@ -332,7 +332,6 @@ mod systemd {
                     trace!("spawned PID: {pid}");
 
                     // Start a systemd scope for the grandchild.
-                    #[cfg(feature = "systemd")]
                     if let Err(err) = start_systemd_scope(command, child.id(), pid as u32) {
                         trace!("error starting systemd scope for spawned command: {err:?}");
                     }
@@ -351,7 +350,6 @@ mod systemd {
         Some(child)
     }
 
-    #[cfg(feature = "systemd")]
     fn write_all(fd: impl AsFd, buf: &[u8]) -> rustix::io::Result<()> {
         let mut written = 0;
         loop {
@@ -367,7 +365,6 @@ mod systemd {
         }
     }
 
-    #[cfg(feature = "systemd")]
     fn read_all(fd: impl AsFd, buf: &mut [u8]) -> rustix::io::Result<()> {
         let mut start = 0;
         loop {
@@ -387,7 +384,6 @@ mod systemd {
     ///
     /// This separates the pid from the compositor scope, which for example prevents the OOM killer
     /// from bringing down the compositor together with a misbehaving client.
-    #[cfg(feature = "systemd")]
     fn start_systemd_scope(
         name: &OsStr,
         intermediate_pid: u32,
