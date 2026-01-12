@@ -341,7 +341,6 @@ impl State {
                     session_id,
                     stream_id,
                     target,
-                    dynamic_target,
                     size,
                     refresh,
                     alpha,
@@ -349,7 +348,8 @@ impl State {
                     signal_ctx,
                 );
                 match res {
-                    Ok(cast) => {
+                    Ok(mut cast) => {
+                        cast.dynamic_target = dynamic_target;
                         self.niri.casting.casts.push(cast);
                     }
                     Err(err) => {
