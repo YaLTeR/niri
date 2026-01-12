@@ -391,8 +391,7 @@ impl State {
                 signal_ctx,
             } => {
                 let _span = tracy_client::span!("StartCast");
-
-                debug!(session_id, stream_id, "StartCast");
+                let _span = debug_span!("StartCast", session_id, stream_id).entered();
 
                 let (target, size, refresh, alpha) = match target {
                     StreamTargetId::Output { name } => {
@@ -410,10 +409,7 @@ impl State {
                     StreamTargetId::Window { id }
                         if id == self.niri.casting.dynamic_cast_id_for_portal.get() =>
                     {
-                        debug!(
-                            session_id,
-                            stream_id, "delaying dynamic cast until target is set"
-                        );
+                        debug!("delaying dynamic cast until target is set");
                         self.niri.casting.pending_dynamic_casts.push(PendingCast {
                             session_id,
                             stream_id,
@@ -700,8 +696,7 @@ impl Niri {
 
     fn stop_cast(&mut self, session_id: usize) {
         let _span = tracy_client::span!("Niri::stop_cast");
-
-        debug!(session_id, "StopCast");
+        let _span = debug_span!("stop_cast", session_id).entered();
 
         self.casting
             .pending_dynamic_casts
