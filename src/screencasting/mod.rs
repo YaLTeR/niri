@@ -156,8 +156,8 @@ impl State {
                 });
                 return;
             }
-            CastTarget::Output(weak) => {
-                if let Some(output) = weak.upgrade() {
+            CastTarget::Output { output, .. } => {
+                if let Some(output) = output.upgrade() {
                     self.niri.queue_redraw(&output);
                 }
                 return;
@@ -260,7 +260,7 @@ impl State {
             // Leave refresh as is when clearing. Chances are, the next refresh will match it,
             // then we'll avoid reconfiguring.
             CastTarget::Nothing => (),
-            CastTarget::Output(output) => {
+            CastTarget::Output { output, .. } => {
                 if let Some(output) = output.upgrade() {
                     refresh = Some(output.current_mode().unwrap().refresh as u32);
                 }
@@ -316,8 +316,8 @@ impl State {
         // We don't stop dynamic casts on missing output/window.
         let (size, refresh) = match target {
             CastTarget::Nothing => panic!("dynamic cast starting target must not be Nothing"),
-            CastTarget::Output(weak) => {
-                let Some(output) = weak.upgrade() else {
+            CastTarget::Output { output, .. } => {
+                let Some(output) = output.upgrade() else {
                     return;
                 };
                 cast_params_for_output(&output)
@@ -404,7 +404,7 @@ impl State {
                         };
 
                         let (size, refresh) = cast_params_for_output(output);
-                        (CastTarget::Output(output.downgrade()), size, refresh, false)
+                        (CastTarget::output(output), size, refresh, false)
                     }
                     StreamTargetId::Window { id }
                         if id == self.niri.casting.dynamic_cast_id_for_portal.get() =>
@@ -538,8 +538,7 @@ impl Niri {
     ) {
         let _span = tracy_client::span!("Niri::render_for_screen_cast");
 
-        let target = CastTarget::Output(output.downgrade());
-
+        let weak = output.downgrade();
         let size = output.current_mode().unwrap().size;
         let transform = output.current_transform();
         let size = transform.transform_size(size);
@@ -558,7 +557,7 @@ impl Niri {
                 continue;
             }
 
-            if cast.target != target {
+            if !cast.target.matches_output(&weak) {
                 continue;
             }
 

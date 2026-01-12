@@ -571,8 +571,27 @@ pub enum CenterCoords {
 pub enum CastTarget {
     // Dynamic cast before selecting anything.
     Nothing,
-    Output(WeakOutput),
-    Window { id: u64 },
+    Output {
+        output: WeakOutput,
+        /// Cached name of the output.
+        name: String,
+    },
+    Window {
+        id: u64,
+    },
+}
+
+impl CastTarget {
+    pub fn output(output: &Output) -> Self {
+        Self::Output {
+            output: output.downgrade(),
+            name: output.name(),
+        }
+    }
+
+    pub fn matches_output(&self, weak: &WeakOutput) -> bool {
+        matches!(self, CastTarget::Output { output, .. } if output == weak)
+    }
 }
 
 /// Pending update to a window's focus timestamp.
@@ -2797,7 +2816,7 @@ impl Niri {
             RedrawState::WaitingForEstimatedVBlankAndQueued(token) => self.event_loop.remove(token),
         }
 
-        self.stop_casts_for_target(CastTarget::Output(output.downgrade()));
+        self.stop_casts_for_target(CastTarget::output(output));
 
         self.remove_screencopy_output(output);
 
