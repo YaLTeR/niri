@@ -2086,22 +2086,27 @@ impl State {
 
                 let mut pointer_elements = Vec::new();
                 let mut pointer_location = Point::default();
-                if let Some((pointer_pos, win_pos)) = self.niri.pointer_pos_for_window_cast(mapped)
-                {
-                    // Pointer location must be relative to the screencast buffer.
-                    // - win_pos is the position of the main window surface in output-local
-                    //   coordinates
-                    // - bbox.loc moves us relative to the screencast buffer
-                    let buf_pos = win_pos + bbox.loc.to_f64().to_logical(scale);
-                    let output_pos = self.niri.global_space.output_geometry(output).unwrap().loc;
-                    pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
 
-                    let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
-                    self.niri.render_pointer(renderer, output, &mut |elem| {
-                        let elem =
-                            RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
-                        pointer_elements.push(CastRenderElement::from(elem));
-                    });
+                if self.niri.pointer_visibility.is_visible() {
+                    if let Some((pointer_pos, win_pos)) =
+                        self.niri.pointer_pos_for_window_cast(mapped)
+                    {
+                        // Pointer location must be relative to the screencast buffer.
+                        // - win_pos is the position of the main window surface in output-local
+                        //   coordinates
+                        // - bbox.loc moves us relative to the screencast buffer
+                        let buf_pos = win_pos + bbox.loc.to_f64().to_logical(scale);
+                        let output_pos =
+                            self.niri.global_space.output_geometry(output).unwrap().loc;
+                        pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
+
+                        let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
+                        self.niri.render_pointer(renderer, output, &mut |elem| {
+                            let elem =
+                                RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
+                            pointer_elements.push(CastRenderElement::from(elem));
+                        });
+                    }
                 }
                 let cursor_data = CursorData::compute(&pointer_elements, pointer_location, scale);
 
@@ -5331,7 +5336,9 @@ impl Niri {
                     &mut |elem| elements.push(elem.into()),
                 );
 
-                self.render_pointer(renderer, output, &mut |elem| pointer.push(elem.into()));
+                if self.pointer_visibility.is_visible() {
+                    self.render_pointer(renderer, output, &mut |elem| pointer.push(elem.into()));
+                }
 
                 let output_pos = self.global_space.output_geometry(output).unwrap().loc;
                 let pointer_pos = self
@@ -5407,19 +5414,24 @@ impl Niri {
 
             let mut pointer_elements = Vec::new();
             let mut pointer_location = Point::default();
-            if let Some((pointer_pos, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
-                // Pointer location must be relative to the screencast buffer.
-                // - win_pos is the position of the main window surface in output-local coordinates
-                // - bbox.loc moves us relative to the screencast buffer
-                let buf_pos = win_pos + bbox.loc.to_f64().to_logical(scale);
-                let output_pos = self.global_space.output_geometry(output).unwrap().loc;
-                pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
 
-                let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
-                self.render_pointer(renderer, output, &mut |elem| {
-                    let elem = RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
-                    pointer_elements.push(CastRenderElement::from(elem));
-                });
+            if self.pointer_visibility.is_visible() {
+                if let Some((pointer_pos, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
+                    // Pointer location must be relative to the screencast buffer.
+                    // - win_pos is the position of the main window surface in output-local
+                    //   coordinates
+                    // - bbox.loc moves us relative to the screencast buffer
+                    let buf_pos = win_pos + bbox.loc.to_f64().to_logical(scale);
+                    let output_pos = self.global_space.output_geometry(output).unwrap().loc;
+                    pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
+
+                    let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
+                    self.render_pointer(renderer, output, &mut |elem| {
+                        let elem =
+                            RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
+                        pointer_elements.push(CastRenderElement::from(elem));
+                    });
+                }
             }
             let cursor_data = CursorData::compute(&pointer_elements, pointer_location, scale);
 
