@@ -3,13 +3,17 @@ use std::collections::{HashMap, HashSet};
 use std::mem;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use calloop::LoopHandle;
+use smithay::backend::allocator::format::FormatSet;
+use smithay::backend::allocator::gbm::GbmDevice;
+use smithay::backend::drm::DrmDeviceFd;
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::reexports::gbm::Modifier;
-use smithay::utils::{Point, Scale, Size};
+use smithay::utils::{Physical, Point, Scale, Size};
 
 use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri, StreamTargetId};
 use crate::niri::{CastTarget, Niri, OutputRenderElements, PointerRenderElements, State};
@@ -59,6 +63,42 @@ impl Screencasting {
 }
 
 impl State {
+    fn prepare_pw_cast(&mut self) -> anyhow::Result<(GbmDevice<DrmDeviceFd>, FormatSet)> {
+        let gbm = self
+            .backend
+            .gbm_device()
+            .context("no GBM device available")?;
+
+        // Ensure PipeWire is initialized.
+        if self.niri.casting.pipewire.is_none() {
+            let pw = PipeWire::new(
+                self.niri.event_loop.clone(),
+                self.niri.casting.pw_to_niri.clone(),
+            )
+            .context("error initializing PipeWire")?;
+            self.niri.casting.pipewire = Some(pw);
+        }
+
+        let mut render_formats = self
+            .backend
+            .with_primary_renderer(|renderer| {
+                renderer.egl_context().dmabuf_render_formats().clone()
+            })
+            .unwrap_or_default();
+
+        {
+            let config = self.niri.config.borrow();
+            if config.debug.force_pipewire_invalid_modifier {
+                render_formats = render_formats
+                    .into_iter()
+                    .filter(|f| f.modifier == Modifier::Invalid)
+                    .collect();
+            }
+        }
+
+        Ok((gbm, render_formats))
+    }
+
     pub fn on_pw_msg(&mut self, msg: PwToNiri) {
         match msg {
             PwToNiri::StopCast { session_id } => self.niri.stop_cast(session_id),
@@ -252,30 +292,6 @@ impl State {
 
                 debug!(session_id, stream_id, "StartCast");
 
-                let Some(gbm) = self.backend.gbm_device() else {
-                    warn!("error starting screencast: no GBM device available");
-                    self.niri.stop_cast(session_id);
-                    return;
-                };
-
-                let pw = if let Some(pw) = &self.niri.casting.pipewire {
-                    pw
-                } else {
-                    match PipeWire::new(
-                        self.niri.event_loop.clone(),
-                        self.niri.casting.pw_to_niri.clone(),
-                    ) {
-                        Ok(pipewire) => self.niri.casting.pipewire.insert(pipewire),
-                        Err(err) => {
-                            warn!(
-                                "error starting screencast: PipeWire failed to initialize: {err:?}"
-                            );
-                            self.niri.stop_cast(session_id);
-                            return;
-                        }
-                    }
-                };
-
                 let mut dynamic_target = false;
                 let (target, size, refresh, alpha) = match target {
                     StreamTargetId::Output { name } => {
@@ -287,10 +303,7 @@ impl State {
                             return;
                         };
 
-                        let mode = output.current_mode().unwrap();
-                        let transform = output.current_transform();
-                        let size = transform.transform_size(mode.size);
-                        let refresh = mode.refresh as u32;
+                        let (size, refresh) = cast_params_for_output(output);
                         (CastTarget::Output(output.downgrade()), size, refresh, false)
                     }
                     StreamTargetId::Window { id }
@@ -303,46 +316,24 @@ impl State {
                         (CastTarget::Nothing, Size::from((1, 1)), 1000, true)
                     }
                     StreamTargetId::Window { id } => {
-                        let Some(window) = self.niri.layout.windows().find_map(|(_, mapped)| {
-                            (mapped.id().get() == id).then_some(&mapped.window)
-                        }) else {
+                        let Some((size, refresh)) = self.niri.cast_params_for_window(id) else {
                             warn!("error starting screencast: requested window is missing");
                             self.niri.stop_cast(session_id);
                             return;
                         };
-
-                        // Use the cached output since it will be present even if the output was
-                        // currently disconnected.
-                        let Some(output) = self.niri.casting.mapped_cast_output.get(window) else {
-                            warn!("error starting screencast: requested window is missing");
-                            self.niri.stop_cast(session_id);
-                            return;
-                        };
-
-                        let scale = Scale::from(output.current_scale().fractional_scale());
-                        let bbox = window.bbox_with_popups().to_physical_precise_up(scale);
-                        let refresh = output.current_mode().unwrap().refresh as u32;
-
-                        (CastTarget::Window { id }, bbox.size, refresh, true)
+                        (CastTarget::Window { id }, size, refresh, true)
                     }
                 };
 
-                let mut render_formats = self
-                    .backend
-                    .with_primary_renderer(|renderer| {
-                        renderer.egl_context().dmabuf_render_formats().clone()
-                    })
-                    .unwrap_or_default();
-
-                {
-                    let config = self.niri.config.borrow();
-                    if config.debug.force_pipewire_invalid_modifier {
-                        render_formats = render_formats
-                            .into_iter()
-                            .filter(|f| f.modifier == Modifier::Invalid)
-                            .collect();
+                let (gbm, render_formats) = match self.prepare_pw_cast() {
+                    Ok(x) => x,
+                    Err(err) => {
+                        warn!("error starting screencast: {err:?}");
+                        self.niri.stop_cast(session_id);
+                        return;
                     }
-                }
+                };
+                let pw = self.niri.casting.pipewire.as_ref().unwrap();
 
                 let res = pw.start_cast(
                     gbm,
@@ -662,6 +653,29 @@ impl Niri {
                 .insert_idle(|state| state.set_dynamic_cast_target(CastTarget::Nothing));
         }
     }
+
+    fn cast_params_for_window(&self, window_id: u64) -> Option<(Size<i32, Physical>, u32)> {
+        let (_, mapped) = self
+            .layout
+            .windows()
+            .find(|(_, m)| m.id().get() == window_id)?;
+        let output = self.casting.mapped_cast_output.get(&mapped.window)?;
+        let scale = Scale::from(output.current_scale().fractional_scale());
+        let bbox = mapped
+            .window
+            .bbox_with_popups()
+            .to_physical_precise_up(scale);
+        let refresh = output.current_mode().unwrap().refresh as u32;
+        Some((bbox.size, refresh))
+    }
+}
+
+fn cast_params_for_output(output: &Output) -> (Size<i32, Physical>, u32) {
+    let mode = output.current_mode().unwrap();
+    let transform = output.current_transform();
+    let size = transform.transform_size(mode.size);
+    let refresh = mode.refresh as u32;
+    (size, refresh)
 }
 
 niri_render_elements! {
