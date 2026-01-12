@@ -1,0 +1,674 @@
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
+use std::mem;
+use std::time::Duration;
+
+use calloop::LoopHandle;
+use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::desktop::Window;
+use smithay::output::Output;
+use smithay::reexports::gbm::Modifier;
+use smithay::utils::{Point, Scale, Size};
+
+use crate::dbus::mutter_screen_cast::{self, ScreenCastToNiri, StreamTargetId};
+use crate::niri::{CastTarget, Niri, OutputRenderElements, PointerRenderElements, State};
+use crate::niri_render_elements;
+use crate::render_helpers::RenderTarget;
+use crate::utils::get_monotonic_time;
+use crate::window::mapped::{MappedId, WindowCastRenderElements};
+
+mod pw_utils;
+use pw_utils::{Cast, CastSizeChange, CursorData, PipeWire, PwToNiri};
+
+pub struct Screencasting {
+    pub casts: Vec<Cast>,
+    pub pw_to_niri: calloop::channel::Sender<PwToNiri>,
+
+    /// Screencast output for each mapped window.
+    pub mapped_cast_output: HashMap<Window, Output>,
+
+    /// Window ID for the "dynamic cast" special window for the xdp-gnome picker.
+    pub dynamic_cast_id_for_portal: MappedId,
+
+    // Drop PipeWire last, and specifically after casts, to prevent a double-free (yay).
+    pub pipewire: Option<PipeWire>,
+}
+
+impl Screencasting {
+    pub fn new(event_loop: &LoopHandle<'static, State>) -> Self {
+        let pw_to_niri = {
+            let (pw_to_niri, from_pipewire) = calloop::channel::channel();
+            event_loop
+                .insert_source(from_pipewire, move |event, _, state| match event {
+                    calloop::channel::Event::Msg(msg) => state.on_pw_msg(msg),
+                    calloop::channel::Event::Closed => (),
+                })
+                .unwrap();
+            pw_to_niri
+        };
+
+        Self {
+            casts: vec![],
+            pw_to_niri,
+            mapped_cast_output: HashMap::new(),
+            dynamic_cast_id_for_portal: MappedId::next(),
+            pipewire: None,
+        }
+    }
+}
+
+impl State {
+    pub fn on_pw_msg(&mut self, msg: PwToNiri) {
+        match msg {
+            PwToNiri::StopCast { session_id } => self.niri.stop_cast(session_id),
+            PwToNiri::Redraw { stream_id } => self.redraw_cast(stream_id),
+            PwToNiri::FatalError => {
+                warn!("stopping PipeWire due to fatal error");
+                let casting = &mut self.niri.casting;
+                if let Some(pw) = casting.pipewire.take() {
+                    let ids: Vec<_> = casting.casts.iter().map(|cast| cast.session_id).collect();
+                    for id in ids {
+                        self.niri.stop_cast(id);
+                    }
+                    self.niri.event_loop.remove(pw.token);
+                }
+            }
+        }
+    }
+
+    fn redraw_cast(&mut self, stream_id: usize) {
+        let _span = tracy_client::span!("State::redraw_cast");
+
+        let casts = &mut self.niri.casting.casts;
+        let Some(idx) = casts.iter().position(|cast| cast.stream_id == stream_id) else {
+            warn!("cast to redraw is missing");
+            return;
+        };
+        let cast = &mut casts[idx];
+
+        let id = match &cast.target {
+            CastTarget::Nothing => {
+                self.backend.with_primary_renderer(|renderer| {
+                    if cast.dequeue_buffer_and_clear(renderer) {
+                        cast.last_frame_time = get_monotonic_time();
+                    }
+                });
+                return;
+            }
+            CastTarget::Output(weak) => {
+                if let Some(output) = weak.upgrade() {
+                    self.niri.queue_redraw(&output);
+                }
+                return;
+            }
+            CastTarget::Window { id } => *id,
+        };
+
+        // Lack of partial borrowing strikes again...
+        let mut casts = mem::take(&mut self.niri.casting.casts);
+        let cast = &mut casts[idx];
+        let mut stop = false;
+        // Use a loop {} so we can break instead of early-return.
+        #[allow(clippy::never_loop)]
+        loop {
+            let mut windows = self.niri.layout.windows();
+            let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == id) else {
+                break;
+            };
+
+            // Use the cached output since it will be present even if the output was
+            // currently disconnected.
+            let Some(output) = self.niri.casting.mapped_cast_output.get(&mapped.window) else {
+                break;
+            };
+
+            let scale = Scale::from(output.current_scale().fractional_scale());
+            let bbox = mapped
+                .window
+                .bbox_with_popups()
+                .to_physical_precise_up(scale);
+
+            match cast.ensure_size(bbox.size) {
+                Ok(CastSizeChange::Ready) => (),
+                Ok(CastSizeChange::Pending) => break,
+                Err(err) => {
+                    warn!("error updating stream size, stopping screencast: {err:?}");
+                    stop = true;
+                    break;
+                }
+            }
+
+            self.backend.with_primary_renderer(|renderer| {
+                let mut elements = Vec::new();
+                mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+                    elements.push(CastRenderElement::from(elem))
+                });
+
+                let mut pointer_elements = Vec::new();
+                let mut pointer_location = Point::default();
+
+                if self.niri.pointer_visibility.is_visible() {
+                    if let Some((pointer_pos, win_pos)) =
+                        self.niri.pointer_pos_for_window_cast(mapped)
+                    {
+                        // Pointer location must be relative to the screencast buffer.
+                        // - win_pos is the position of the main window surface in output-local
+                        //   coordinates
+                        // - bbox.loc moves us relative to the screencast buffer
+                        let buf_pos = win_pos + bbox.loc.to_f64().to_logical(scale);
+                        let output_pos =
+                            self.niri.global_space.output_geometry(output).unwrap().loc;
+                        pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
+
+                        let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
+                        self.niri.render_pointer(renderer, output, &mut |elem| {
+                            let elem =
+                                RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
+                            pointer_elements.push(CastRenderElement::from(elem));
+                        });
+                    }
+                }
+                let cursor_data = CursorData::compute(&pointer_elements, pointer_location, scale);
+
+                if cast.dequeue_buffer_and_render(
+                    renderer,
+                    &elements,
+                    &cursor_data,
+                    bbox.size,
+                    scale,
+                ) {
+                    cast.last_frame_time = get_monotonic_time();
+                }
+            });
+
+            break;
+        }
+        let session_id = cast.session_id;
+        self.niri.casting.casts = casts;
+
+        if stop {
+            self.niri.stop_cast(session_id);
+        }
+    }
+
+    pub fn set_dynamic_cast_target(&mut self, target: CastTarget) {
+        let _span = tracy_client::span!("State::set_dynamic_cast_target");
+
+        let mut refresh = None;
+        match &target {
+            // Leave refresh as is when clearing. Chances are, the next refresh will match it,
+            // then we'll avoid reconfiguring.
+            CastTarget::Nothing => (),
+            CastTarget::Output(output) => {
+                if let Some(output) = output.upgrade() {
+                    refresh = Some(output.current_mode().unwrap().refresh as u32);
+                }
+            }
+            CastTarget::Window { id } => {
+                let mut windows = self.niri.layout.windows();
+                if let Some((_, mapped)) = windows.find(|(_, mapped)| mapped.id().get() == *id) {
+                    if let Some(output) = self.niri.casting.mapped_cast_output.get(&mapped.window) {
+                        refresh = Some(output.current_mode().unwrap().refresh as u32);
+                    }
+                }
+            }
+        }
+
+        let mut to_redraw = Vec::new();
+        let mut to_stop = Vec::new();
+        for cast in &mut self.niri.casting.casts {
+            if !cast.dynamic_target {
+                continue;
+            }
+
+            if let Some(refresh) = refresh {
+                if let Err(err) = cast.set_refresh(refresh) {
+                    warn!("error changing cast FPS: {err:?}");
+                    to_stop.push(cast.session_id);
+                    continue;
+                }
+            }
+
+            cast.target = target.clone();
+            to_redraw.push(cast.stream_id);
+        }
+
+        for id in to_redraw {
+            self.redraw_cast(id);
+        }
+    }
+
+    pub fn on_screen_cast_msg(&mut self, msg: ScreenCastToNiri) {
+        match msg {
+            ScreenCastToNiri::StartCast {
+                session_id,
+                stream_id,
+                target,
+                cursor_mode,
+                signal_ctx,
+            } => {
+                let _span = tracy_client::span!("StartCast");
+
+                debug!(session_id, stream_id, "StartCast");
+
+                let Some(gbm) = self.backend.gbm_device() else {
+                    warn!("error starting screencast: no GBM device available");
+                    self.niri.stop_cast(session_id);
+                    return;
+                };
+
+                let pw = if let Some(pw) = &self.niri.casting.pipewire {
+                    pw
+                } else {
+                    match PipeWire::new(
+                        self.niri.event_loop.clone(),
+                        self.niri.casting.pw_to_niri.clone(),
+                    ) {
+                        Ok(pipewire) => self.niri.casting.pipewire.insert(pipewire),
+                        Err(err) => {
+                            warn!(
+                                "error starting screencast: PipeWire failed to initialize: {err:?}"
+                            );
+                            self.niri.stop_cast(session_id);
+                            return;
+                        }
+                    }
+                };
+
+                let mut dynamic_target = false;
+                let (target, size, refresh, alpha) = match target {
+                    StreamTargetId::Output { name } => {
+                        let global_space = &self.niri.global_space;
+                        let output = global_space.outputs().find(|out| out.name() == name);
+                        let Some(output) = output else {
+                            warn!("error starting screencast: requested output is missing");
+                            self.niri.stop_cast(session_id);
+                            return;
+                        };
+
+                        let mode = output.current_mode().unwrap();
+                        let transform = output.current_transform();
+                        let size = transform.transform_size(mode.size);
+                        let refresh = mode.refresh as u32;
+                        (CastTarget::Output(output.downgrade()), size, refresh, false)
+                    }
+                    StreamTargetId::Window { id }
+                        if id == self.niri.casting.dynamic_cast_id_for_portal.get() =>
+                    {
+                        dynamic_target = true;
+
+                        // All dynamic casts start as Nothing to avoid surprises and exposing
+                        // sensitive info.
+                        (CastTarget::Nothing, Size::from((1, 1)), 1000, true)
+                    }
+                    StreamTargetId::Window { id } => {
+                        let Some(window) = self.niri.layout.windows().find_map(|(_, mapped)| {
+                            (mapped.id().get() == id).then_some(&mapped.window)
+                        }) else {
+                            warn!("error starting screencast: requested window is missing");
+                            self.niri.stop_cast(session_id);
+                            return;
+                        };
+
+                        // Use the cached output since it will be present even if the output was
+                        // currently disconnected.
+                        let Some(output) = self.niri.casting.mapped_cast_output.get(window) else {
+                            warn!("error starting screencast: requested window is missing");
+                            self.niri.stop_cast(session_id);
+                            return;
+                        };
+
+                        let scale = Scale::from(output.current_scale().fractional_scale());
+                        let bbox = window.bbox_with_popups().to_physical_precise_up(scale);
+                        let refresh = output.current_mode().unwrap().refresh as u32;
+
+                        (CastTarget::Window { id }, bbox.size, refresh, true)
+                    }
+                };
+
+                let mut render_formats = self
+                    .backend
+                    .with_primary_renderer(|renderer| {
+                        renderer.egl_context().dmabuf_render_formats().clone()
+                    })
+                    .unwrap_or_default();
+
+                {
+                    let config = self.niri.config.borrow();
+                    if config.debug.force_pipewire_invalid_modifier {
+                        render_formats = render_formats
+                            .into_iter()
+                            .filter(|f| f.modifier == Modifier::Invalid)
+                            .collect();
+                    }
+                }
+
+                let res = pw.start_cast(
+                    gbm,
+                    render_formats,
+                    session_id,
+                    stream_id,
+                    target,
+                    dynamic_target,
+                    size,
+                    refresh,
+                    alpha,
+                    cursor_mode,
+                    signal_ctx,
+                );
+                match res {
+                    Ok(cast) => {
+                        self.niri.casting.casts.push(cast);
+                    }
+                    Err(err) => {
+                        warn!("error starting screencast: {err:?}");
+                        self.niri.stop_cast(session_id);
+                    }
+                }
+            }
+            ScreenCastToNiri::StopCast { session_id } => self.niri.stop_cast(session_id),
+        }
+    }
+}
+
+impl Niri {
+    pub fn refresh_mapped_cast_window_rules(&mut self) {
+        // O(N^2) but should be fine since there aren't many casts usually.
+        self.layout.with_windows_mut(|mapped, _| {
+            let id = mapped.id().get();
+            // Find regardless of cast.is_active.
+            let value = self
+                .casting
+                .casts
+                .iter()
+                .any(|cast| cast.target == (CastTarget::Window { id }));
+            mapped.set_is_window_cast_target(value);
+        });
+    }
+
+    pub fn refresh_mapped_cast_outputs(&mut self) {
+        let mut seen = HashSet::new();
+        let mut output_changed = vec![];
+
+        self.layout.with_windows(|mapped, output, _, _| {
+            seen.insert(mapped.window.clone());
+
+            let Some(output) = output else {
+                return;
+            };
+
+            match self.casting.mapped_cast_output.entry(mapped.window.clone()) {
+                Entry::Occupied(mut entry) => {
+                    if entry.get() != output {
+                        entry.insert(output.clone());
+                        output_changed.push((mapped.id(), output.clone()));
+                    }
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(output.clone());
+                }
+            }
+        });
+
+        self.casting
+            .mapped_cast_output
+            .retain(|win, _| seen.contains(win));
+
+        let mut to_stop = vec![];
+        for (id, out) in output_changed {
+            let refresh = out.current_mode().unwrap().refresh as u32;
+            let target = CastTarget::Window { id: id.get() };
+            for cast in self
+                .casting
+                .casts
+                .iter_mut()
+                .filter(|cast| cast.target == target)
+            {
+                if let Err(err) = cast.set_refresh(refresh) {
+                    warn!("error changing cast FPS: {err:?}");
+                    to_stop.push(cast.session_id);
+                };
+            }
+        }
+
+        for session_id in to_stop {
+            self.stop_cast(session_id);
+        }
+    }
+
+    pub fn render_for_screen_cast(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+        target_presentation_time: Duration,
+    ) {
+        let _span = tracy_client::span!("Niri::render_for_screen_cast");
+
+        let target = CastTarget::Output(output.downgrade());
+
+        let size = output.current_mode().unwrap().size;
+        let transform = output.current_transform();
+        let size = transform.transform_size(size);
+
+        let scale = Scale::from(output.current_scale().fractional_scale());
+
+        let mut elements = Vec::new();
+        let mut pointer = Vec::new();
+        let mut cursor_data = None;
+
+        let mut casts_to_stop = vec![];
+
+        let mut casts = mem::take(&mut self.casting.casts);
+        for cast in &mut casts {
+            if !cast.is_active() {
+                continue;
+            }
+
+            if cast.target != target {
+                continue;
+            }
+
+            match cast.ensure_size(size) {
+                Ok(CastSizeChange::Ready) => (),
+                Ok(CastSizeChange::Pending) => continue,
+                Err(err) => {
+                    warn!("error updating stream size, stopping screencast: {err:?}");
+                    casts_to_stop.push(cast.session_id);
+                }
+            }
+
+            if cast.check_time_and_schedule(output, target_presentation_time) {
+                continue;
+            }
+
+            if cursor_data.is_none() {
+                // FIXME: support debug draw opaque regions.
+                self.render_inner(
+                    renderer,
+                    output,
+                    false,
+                    RenderTarget::Screencast,
+                    &mut |elem| elements.push(elem.into()),
+                );
+
+                if self.pointer_visibility.is_visible() {
+                    self.render_pointer(renderer, output, &mut |elem| pointer.push(elem.into()));
+                }
+
+                let output_pos = self.global_space.output_geometry(output).unwrap().loc;
+                let pointer_pos = self
+                    .tablet_cursor_location
+                    .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
+                let pointer_pos = pointer_pos - output_pos.to_f64();
+
+                cursor_data = Some(CursorData::compute(&pointer, pointer_pos, scale));
+            }
+            let cursor_data = cursor_data.as_ref().unwrap();
+
+            if cast.dequeue_buffer_and_render(renderer, &elements, cursor_data, size, scale) {
+                cast.last_frame_time = target_presentation_time;
+            }
+        }
+        self.casting.casts = casts;
+
+        for id in casts_to_stop {
+            self.stop_cast(id);
+        }
+    }
+
+    pub fn render_windows_for_screen_cast(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+        target_presentation_time: Duration,
+    ) {
+        let _span = tracy_client::span!("Niri::render_windows_for_screen_cast");
+
+        let scale = Scale::from(output.current_scale().fractional_scale());
+
+        let mut casts_to_stop = vec![];
+
+        let mut casts = mem::take(&mut self.casting.casts);
+        for cast in &mut casts {
+            if !cast.is_active() {
+                continue;
+            }
+
+            let CastTarget::Window { id } = cast.target else {
+                continue;
+            };
+
+            let mut windows = self.layout.windows_for_output(output);
+            let Some(mapped) = windows.find(|win| win.id().get() == id) else {
+                continue;
+            };
+
+            let bbox = mapped
+                .window
+                .bbox_with_popups()
+                .to_physical_precise_up(scale);
+
+            match cast.ensure_size(bbox.size) {
+                Ok(CastSizeChange::Ready) => (),
+                Ok(CastSizeChange::Pending) => continue,
+                Err(err) => {
+                    warn!("error updating stream size, stopping screencast: {err:?}");
+                    casts_to_stop.push(cast.session_id);
+                }
+            }
+
+            if cast.check_time_and_schedule(output, target_presentation_time) {
+                continue;
+            }
+
+            let mut elements = Vec::new();
+            mapped.render_for_screen_cast(renderer, scale, &mut |elem| {
+                elements.push(CastRenderElement::from(elem))
+            });
+
+            let mut pointer_elements = Vec::new();
+            let mut pointer_location = Point::default();
+
+            if self.pointer_visibility.is_visible() {
+                if let Some((pointer_pos, win_pos)) = self.pointer_pos_for_window_cast(mapped) {
+                    // Pointer location must be relative to the screencast buffer.
+                    // - win_pos is the position of the main window surface in output-local
+                    //   coordinates
+                    // - bbox.loc moves us relative to the screencast buffer
+                    let buf_pos = win_pos + bbox.loc.to_f64().to_logical(scale);
+                    let output_pos = self.global_space.output_geometry(output).unwrap().loc;
+                    pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
+
+                    let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
+                    self.render_pointer(renderer, output, &mut |elem| {
+                        let elem =
+                            RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
+                        pointer_elements.push(CastRenderElement::from(elem));
+                    });
+                }
+            }
+            let cursor_data = CursorData::compute(&pointer_elements, pointer_location, scale);
+
+            if cast.dequeue_buffer_and_render(renderer, &elements, &cursor_data, bbox.size, scale) {
+                cast.last_frame_time = target_presentation_time;
+            }
+        }
+        self.casting.casts = casts;
+
+        for id in casts_to_stop {
+            self.stop_cast(id);
+        }
+    }
+
+    fn stop_cast(&mut self, session_id: usize) {
+        let _span = tracy_client::span!("Niri::stop_cast");
+
+        debug!(session_id, "StopCast");
+
+        for i in (0..self.casting.casts.len()).rev() {
+            let cast = &self.casting.casts[i];
+            if cast.session_id != session_id {
+                continue;
+            }
+
+            let cast = self.casting.casts.swap_remove(i);
+            if let Err(err) = cast.stream.disconnect() {
+                warn!("error disconnecting stream: {err:?}");
+            }
+        }
+
+        let dbus = &self.dbus.as_ref().unwrap();
+        let server = dbus.conn_screen_cast.as_ref().unwrap().object_server();
+        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{session_id}");
+        if let Ok(iface) = server.interface::<_, mutter_screen_cast::Session>(path) {
+            let _span = tracy_client::span!("invoking Session::stop");
+
+            async_io::block_on(async move {
+                iface
+                    .get()
+                    .stop(server.inner(), iface.signal_emitter().clone())
+                    .await
+            });
+        }
+    }
+
+    pub fn stop_casts_for_target(&mut self, target: CastTarget) {
+        let _span = tracy_client::span!("Niri::stop_casts_for_target");
+
+        // This is O(N^2) but it shouldn't be a problem I think.
+        let mut saw_dynamic = false;
+        let mut ids = Vec::new();
+        for cast in &self.casting.casts {
+            if cast.target != target {
+                continue;
+            }
+
+            if cast.dynamic_target {
+                saw_dynamic = true;
+                continue;
+            }
+
+            ids.push(cast.session_id);
+        }
+
+        for id in ids {
+            self.stop_cast(id);
+        }
+
+        // We don't stop dynamic casts, instead we switch them to Nothing.
+        if saw_dynamic {
+            self.event_loop
+                .insert_idle(|state| state.set_dynamic_cast_target(CastTarget::Nothing));
+        }
+    }
+}
+
+niri_render_elements! {
+    CastRenderElement<R> => {
+        Output = OutputRenderElements<R>,
+        Window = WindowCastRenderElements<R>,
+        Pointer = PointerRenderElements<R>,
+        RelocatedPointer = RelocateRenderElement<PointerRenderElements<R>>,
+    }
+}

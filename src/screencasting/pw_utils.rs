@@ -50,10 +50,11 @@ use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 use zbus::object_server::SignalEmitter;
 
 use crate::dbus::mutter_screen_cast::{self, CursorMode};
-use crate::niri::{CastRenderElement, CastTarget, State};
+use crate::niri::{CastTarget, State};
 use crate::render_helpers::{
     clear_dmabuf, encompassing_geo, render_and_download, render_to_dmabuf,
 };
+use crate::screencasting::CastRenderElement;
 use crate::utils::get_monotonic_time;
 
 // Give a 0.1 ms allowance for presentation time errors.
@@ -1040,7 +1041,7 @@ impl Cast {
                 let source = Generic::new(sync_fd, Interest::READ, Mode::OneShot);
                 self.event_loop
                     .insert_source(source, move |_, _, state| {
-                        for cast in &mut state.niri.casts {
+                        for cast in &mut state.niri.casting.casts {
                             if cast.stream_id == stream_id {
                                 cast.queue_completed_buffers();
                             }
