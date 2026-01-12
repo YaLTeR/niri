@@ -9,7 +9,7 @@ use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::output::Output;
+use smithay::output::{Output, WeakOutput};
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::{
     zwlr_screencopy_frame_v1, zwlr_screencopy_manager_v1,
 };
@@ -23,7 +23,7 @@ use smithay::wayland::{dmabuf, shm};
 use zwlr_screencopy_frame_v1::{Flags, ZwlrScreencopyFrameV1};
 use zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 
-use crate::utils::get_monotonic_time;
+use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
 
 const VERSION: u32 = 3;
 
@@ -33,6 +33,40 @@ pub struct ScreencopyQueue {
     pending_frames: HashSet<ZwlrScreencopyFrameV1>,
     /// Queue of screencopies waiting for a corresponding output redraw with damage.
     screencopies: Vec<Screencopy>,
+    /// Cast tracking, set when the first with_damage request arrives.
+    cast: Option<ScreencopyCast>,
+}
+
+pub struct ScreencopyCast {
+    pub session_id: CastSessionId,
+    pub stream_id: CastStreamId,
+    /// Output being captured.
+    ///
+    /// Generally equal to the front entry in the queue, and persisted here when the queue becomes
+    /// empty.
+    pub output: WeakOutput,
+    /// Cached name of the output.
+    pub output_name: String,
+}
+
+impl ScreencopyCast {
+    fn new(output: &Output) -> Self {
+        Self {
+            session_id: CastSessionId::next(),
+            stream_id: CastStreamId::next(),
+            output: output.downgrade(),
+            output_name: output.name(),
+        }
+    }
+
+    fn update_output(&mut self, output: &Output) {
+        // Only allocate a new name when the output differs.
+        let weak = output.downgrade();
+        if self.output != weak {
+            self.output = weak;
+            self.output_name = output.name();
+        }
+    }
 }
 
 impl Default for ScreencopyQueue {
@@ -47,11 +81,17 @@ impl ScreencopyQueue {
             damage_tracker: OutputDamageTracker::new((0, 0), 1.0, Transform::Normal),
             pending_frames: HashSet::new(),
             screencopies: Vec::new(),
+            cast: None,
         }
     }
 
     pub fn is_empty(&self) -> bool {
         self.pending_frames.is_empty() && self.screencopies.is_empty()
+    }
+
+    /// Get the cast tracking info, if this queue is tracking a cast.
+    pub fn cast(&self) -> Option<&ScreencopyCast> {
+        self.cast.as_ref()
     }
 
     pub fn split(&mut self) -> (&mut OutputDamageTracker, Option<&Screencopy>) {
@@ -69,11 +109,30 @@ impl ScreencopyQueue {
             error!("only screencopy with damage can be pushed in the queue");
         }
 
+        if let Some(cast) = &mut self.cast {
+            // Update cast output when pushing a new front screencopy.
+            if self.screencopies.is_empty() {
+                cast.update_output(screencopy.output());
+            }
+        } else {
+            // First with_damage request, mark this as a screencast.
+            let output = screencopy.output();
+            self.cast = Some(ScreencopyCast::new(output));
+        }
+
         self.screencopies.push(screencopy);
     }
 
     pub fn pop(&mut self) -> Screencopy {
-        self.screencopies.remove(0)
+        let rv = self.screencopies.remove(0);
+
+        // Update cast output (most of the time we expect this to be the same).
+        if let Some(first) = self.screencopies.first() {
+            let cast = self.cast.as_mut().unwrap();
+            cast.update_output(first.output());
+        }
+
+        rv
     }
 }
 
@@ -133,6 +192,10 @@ impl ScreencopyManagerState {
         }
 
         self.cleanup_queues();
+    }
+
+    pub fn queues(&self) -> impl Iterator<Item = &ScreencopyQueue> {
+        self.queues.values()
     }
 
     pub fn with_queues_mut(&mut self, mut f: impl FnMut(&mut ScreencopyQueue)) {

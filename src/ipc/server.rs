@@ -798,7 +798,6 @@ impl State {
         server.send_event(event);
     }
 
-    #[cfg(feature = "xdp-gnome-screencast")]
     pub fn ipc_refresh_casts(&mut self) {
         let Some(server) = &self.niri.ipc_server else {
             return;
@@ -812,42 +811,73 @@ impl State {
         let mut events = Vec::new();
         let mut seen = HashSet::new();
 
-        // Check pending dynamic casts.
-        for pending in &self.niri.casting.pending_dynamic_casts {
-            let stream_id = pending.stream_id.get();
-            seen.insert(stream_id);
+        // Check PipeWire screencasts.
+        #[cfg(feature = "xdp-gnome-screencast")]
+        {
+            // Check pending dynamic casts.
+            for pending in &self.niri.casting.pending_dynamic_casts {
+                let stream_id = pending.stream_id.get();
+                seen.insert(stream_id);
 
-            // Pending dynamic casts don't change any properties, so we only need to check if it's
-            // missing from the state.
-            if !state.casts.contains_key(&stream_id) {
-                let cast = niri_ipc::Cast {
-                    session_id: pending.session_id.get(),
-                    stream_id,
-                    target: niri_ipc::CastTarget::Nothing {},
-                    is_dynamic_target: true,
-                    is_active: false,
-                };
-                events.push(Event::CastStartedOrChanged { cast });
+                // Pending dynamic casts don't change any properties, so we only need to check if
+                // it's missing from the state.
+                if !state.casts.contains_key(&stream_id) {
+                    let cast = niri_ipc::Cast {
+                        session_id: pending.session_id.get(),
+                        stream_id,
+                        target: niri_ipc::CastTarget::Nothing {},
+                        is_dynamic_target: true,
+                        is_active: false,
+                    };
+                    events.push(Event::CastStartedOrChanged { cast });
+                }
+            }
+
+            // Check active casts.
+            for cast in &self.niri.casting.casts {
+                let stream_id = cast.stream_id.get();
+                seen.insert(stream_id);
+
+                if state.casts.get(&stream_id).is_none_or(|existing| {
+                    // Only these properties can change.
+                    existing.is_active != cast.is_active() || !cast.target.matches(&existing.target)
+                }) {
+                    let cast = niri_ipc::Cast {
+                        session_id: cast.session_id.get(),
+                        stream_id,
+                        target: cast.target.make_ipc(),
+                        is_dynamic_target: cast.dynamic_target,
+                        is_active: cast.is_active(),
+                    };
+                    events.push(Event::CastStartedOrChanged { cast });
+                }
             }
         }
 
-        // Check active casts.
-        for cast in &self.niri.casting.casts {
-            let stream_id = cast.stream_id.get();
-            seen.insert(stream_id);
+        // Check screencopy casts.
+        for queue in self.niri.screencopy_state.queues() {
+            if let Some(cast_info) = queue.cast() {
+                let stream_id = cast_info.stream_id.get();
+                seen.insert(stream_id);
 
-            if state.casts.get(&stream_id).is_none_or(|existing| {
-                // Only these properties can change.
-                existing.is_active != cast.is_active() || !cast.target.matches(&existing.target)
-            }) {
-                let cast = niri_ipc::Cast {
-                    session_id: cast.session_id.get(),
-                    stream_id,
-                    target: cast.target.make_ipc(),
-                    is_dynamic_target: cast.dynamic_target,
-                    is_active: cast.is_active(),
-                };
-                events.push(Event::CastStartedOrChanged { cast });
+                if state.casts.get(&stream_id).is_none_or(|existing| {
+                    // Only this property can change.
+                    match &existing.target {
+                        niri_ipc::CastTarget::Output { name } => *name != cast_info.output_name,
+                        _ => true,
+                    }
+                }) {
+                    let cast = niri_ipc::Cast {
+                        session_id: cast_info.session_id.get(),
+                        stream_id,
+                        target: niri_ipc::CastTarget::Output {
+                            name: cast_info.output_name.clone(),
+                        },
+                        is_dynamic_target: false,
+                        is_active: true,
+                    };
+                    events.push(Event::CastStartedOrChanged { cast });
+                }
             }
         }
 
