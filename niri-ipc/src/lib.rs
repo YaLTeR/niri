@@ -117,6 +117,8 @@ pub enum Request {
     ReturnError,
     /// Request information about the overview.
     OverviewState,
+    /// Request information about screencasts.
+    Casts,
 }
 
 /// Reply from niri to client.
@@ -161,6 +163,8 @@ pub enum Response {
     OutputConfigChanged(OutputConfigChanged),
     /// Information about the overview.
     OverviewState(Overview),
+    /// Information about screencasts.
+    Casts(Vec<Cast>),
 }
 
 /// Overview information.
@@ -1473,6 +1477,52 @@ pub struct LayerSurface {
     pub keyboard_interactivity: LayerSurfaceKeyboardInteractivity,
 }
 
+/// A screencast.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Cast {
+    /// Stream ID of the screencast that uniquely identifies it.
+    pub stream_id: u64,
+    /// Session ID of the screencast.
+    ///
+    /// A session can have multiple screencast streams. Then multiple `Cast`s will have the same
+    /// `session_id`. Though, usually there's only one stream per session.
+    ///
+    /// Do not confuse `session_id` with [`stream_id`](Self::stream_id).
+    pub session_id: u64,
+    /// Target being captured.
+    pub target: CastTarget,
+    /// Whether this is a Dynamic Cast Target screencast.
+    ///
+    /// Meaning that actions like `SetDynamicCastWindow` will act on this screencast.
+    ///
+    /// Keep in mind that the target can change even if this is `false`.
+    pub is_dynamic_target: bool,
+    /// Whether the cast is currently streaming frames.
+    ///
+    /// This can be `false` for example when switching away to a different scene in OBS, which
+    /// pauses the stream.
+    pub is_active: bool,
+}
+
+/// Target of a screencast.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum CastTarget {
+    /// The target is not yet set, or was cleared.
+    Nothing {},
+    /// Casting an output.
+    Output {
+        /// Name of the screencasted output.
+        name: String,
+    },
+    /// Casting a window.
+    Window {
+        /// ID of the screencasted window.
+        id: u64,
+    },
+}
+
 /// A compositor event.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -1594,6 +1644,24 @@ pub enum Event {
         /// If `None`, the screenshot was either only copied to the clipboard, or the path couldn't
         /// be converted to a `String` (e.g. contained invalid UTF-8 bytes).
         path: Option<String>,
+    },
+    /// The screencasts have changed.
+    CastsChanged {
+        /// The new screencast information.
+        ///
+        /// This configuration completely replaces the previous configuration. I.e. if any casts
+        /// are missing from here, then they were stopped.
+        casts: Vec<Cast>,
+    },
+    /// A screencast started, or an existing cast changed.
+    CastStartedOrChanged {
+        /// The cast that started or changed.
+        cast: Cast,
+    },
+    /// A screencast stopped.
+    CastStopped {
+        /// Stream ID of the stopped screencast.
+        stream_id: u64,
     },
 }
 
