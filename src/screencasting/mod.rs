@@ -20,7 +20,7 @@ use crate::dbus::mutter_screen_cast::{self, CursorMode, ScreenCastToNiri, Stream
 use crate::niri::{CastTarget, Niri, OutputRenderElements, PointerRenderElements, State};
 use crate::niri_render_elements;
 use crate::render_helpers::RenderTarget;
-use crate::utils::get_monotonic_time;
+use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
 use crate::window::mapped::{MappedId, WindowCastRenderElements};
 
 mod pw_utils;
@@ -46,8 +46,8 @@ pub struct Screencasting {
 
 /// A screencast request that hasn't been started yet.
 pub struct PendingCast {
-    pub session_id: usize,
-    pub stream_id: usize,
+    pub session_id: CastSessionId,
+    pub stream_id: CastStreamId,
     pub cursor_mode: CursorMode,
     pub signal_ctx: SignalEmitter<'static>,
 }
@@ -137,7 +137,7 @@ impl State {
         }
     }
 
-    fn redraw_cast(&mut self, stream_id: usize) {
+    fn redraw_cast(&mut self, stream_id: CastStreamId) {
         let _span = tracy_client::span!("State::redraw_cast");
 
         let casts = &mut self.niri.casting.casts;
@@ -391,7 +391,7 @@ impl State {
                 signal_ctx,
             } => {
                 let _span = tracy_client::span!("StartCast");
-                let _span = debug_span!("StartCast", session_id, stream_id).entered();
+                let _span = debug_span!("StartCast", %session_id, %stream_id).entered();
 
                 let (target, size, refresh, alpha) = match target {
                     StreamTargetId::Output { name } => {
@@ -694,9 +694,9 @@ impl Niri {
         }
     }
 
-    fn stop_cast(&mut self, session_id: usize) {
+    fn stop_cast(&mut self, session_id: CastSessionId) {
         let _span = tracy_client::span!("Niri::stop_cast");
-        let _span = debug_span!("stop_cast", session_id).entered();
+        let _span = debug_span!("stop_cast", %session_id).entered();
 
         self.casting
             .pending_dynamic_casts
@@ -716,7 +716,7 @@ impl Niri {
 
         let dbus = &self.dbus.as_ref().unwrap();
         let server = dbus.conn_screen_cast.as_ref().unwrap().object_server();
-        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{session_id}");
+        let path = format!("/org/gnome/Mutter/ScreenCast/Session/u{}", session_id.get());
         if let Ok(iface) = server.interface::<_, mutter_screen_cast::Session>(path) {
             let _span = tracy_client::span!("invoking Session::stop");
 

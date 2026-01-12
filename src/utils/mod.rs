@@ -1,12 +1,13 @@
 use std::cmp::{max, min};
-use std::f64;
 use std::ffi::{CString, OsStr};
+use std::fmt::Display;
 use std::io::Write;
 use std::os::unix::prelude::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::ptr::null_mut;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
+use std::{f64, fmt};
 
 use anyhow::{ensure, Context};
 use bitflags::bitflags;
@@ -43,6 +44,50 @@ pub mod watcher;
 pub mod xwayland;
 
 pub static IS_SYSTEMD_SERVICE: AtomicBool = AtomicBool::new(false);
+
+use id::IdCounter;
+
+/// Unique ID for a screencast session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CastSessionId(u64);
+
+impl CastSessionId {
+    pub fn next() -> Self {
+        static COUNTER: IdCounter = IdCounter::new();
+        Self(COUNTER.next())
+    }
+
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl Display for CastSessionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Unique ID for a screencast stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CastStreamId(u64);
+
+impl CastStreamId {
+    pub fn next() -> Self {
+        static COUNTER: IdCounter = IdCounter::new();
+        Self(COUNTER.next())
+    }
+
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl Display for CastStreamId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

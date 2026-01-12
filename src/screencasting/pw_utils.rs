@@ -55,7 +55,7 @@ use crate::render_helpers::{
     clear_dmabuf, encompassing_geo, render_and_download, render_to_dmabuf,
 };
 use crate::screencasting::CastRenderElement;
-use crate::utils::get_monotonic_time;
+use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
 
 // Give a 0.1 ms allowance for presentation time errors.
 const CAST_DELAY_ALLOWANCE: Duration = Duration::from_micros(100);
@@ -79,15 +79,15 @@ pub struct PipeWire {
 }
 
 pub enum PwToNiri {
-    StopCast { session_id: usize },
-    Redraw { stream_id: usize },
+    StopCast { session_id: CastSessionId },
+    Redraw { stream_id: CastStreamId },
     FatalError,
 }
 
 pub struct Cast {
     event_loop: LoopHandle<'static, State>,
-    pub session_id: usize,
-    pub stream_id: usize,
+    pub session_id: CastSessionId,
+    pub stream_id: CastStreamId,
     // Listener is dropped before Stream to prevent a use-after-free.
     _listener: StreamListener<()>,
     pub stream: StreamRc,
@@ -269,8 +269,8 @@ impl PipeWire {
         &self,
         gbm: GbmDevice<DrmDeviceFd>,
         formats: FormatSet,
-        session_id: usize,
-        stream_id: usize,
+        session_id: CastSessionId,
+        stream_id: CastStreamId,
         target: CastTarget,
         size: Size<i32, Physical>,
         refresh: u32,
@@ -283,13 +283,13 @@ impl PipeWire {
         let to_niri_ = self.to_niri.clone();
         let stop_cast = move || {
             if let Err(err) = to_niri_.send(PwToNiri::StopCast { session_id }) {
-                warn!(session_id, "error sending StopCast to niri: {err:?}");
+                warn!(%session_id, "error sending StopCast to niri: {err:?}");
             }
         };
         let to_niri_ = self.to_niri.clone();
         let redraw = move || {
             if let Err(err) = to_niri_.send(PwToNiri::Redraw { stream_id }) {
-                warn!(stream_id, "error sending Redraw to niri: {err:?}");
+                warn!(%stream_id, "error sending Redraw to niri: {err:?}");
             }
         };
         let redraw_ = redraw.clone();
@@ -328,7 +328,7 @@ impl PipeWire {
                 let inner = inner.clone();
                 let stop_cast = stop_cast.clone();
                 move |stream, (), old, new| {
-                    let _span = debug_span!("state_changed", stream_id).entered();
+                    let _span = debug_span!("state_changed", %stream_id).entered();
                     debug!("{old:?} -> {new:?}");
                     let mut inner = inner.borrow_mut();
 
@@ -378,7 +378,7 @@ impl PipeWire {
                 let formats = formats.clone();
                 move |stream, (), id, pod| {
                     let id = ParamType::from_raw(id);
-                    trace!(stream_id, ?id, "param_changed");
+                    trace!(%stream_id, ?id, "param_changed");
                     let mut inner = inner.borrow_mut();
                     let inner = &mut *inner;
 
@@ -386,7 +386,7 @@ impl PipeWire {
                         return;
                     }
 
-                    let _span = debug_span!("param_changed", stream_id).entered();
+                    let _span = debug_span!("param_changed", %stream_id).entered();
 
                     let Some(pod) = pod else { return };
 
@@ -678,7 +678,7 @@ impl PipeWire {
                 let inner = inner.clone();
                 let stop_cast = stop_cast.clone();
                 move |stream, (), buffer| {
-                    let _span = debug_span!("add_buffer", stream_id).entered();
+                    let _span = debug_span!("add_buffer", %stream_id).entered();
                     let mut inner = inner.borrow_mut();
 
                     let (size, alpha, modifier) = if let CastState::Ready {
@@ -758,7 +758,7 @@ impl PipeWire {
             .remove_buffer({
                 let inner = inner.clone();
                 move |_stream, (), buffer| {
-                    trace!(stream_id, "remove_buffer");
+                    trace!(%stream_id, "remove_buffer");
                     let mut inner = inner.borrow_mut();
 
                     inner
@@ -779,7 +779,7 @@ impl PipeWire {
             .unwrap();
 
         trace!(
-            stream_id,
+            %stream_id,
             "starting pw stream with size={pending_size:?}, refresh={refresh:?}"
         );
 
