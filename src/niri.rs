@@ -4042,9 +4042,52 @@ impl Niri {
             elements.push(elem)
         });
 
+        let output_scale = Scale::from(output.current_scale().fractional_scale());
         if self.debug_draw_opaque_regions {
-            let output_scale = Scale::from(output.current_scale().fractional_scale());
             draw_opaque_regions(&mut elements, output_scale);
+        }
+
+        // Apply cursor zoom to all elements except the cursor itself
+        // if cursor zoom is active. Per-monitor like overview zoom.
+        if self.cursor_zoom_factor > 1.0 {
+            let zoom_factor = self.cursor_zoom_factor;
+            let pointer = self.seat.get_pointer().unwrap();
+            let cursor_pos = pointer.current_location();
+            let output_geo = self.global_space.output_geometry(output).unwrap();
+            let cursor_pos_in_output = cursor_pos - output_geo.loc.to_f64();
+            let output_size = output_geo.size.to_f64();
+            let output_rect = Rectangle::new(Point::new(0., 0.), output_size);
+
+            let mut zoomed_elements = Vec::new();
+
+            macro_rules! process_zoom {
+                ($elem:expr, $($variant:ident),*) => {
+                    match $elem {
+                        $(
+                            OutputRenderElements::$variant(elem) => {
+                                if let Some(elem) = apply_cursor_zoom(
+                                    elem,
+                                    output_scale,
+                                    zoom_factor,
+                                    cursor_pos_in_output,
+                                    output_rect,
+                                ) {
+                                    zoomed_elements.push(elem.into());
+                                }
+                            }
+                        )*
+                        // Other elements pass through unchanged for now
+                        // Skip cursor, specifically - it renders at logical position
+                        _ => zoomed_elements.push($elem),
+                    }
+                };
+            }
+
+            for elem in elements.drain(..) {
+                process_zoom!(elem, LayerSurface, SolidColor, Wayland, Monitor);
+            }
+
+            elements = zoomed_elements;
         }
 
         elements
@@ -4270,6 +4313,7 @@ impl Niri {
         push(backdrop);
     }
 
+    /// Renders the output with cursor zoom applied.
     fn layers_in_render_order<'a>(
         &'a self,
         layer_map: &'a LayerMap,
@@ -6135,6 +6179,30 @@ fn scale_relocate_crop<E: Element>(
     CropRenderElement::from_element(elem, output_scale, ws_geo)
 }
 
+fn apply_cursor_zoom<E: Element>(
+    element: E,
+    output_scale: Scale<f64>,
+    zoom: f64,
+    cursor_pos: Point<f64, Logical>,
+    output_geo: Rectangle<f64, Logical>,
+) -> Option<CropRenderElement<RelocateRenderElement<RescaleRenderElement<E>>>> {
+    let offset_x = (cursor_pos.x * (1.0 - zoom)) as i32;
+    let offset_y = (cursor_pos.y * (1.0 - zoom)) as i32;
+    let physical_offset = Point::<i32, Physical>::from((
+        (offset_x as f64 * output_scale.x) as i32,
+        (offset_y as f64 * output_scale.y) as i32,
+    ));
+    let scaled = RescaleRenderElement::from_element(element, (0, 0).into(), zoom);
+    let relocated =
+        RelocateRenderElement::from_element(scaled, physical_offset, Relocate::Relative);
+
+    CropRenderElement::from_element(
+        relocated,
+        output_scale,
+        output_geo.to_physical_precise_round(output_scale),
+    )
+}
+
 niri_render_elements! {
     PointerRenderElements<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
@@ -6167,7 +6235,21 @@ niri_render_elements! {
         WindowMruUi = WindowMruUiRenderElement<R>,
         ExitConfirmDialog = ExitConfirmDialogRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
+
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
+
+        RelocatedMonitor = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            MonitorRenderElement<R>
+        >>>,
+        RelocatedWayland = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            WaylandSurfaceRenderElement<R>
+        >>>,
+        RelocatedTile = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            TileRenderElement<R>
+        >>>,
+        RelocatedExitConfirmDialog = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            ExitConfirmDialogRenderElement
+        >>>,
     }
 }
