@@ -2817,8 +2817,7 @@ impl Niri {
         }
 
         self.stop_casts_for_target(CastTarget::output(output));
-
-        self.remove_screencopy_output(output);
+        self.screencopy_state.remove_output(output);
 
         // Disable the output global and remove some time later to give the clients some time to
         // process it.
@@ -4900,7 +4899,7 @@ impl Niri {
         let mut screencopy_state = mem::take(&mut self.screencopy_state);
         let elements = OnceCell::new();
 
-        for queue in screencopy_state.queues_mut() {
+        screencopy_state.with_queues_mut(|queue| {
             let (damage_tracker, screencopy) = queue.split();
             if let Some(screencopy) = screencopy {
                 if screencopy.output() == output {
@@ -4947,7 +4946,7 @@ impl Niri {
                     }
                 };
             }
-        }
+        });
 
         self.screencopy_state = screencopy_state;
     }
@@ -4974,10 +4973,10 @@ impl Niri {
             screencopy.overlay_cursor(),
             RenderTarget::ScreenCapture,
         );
-        let Some(queue) = self.screencopy_state.get_queue_mut(manager) else {
-            bail!("screencopy manager destroyed already");
+        let Some(damage_tracker) = self.screencopy_state.damage_tracker(manager) else {
+            error!("screencopy queue must not be deleted as long as frames exist");
+            bail!("screencopy queue missing");
         };
-        let damage_tracker = queue.split().0;
 
         let render_result = Self::render_for_screencopy_internal(
             renderer,
@@ -5064,13 +5063,6 @@ impl Niri {
 
     #[cfg(not(feature = "xdp-gnome-screencast"))]
     pub fn stop_casts_for_target(&mut self, _target: CastTarget) {}
-
-    pub fn remove_screencopy_output(&mut self, output: &Output) {
-        let _span = tracy_client::span!("Niri::remove_screencopy_output");
-        for queue in self.screencopy_state.queues_mut() {
-            queue.remove_output(output);
-        }
-    }
 
     pub fn debug_toggle_damage(&mut self) {
         self.debug_draw_damage = !self.debug_draw_damage;

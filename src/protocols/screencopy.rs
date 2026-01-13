@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,10 +10,6 @@ use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::sync::SyncPoint;
 use smithay::output::Output;
-use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_frame_v1::{
-    Flags, ZwlrScreencopyFrameV1,
-};
-use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::{
     zwlr_screencopy_frame_v1, zwlr_screencopy_manager_v1,
 };
@@ -24,6 +20,8 @@ use smithay::reexports::wayland_server::{
 };
 use smithay::utils::{Physical, Point, Rectangle, Size, Transform};
 use smithay::wayland::{dmabuf, shm};
+use zwlr_screencopy_frame_v1::{Flags, ZwlrScreencopyFrameV1};
+use zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 
 use crate::utils::get_monotonic_time;
 
@@ -31,6 +29,9 @@ const VERSION: u32 = 3;
 
 pub struct ScreencopyQueue {
     damage_tracker: OutputDamageTracker,
+    /// Frames waiting for the client to call copy or destroy.
+    pending_frames: HashSet<ZwlrScreencopyFrameV1>,
+    /// Queue of screencopies waiting for a corresponding output redraw with damage.
     screencopies: Vec<Screencopy>,
 }
 
@@ -44,29 +45,35 @@ impl ScreencopyQueue {
     pub fn new() -> Self {
         Self {
             damage_tracker: OutputDamageTracker::new((0, 0), 1.0, Transform::Normal),
+            pending_frames: HashSet::new(),
             screencopies: Vec::new(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pending_frames.is_empty() && self.screencopies.is_empty()
     }
 
     pub fn split(&mut self) -> (&mut OutputDamageTracker, Option<&Screencopy>) {
         let ScreencopyQueue {
             damage_tracker,
             screencopies,
+            ..
         } = self;
         (damage_tracker, screencopies.first())
     }
 
     pub fn push(&mut self, screencopy: Screencopy) {
+        // Screencopy without damage is rendered immediately without the queue.
+        if !screencopy.with_damage() {
+            error!("only screencopy with damage can be pushed in the queue");
+        }
+
         self.screencopies.push(screencopy);
     }
 
     pub fn pop(&mut self) -> Screencopy {
         self.screencopies.remove(0)
-    }
-
-    pub fn remove_output(&mut self, output: &Output) {
-        self.screencopies
-            .retain(|screencopy| screencopy.output() != output);
     }
 }
 
@@ -99,23 +106,46 @@ impl ScreencopyManagerState {
         }
     }
 
-    pub fn bind(&mut self, manager: &ZwlrScreencopyManagerV1) {
-        // Clean up all entries if its manager is dead and its queue is empty.
-        self.queues
-            .retain(|k, v| k.is_alive() || !v.screencopies.is_empty());
+    pub fn push(&mut self, manager: &ZwlrScreencopyManagerV1, screencopy: Screencopy) {
+        let Some(queue) = self.queues.get_mut(manager) else {
+            // Destroying the manager does not invalidate existing frames, so the queue should
+            // keep existing.
+            error!("screencopy queue must not be deleted as long as frames exist");
+            return;
+        };
 
-        self.queues.insert(manager.clone(), ScreencopyQueue::new());
+        queue.push(screencopy);
     }
 
-    pub fn get_queue_mut(
+    pub fn damage_tracker(
         &mut self,
         manager: &ZwlrScreencopyManagerV1,
-    ) -> Option<&mut ScreencopyQueue> {
-        self.queues.get_mut(manager)
+    ) -> Option<&mut OutputDamageTracker> {
+        let queue = self.queues.get_mut(manager)?;
+        Some(&mut queue.damage_tracker)
     }
 
-    pub fn queues_mut(&mut self) -> impl Iterator<Item = &mut ScreencopyQueue> {
-        self.queues.values_mut()
+    pub fn remove_output(&mut self, output: &Output) {
+        for queue in self.queues.values_mut() {
+            queue
+                .screencopies
+                .retain(|screencopy| screencopy.output() != output);
+        }
+
+        self.cleanup_queues();
+    }
+
+    pub fn with_queues_mut(&mut self, mut f: impl FnMut(&mut ScreencopyQueue)) {
+        for queue in self.queues.values_mut() {
+            f(queue);
+        }
+
+        self.cleanup_queues();
+    }
+
+    fn cleanup_queues(&mut self) {
+        self.queues
+            .retain(|manager, queue| manager.is_alive() || !queue.is_empty());
     }
 }
 
@@ -137,7 +167,9 @@ where
         data_init: &mut DataInit<'_, D>,
     ) {
         let manager = data_init.init(manager, ());
-        state.screencopy_state().bind(&manager);
+
+        let state = state.screencopy_state();
+        state.queues.insert(manager.clone(), ScreencopyQueue::new());
     }
 
     fn can_view(client: Client, global_data: &ScreencopyManagerGlobalData) -> bool {
@@ -154,7 +186,7 @@ where
     D: 'static,
 {
     fn request(
-        _state: &mut D,
+        state: &mut D,
         _client: &Client,
         manager: &ZwlrScreencopyManagerV1,
         request: zwlr_screencopy_manager_v1::Request,
@@ -273,13 +305,35 @@ where
             // Notify client that all supported buffers were enumerated.
             frame.buffer_done();
         }
+
+        let state = state.screencopy_state();
+        let queue = state.queues.get_mut(manager).unwrap();
+        queue.pending_frames.insert(frame);
+    }
+
+    fn destroyed(
+        state: &mut D,
+        _client: wayland_backend::server::ClientId,
+        manager: &ZwlrScreencopyManagerV1,
+        _data: &(),
+    ) {
+        let state = state.screencopy_state();
+        let queue = state.queues.get_mut(manager).unwrap();
+        // Clean up the queue if this was the last object.
+        if queue.is_empty() {
+            state.queues.remove(manager);
+        }
     }
 }
 
 /// Handler trait for wlr-screencopy.
 pub trait ScreencopyHandler {
     /// Handle new screencopy request.
+    ///
+    /// The handler must synchronously either ready/fail the screencopy, or submit it to the
+    /// manager queue.
     fn frame(&mut self, manager: &ZwlrScreencopyManagerV1, screencopy: Screencopy);
+
     fn screencopy_state(&mut self) -> &mut ScreencopyManagerState;
 }
 
@@ -405,6 +459,42 @@ where
                 submitted: false,
             },
         );
+
+        // By this point the frame should've been either copied or failed or pushed to the queue,
+        // so remove it from pending frames.
+        let state = state.screencopy_state();
+        let queue = state.queues.get_mut(manager).unwrap();
+        queue.pending_frames.remove(frame);
+        if queue.is_empty() && !manager.is_alive() {
+            state.queues.remove(manager);
+        }
+    }
+
+    fn destroyed(
+        state: &mut D,
+        _client: wayland_backend::server::ClientId,
+        frame: &ZwlrScreencopyFrameV1,
+        data: &ScreencopyFrameState,
+    ) {
+        let ScreencopyFrameState::Pending { manager, .. } = data else {
+            return;
+        };
+
+        let state = state.screencopy_state();
+        let Some(queue) = state.queues.get_mut(manager) else {
+            // I think this can happen when we post_error() on a pending frame? Either way better
+            // safe than sorry.
+            return;
+        };
+
+        queue.pending_frames.remove(frame);
+        queue
+            .screencopies
+            .retain(|screencopy| screencopy.frame != *frame);
+        // Clean up the queue if this was the last object.
+        if queue.is_empty() && !manager.is_alive() {
+            state.queues.remove(manager);
+        }
     }
 }
 
