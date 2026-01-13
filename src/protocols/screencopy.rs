@@ -61,7 +61,7 @@ impl ScreencopyQueue {
     }
 
     pub fn pop(&mut self) -> Screencopy {
-        self.screencopies.pop().unwrap()
+        self.screencopies.remove(0)
     }
 
     pub fn remove_output(&mut self, output: &Output) {
