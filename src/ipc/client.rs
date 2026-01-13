@@ -7,7 +7,7 @@ use anyhow::{anyhow, bail, Context};
 use niri_config::OutputName;
 use niri_ipc::socket::Socket;
 use niri_ipc::{
-    Action, Cast, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
+    Action, Cast, CastKind, CastTarget, Event, KeyboardLayouts, LogicalOutput, Mode, Output,
     OutputConfigChanged, Overview, Request, Response, Transform, Window, WindowLayout,
 };
 use serde_json::json;
@@ -742,6 +742,12 @@ fn print_cast(cast: &Cast) {
     let active = if cast.is_active { "" } else { " (inactive)" };
     println!("Cast stream ID {}:{active}", cast.stream_id);
     println!("  Session ID: {}", cast.session_id);
+
+    let kind = match cast.kind {
+        CastKind::PipeWire => "PipeWire",
+        CastKind::WlrScreencopy => "wlr-screencopy",
+    };
+    println!("  Kind: {kind}");
 
     match &cast.target {
         CastTarget::Nothing {} => {

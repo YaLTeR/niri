@@ -1490,6 +1490,8 @@ pub struct Cast {
     ///
     /// Do not confuse `session_id` with [`stream_id`](Self::stream_id).
     pub session_id: u64,
+    /// Kind of this screencast.
+    pub kind: CastKind,
     /// Target being captured.
     pub target: CastTarget,
     /// Whether this is a Dynamic Cast Target screencast.
@@ -1503,6 +1505,21 @@ pub struct Cast {
     /// This can be `false` for example when switching away to a different scene in OBS, which
     /// pauses the stream.
     pub is_active: bool,
+}
+
+/// Kind of screencast.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum CastKind {
+    /// PipeWire screencast, typically via xdg-desktop-portal-gnome.
+    PipeWire,
+    /// wlr-screencopy protocol screencast.
+    ///
+    /// Tools like wf-recorder, and the xdg-desktop-portal-wlr portal.
+    ///
+    /// Only wlr-screencopy with damage tracking is reported here. Screencopy without damage is
+    /// treated as a regular screenshot and not reported as a screencast.
+    WlrScreencopy,
 }
 
 /// Target of a screencast.

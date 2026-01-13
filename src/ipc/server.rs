@@ -825,6 +825,7 @@ impl State {
                     let cast = niri_ipc::Cast {
                         session_id: pending.session_id.get(),
                         stream_id,
+                        kind: niri_ipc::CastKind::PipeWire,
                         target: niri_ipc::CastTarget::Nothing {},
                         is_dynamic_target: true,
                         is_active: false,
@@ -845,6 +846,7 @@ impl State {
                     let cast = niri_ipc::Cast {
                         session_id: cast.session_id.get(),
                         stream_id,
+                        kind: niri_ipc::CastKind::PipeWire,
                         target: cast.target.make_ipc(),
                         is_dynamic_target: cast.dynamic_target,
                         is_active: cast.is_active(),
@@ -870,6 +872,7 @@ impl State {
                     let cast = niri_ipc::Cast {
                         session_id: cast_info.session_id.get(),
                         stream_id,
+                        kind: niri_ipc::CastKind::WlrScreencopy,
                         target: niri_ipc::CastTarget::Output {
                             name: cast_info.output_name.clone(),
                         },
