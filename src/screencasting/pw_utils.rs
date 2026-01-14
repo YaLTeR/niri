@@ -819,6 +819,10 @@ impl Cast {
         self.inner.borrow().is_active
     }
 
+    pub fn node_id(&self) -> Option<u32> {
+        self.inner.borrow().node_id
+    }
+
     pub fn ensure_size(&self, size: Size<i32, Physical>) -> anyhow::Result<CastSizeChange> {
         let mut inner = self.inner.borrow_mut();
 

@@ -830,6 +830,7 @@ impl State {
                         is_dynamic_target: true,
                         is_active: false,
                         pid: None,
+                        pw_node_id: None,
                     };
                     events.push(Event::CastStartedOrChanged { cast });
                 }
@@ -840,9 +841,12 @@ impl State {
                 let stream_id = cast.stream_id.get();
                 seen.insert(stream_id);
 
+                let pw_node_id = cast.node_id();
                 if state.casts.get(&stream_id).is_none_or(|existing| {
                     // Only these properties can change.
-                    existing.is_active != cast.is_active() || !cast.target.matches(&existing.target)
+                    existing.is_active != cast.is_active()
+                        || !cast.target.matches(&existing.target)
+                        || existing.pw_node_id != pw_node_id
                 }) {
                     let cast = niri_ipc::Cast {
                         session_id: cast.session_id.get(),
@@ -852,6 +856,7 @@ impl State {
                         is_dynamic_target: cast.dynamic_target,
                         is_active: cast.is_active(),
                         pid: None,
+                        pw_node_id,
                     };
                     events.push(Event::CastStartedOrChanged { cast });
                 }
@@ -886,6 +891,7 @@ impl State {
                         is_dynamic_target: false,
                         is_active: true,
                         pid: queue.credentials().map(|creds| creds.pid),
+                        pw_node_id: None,
                     };
                     events.push(Event::CastStartedOrChanged { cast });
                 }

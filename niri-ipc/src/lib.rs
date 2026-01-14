@@ -1509,6 +1509,11 @@ pub struct Cast {
     ///
     /// Currently, only wlr-screencopy screencasts can have a pid.
     pub pid: Option<i32>,
+    /// PipeWire node ID of the screencast stream.
+    ///
+    /// This is `None` for wlr-screencopy casts, and also for PipeWire casts before the node is
+    /// created (when the cast is just starting up).
+    pub pw_node_id: Option<u32>,
 }
 
 /// Kind of screencast.

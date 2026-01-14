@@ -768,6 +768,10 @@ fn print_cast(cast: &Cast) {
     if let Some(pid) = cast.pid {
         println!("  PID: {pid}");
     }
+
+    if let Some(node_id) = cast.pw_node_id {
+        println!("  PipeWire node ID: {node_id}");
+    }
 }
 
 fn fmt_rounded(x: f64) -> String {
