@@ -27,6 +27,13 @@ use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
 
 const VERSION: u32 = 3;
 
+/// Inactivity timeout for considering a screencopy cast as stopped.
+///
+/// xdg-desktop-portal-wlr keeps the screencopy manager alive across casts, so there's no way to
+/// tell that a screencast had stopped. So we use a timeout: if no new with_damage frames are
+/// requested for this timeout, consider the screencast finished.
+const CAST_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub struct ScreencopyQueue {
     damage_tracker: OutputDamageTracker,
     /// Frames waiting for the client to call copy or destroy.
@@ -47,6 +54,8 @@ pub struct ScreencopyCast {
     pub output: WeakOutput,
     /// Cached name of the output.
     pub output_name: String,
+    /// Deadline after which this cast is considered stopped if no new frames arrive.
+    pub deadline: Duration,
 }
 
 impl ScreencopyCast {
@@ -56,7 +65,12 @@ impl ScreencopyCast {
             stream_id: CastStreamId::next(),
             output: output.downgrade(),
             output_name: output.name(),
+            deadline: get_monotonic_time() + CAST_TIMEOUT,
         }
+    }
+
+    fn update_deadline(&mut self) {
+        self.deadline = get_monotonic_time() + CAST_TIMEOUT;
     }
 
     fn update_output(&mut self, output: &Output) {
@@ -126,13 +140,59 @@ impl ScreencopyQueue {
     pub fn pop(&mut self) -> Screencopy {
         let rv = self.screencopies.remove(0);
 
-        // Update cast output (most of the time we expect this to be the same).
+        let cast = self.cast.as_mut().unwrap();
         if let Some(first) = self.screencopies.first() {
-            let cast = self.cast.as_mut().unwrap();
+            // Update cast output (most of the time we expect this to be the same).
             cast.update_output(first.output());
+        } else {
+            // Queue became empty, update deadline for considering the cast stopped.
+            cast.update_deadline();
         }
 
         rv
+    }
+
+    pub fn clear_expired_cast(&mut self) {
+        if let Some(cast) = &self.cast {
+            // Check deadline if there are no in-flight frames.
+            if self.screencopies.is_empty() && cast.deadline <= get_monotonic_time() {
+                self.cast = None;
+            }
+        }
+    }
+
+    fn remove_output(&mut self, output: &Output) {
+        if self.screencopies.is_empty() {
+            return;
+        }
+
+        self.screencopies
+            .retain(|screencopy| screencopy.output() != output);
+
+        if let Some(cast) = &mut self.cast {
+            if self.screencopies.is_empty() {
+                // Queue became empty, update deadline for considering the cast stopped.
+                cast.update_deadline();
+            }
+        }
+    }
+
+    fn remove_frame(&mut self, frame: &ZwlrScreencopyFrameV1) {
+        self.pending_frames.remove(frame);
+
+        if self.screencopies.is_empty() {
+            return;
+        }
+
+        self.screencopies
+            .retain(|screencopy| screencopy.frame != *frame);
+
+        if let Some(cast) = &mut self.cast {
+            if self.screencopies.is_empty() {
+                // Queue became empty, update deadline for considering the cast stopped.
+                cast.update_deadline();
+            }
+        }
     }
 }
 
@@ -186,9 +246,7 @@ impl ScreencopyManagerState {
 
     pub fn remove_output(&mut self, output: &Output) {
         for queue in self.queues.values_mut() {
-            queue
-                .screencopies
-                .retain(|screencopy| screencopy.output() != output);
+            queue.remove_output(output);
         }
 
         self.cleanup_queues();
@@ -209,6 +267,12 @@ impl ScreencopyManagerState {
     fn cleanup_queues(&mut self) {
         self.queues
             .retain(|manager, queue| manager.is_alive() || !queue.is_empty());
+    }
+
+    pub fn clear_expired_casts(&mut self) {
+        for queue in self.queues.values_mut() {
+            queue.clear_expired_cast();
+        }
     }
 }
 
@@ -550,10 +614,8 @@ where
             return;
         };
 
-        queue.pending_frames.remove(frame);
-        queue
-            .screencopies
-            .retain(|screencopy| screencopy.frame != *frame);
+        queue.remove_frame(frame);
+
         // Clean up the queue if this was the last object.
         if queue.is_empty() && !manager.is_alive() {
             state.queues.remove(manager);

@@ -857,6 +857,11 @@ impl State {
         }
 
         // Check screencopy casts.
+        //
+        // First, clear expired casts. Ideally we'd have a deadline timer, but our 1 second frame
+        // callback timer calls refresh regularly, so that's fine as is.
+        self.niri.screencopy_state.clear_expired_casts();
+
         for queue in self.niri.screencopy_state.queues() {
             if let Some(cast_info) = queue.cast() {
                 let stream_id = cast_info.stream_id.get();
