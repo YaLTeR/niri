@@ -21,7 +21,7 @@ use smithay::reexports::rustix::time::{clock_gettime, ClockId};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::reexports::wayland_server::{DisplayHandle, Resource as _};
+use smithay::reexports::wayland_server::{Client, DisplayHandle, Resource as _};
 use smithay::utils::{Coordinate, Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{send_surface_state, with_states, SurfaceData};
 use smithay::wayland::fractional_scale::with_fractional_scale;
@@ -457,12 +457,16 @@ pub fn get_credentials_for_surface(surface: &WlSurface) -> Option<Credentials> {
     let dh = DisplayHandle::from(handle);
 
     let client = dh.get_client(surface.id()).ok()?;
+    get_credentials_for_client(&dh, &client)
+}
+
+pub fn get_credentials_for_client(dh: &DisplayHandle, client: &Client) -> Option<Credentials> {
     let data = client.get_data::<ClientState>().unwrap();
     if data.credentials_unknown {
         return None;
     }
 
-    client.get_credentials(&dh).ok()
+    client.get_credentials(dh).ok()
 }
 
 pub fn ensure_min_max_size(mut x: i32, min_size: i32, max_size: i32) -> i32 {

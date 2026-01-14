@@ -764,6 +764,10 @@ fn print_cast(cast: &Cast) {
     if cast.is_dynamic_target {
         println!("  Dynamic cast target");
     }
+
+    if let Some(pid) = cast.pid {
+        println!("  PID: {pid}");
+    }
 }
 
 fn fmt_rounded(x: f64) -> String {

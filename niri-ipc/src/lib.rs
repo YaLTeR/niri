@@ -1505,6 +1505,10 @@ pub struct Cast {
     /// This can be `false` for example when switching away to a different scene in OBS, which
     /// pauses the stream.
     pub is_active: bool,
+    /// Process ID of the screencast consumer, if known.
+    ///
+    /// Currently, only wlr-screencopy screencasts can have a pid.
+    pub pid: Option<i32>,
 }
 
 /// Kind of screencast.

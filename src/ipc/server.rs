@@ -829,6 +829,7 @@ impl State {
                         target: niri_ipc::CastTarget::Nothing {},
                         is_dynamic_target: true,
                         is_active: false,
+                        pid: None,
                     };
                     events.push(Event::CastStartedOrChanged { cast });
                 }
@@ -850,6 +851,7 @@ impl State {
                         target: cast.target.make_ipc(),
                         is_dynamic_target: cast.dynamic_target,
                         is_active: cast.is_active(),
+                        pid: None,
                     };
                     events.push(Event::CastStartedOrChanged { cast });
                 }
@@ -883,6 +885,7 @@ impl State {
                         },
                         is_dynamic_target: false,
                         is_active: true,
+                        pid: queue.credentials().map(|creds| creds.pid),
                     };
                     events.push(Event::CastStartedOrChanged { cast });
                 }

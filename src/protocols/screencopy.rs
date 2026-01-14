@@ -20,10 +20,11 @@ use smithay::reexports::wayland_server::{
 };
 use smithay::utils::{Physical, Point, Rectangle, Size, Transform};
 use smithay::wayland::{dmabuf, shm};
+use wayland_backend::server::Credentials;
 use zwlr_screencopy_frame_v1::{Flags, ZwlrScreencopyFrameV1};
 use zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 
-use crate::utils::{get_monotonic_time, CastSessionId, CastStreamId};
+use crate::utils::{get_credentials_for_client, get_monotonic_time, CastSessionId, CastStreamId};
 
 const VERSION: u32 = 3;
 
@@ -35,6 +36,8 @@ const VERSION: u32 = 3;
 const CAST_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct ScreencopyQueue {
+    /// Credentials of this wlr-screencopy client, if known.
+    credentials: Option<Credentials>,
     damage_tracker: OutputDamageTracker,
     /// Frames waiting for the client to call copy or destroy.
     pending_frames: HashSet<ZwlrScreencopyFrameV1>,
@@ -83,19 +86,14 @@ impl ScreencopyCast {
     }
 }
 
-impl Default for ScreencopyQueue {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ScreencopyQueue {
-    pub fn new() -> Self {
+    pub fn new(credentials: Option<Credentials>) -> Self {
         Self {
             damage_tracker: OutputDamageTracker::new((0, 0), 1.0, Transform::Normal),
             pending_frames: HashSet::new(),
             screencopies: Vec::new(),
             cast: None,
+            credentials,
         }
     }
 
@@ -106,6 +104,10 @@ impl ScreencopyQueue {
     /// Get the cast tracking info, if this queue is tracking a cast.
     pub fn cast(&self) -> Option<&ScreencopyCast> {
         self.cast.as_ref()
+    }
+
+    pub fn credentials(&self) -> Option<Credentials> {
+        self.credentials
     }
 
     pub fn split(&mut self) -> (&mut OutputDamageTracker, Option<&Screencopy>) {
@@ -287,8 +289,8 @@ where
 {
     fn bind(
         state: &mut D,
-        _display: &DisplayHandle,
-        _client: &Client,
+        dh: &DisplayHandle,
+        client: &Client,
         manager: New<ZwlrScreencopyManagerV1>,
         _manager_state: &ScreencopyManagerGlobalData,
         data_init: &mut DataInit<'_, D>,
@@ -296,7 +298,9 @@ where
         let manager = data_init.init(manager, ());
 
         let state = state.screencopy_state();
-        state.queues.insert(manager.clone(), ScreencopyQueue::new());
+        let credentials = get_credentials_for_client(dh, client);
+        let queue = ScreencopyQueue::new(credentials);
+        state.queues.insert(manager.clone(), queue);
     }
 
     fn can_view(client: Client, global_data: &ScreencopyManagerGlobalData) -> bool {
