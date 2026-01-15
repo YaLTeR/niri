@@ -5086,6 +5086,9 @@ impl Niri {
     #[cfg(not(feature = "xdp-gnome-screencast"))]
     pub fn stop_casts_for_target(&mut self, _target: CastTarget) {}
 
+    #[cfg(not(feature = "xdp-gnome-screencast"))]
+    pub fn stop_cast(&mut self, _session_id: crate::utils::CastSessionId) {}
+
     pub fn debug_toggle_damage(&mut self) {
         self.debug_draw_damage = !self.debug_draw_damage;
 

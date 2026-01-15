@@ -693,7 +693,7 @@ impl Niri {
         }
     }
 
-    fn stop_cast(&mut self, session_id: CastSessionId) {
+    pub fn stop_cast(&mut self, session_id: CastSessionId) {
         let _span = tracy_client::span!("Niri::stop_cast");
         let _span = debug_span!("stop_cast", %session_id).entered();
 
