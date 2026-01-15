@@ -148,6 +148,7 @@
                 "-Wl,--pop-state"
               ]
             );
+            NIRI_BUILD_COMMIT = self.shortRev;
           };
 
           passthru = {

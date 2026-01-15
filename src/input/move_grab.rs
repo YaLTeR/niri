@@ -307,7 +307,7 @@ impl PointerGrab<State> for MoveGrab {
 
         self.new_location = event.location;
 
-        // Relative motion takes precedense over normal motion.
+        // Relative motion takes precedence over normal motion.
         if self.relative_delta.is_none() {
             self.event_timestamp = Some(Duration::from_millis(u64::from(event.time)));
         }

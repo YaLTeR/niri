@@ -2235,8 +2235,7 @@ impl State {
                     Some(name) => self.niri.output_by_name_match(&name),
                 };
                 if let Some(output) = output {
-                    let output = output.downgrade();
-                    self.set_dynamic_cast_target(CastTarget::Output(output));
+                    self.set_dynamic_cast_target(CastTarget::output(output));
                 }
             }
             Action::ClearDynamicCastTarget => {
