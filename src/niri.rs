@@ -2024,6 +2024,9 @@ impl State {
         self.niri.queue_redraw_all();
     }
 
+    #[cfg(not(feature = "xdp-gnome-screencast"))]
+    pub fn set_dynamic_cast_target(&mut self, _target: CastTarget) {}
+
     #[cfg(feature = "dbus")]
     pub fn on_screen_shot_msg(
         &mut self,
@@ -5079,9 +5082,6 @@ impl Niri {
 
         Ok((sync, damages))
     }
-
-    #[cfg(not(feature = "xdp-gnome-screencast"))]
-    pub fn set_dynamic_cast_target(&mut self, _target: CastTarget) {}
 
     #[cfg(not(feature = "xdp-gnome-screencast"))]
     pub fn stop_casts_for_target(&mut self, _target: CastTarget) {}
