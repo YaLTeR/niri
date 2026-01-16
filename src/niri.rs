@@ -4058,7 +4058,7 @@ impl Niri {
             let output_size = output_geo.size.to_f64();
             let output_rect = Rectangle::new(Point::new(0., 0.), output_size);
 
-            let mut zoomed_elements = Vec::new();
+            let mut zoomed_elements = Vec::with_capacity(elements.len());
 
             macro_rules! process_zoom {
                 ($elem:expr, $($variant:ident),*) => {
@@ -4076,14 +4076,13 @@ impl Niri {
                                 }
                             }
                         )*
-                        // Other elements pass through unchanged for now
-                        // Skip cursor, specifically - it renders at logical position
+                        // Other elements pass through unchanged
                         _ => zoomed_elements.push($elem),
                     }
                 };
             }
 
-            for elem in elements.drain(..) {
+            for elem in elements.into_iter() {
                 process_zoom!(
                     elem,
                     Monitor,
@@ -4093,7 +4092,8 @@ impl Niri {
                     SolidColor,
                     ExitConfirmDialog,
                     Texture,
-                    RelocatedColor
+                    RelocatedColor,
+                    RelocatedLayerSurface
                 );
             }
 
@@ -6282,6 +6282,11 @@ niri_render_elements! {
             CropRenderElement<RelocateRenderElement<RescaleRenderElement<
                 SolidColorRenderElement
             >>
-        >>>>
+        >>>>,
+        ReRelocatedLayerSurface = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+            CropRenderElement<RelocateRenderElement<RescaleRenderElement<
+                LayerSurfaceRenderElement<R>
+            >>
+        >>>>,
     }
 }
