@@ -624,11 +624,7 @@ impl ScreencopyHandler for State {
         // If with_damage then push it onto the queue for redraw of the output,
         // otherwise render it immediately.
         if screencopy.with_damage() {
-            let Some(queue) = self.niri.screencopy_state.get_queue_mut(manager) else {
-                trace!("screencopy manager destroyed already");
-                return;
-            };
-            queue.push(screencopy);
+            self.niri.screencopy_state.push(manager, screencopy);
         } else {
             self.backend.with_primary_renderer(|renderer| {
                 if let Err(err) = self

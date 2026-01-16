@@ -51,7 +51,7 @@ use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
-use crate::utils::{center, get_monotonic_time, ResizeEdge};
+use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
 
 pub mod backend_ext;
 pub mod move_grab;
@@ -2235,12 +2235,14 @@ impl State {
                     Some(name) => self.niri.output_by_name_match(&name),
                 };
                 if let Some(output) = output {
-                    let output = output.downgrade();
-                    self.set_dynamic_cast_target(CastTarget::Output(output));
+                    self.set_dynamic_cast_target(CastTarget::output(output));
                 }
             }
             Action::ClearDynamicCastTarget => {
                 self.set_dynamic_cast_target(CastTarget::Nothing);
+            }
+            Action::StopCast(session_id) => {
+                self.niri.stop_cast(CastSessionId::from(session_id));
             }
             Action::ToggleOverview => {
                 self.niri.layout.toggle_overview();
