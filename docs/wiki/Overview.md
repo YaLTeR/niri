@@ -114,3 +114,11 @@ overview {
     }
 }
 ```
+Alternatively to using two programs (swaybg and awww/swww), you can use only swww and run two swww-daemon instances using different namespaces. They will show as `swww-daemon<namespace>` in `niri msg layers`.
+If using separate systemd services, use a systemd service template unit (`swww@.service`) to avoid cache conflicts that could cause one instance to fail loading:
+```systemd
+...
+ExecStart=/usr/bin/swww-daemon --namespace %i // ".%i" to get swww-daemon.<namespace> in niri msg layers
+...
+```
+Enable with: `systemctl --user add-wants niri.service swww@wallpaper.service swww@backdrop.service`
