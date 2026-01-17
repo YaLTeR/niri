@@ -4030,6 +4030,18 @@ impl Niri {
         }
     }
 
+    pub fn render_for_color_pick<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        output: &Output,
+    ) -> Vec<OutputRenderElements<R>> {
+        let mut elements = Vec::new();
+        self.render_inner(renderer, output, false, RenderTarget::Output, &mut |elem| {
+            elements.push(elem)
+        });
+        elements
+    }
+
     pub fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,

@@ -13,7 +13,7 @@ use smithay::input::SeatHandler;
 use smithay::utils::{Logical, Physical, Point, Scale, Size, Transform};
 
 use crate::niri::State;
-use crate::render_helpers::{render_and_download, RenderTarget};
+use crate::render_helpers::render_and_download;
 
 pub struct PickColorGrab {
     start_data: PointerGrabStartData<State>,
@@ -49,13 +49,7 @@ impl PickColorGrab {
                 let pos = pos_within_output.to_physical_precise_floor(scale);
                 let size = Size::<i32, Physical>::from((1, 1));
 
-                let elements = data.niri.render(
-                    renderer,
-                    &output,
-                    false,
-                    // This is an interactive operation so we can render without blocking out.
-                    RenderTarget::Output,
-                );
+                let elements = data.niri.render_for_color_pick(renderer, &output);
 
                 let mapping = match render_and_download(
                     renderer,
