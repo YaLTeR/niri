@@ -397,9 +397,6 @@ pub struct Niri {
     pub debug_draw_opaque_regions: bool,
     pub debug_draw_damage: bool,
 
-    /// Cursor zoom factor for desktop magnification (1.0 = no zoom).
-    pub cursor_zoom_factor: f64,
-
     #[cfg(feature = "dbus")]
     pub dbus: Option<crate::dbus::DBusServers>,
     #[cfg(feature = "dbus")]
@@ -2554,8 +2551,6 @@ impl Niri {
             debug_draw_opaque_regions: false,
             debug_draw_damage: false,
 
-            cursor_zoom_factor: 1.0,
-
             #[cfg(feature = "dbus")]
             dbus: None,
             #[cfg(feature = "dbus")]
@@ -4061,14 +4056,27 @@ impl Niri {
 
         // Apply cursor zoom to all elements except the cursor itself
         // if cursor zoom is active. Per-monitor like overview zoom.
-        if self.cursor_zoom_factor > 1.0 {
-            let zoom_factor = self.cursor_zoom_factor;
-            let pointer = self.seat.get_pointer().unwrap();
-            let cursor_pos = pointer.current_location();
+        let cursor_zoom_factor = self
+            .layout
+            .monitor_for_output(output)
+            .map(|m| m.cursor_zoom_factor)
+            .unwrap_or(1.0);
+
+        if cursor_zoom_factor > 1.0 {
+            let zoom_factor = cursor_zoom_factor;
+            let monitor = self.layout.monitor_for_output(output).unwrap();
             let output_geo = self.global_space.output_geometry(output).unwrap();
-            let cursor_pos_in_output = cursor_pos - output_geo.loc.to_f64();
             let output_size = output_geo.size.to_f64();
             let output_rect = Rectangle::new(Point::new(0., 0.), output_size);
+
+            let zoom_center = match monitor.cursor_zoom_center_behavior {
+                niri_ipc::ZoomBehavior::Cursor => {
+                    let pointer = self.seat.get_pointer().unwrap();
+                    let cursor_pos = pointer.current_location();
+                    cursor_pos - output_geo.loc.to_f64()
+                }
+                niri_ipc::ZoomBehavior::EdgePushed => monitor.cursor_zoom_center,
+            };
 
             let mut zoomed_elements = Vec::with_capacity(elements.len());
 
@@ -4081,7 +4089,7 @@ impl Niri {
                                     elem,
                                     output_scale,
                                     zoom_factor,
-                                    cursor_pos_in_output,
+                                    zoom_center,
                                     output_rect,
                                 ) {
                                     zoomed_elements.push(elem.into());

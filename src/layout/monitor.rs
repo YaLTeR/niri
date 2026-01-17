@@ -4,6 +4,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use niri_config::{CornerRadius, LayoutPart};
+use niri_ipc::ZoomBehavior;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
@@ -87,6 +88,12 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) options: Rc<Options>,
     /// Layout config overrides for this monitor.
     layout_config: Option<niri_config::LayoutPart>,
+    /// Cursor zoom factor for this monitor (1.0 = no zoom).
+    pub cursor_zoom_factor: f64,
+    /// Cursor zoom center position for this monitor (in output-local logical coordinates).
+    pub cursor_zoom_center: Point<f64, Logical>,
+    /// Behavior for how the zoom center is maintained.
+    pub cursor_zoom_center_behavior: ZoomBehavior,
 }
 
 #[derive(Debug)]
@@ -345,6 +352,9 @@ impl<W: LayoutElement> Monitor<W> {
             base_options,
             options,
             layout_config,
+            cursor_zoom_factor: 1.0,
+            cursor_zoom_center: Point::from((0., 0.)),
+            cursor_zoom_center_behavior: ZoomBehavior::default(),
         }
     }
 
@@ -1372,6 +1382,34 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn overview_zoom(&self) -> f64 {
         let progress = self.overview_progress.as_ref().map(|p| p.value());
         compute_overview_zoom(&self.options, progress)
+    }
+
+    pub fn cursor_zoom(&self) -> f64 {
+        self.cursor_zoom_factor
+    }
+
+    pub fn cursor_zoom_behavior(&self) -> ZoomBehavior {
+        self.cursor_zoom_center_behavior
+    }
+
+    pub fn set_cursor_zoom(&mut self, factor: f64, center: Point<f64, Logical>) {
+        self.cursor_zoom_factor = factor.max(1.0);
+        self.cursor_zoom_center = center;
+    }
+
+    pub fn adjust_cursor_zoom(&mut self, delta: f64) {
+        self.cursor_zoom_factor = (self.cursor_zoom_factor + delta).max(1.0);
+    }
+
+    pub fn set_cursor_zoom_behavior(&mut self, behavior: ZoomBehavior) {
+        self.cursor_zoom_center_behavior = behavior;
+    }
+
+    pub fn toggle_cursor_zoom_behavior(&mut self) {
+        self.cursor_zoom_center_behavior = match self.cursor_zoom_center_behavior {
+            ZoomBehavior::Cursor => ZoomBehavior::EdgePushed,
+            ZoomBehavior::EdgePushed => ZoomBehavior::Cursor,
+        };
     }
 
     pub(super) fn set_overview_progress(&mut self, progress: Option<&super::OverviewProgress>) {

@@ -2407,9 +2407,47 @@ impl State {
                     self.niri.queue_redraw_mru_output();
                 }
             }
-            Action::SetCursorZoom(factor) => {
-                self.niri.cursor_zoom_factor = factor.max(1.0);
-                self.niri.queue_redraw_all();
+            Action::SetZoom { factor, output } => {
+                let target_output = match output {
+                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
+                    None => self.niri.layout.active_output().cloned(),
+                };
+                if let Some(output) = target_output {
+                    let pointer = self.niri.seat.get_pointer().unwrap();
+                    let cursor_pos = pointer.current_location();
+                    let output_geo = self.niri.global_space.output_geometry(&output).unwrap();
+                    let cursor_pos_in_output = cursor_pos - output_geo.loc.to_f64();
+                    self.niri
+                        .layout
+                        .set_cursor_zoom(&output, factor, cursor_pos_in_output);
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::GetZoom { output: _ } => {
+                // Query-only action, response handled via IPC
+            }
+            Action::SetZoomBehavior { behavior, output } => {
+                let target_output = match output {
+                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
+                    None => self.niri.layout.active_output().cloned(),
+                };
+                if let Some(output) = target_output {
+                    self.niri.layout.set_cursor_zoom_behavior(&output, behavior);
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::ToggleZoomBehavior { output } => {
+                let target_output = match output {
+                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
+                    None => self.niri.layout.active_output().cloned(),
+                };
+                if let Some(output) = target_output {
+                    self.niri.layout.toggle_cursor_zoom_behavior(&output);
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::GetZoomBehavior { output: _ } => {
+                // Query-only action, response handled via IPC
             }
         }
     }

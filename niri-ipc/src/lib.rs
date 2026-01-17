@@ -932,11 +932,52 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
-    /// Set the cursor zoom factor (desktop magnification centered on cursor).
-    SetCursorZoom {
-        /// Zoom factor (1.0 = no zoom, 2.0 = 2x magnification, etc.)
+    /// Set the cursor zoom factor for a monitor (desktop magnification).
+    ///
+    /// The zoom is applied per-monitor. If no output is specified, the focused monitor is used.
+    SetZoom {
+        /// Zoom factor: absolute (e.g., "2.0") or relative (e.g., "-0.5", "+0.5").
+        #[cfg_attr(
+            feature = "clap",
+            arg(value_parser = |s: &str| s.parse::<ZoomFactor>().map_err(|e| e.to_string())),
+            arg(allow_hyphen_values = true)
+        )]
+        factor: ZoomFactor,
+        /// Output to set zoom for. If not specified, uses the focused output.
         #[cfg_attr(feature = "clap", arg())]
-        factor: f64,
+        output: Option<String>,
+    },
+    /// Get the current cursor zoom factor for a monitor.
+    GetZoom {
+        /// Output to query zoom for.
+        #[cfg_attr(feature = "clap", arg())]
+        output: String,
+    },
+    /// Set the cursor zoom center behavior for a monitor.
+    ///
+    /// If no output is specified, the focused monitor is used.
+    SetZoomBehavior {
+        /// Zoom center behavior to set.
+        #[cfg_attr(feature = "clap", arg(value_enum))]
+        behavior: ZoomBehavior,
+        /// Output to set behavior for. If not specified, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
+    /// Toggle the cursor zoom center behavior for a monitor.
+    ///
+    /// Toggles between cursor-centered and edge-pushed modes.
+    /// If no output is specified, the focused monitor is used.
+    ToggleZoomBehavior {
+        /// Output to toggle behavior for. If not specified, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
+    /// Get the current cursor zoom center behavior for a monitor.
+    GetZoomBehavior {
+        /// Output to query behavior for.
+        #[cfg_attr(feature = "clap", arg())]
+        output: String,
     },
     /// Reload the config file.
     ///
@@ -1005,6 +1046,88 @@ pub enum ColumnDisplay {
     Normal,
     /// Windows are in tabs.
     Tabbed,
+}
+
+/// Zoom factor that can be absolute or relative.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ZoomFactor {
+    /// Set zoom to an absolute value (e.g., 2.0 for 2x magnification).
+    Absolute(f64),
+    /// Adjust zoom relative to current value (e.g., +0.5 to increase by 0.5).
+    Relative(f64),
+}
+
+impl ZoomFactor {
+    /// Apply this zoom factor to a current zoom value, returning the new zoom.
+    /// Result is clamped to minimum of 1.0.
+    pub fn apply_to(self, current: f64) -> f64 {
+        match self {
+            ZoomFactor::Absolute(f) => f.max(1.0),
+            ZoomFactor::Relative(delta) => (current + delta).max(1.0),
+        }
+    }
+}
+
+impl FromStr for ZoomFactor {
+    type Err = std::num::ParseFloatError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        if s.starts_with('+') || s.starts_with('-') {
+            s.parse::<f64>().map(ZoomFactor::Relative)
+        } else {
+            s.parse::<f64>().map(ZoomFactor::Absolute)
+        }
+    }
+}
+
+impl std::fmt::Display for ZoomFactor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ZoomFactor::Absolute(v) => write!(f, "{v}"),
+            ZoomFactor::Relative(v) if *v >= 0.0 => write!(f, "+{v}"),
+            ZoomFactor::Relative(v) => write!(f, "{v}"),
+        }
+    }
+}
+
+/// Cursor zoom center behavior.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ZoomBehavior {
+    /// Zoom view is always centered on cursor position.
+    #[default]
+    #[cfg_attr(feature = "clap", value(name = "cursor"))]
+    Cursor,
+    /// Zoom view has independent center, pushed by cursor at edges.
+    #[cfg_attr(feature = "clap", value(name = "edge-pushed"))]
+    EdgePushed,
+}
+
+impl FromStr for ZoomBehavior {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "cursor" | "cursor-centered" => Ok(ZoomBehavior::Cursor),
+            "edge" | "edge-pushed" | "edgepushed" => Ok(ZoomBehavior::EdgePushed),
+            _ => Err(format!(
+                "invalid zoom behavior '{}', expected 'cursor' or 'edge-pushed'",
+                s
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for ZoomBehavior {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ZoomBehavior::Cursor => write!(f, "cursor"),
+            ZoomBehavior::EdgePushed => write!(f, "edge-pushed"),
+        }
+    }
 }
 
 /// Output actions that niri can perform.
