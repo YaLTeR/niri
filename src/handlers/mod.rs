@@ -61,14 +61,15 @@ use smithay::wayland::xdg_activation::{
     XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
 };
 use smithay::{
-    delegate_cursor_shape, delegate_data_control, delegate_data_device, delegate_dmabuf,
-    delegate_drm_lease, delegate_ext_data_control, delegate_fractional_scale,
-    delegate_idle_inhibit, delegate_idle_notify, delegate_input_method_manager,
-    delegate_keyboard_shortcuts_inhibit, delegate_output, delegate_pointer_constraints,
-    delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
-    delegate_relative_pointer, delegate_seat, delegate_security_context, delegate_session_lock,
-    delegate_single_pixel_buffer, delegate_tablet_manager, delegate_text_input_manager,
-    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation,
+    delegate_commit_timing, delegate_cursor_shape, delegate_data_control, delegate_data_device,
+    delegate_dmabuf, delegate_drm_lease, delegate_drm_syncobj, delegate_ext_data_control,
+    delegate_fifo, delegate_fractional_scale, delegate_idle_inhibit, delegate_idle_notify,
+    delegate_input_method_manager, delegate_keyboard_shortcuts_inhibit, delegate_output,
+    delegate_pointer_constraints, delegate_pointer_gestures, delegate_presentation,
+    delegate_primary_selection, delegate_relative_pointer, delegate_seat,
+    delegate_security_context, delegate_session_lock, delegate_single_pixel_buffer,
+    delegate_tablet_manager, delegate_text_input_manager, delegate_viewporter,
+    delegate_virtual_keyboard_manager, delegate_xdg_activation,
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
@@ -835,6 +836,12 @@ impl OutputManagementHandler for State {
         self.reload_output_config();
     }
 }
+delegate_drm_syncobj!(State);
+
+delegate_fifo!(State);
+
+delegate_commit_timing!(State);
+
 delegate_output_management!(State);
 
 impl MutterX11InteropHandler for State {}
