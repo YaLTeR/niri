@@ -20,6 +20,7 @@ pub struct Cursor {
     pub xcursor_size: u8,
     pub hide_when_typing: bool,
     pub hide_after_inactive_ms: Option<u32>,
+    pub pointer_scaling: bool, // Decides if zoom is applied to the cursor
 }
 
 impl Default for Cursor {
@@ -29,6 +30,7 @@ impl Default for Cursor {
             xcursor_size: 24,
             hide_when_typing: false,
             hide_after_inactive_ms: None,
+            pointer_scaling: false, // Default to false
         }
     }
 }
@@ -43,12 +45,14 @@ pub struct CursorPart {
     pub hide_when_typing: Option<Flag>,
     #[knuffel(child, unwrap(argument))]
     pub hide_after_inactive_ms: Option<u32>,
+    #[knuffel(child)]
+    pub pointer_scaling: Option<Flag>,
 }
 
 impl MergeWith<CursorPart> for Cursor {
     fn merge_with(&mut self, part: &CursorPart) {
         merge_clone!((self, part), xcursor_theme, xcursor_size);
-        merge!((self, part), hide_when_typing);
+        merge!((self, part), hide_when_typing, pointer_scaling);
         merge_clone_opt!((self, part), hide_after_inactive_ms);
     }
 }

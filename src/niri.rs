@@ -4062,8 +4062,7 @@ impl Niri {
             .map(|m| m.cursor_zoom_factor)
             .unwrap_or(1.0);
 
-        if cursor_zoom_factor > 1.0 {
-            let zoom_factor = cursor_zoom_factor;
+        let elements = if cursor_zoom_factor > 1.0 {
             let monitor = self.layout.monitor_for_output(output).unwrap();
             let output_geo = self.global_space.output_geometry(output).unwrap();
             let output_size = output_geo.size.to_f64();
@@ -4078,47 +4077,59 @@ impl Niri {
                 niri_ipc::ZoomBehavior::EdgePushed => monitor.cursor_zoom_center,
             };
 
-            let mut zoomed_elements = Vec::with_capacity(elements.len());
+            let pointer_scaling = self.config.borrow().cursor.pointer_scaling;
 
+            // Apply zoom to a OutputRenderElement variant.
+            macro_rules! zoom_variant {
+                ($elem:expr) => {
+                    apply_cursor_zoom(
+                        $elem,
+                        output_scale,
+                        cursor_zoom_factor,
+                        zoom_center,
+                        output_rect,
+                    )
+                };
+            }
+
+            // Generate match arms for each OutputRenderElement variant that should be zoomed.
             macro_rules! process_zoom {
                 ($elem:expr, $($variant:ident),*) => {
                     match $elem {
+                        OutputRenderElements::Pointer(elem) if pointer_scaling => {
+                            zoom_variant!(elem).map(Into::into).into()
+                        }
                         $(
                             OutputRenderElements::$variant(elem) => {
-                                if let Some(elem) = apply_cursor_zoom(
-                                    elem,
-                                    output_scale,
-                                    zoom_factor,
-                                    zoom_center,
-                                    output_rect,
-                                ) {
-                                    zoomed_elements.push(elem.into());
-                                }
+                                zoom_variant!(elem).map(Into::into).into()
                             }
                         )*
                         // Other elements pass through unchanged
-                        _ => zoomed_elements.push($elem),
+                        _ => Some($elem),
                     }
                 };
             }
 
-            for elem in elements.into_iter() {
-                process_zoom!(
-                    elem,
-                    Monitor,
-                    RescaledTile,
-                    LayerSurface,
-                    Wayland,
-                    SolidColor,
-                    ExitConfirmDialog,
-                    Texture,
-                    RelocatedColor,
-                    RelocatedLayerSurface
-                );
-            }
-
-            elements = zoomed_elements;
-        }
+            elements
+                .into_iter()
+                .filter_map(|elem| {
+                    process_zoom!(
+                        elem,
+                        Monitor,
+                        RescaledTile,
+                        LayerSurface,
+                        Wayland,
+                        SolidColor,
+                        ExitConfirmDialog,
+                        Texture,
+                        RelocatedColor,
+                        RelocatedLayerSurface
+                    )
+                })
+                .collect()
+        } else {
+            elements
+        };
 
         elements
     }
