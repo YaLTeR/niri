@@ -584,15 +584,21 @@ impl Niri {
                     &mut |elem| elements.push(elem.into()),
                 );
 
+                let mut pointer_pos = Point::default();
                 if self.pointer_visibility.is_visible() {
-                    self.render_pointer(renderer, output, &mut |elem| pointer.push(elem.into()));
+                    let output_geo = self.global_space.output_geometry(output).unwrap().to_f64();
+                    let pointer_loc = self
+                        .tablet_cursor_location
+                        .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
+                    // Only render when the pointer is within the output. Otherwise, it will
+                    // happily appear anywhere outside the output video source in OBS.
+                    if output_geo.contains(pointer_loc) {
+                        pointer_pos = pointer_loc - output_geo.loc;
+                        self.render_pointer(renderer, output, &mut |elem| {
+                            pointer.push(elem.into())
+                        });
+                    }
                 }
-
-                let output_pos = self.global_space.output_geometry(output).unwrap().loc;
-                let pointer_pos = self
-                    .tablet_cursor_location
-                    .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
-                let pointer_pos = pointer_pos - output_pos.to_f64();
 
                 cursor_data = Some(CursorData::compute(&pointer, pointer_pos, scale));
             }
@@ -693,7 +699,7 @@ impl Niri {
         }
     }
 
-    fn stop_cast(&mut self, session_id: CastSessionId) {
+    pub fn stop_cast(&mut self, session_id: CastSessionId) {
         let _span = tracy_client::span!("Niri::stop_cast");
         let _span = debug_span!("stop_cast", %session_id).entered();
 

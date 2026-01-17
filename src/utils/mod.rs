@@ -68,6 +68,12 @@ impl Display for CastSessionId {
     }
 }
 
+impl From<u64> for CastSessionId {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 /// Unique ID for a screencast stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CastStreamId(u64);

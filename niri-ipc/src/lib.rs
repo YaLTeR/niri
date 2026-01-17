@@ -898,6 +898,16 @@ pub enum Action {
     },
     /// Clear the dynamic cast target, making it show nothing.
     ClearDynamicCastTarget {},
+    /// Stop a PipeWire screencast.
+    ///
+    /// wlr-screencopy screencasts cannot currently be stopped via IPC.
+    StopCast {
+        /// Session ID of the screencast to stop.
+        ///
+        /// If the session has multiple screencast streams, this will stop all of them.
+        #[cfg_attr(feature = "clap", arg(long))]
+        session_id: u64,
+    },
     /// Toggle (open/close) the Overview.
     ToggleOverview {},
     /// Open the Overview.

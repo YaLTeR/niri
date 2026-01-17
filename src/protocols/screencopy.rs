@@ -449,7 +449,22 @@ where
         _data: &(),
     ) {
         let state = state.screencopy_state();
-        let queue = state.queues.get_mut(manager).unwrap();
+
+        let Some(queue) = state.queues.get_mut(manager) else {
+            // This happened once. I'm really not sure how exactly though.
+            //
+            // I've dug into wayland-server and wayland-backend, and apparently there are a bunch
+            // of places where calling destroyed() is delayed (even on a +1 ms timer). Then, it's
+            // quite possible for some code to run cleanup_queues() *before* this destroyed()
+            // handler, and delete the queue because the manager is no longer .is_alive() by then.
+            // Then, queue will be None here.
+            //
+            // My attempts to reproduce this in a test have failed though. Perhaps it requires a
+            // tricky timing condition where the client disconnects at some precise spot inside our
+            // State::refresh_and_flush_clients() call.
+            return;
+        };
+
         // Clean up the queue if this was the last object.
         if queue.is_empty() {
             state.queues.remove(manager);

@@ -7,7 +7,7 @@ use std::time::Duration;
 use calloop::timer::{TimeoutAction, Timer};
 use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
-    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger,
+    Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger, Xkb,
 };
 use niri_ipc::LayoutSwitchTarget;
 use smithay::backend::input::{
@@ -48,10 +48,11 @@ use crate::dbus::freedesktop_a11y::KbMonBlock;
 use crate::layout::scrolling::ScrollDirection;
 use crate::layout::{ActivateWindow, LayoutElement as _};
 use crate::niri::{CastTarget, PointerVisibility, State};
+use crate::protocols::virtual_keyboard::VirtualKeyboard;
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
-use crate::utils::{center, get_monotonic_time, ResizeEdge};
+use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
 
 pub mod backend_ext;
 pub mod move_grab;
@@ -360,11 +361,36 @@ impl State {
             .is_some_and(KeyboardShortcutsInhibitor::is_active)
     }
 
-    fn on_keyboard<I: InputBackend>(
+    fn on_keyboard<I: InputBackend + 'static>(
         &mut self,
         event: I::KeyboardKeyEvent,
         consumed_by_a11y: &mut bool,
-    ) {
+    ) where
+        I::Device: 'static,
+    {
+        // Reset the keymap when handling a physical keyboard after a virtual one.
+        if self.niri.reset_keymap {
+            let device = event.device();
+            let is_virtual_keyboard = (&device as &dyn Any)
+                .downcast_ref::<VirtualKeyboard>()
+                .is_some();
+            if !is_virtual_keyboard {
+                self.niri.reset_keymap = false;
+
+                let config = self.niri.config.borrow();
+                let xkb_config = config.input.keyboard.xkb.clone();
+                std::mem::drop(config);
+
+                if xkb_config != Xkb::default() {
+                    self.set_xkb_config(xkb_config.to_xkb_config());
+                } else {
+                    // Use locale1 settings if xkb config is unset.
+                    let xkb = self.niri.xkb_from_locale1.clone().unwrap_or_default();
+                    self.set_xkb_config(xkb.to_xkb_config());
+                }
+            }
+        }
+
         let mod_key = self.backend.mod_key(&self.niri.config.borrow());
 
         let serial = SERIAL_COUNTER.next_serial();
@@ -2240,6 +2266,9 @@ impl State {
             }
             Action::ClearDynamicCastTarget => {
                 self.set_dynamic_cast_target(CastTarget::Nothing);
+            }
+            Action::StopCast(session_id) => {
+                self.niri.stop_cast(CastSessionId::from(session_id));
             }
             Action::ToggleOverview => {
                 self.niri.layout.toggle_overview();
