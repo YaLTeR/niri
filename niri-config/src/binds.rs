@@ -132,6 +132,7 @@ pub enum Action {
     ),
     ScreenshotWindow(
         #[knuffel(property(name = "write-to-disk"), default = true)] bool,
+        #[knuffel(property(name = "show-pointer"), default = false)] bool,
         // Path; not settable from knuffel
         Option<String>,
     ),
@@ -139,6 +140,7 @@ pub enum Action {
     ScreenshotWindowById {
         id: u64,
         write_to_disk: bool,
+        show_pointer: bool,
         path: Option<String>,
     },
     ToggleKeyboardShortcutsInhibit,
@@ -354,6 +356,8 @@ pub enum Action {
     SetDynamicCastWindowById(u64),
     SetDynamicCastMonitor(#[knuffel(argument)] Option<String>),
     ClearDynamicCastTarget,
+    #[knuffel(skip)]
+    StopCast(u64),
     ToggleOverview,
     OpenOverview,
     CloseOverview,
@@ -407,15 +411,18 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ScreenshotWindow {
                 id: None,
                 write_to_disk,
+                show_pointer,
                 path,
-            } => Self::ScreenshotWindow(write_to_disk, path),
+            } => Self::ScreenshotWindow(write_to_disk, show_pointer, path),
             niri_ipc::Action::ScreenshotWindow {
                 id: Some(id),
                 write_to_disk,
+                show_pointer,
                 path,
             } => Self::ScreenshotWindowById {
                 id,
                 write_to_disk,
+                show_pointer,
                 path,
             },
             niri_ipc::Action::ToggleKeyboardShortcutsInhibit {} => {
@@ -685,6 +692,7 @@ impl From<niri_ipc::Action> for Action {
                 Self::SetDynamicCastMonitor(output)
             }
             niri_ipc::Action::ClearDynamicCastTarget {} => Self::ClearDynamicCastTarget,
+            niri_ipc::Action::StopCast { session_id } => Self::StopCast(session_id),
             niri_ipc::Action::ToggleOverview {} => Self::ToggleOverview,
             niri_ipc::Action::OpenOverview {} => Self::OpenOverview,
             niri_ipc::Action::CloseOverview {} => Self::CloseOverview,
