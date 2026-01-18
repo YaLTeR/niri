@@ -89,6 +89,10 @@ impl Winit {
                 vrr_supported: false,
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),
+                zoom_factor: 1.0,
+                zoom_behavior: niri_ipc::ZoomBehavior::default(),
+                zoom_filter: niri_ipc::ZoomFilter::default(),
+                zoom_bounds: 0,
             },
         )])));
 
@@ -267,6 +271,18 @@ impl Winit {
             Err(err) => {
                 debug!("error importing dmabuf: {err:?}");
                 false
+            }
+        }
+    }
+
+    pub fn refresh_ipc_outputs(&mut self, niri: &Niri) {
+        let mut ipc_outputs = self.ipc_outputs.lock().unwrap();
+        if let Some(output) = ipc_outputs.values_mut().next() {
+            if let Some(mon) = niri.layout.monitor_for_output(&self.output) {
+                output.zoom_factor = mon.cursor_zoom();
+                output.zoom_behavior = mon.cursor_zoom_behavior().into();
+                output.zoom_filter = mon.cursor_zoom_filter().into();
+                output.zoom_bounds = mon.cursor_zoom_bounds();
             }
         }
     }

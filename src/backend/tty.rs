@@ -1886,9 +1886,12 @@ impl Tty {
                 .monitor_for_output(output)
                 .map(|m| m.cursor_zoom_factor)
                 .unwrap_or(1.0);
-            if zoom_factor > 1.0
-                && config.cursor.zoom_quality == niri_config::ZoomQuality::PixelPerfect
-            {
+            let zoom_filter = niri
+                .layout
+                .monitor_for_output(output)
+                .map(|m| m.cursor_zoom_filter())
+                .unwrap_or_default();
+            if zoom_factor > 1.0 && zoom_filter == niri_config::ZoomFilter::Nearest {
                 flags.remove(primary_scanout_flag);
                 flags.remove(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
             }
@@ -2148,14 +2151,31 @@ impl Tty {
                     });
                 let vrr_enabled = surface.is_some_and(|surface| surface.compositor.vrr_enabled());
 
-                let logical = niri
-                    .global_space
-                    .outputs()
-                    .find(|output| {
-                        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-                        tty_state.node == *node && tty_state.crtc == crtc
-                    })
-                    .map(logical_output);
+                let output = niri.global_space.outputs().find(|output| {
+                    let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+                    tty_state.node == *node && tty_state.crtc == crtc
+                });
+                let logical = output.map(logical_output);
+
+                // Get zoom state from the monitor if available.
+                let (zoom_factor, zoom_behavior, zoom_filter, zoom_bounds) = output
+                    .and_then(|o| niri.layout.monitor_for_output(o))
+                    .map_or(
+                        (
+                            1.0,
+                            niri_ipc::ZoomBehavior::default(),
+                            niri_ipc::ZoomFilter::default(),
+                            0,
+                        ),
+                        |mon| {
+                            (
+                                mon.cursor_zoom(),
+                                mon.cursor_zoom_behavior(),
+                                mon.cursor_zoom_filter().into(),
+                                mon.cursor_zoom_bounds(),
+                            )
+                        },
+                    );
 
                 let id = device.known_crtcs.get(&crtc).map(|info| info.id);
                 let id = id.unwrap_or_else(|| {
@@ -2175,6 +2195,10 @@ impl Tty {
                     vrr_supported,
                     vrr_enabled,
                     logical,
+                    zoom_factor,
+                    zoom_behavior,
+                    zoom_filter,
+                    zoom_bounds,
                 };
 
                 ipc_outputs.insert(id, ipc_output);

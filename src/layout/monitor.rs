@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::rc::Rc;
 use std::time::Duration;
 
-use niri_config::{CornerRadius, LayoutPart};
+use niri_config::{CornerRadius, LayoutPart, ZoomFilter};
 use niri_ipc::ZoomBehavior;
 use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
@@ -94,6 +94,10 @@ pub struct Monitor<W: LayoutElement> {
     pub cursor_zoom_center: Point<f64, Logical>,
     /// Behavior for how the zoom center is maintained.
     pub cursor_zoom_center_behavior: ZoomBehavior,
+    /// Filter setting for cursor zoom magnification.
+    pub cursor_zoom_filter: ZoomFilter,
+    /// Bounds for cursor zoom center (padding from edges in logical pixels).
+    pub cursor_zoom_bounds: i32,
 }
 
 #[derive(Debug)]
@@ -355,6 +359,8 @@ impl<W: LayoutElement> Monitor<W> {
             cursor_zoom_factor: 1.0,
             cursor_zoom_center: Point::from((0., 0.)),
             cursor_zoom_center_behavior: ZoomBehavior::default(),
+            cursor_zoom_filter: ZoomFilter::default(),
+            cursor_zoom_bounds: 0,
         }
     }
 
@@ -1392,6 +1398,14 @@ impl<W: LayoutElement> Monitor<W> {
         self.cursor_zoom_center_behavior
     }
 
+    pub fn cursor_zoom_filter(&self) -> ZoomFilter {
+        self.cursor_zoom_filter
+    }
+
+    pub fn cursor_zoom_bounds(&self) -> i32 {
+        self.cursor_zoom_bounds
+    }
+
     pub fn set_cursor_zoom(&mut self, factor: f64, center: Point<f64, Logical>) {
         self.cursor_zoom_factor = factor.max(1.0);
         self.cursor_zoom_center = center;
@@ -1410,6 +1424,23 @@ impl<W: LayoutElement> Monitor<W> {
             ZoomBehavior::Cursor => ZoomBehavior::EdgePushed,
             ZoomBehavior::EdgePushed => ZoomBehavior::Cursor,
         };
+    }
+
+    pub fn update_zoom_config(&mut self, zoom: Option<&niri_config::output::Zoom>) {
+        if let Some(zoom) = zoom {
+            if let Some(factor) = zoom.factor {
+                self.cursor_zoom_factor = factor.0;
+            }
+            if let Some(behavior) = zoom.behavior {
+                self.cursor_zoom_center_behavior = behavior;
+            }
+            if let Some(filter) = zoom.filter {
+                self.cursor_zoom_filter = filter;
+            }
+            if let Some(bounds) = zoom.bounds {
+                self.cursor_zoom_bounds = bounds;
+            }
+        }
     }
 
     pub(super) fn set_overview_progress(&mut self, progress: Option<&super::OverviewProgress>) {

@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use smithay::backend::renderer::TextureFilter;
 
 use crate::appearance::{Color, WorkspaceShadow, WorkspaceShadowPart, DEFAULT_BACKDROP_COLOR};
@@ -16,27 +18,58 @@ pub struct SpawnShAtStartup {
     pub command: String,
 }
 
-/// Quality setting for cursor zoom magnification
+/// Filter setting for cursor zoom magnification
 #[derive(knuffel::DecodeScalar, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum ZoomQuality {
-    #[knuffel(rename = "pixel-perfect")]
+pub enum ZoomFilter {
     #[default]
-    PixelPerfect,
-    #[knuffel(rename = "smooth")]
-    Smooth,
+    Linear,
+    Nearest,
 }
 
-impl From<ZoomQuality> for TextureFilter {
-    fn from(zoom_quality: ZoomQuality) -> Self {
-        match zoom_quality {
-            ZoomQuality::PixelPerfect => TextureFilter::Nearest,
-            ZoomQuality::Smooth => TextureFilter::Linear,
+impl FromStr for ZoomFilter {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "nearest" => Ok(ZoomFilter::Nearest),
+            "linear" => Ok(ZoomFilter::Linear),
+            _ => Err(format!(
+                "invalid zoom filter '{}', expected 'nearest' or 'linear'",
+                s
+            )),
         }
     }
 }
 
-impl MergeWith<ZoomQuality> for ZoomQuality {
-    fn merge_with(&mut self, part: &ZoomQuality) {
+impl From<ZoomFilter> for TextureFilter {
+    fn from(zoom_filter: ZoomFilter) -> Self {
+        match zoom_filter {
+            ZoomFilter::Nearest => TextureFilter::Nearest,
+            ZoomFilter::Linear => TextureFilter::Linear,
+        }
+    }
+}
+
+impl From<niri_ipc::ZoomFilter> for ZoomFilter {
+    fn from(filter: niri_ipc::ZoomFilter) -> Self {
+        match filter {
+            niri_ipc::ZoomFilter::Nearest => ZoomFilter::Nearest,
+            niri_ipc::ZoomFilter::Linear => ZoomFilter::Linear,
+        }
+    }
+}
+
+impl From<ZoomFilter> for niri_ipc::ZoomFilter {
+    fn from(filter: ZoomFilter) -> Self {
+        match filter {
+            ZoomFilter::Nearest => niri_ipc::ZoomFilter::Nearest,
+            ZoomFilter::Linear => niri_ipc::ZoomFilter::Linear,
+        }
+    }
+}
+
+impl MergeWith<ZoomFilter> for ZoomFilter {
+    fn merge_with(&mut self, part: &ZoomFilter) {
         *self = *part;
     }
 }
@@ -47,8 +80,7 @@ pub struct Cursor {
     pub xcursor_size: u8,
     pub hide_when_typing: bool,
     pub hide_after_inactive_ms: Option<u32>,
-    pub pointer_scaling: bool, // Decides if zoom is applied to the cursor
-    pub zoom_quality: ZoomQuality, // Quality setting for cursor zoom magnification
+    pub scale_with_zoom: bool, // Decides if zoom is applied to the cursor
 }
 
 impl Default for Cursor {
@@ -58,8 +90,7 @@ impl Default for Cursor {
             xcursor_size: 24,
             hide_when_typing: false,
             hide_after_inactive_ms: None,
-            pointer_scaling: false,               // Default to false
-            zoom_quality: ZoomQuality::default(), // Default to Smooth
+            scale_with_zoom: false, // Default to false
         }
     }
 }
@@ -75,17 +106,14 @@ pub struct CursorPart {
     #[knuffel(child, unwrap(argument))]
     pub hide_after_inactive_ms: Option<u32>,
     #[knuffel(child)]
-    pub pointer_scaling: Option<Flag>,
-    #[knuffel(child, unwrap(argument))]
-    pub zoom_quality: Option<ZoomQuality>,
+    pub scale_with_zoom: Option<Flag>,
 }
 
 impl MergeWith<CursorPart> for Cursor {
     fn merge_with(&mut self, part: &CursorPart) {
         merge_clone!((self, part), xcursor_theme, xcursor_size);
-        merge!((self, part), hide_when_typing, pointer_scaling);
+        merge!((self, part), hide_when_typing, scale_with_zoom);
         merge_clone_opt!((self, part), hide_after_inactive_ms);
-        merge!((self, part), zoom_quality);
     }
 }
 

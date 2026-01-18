@@ -568,6 +568,11 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         vrr_supported,
         vrr_enabled,
         logical,
+        zoom_factor,
+        zoom_behavior,
+        zoom_filter,
+        zoom_bounds,
+        ..
     } = output;
 
     let serial = serial.as_deref().unwrap_or("Unknown");
@@ -650,6 +655,20 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         };
         println!("  Transform: {transform}");
     }
+
+    print!("  Zoom: {zoom_factor}x");
+    let b = match zoom_behavior {
+        niri_ipc::ZoomBehavior::Cursor => "cursor-centered",
+        niri_ipc::ZoomBehavior::EdgePushed => "edge-pushed",
+    };
+    print!(", {b}");
+    let f = match zoom_filter {
+        niri_ipc::ZoomFilter::Nearest => "nearest",
+        niri_ipc::ZoomFilter::Linear => "linear",
+    };
+    print!(", {f}");
+    print!(", bounds: {zoom_bounds}px");
+    println!();
 
     println!("  Available modes:");
     for (idx, mode) in modes.into_iter().enumerate() {

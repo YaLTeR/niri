@@ -18,7 +18,6 @@ use niri_config::{
     Config, FloatOrInt, Key, Modifiers, OutputName, TrackLayout, WarpMouseToFocusMode,
     WorkspaceReference, Xkb,
 };
-
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
@@ -1776,6 +1775,9 @@ impl State {
                     // Also redraw these; if anything, the background color could've changed.
                     recolored_outputs.push(output.clone());
                 }
+
+                mon.update_zoom_config(config.and_then(|c| c.zoom.as_ref()));
+                self.niri.ipc_outputs_changed = true;
                 break;
             }
         }
@@ -1914,6 +1916,30 @@ impl State {
                     None
                 }
             }
+            niri_ipc::OutputAction::Zoom { action } => {
+                if let Some(action) = action {
+                    let zoom = config.zoom.get_or_insert_with(Default::default);
+                    match action {
+                        niri_ipc::ZoomAction::Factor { factor } => {
+                            zoom.factor = match factor {
+                                niri_ipc::ZoomFactor::Absolute(f) => Some(FloatOrInt(f)),
+                                niri_ipc::ZoomFactor::Relative(add) => zoom
+                                    .factor
+                                    .map(|f| FloatOrInt((f.0 + add).clamp(1.0, 100.0))),
+                            };
+                        }
+                        niri_ipc::ZoomAction::Behavior { behavior } => {
+                            zoom.behavior = Some(behavior);
+                        }
+                        niri_ipc::ZoomAction::Filter { filter } => {
+                            zoom.filter = Some(filter.into());
+                        }
+                        niri_ipc::ZoomAction::Bounds { bound } => {
+                            zoom.bounds = Some(bound);
+                        }
+                    }
+                }
+            }
         });
 
         self.reload_output_config();
@@ -1928,13 +1954,19 @@ impl State {
         let _span = tracy_client::span!("State::refresh_ipc_outputs");
 
         for ipc_output in self.backend.ipc_outputs().lock().unwrap().values_mut() {
-            let logical = self
+            let output = self
                 .niri
                 .global_space
                 .outputs()
-                .find(|output| output.name() == ipc_output.name)
-                .map(logical_output);
-            ipc_output.logical = logical;
+                .find(|output| output.name() == ipc_output.name);
+            ipc_output.logical = output.map(logical_output);
+
+            if let Some(mon) = output.and_then(|o| self.niri.layout.monitor_for_output(o)) {
+                ipc_output.zoom_factor = mon.cursor_zoom();
+                ipc_output.zoom_behavior = mon.cursor_zoom_behavior().into();
+                ipc_output.zoom_filter = mon.cursor_zoom_filter().into();
+                ipc_output.zoom_bounds = mon.cursor_zoom_bounds().into();
+            }
         }
 
         #[cfg(feature = "dbus")]
@@ -4047,19 +4079,14 @@ impl Niri {
     ) -> Vec<OutputRenderElements<R>> {
         let mut elements = Vec::new();
 
-        // Apply cursor zoom to all elements except the cursor itself
-        // if cursor zoom is active. Per-monitor like overview zoom.
-        let cursor_zoom_factor = self
-            .layout
-            .monitor_for_output(output)
-            .map(|m| m.cursor_zoom_factor)
-            .unwrap_or(1.0);
+        let monitor = self.layout.monitor_for_output(output).unwrap();
+        let cursor_zoom_factor = monitor.cursor_zoom_factor;
+        let zoom_filter = monitor.cursor_zoom_filter();
 
         if cursor_zoom_factor > 1.0 {
-            let zoom_quality = self.config.borrow().cursor.zoom_quality;
             // Nearest-neighbor filtering must be set before DRM compositor renders.
             // Reset to Linear for smooth mode, or set to Nearest for pixel-perfect.
-            let filter = TextureFilter::from(zoom_quality);
+            let filter = TextureFilter::from(zoom_filter);
             let gles = renderer.as_gles_renderer();
             let _ = gles.upscale_filter(filter).map_err(|err| {
                 warn!("error setting upscale filter: {err:?}");
@@ -4079,7 +4106,6 @@ impl Niri {
         }
 
         let elements = if cursor_zoom_factor > 1.0 {
-            let monitor = self.layout.monitor_for_output(output).unwrap();
             let output_geo = self.global_space.output_geometry(output).unwrap();
             let output_size = output_geo.size.to_f64();
             let output_rect = Rectangle::new(Point::new(0., 0.), output_size);
@@ -4093,7 +4119,8 @@ impl Niri {
                 niri_ipc::ZoomBehavior::EdgePushed => monitor.cursor_zoom_center,
             };
 
-            let pointer_scaling = self.config.borrow().cursor.pointer_scaling;
+            let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
+            let bound = monitor.cursor_zoom_bounds;
 
             // Apply zoom to a OutputRenderElement variant.
             macro_rules! zoom_variant {
@@ -4102,6 +4129,7 @@ impl Niri {
                         $elem,
                         output_scale,
                         cursor_zoom_factor,
+                        bound,
                         zoom_center,
                         output_rect,
                     )
@@ -4112,7 +4140,7 @@ impl Niri {
             macro_rules! process_zoom {
                 ($elem:expr, $($variant:ident),*) => {
                     match $elem {
-                        OutputRenderElements::Pointer(elem) if pointer_scaling => {
+                        OutputRenderElements::Pointer(elem) if scale_with_zoom => {
                             zoom_variant!(elem).map(Into::into).into()
                         }
                         $(
@@ -6251,6 +6279,7 @@ fn apply_cursor_zoom<E: Element>(
     element: E,
     output_scale: Scale<f64>,
     zoom: f64,
+    bound: i32,
     cursor_pos: Point<f64, Logical>,
     output_geo: Rectangle<f64, Logical>,
 ) -> Option<CropRenderElement<RelocateRenderElement<RescaleRenderElement<E>>>> {
@@ -6260,6 +6289,7 @@ fn apply_cursor_zoom<E: Element>(
         (offset_x as f64 * output_scale.x) as i32,
         (offset_y as f64 * output_scale.y) as i32,
     ));
+
     let scaled = RescaleRenderElement::from_element(element, (0, 0).into(), zoom);
     let relocated =
         RelocateRenderElement::from_element(scaled, physical_offset, Relocate::Relative);

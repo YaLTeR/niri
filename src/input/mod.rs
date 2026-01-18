@@ -2697,15 +2697,11 @@ impl State {
             }
         }
 
-        // Redraw to update the cursor position.
-        // FIXME: redraw only outputs overlapping the cursor.
-        self.niri.queue_redraw_all();
-
-        // Update cursor zoom center for EdgePushed behavior
+        // Update cursor zoom center for EdgePushed behavior (like cosmic-comp's OnEdge)
+        // When cursor exits visible zoomed area, pan by cursor delta scaled by zoom
         for monitor in self.niri.layout.monitors_mut() {
-            if monitor.cursor_zoom_factor <= 1.0
-                || monitor.cursor_zoom_center_behavior != ZoomBehavior::EdgePushed
-            {
+            let zoom = monitor.cursor_zoom_factor;
+            if zoom <= 1.0 || monitor.cursor_zoom_center_behavior != ZoomBehavior::EdgePushed {
                 continue;
             }
 
@@ -2714,47 +2710,48 @@ impl State {
                 None => continue,
             };
 
-            // Get cursor position within this monitor
             let cursor_in_monitor = new_pos - output_geo.loc.to_f64();
             if !output_geo.contains(cursor_in_monitor.to_i32_round()) {
                 continue;
             }
 
-            let output_size = output_geo.size;
-            let edge_threshold = output_size.to_f64() * 0.1; // 10% from each edge
+            let output_w = output_geo.size.w as f64;
+            let output_h = output_geo.size.h as f64;
 
-            // Calculate target center based on cursor position relative to edges
-            let target_center = if cursor_in_monitor.x < edge_threshold.w {
-                // Cursor near left edge - push center left
-                Point::from((cursor_in_monitor.x * 0.3, cursor_in_monitor.y))
-            } else if cursor_in_monitor.x > output_size.w - edge_threshold.w {
-                // Cursor near right edge - push center right
-                Point::from((
-                    cursor_in_monitor.x * 1.7 - output_size.w * 0.7,
-                    cursor_in_monitor.y,
-                ))
-            } else if cursor_in_monitor.y < edge_threshold.h {
-                // Cursor near top edge - push center up
-                Point::from((cursor_in_monitor.x, cursor_in_monitor.y * 0.3))
-            } else if cursor_in_monitor.y > output_size.h - edge_threshold.h {
-                // Cursor near bottom edge - push center down
-                Point::from((
-                    cursor_in_monitor.x,
-                    cursor_in_monitor.y * 1.7 - output_size.h * 0.7,
-                ))
-            } else {
-                // Cursor in middle - keep current center
-                monitor.cursor_zoom_center
-            };
+            // Calculate visible area bounds matching the render formula:
+            // offset = cursor_pos * (1 - zoom)
+            // For point p, screen_pos = (p - cursor_pos) * zoom + cursor_pos
+            // visible_left: screen=0 → p = cursor_pos * (zoom-1)/zoom
+            // visible_right: screen=output_w → p = cursor_pos + (output_w - cursor_pos)/zoom
+            let focal = monitor.cursor_zoom_center;
+            let visible_left = focal.x * (zoom - 1.0) / zoom;
+            let visible_right = focal.x + (output_w - focal.x) / zoom;
+            let visible_top = focal.y * (zoom - 1.0) / zoom;
+            let visible_bottom = focal.y + (output_h - focal.y) / zoom;
 
-            // Smooth transition to target center (lerp with 0.1 factor)
-            monitor.cursor_zoom_center = Point::from((
-                monitor.cursor_zoom_center.x
-                    + (target_center.x - monitor.cursor_zoom_center.x) * 0.1,
-                monitor.cursor_zoom_center.y
-                    + (target_center.y - monitor.cursor_zoom_center.y) * 0.1,
-            ));
+            // Check if cursor is outside visible area
+            let cursor_outside = cursor_in_monitor.x < visible_left
+                || cursor_in_monitor.x > visible_right
+                || cursor_in_monitor.y < visible_top
+                || cursor_in_monitor.y > visible_bottom;
+
+            if cursor_outside {
+                // Move focal point by delta scaled by zoom
+                let delta = event.delta();
+                let mut new_focal_x = focal.x + delta.x * zoom;
+                let mut new_focal_y = focal.y + delta.y * zoom;
+
+                // Clamp focal point to output bounds
+                new_focal_x = new_focal_x.clamp(0.0, output_w);
+                new_focal_y = new_focal_y.clamp(0.0, output_h);
+
+                monitor.cursor_zoom_center = Point::from((new_focal_x, new_focal_y));
+            }
         }
+
+        // Redraw to update the cursor position.
+        // FIXME: redraw only outputs overlapping the cursor.
+        self.niri.queue_redraw_all();
     }
 
     fn on_pointer_motion_absolute<I: InputBackend>(

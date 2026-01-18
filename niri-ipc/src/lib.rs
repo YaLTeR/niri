@@ -1130,6 +1130,77 @@ impl std::fmt::Display for ZoomBehavior {
     }
 }
 
+/// Filter setting for cursor zoom magnification.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ZoomFilter {
+    /// Nearest neighbor filtering (pixel-perfect).
+    #[default]
+    #[serde(rename = "nearest")]
+    Nearest,
+    /// Linear filtering (smooth).
+    #[serde(rename = "linear")]
+    Linear,
+}
+
+impl std::fmt::Display for ZoomFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ZoomFilter::Nearest => write!(f, "nearest"),
+            ZoomFilter::Linear => write!(f, "linear"),
+        }
+    }
+}
+
+impl std::str::FromStr for ZoomFilter {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "nearest" => Ok(ZoomFilter::Nearest),
+            "linear" => Ok(ZoomFilter::Linear),
+            _ => Err(format!(
+                "invalid zoom filter '{}', expected 'nearest' or 'linear'",
+                s
+            )),
+        }
+    }
+}
+
+/// Zoom subactions for configuring zoom on an output.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "clap", derive(clap::Parser))]
+#[cfg_attr(feature = "clap", command(subcommand_value_name = "ZOOM_ACTION"))]
+#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Zoom Actions"))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ZoomAction {
+    /// Set the zoom factor.
+    Factor {
+        /// Zoom factor to set (absolute or relative).
+        #[cfg_attr(feature = "clap", arg(value_parser = |s: &str| s.parse::<ZoomFactor>().map_err(|e| e.to_string())))]
+        factor: ZoomFactor,
+    },
+    /// Set the zoom behavior.
+    Behavior {
+        /// Zoom behavior to set ("cursor" or "edge-pushed").
+        #[cfg_attr(feature = "clap", arg())]
+        behavior: ZoomBehavior,
+    },
+    /// Set the zoom filter.
+    Filter {
+        /// Zoom filter to set ("nearest" or "linear").
+        #[cfg_attr(feature = "clap", arg())]
+        filter: ZoomFilter,
+    },
+    /// Set the zoom bounds in pixels.
+    Bounds {
+        /// Zoom bounds to set in pixels.
+        #[cfg_attr(feature = "clap", arg())]
+        bound: i32,
+    },
+}
+
 /// Output actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most thigs from
 // niri-config should be present here.
@@ -1219,6 +1290,12 @@ pub enum OutputAction {
         /// Variable refresh rate mode to set.
         #[cfg_attr(feature = "clap", command(flatten))]
         vrr: VrrToSet,
+    },
+    /// Configure zoom settings.
+    Zoom {
+        /// Zoom subcommand.
+        #[cfg_attr(feature = "clap", command(subcommand))]
+        action: Option<ZoomAction>,
     },
 }
 
@@ -1351,6 +1428,16 @@ pub struct Output {
     ///
     /// `None` if the output is not mapped to any logical output (for example, if it is disabled).
     pub logical: Option<LogicalOutput>,
+    /// Current zoom factor.
+    pub zoom_factor: f64,
+    /// Current zoom behavior.
+    pub zoom_behavior: ZoomBehavior,
+    /// Current zoom filter.
+    pub zoom_filter: ZoomFilter,
+    /// Current zoom bounds in pixels.
+    ///
+    /// `None` if no bounds are configured.
+    pub zoom_bounds: i32,
 }
 
 /// Output mode.
