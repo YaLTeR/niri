@@ -7,7 +7,6 @@ use knuffel::errors::DecodeError;
 use miette::miette;
 use niri_ipc::{
     ColumnDisplay, LayoutSwitchTarget, PositionChange, SizeChange, WorkspaceReferenceArg,
-    ZoomBehavior, ZoomFactor,
 };
 use smithay::input::keyboard::keysyms::KEY_NoSymbol;
 use smithay::input::keyboard::xkb::{keysym_from_name, KEYSYM_CASE_INSENSITIVE, KEYSYM_NO_FLAGS};
@@ -369,26 +368,8 @@ pub enum Action {
     #[knuffel(skip)]
     UnsetWindowUrgent(u64),
     #[knuffel(skip)]
-    SetZoom {
-        factor: ZoomFactor,
+    ToggleZoom {
         output: Option<String>,
-    },
-    #[knuffel(skip)]
-    GetZoom {
-        output: String,
-    },
-    #[knuffel(skip)]
-    SetZoomBehavior {
-        behavior: ZoomBehavior,
-        output: Option<String>,
-    },
-    #[knuffel(skip)]
-    ToggleZoomBehavior {
-        output: Option<String>,
-    },
-    #[knuffel(skip)]
-    GetZoomBehavior {
-        output: String,
     },
     #[knuffel(skip)]
     LoadConfigFile,
@@ -722,13 +703,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::ToggleWindowUrgent { id } => Self::ToggleWindowUrgent(id),
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
-            niri_ipc::Action::SetZoom { factor, output } => Self::SetZoom { factor, output },
-            niri_ipc::Action::GetZoom { output } => Self::GetZoom { output },
-            niri_ipc::Action::SetZoomBehavior { behavior, output } => {
-                Self::SetZoomBehavior { behavior, output }
-            }
-            niri_ipc::Action::ToggleZoomBehavior { output } => Self::ToggleZoomBehavior { output },
-            niri_ipc::Action::GetZoomBehavior { output } => Self::GetZoomBehavior { output },
+            niri_ipc::Action::ToggleZoom { output } => Self::ToggleZoom { output },
             niri_ipc::Action::LoadConfigFile {} => Self::LoadConfigFile,
         }
     }

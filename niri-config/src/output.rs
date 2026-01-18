@@ -53,7 +53,7 @@ pub struct Zoom {
     #[knuffel(child, unwrap(argument))]
     pub factor: Option<super::FloatOrInt<1, 100>>,
     #[knuffel(child, unwrap(argument, str))]
-    pub behavior: Option<niri_ipc::ZoomBehavior>,
+    pub movement: Option<niri_ipc::ZoomMovement>,
     #[knuffel(child, unwrap(argument))]
     pub threshold: Option<f64>,
 }
@@ -63,8 +63,8 @@ impl MergeWith<Zoom> for Zoom {
         if part.factor.is_some() {
             self.factor = part.factor;
         }
-        if part.behavior.is_some() {
-            self.behavior = part.behavior;
+        if part.movement.is_some() {
+            self.movement = part.movement;
         }
         if part.threshold.is_some() {
             self.threshold = part.threshold;

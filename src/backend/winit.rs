@@ -90,7 +90,7 @@ impl Winit {
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),
                 zoom_factor: 1.0,
-                zoom_behavior: niri_ipc::ZoomBehavior::default(),
+                zoom_movement: niri_ipc::ZoomMovement::default(),
                 zoom_threshold: 0.15,
             },
         )])));
@@ -279,7 +279,7 @@ impl Winit {
         if let Some(output) = ipc_outputs.values_mut().next() {
             if let Some(mon) = niri.layout.monitor_for_output(&self.output) {
                 output.zoom_factor = mon.cursor_zoom();
-                output.zoom_behavior = mon.cursor_zoom_behavior().into();
+                output.zoom_movement = mon.cursor_zoom_movement().into();
                 output.zoom_threshold = mon.cursor_zoom_threshold();
             }
         }

@@ -1928,8 +1928,8 @@ impl State {
                                     .map(|f| FloatOrInt((f.0 + add).clamp(1.0, 100.0))),
                             };
                         }
-                        niri_ipc::ZoomAction::Behavior { behavior } => {
-                            zoom.behavior = Some(behavior);
+                        niri_ipc::ZoomAction::Movement { movement } => {
+                            zoom.movement = Some(movement);
                         }
                         niri_ipc::ZoomAction::Threshold { threshold } => {
                             zoom.threshold = Some(threshold.clamp(0.0, 1.0));
@@ -1960,7 +1960,7 @@ impl State {
 
             if let Some(mon) = output.and_then(|o| self.niri.layout.monitor_for_output(o)) {
                 ipc_output.zoom_factor = mon.cursor_zoom();
-                ipc_output.zoom_behavior = mon.cursor_zoom_behavior().into();
+                ipc_output.zoom_movement = mon.cursor_zoom_movement().into();
                 ipc_output.zoom_threshold = mon.cursor_zoom_threshold();
             }
         }
@@ -4075,8 +4075,9 @@ impl Niri {
 
         let monitor = self.layout.monitor_for_output(output).unwrap();
         let cursor_zoom_factor = monitor.cursor_zoom_factor;
+        let cursor_zoom_enabled = monitor.cursor_zoom_enabled;
 
-        if cursor_zoom_factor > 1.0 {
+        if cursor_zoom_enabled && cursor_zoom_factor > 1.0 {
             // Use Nearest neighbor filtering for high zoom levels (pixel-perfect),
             // Linear for lower zoom levels (smooth).
             let filter = if cursor_zoom_factor > 3.0 {
@@ -4102,18 +4103,18 @@ impl Niri {
             draw_opaque_regions(&mut elements, output_scale);
         }
 
-        let elements = if cursor_zoom_factor > 1.0 {
+        let elements = if cursor_zoom_enabled && cursor_zoom_factor > 1.0 {
             let output_geo = self.global_space.output_geometry(output).unwrap();
             let output_size = output_geo.size.to_f64();
             let output_rect = Rectangle::new(Point::new(0., 0.), output_size);
 
-            let zoom_center = match monitor.cursor_zoom_center_behavior {
-                niri_ipc::ZoomBehavior::Cursor => {
+            let zoom_center = match monitor.cursor_zoom_movement {
+                niri_ipc::ZoomMovement::Cursor => {
                     let pointer = self.seat.get_pointer().unwrap();
                     let cursor_pos = pointer.current_location();
                     cursor_pos - output_geo.loc.to_f64()
                 }
-                niri_ipc::ZoomBehavior::EdgePushed => monitor.cursor_zoom_center,
+                niri_ipc::ZoomMovement::EdgePushed => monitor.cursor_zoom_center,
             };
 
             let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
@@ -4131,12 +4132,27 @@ impl Niri {
                 };
             }
 
+            macro_rules! reposition_variant {
+                ($elem:expr) => {
+                    reposition_cursor_in_zoom(
+                        $elem,
+                        output_scale,
+                        cursor_zoom_factor,
+                        zoom_center,
+                        output_rect,
+                    )
+                };
+            }
+
             // Generate match arms for each OutputRenderElement variant that should be zoomed.
             macro_rules! process_zoom {
                 ($elem:expr, $($variant:ident),*) => {
                     match $elem {
                         OutputRenderElements::Pointer(elem) if scale_with_zoom => {
                             zoom_variant!(elem).map(Into::into).into()
+                        }
+                        OutputRenderElements::Pointer(elem) => {
+                            reposition_variant!(elem).map(Into::into).into()
                         }
                         $(
                             OutputRenderElements::$variant(elem) => {
@@ -6295,6 +6311,46 @@ fn apply_cursor_zoom<E: Element>(
     )
 }
 
+fn reposition_cursor_in_zoom<E: Element>(
+    element: E,
+    output_scale: Scale<f64>,
+    zoom: f64,
+    cursor_pos: Point<f64, Logical>,
+    output_geo: Rectangle<f64, Logical>,
+) -> Option<CropRenderElement<RelocateRenderElement<E>>> {
+    // Cursor position in zoomed view: original_pos * zoom + offset
+    // where offset = cursor_pos * (1 - zoom)
+    // So: screen_pos = original_pos * zoom + cursor_pos * (1 - zoom)
+    // For cursor at cursor_pos: screen_pos = cursor_pos * zoom + cursor_pos * (1 - zoom) = cursor_pos
+    // Delta from original: cursor_pos - cursor_pos = 0? No, the element has its own geometry.
+    //
+    // The element's original position is elem.geometry().loc. In the zoomed view,
+    // that position maps to: elem_pos * zoom + cursor_pos * (1 - zoom)
+    // So we need to relocate by: elem_pos * (zoom - 1) + cursor_pos * (1 - zoom)
+    //                          = (cursor_pos - elem_pos) * (1 - zoom)
+    let elem_geo = element.geometry(output_scale);
+    let elem_pos_logical: Point<f64, Logical> = Point::from((
+        elem_geo.loc.x as f64 / output_scale.x,
+        elem_geo.loc.y as f64 / output_scale.y,
+    ));
+
+    let offset_x = ((cursor_pos.x - elem_pos_logical.x) * (1.0 - zoom)) as i32;
+    let offset_y = ((cursor_pos.y - elem_pos_logical.y) * (1.0 - zoom)) as i32;
+    let physical_offset = Point::<i32, Physical>::from((
+        (offset_x as f64 * output_scale.x) as i32,
+        (offset_y as f64 * output_scale.y) as i32,
+    ));
+
+    let relocated =
+        RelocateRenderElement::from_element(element, physical_offset, Relocate::Relative);
+
+    CropRenderElement::from_element(
+        relocated,
+        output_scale,
+        output_geo.to_physical_precise_round(output_scale),
+    )
+}
+
 niri_render_elements! {
     PointerRenderElements<R> => {
         Wayland = WaylandSurfaceRenderElement<R>,
@@ -6337,6 +6393,10 @@ niri_render_elements! {
         RelocatedPointer = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
             PointerRenderElements<R>
         >>>,
+        // Need this for correct behavior of edge-pushed zoom, when scale-with-zoom is disabled.
+        RepositionedPointer = CropRenderElement<RelocateRenderElement<
+            PointerRenderElements<R>
+        >>,
         RelocatedWayland = CropRenderElement<RelocateRenderElement<RescaleRenderElement<
             WaylandSurfaceRenderElement<R>
         >>>,

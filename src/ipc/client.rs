@@ -569,7 +569,7 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         vrr_enabled,
         logical,
         zoom_factor,
-        zoom_behavior,
+        zoom_movement,
         zoom_threshold,
         ..
     } = output;
@@ -656,11 +656,11 @@ fn print_output(output: Output) -> anyhow::Result<()> {
     }
 
     print!("  Zoom: {zoom_factor}x");
-    let b = match zoom_behavior {
-        niri_ipc::ZoomBehavior::Cursor => "cursor-centered",
-        niri_ipc::ZoomBehavior::EdgePushed => "edge-pushed",
+    let m = match zoom_movement {
+        niri_ipc::ZoomMovement::Cursor => "cursor-centered",
+        niri_ipc::ZoomMovement::EdgePushed => "edge-pushed",
     };
-    print!(", {b}");
+    print!(", {m}");
     print!(", threshold: {:.2}", zoom_threshold);
     println!();
 

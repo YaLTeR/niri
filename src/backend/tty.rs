@@ -2153,12 +2153,12 @@ impl Tty {
                 let logical = output.map(logical_output);
 
                 // Get zoom state from the monitor if available.
-                let (zoom_factor, zoom_behavior, zoom_threshold) = output
+                let (zoom_factor, zoom_movement, zoom_threshold) = output
                     .and_then(|o| niri.layout.monitor_for_output(o))
-                    .map_or((1.0, niri_ipc::ZoomBehavior::default(), 0.15), |mon| {
+                    .map_or((1.0, niri_ipc::ZoomMovement::default(), 0.15), |mon| {
                         (
                             mon.cursor_zoom(),
-                            mon.cursor_zoom_behavior(),
+                            mon.cursor_zoom_movement(),
                             mon.cursor_zoom_threshold(),
                         )
                     });
@@ -2182,7 +2182,7 @@ impl Tty {
                     vrr_enabled,
                     logical,
                     zoom_factor,
-                    zoom_behavior,
+                    zoom_movement,
                     zoom_threshold,
                 };
 

@@ -9,7 +9,7 @@ use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger, Xkb,
 };
-use niri_ipc::{LayoutSwitchTarget, ZoomBehavior};
+use niri_ipc::{LayoutSwitchTarget, ZoomMovement};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -2407,47 +2407,17 @@ impl State {
                     self.niri.queue_redraw_mru_output();
                 }
             }
-            Action::SetZoom { factor, output } => {
+            Action::ToggleZoom { output } => {
                 let target_output = match output {
                     Some(name) => self.niri.output_by_name_match(&name).cloned(),
                     None => self.niri.layout.active_output().cloned(),
                 };
                 if let Some(output) = target_output {
-                    let pointer = self.niri.seat.get_pointer().unwrap();
-                    let cursor_pos = pointer.current_location();
-                    let output_geo = self.niri.global_space.output_geometry(&output).unwrap();
-                    let cursor_pos_in_output = cursor_pos - output_geo.loc.to_f64();
-                    self.niri
-                        .layout
-                        .set_cursor_zoom(&output, factor, cursor_pos_in_output);
+                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
+                        monitor.cursor_zoom_enabled = !monitor.cursor_zoom_enabled;
+                    }
                     self.niri.queue_redraw_all();
                 }
-            }
-            Action::GetZoom { output: _ } => {
-                // Query-only action, response handled via IPC
-            }
-            Action::SetZoomBehavior { behavior, output } => {
-                let target_output = match output {
-                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
-                    None => self.niri.layout.active_output().cloned(),
-                };
-                if let Some(output) = target_output {
-                    self.niri.layout.set_cursor_zoom_behavior(&output, behavior);
-                    self.niri.queue_redraw_all();
-                }
-            }
-            Action::ToggleZoomBehavior { output } => {
-                let target_output = match output {
-                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
-                    None => self.niri.layout.active_output().cloned(),
-                };
-                if let Some(output) = target_output {
-                    self.niri.layout.toggle_cursor_zoom_behavior(&output);
-                    self.niri.queue_redraw_all();
-                }
-            }
-            Action::GetZoomBehavior { output: _ } => {
-                // Query-only action, response handled via IPC
             }
         }
     }
@@ -2697,11 +2667,11 @@ impl State {
             }
         }
 
-        // Update cursor zoom center for EdgePushed behavior (like cosmic-comp's OnEdge)
+        // Update cursor zoom center for EdgePushed movement (like cosmic-comp's OnEdge)
         // When cursor exits visible zoomed area, pan by cursor delta scaled by zoom
         for monitor in self.niri.layout.monitors_mut() {
             let zoom = monitor.cursor_zoom_factor;
-            if zoom <= 1.0 || monitor.cursor_zoom_center_behavior != ZoomBehavior::EdgePushed {
+            if zoom <= 1.0 || monitor.cursor_zoom_movement != ZoomMovement::EdgePushed {
                 continue;
             }
 
@@ -2729,34 +2699,51 @@ impl State {
             let visible_top = focal.y * (zoom - 1.0) / zoom;
             let visible_bottom = focal.y + (output_h - focal.y) / zoom;
 
-            // Cursor has physical dimensions - the hotspot is the point, but the rendered
-            // cursor icon extends beyond. Use a bounding box for cursor collision.
-            // Standard X11 cursors have ~16-24px icons with hotspot at tip.
-            let cursor_half_size = 16.0;
+            // Threshold as fraction of VISIBLE area size (not output size).
+            // This ensures safe zone scales properly with zoom level.
+            let visible_w = visible_right - visible_left;
+            let visible_h = visible_bottom - visible_top;
+            let threshold_x = visible_w * monitor.cursor_zoom_threshold;
+            let threshold_y = visible_h * monitor.cursor_zoom_threshold;
 
-            // Threshold as fraction of output size - cursor can move within this margin
-            // before triggering edge-push panning.
-            let threshold_x = output_w * monitor.cursor_zoom_threshold;
-            let threshold_y = output_h * monitor.cursor_zoom_threshold;
+            // Check if cursor is outside safe zone (visible area shrunk by threshold).
+            let safe_left = visible_left + threshold_x;
+            let safe_right = visible_right - threshold_x;
+            let safe_top = visible_top + threshold_y;
+            let safe_bottom = visible_bottom - threshold_y;
 
-            // Check if cursor BOUNDING BOX is outside visible area (plus threshold margin)
-            let cursor_left = cursor_in_monitor.x - cursor_half_size;
-            let cursor_right = cursor_in_monitor.x + cursor_half_size;
-            let cursor_top = cursor_in_monitor.y - cursor_half_size;
-            let cursor_bottom = cursor_in_monitor.y + cursor_half_size;
+            let outside_left = cursor_in_monitor.x < safe_left;
+            let outside_right = cursor_in_monitor.x > safe_right;
+            let outside_top = cursor_in_monitor.y < safe_top;
+            let outside_bottom = cursor_in_monitor.y > safe_bottom;
 
-            let cursor_outside = cursor_left < visible_left - threshold_x
-                || cursor_right > visible_right + threshold_x
-                || cursor_top < visible_top - threshold_y
-                || cursor_bottom > visible_bottom + threshold_y;
+            if outside_left || outside_right || outside_top || outside_bottom {
+                // Compute focal to place cursor slightly inside safe zone edge.
+                // Add small epsilon to prevent floating-point oscillation at boundary.
+                let z = zoom;
+                let tr = monitor.cursor_zoom_threshold;
+                let zf = z / (z - 1.0);
+                let epsilon = 1.0;
 
-            if cursor_outside {
-                // Move focal point by delta scaled by zoom
-                let delta = event.delta();
-                let mut new_focal_x = focal.x + delta.x * zoom;
-                let mut new_focal_y = focal.y + delta.y * zoom;
+                let mut new_focal_x = focal.x;
+                let mut new_focal_y = focal.y;
 
-                // Clamp focal point to output bounds
+                if outside_left {
+                    let target = cursor_in_monitor.x + epsilon;
+                    new_focal_x = target * zf - output_w * tr / (z - 1.0);
+                } else if outside_right {
+                    let target = cursor_in_monitor.x - epsilon;
+                    new_focal_x = (target - output_w / z) * zf + output_w * tr / (z - 1.0);
+                }
+
+                if outside_top {
+                    let target = cursor_in_monitor.y + epsilon;
+                    new_focal_y = target * zf - output_h * tr / (z - 1.0);
+                } else if outside_bottom {
+                    let target = cursor_in_monitor.y - epsilon;
+                    new_focal_y = (target - output_h / z) * zf + output_h * tr / (z - 1.0);
+                }
+
                 new_focal_x = new_focal_x.clamp(0.0, output_w);
                 new_focal_y = new_focal_y.clamp(0.0, output_h);
 

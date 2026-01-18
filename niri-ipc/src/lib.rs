@@ -932,52 +932,14 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
-    /// Set the cursor zoom factor for a monitor (desktop magnification).
+    /// Toggle cursor zoom for a monitor.
     ///
-    /// The zoom is applied per-monitor. If no output is specified, the focused monitor is used.
-    SetZoom {
-        /// Zoom factor: absolute (e.g., "2.0") or relative (e.g., "-0.5", "+0.5").
-        #[cfg_attr(
-            feature = "clap",
-            arg(value_parser = |s: &str| s.parse::<ZoomFactor>().map_err(|e| e.to_string())),
-            arg(allow_hyphen_values = true)
-        )]
-        factor: ZoomFactor,
-        /// Output to set zoom for. If not specified, uses the focused output.
+    /// Enables zoom with a default factor of 2.0 if disabled, or disables zoom if enabled.
+    /// If no output is specified, uses the focused output.
+    ToggleZoom {
+        /// Output to toggle zoom for. If not specified, uses the focused output.
         #[cfg_attr(feature = "clap", arg())]
         output: Option<String>,
-    },
-    /// Get the current cursor zoom factor for a monitor.
-    GetZoom {
-        /// Output to query zoom for.
-        #[cfg_attr(feature = "clap", arg())]
-        output: String,
-    },
-    /// Set the cursor zoom center behavior for a monitor.
-    ///
-    /// If no output is specified, the focused monitor is used.
-    SetZoomBehavior {
-        /// Zoom center behavior to set.
-        #[cfg_attr(feature = "clap", arg(value_enum))]
-        behavior: ZoomBehavior,
-        /// Output to set behavior for. If not specified, uses the focused output.
-        #[cfg_attr(feature = "clap", arg())]
-        output: Option<String>,
-    },
-    /// Toggle the cursor zoom center behavior for a monitor.
-    ///
-    /// Toggles between cursor-centered and edge-pushed modes.
-    /// If no output is specified, the focused monitor is used.
-    ToggleZoomBehavior {
-        /// Output to toggle behavior for. If not specified, uses the focused output.
-        #[cfg_attr(feature = "clap", arg())]
-        output: Option<String>,
-    },
-    /// Get the current cursor zoom center behavior for a monitor.
-    GetZoomBehavior {
-        /// Output to query behavior for.
-        #[cfg_attr(feature = "clap", arg())]
-        output: String,
     },
     /// Reload the config file.
     ///
@@ -1092,40 +1054,40 @@ impl std::fmt::Display for ZoomFactor {
     }
 }
 
-/// Cursor zoom center behavior.
+/// Cursor zoom movement mode.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub enum ZoomBehavior {
+pub enum ZoomMovement {
     /// Zoom view is always centered on cursor position.
     #[default]
-    #[cfg_attr(feature = "clap", value(name = "cursor"))]
+    #[cfg_attr(feature = "clap", value(name = "cursor-follow"))]
     Cursor,
     /// Zoom view has independent center, pushed by cursor at edges.
     #[cfg_attr(feature = "clap", value(name = "edge-pushed"))]
     EdgePushed,
 }
 
-impl FromStr for ZoomBehavior {
+impl FromStr for ZoomMovement {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "cursor" | "cursor-centered" => Ok(ZoomBehavior::Cursor),
-            "edge" | "edge-pushed" | "edgepushed" => Ok(ZoomBehavior::EdgePushed),
+            "cursor-follow" => Ok(ZoomMovement::Cursor),
+            "edge-pushed" => Ok(ZoomMovement::EdgePushed),
             _ => Err(format!(
-                "invalid zoom behavior '{}', expected 'cursor' or 'edge-pushed'",
+                "invalid zoom movement '{}', expected 'cursor-follow' or 'edge-pushed'",
                 s
             )),
         }
     }
 }
 
-impl std::fmt::Display for ZoomBehavior {
+impl std::fmt::Display for ZoomMovement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ZoomBehavior::Cursor => write!(f, "cursor"),
-            ZoomBehavior::EdgePushed => write!(f, "edge-pushed"),
+            ZoomMovement::Cursor => write!(f, "cursor-follow"),
+            ZoomMovement::EdgePushed => write!(f, "edge-pushed"),
         }
     }
 }
@@ -1143,11 +1105,11 @@ pub enum ZoomAction {
         #[cfg_attr(feature = "clap", arg(value_parser = |s: &str| s.parse::<ZoomFactor>().map_err(|e| e.to_string())))]
         factor: ZoomFactor,
     },
-    /// Set the zoom behavior.
-    Behavior {
-        /// Zoom behavior to set ("cursor" or "edge-pushed").
+    /// Set the zoom movement mode.
+    Movement {
+        /// Zoom movement mode to set ("cursor" or "edge-pushed").
         #[cfg_attr(feature = "clap", arg())]
-        behavior: ZoomBehavior,
+        movement: ZoomMovement,
     },
     /// Set the zoom threshold as fraction of output size.
     Threshold {
@@ -1386,8 +1348,8 @@ pub struct Output {
     pub logical: Option<LogicalOutput>,
     /// Current zoom factor.
     pub zoom_factor: f64,
-    /// Current zoom behavior.
-    pub zoom_behavior: ZoomBehavior,
+    /// Current zoom movement mode.
+    pub zoom_movement: ZoomMovement,
     /// Current zoom threshold as fraction of output size.
     ///
     /// Default is 0.15.

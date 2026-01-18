@@ -1757,21 +1757,21 @@ impl<W: LayoutElement> Layout<W> {
         self.monitor_for_output(output).map(|m| m.cursor_zoom())
     }
 
-    pub fn set_cursor_zoom_behavior(&mut self, output: &Output, behavior: niri_ipc::ZoomBehavior) {
+    pub fn set_cursor_zoom_movement(&mut self, output: &Output, movement: niri_ipc::ZoomMovement) {
         if let Some(mon) = self.monitor_for_output_mut(output) {
-            mon.set_cursor_zoom_behavior(behavior);
+            mon.set_cursor_zoom_movement(movement);
         }
     }
 
-    pub fn toggle_cursor_zoom_behavior(&mut self, output: &Output) {
+    pub fn toggle_cursor_zoom_movement(&mut self, output: &Output) {
         if let Some(mon) = self.monitor_for_output_mut(output) {
-            mon.toggle_cursor_zoom_behavior();
+            mon.toggle_cursor_zoom_movement();
         }
     }
 
-    pub fn get_cursor_zoom_behavior(&self, output: &Output) -> Option<niri_ipc::ZoomBehavior> {
+    pub fn get_cursor_zoom_movement(&self, output: &Output) -> Option<niri_ipc::ZoomMovement> {
         self.monitor_for_output(output)
-            .map(|m| m.cursor_zoom_behavior())
+            .map(|m| m.cursor_zoom_movement())
     }
 
     pub fn outputs(&self) -> impl Iterator<Item = &Output> + '_ {
