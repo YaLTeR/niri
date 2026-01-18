@@ -20,7 +20,9 @@ Then systemd should start them on-demand automatically. These particular portals
 
 For most distributions, this file is located at `/usr/share/xdg-desktop-portal/niri-portals.conf` or `~/.config/xdg-desktop-portal/niri-portals.conf`.
 
-**On NixOS**, do not modify files in `/usr/share/`. Instead, add the following to your `configuration.nix`:
+On NixOS, if you enable niri via the [NixOS module](https://search.nixos.org/options?query=programs.niri.enable) (`programs.niri.enable = true`), [the portals are configured automatically by default](https://github.com/NixOS/nixpkgs/blob/e4bae1bd10c9c57b2cf517953ab70060a828ee6f/nixos/modules/programs/wayland/niri.nix#L43-L62).
+
+If you are configuring manually or need to override the defaults, you can add the following to your `configuration.nix`:
 
 ```nix
 xdg.portal = {
@@ -40,6 +42,8 @@ dconf write /org/gnome/desktop/interface/color-scheme '"prefer-dark"'
 #### File Chooser Details
 
 Note that if you're using the provided `resources/niri-portals.conf` (or the NixOS config above), you also need to install the `nautilus` file manager in order for file chooser dialogues to work properly. This is necessary because `xdg-desktop-portal-gnome` uses nautilus as the file chooser by default starting from version 47.0.
+
+On NixOS, the module installs `nautilus` by default via the [`programs.niri.useNautilus`](https://search.nixos.org/options?query=programs.niri.useNautilus) option. You only need to install it manually if you have disabled this option.
 
 If you do not want to install `nautilus` (say you use `kde` or `nemo` instead), you can override the file picker backend in `niri-portals.conf`:
 
