@@ -1938,11 +1938,14 @@ impl State {
                                 Err(_) => {}
                             }
                         }
-                        niri_ipc::ZoomAction::Movement { movement } => {
+                        niri_ipc::ZoomAction::Movement { movement, .. } => {
                             zoom.movement = Some(movement);
                         }
-                        niri_ipc::ZoomAction::Threshold { threshold } => {
+                        niri_ipc::ZoomAction::Threshold { threshold, .. } => {
                             zoom.threshold = Some(threshold.clamp(0.0, 1.0));
+                        }
+                        niri_ipc::ZoomAction::Frozen { frozen } => {
+                            zoom.frozen = Some(niri_config::utils::Flag(frozen));
                         }
                     }
                 }
@@ -1972,8 +1975,11 @@ impl State {
                 ipc_output.zoom_factor = mon.zoom_factor;
                 ipc_output.zoom_movement = mon.zoom_movement;
                 ipc_output.zoom_threshold = mon.zoom_threshold;
+                ipc_output.zoom_frozen = mon.zoom_frozen;
             }
         }
+
+        #[cfg(feature = "dbus")]
         self.niri.on_ipc_outputs_changed();
 
         let new_config = self.backend.ipc_outputs().lock().unwrap().clone();
@@ -4120,9 +4126,13 @@ impl Niri {
 
             let zoom_center = match monitor.zoom_movement {
                 niri_ipc::ZoomMovement::Cursor => {
-                    let pointer = self.seat.get_pointer().unwrap();
-                    let cursor_pos = pointer.current_location();
-                    cursor_pos - output_geo.loc.to_f64()
+                    if monitor.zoom_frozen {
+                        monitor.zoom_center
+                    } else {
+                        let pointer = self.seat.get_pointer().unwrap();
+                        let cursor_pos = pointer.current_location();
+                        cursor_pos - output_geo.loc.to_f64()
+                    }
                 }
                 niri_ipc::ZoomMovement::EdgePushed => monitor.zoom_center,
             };
@@ -4141,50 +4151,81 @@ impl Niri {
                 }};
             }
 
-            // Generate match arms for each OutputRenderElement variant.
-            macro_rules! process_zoom {
-                ($elem:expr, $($variant:ident),*) => {
-                    match $elem {
-                        OutputRenderElements::Pointer(elem) => {
-                            let offset = zoom_offset!(zoom_center);
-                            let zoom_factor = if scale_with_zoom { zoom_factor } else { 1.0 };
-                            let elements = {
-                                let scaled =
-                                    RescaleRenderElement::from_element(elem, (0, 0).into(), zoom_factor);
-                                let scaled_and_relocated = RelocateRenderElement::from_element(
-                                    scaled, offset, Relocate::Relative,
-                                );
-                                scaled_and_relocated
-                            };
-                            CropRenderElement::from_element(
-                                elements, output_scale,
-                                output_rect.to_physical_precise_round(output_scale),
-                            ).map(Into::into).into()
-                        }
-                        $(
-                            OutputRenderElements::$variant(elem) => {
-                                let offset = zoom_offset!(zoom_center);
-                                let scaled =
-                                    RescaleRenderElement::from_element(elem, (0, 0).into(), zoom_factor);
-                                let relocated = RelocateRenderElement::from_element(
-                                    scaled, offset, Relocate::Relative,
-                                );
-                                CropRenderElement::from_element(
-                                    relocated, output_scale,
-                                    output_rect.to_physical_precise_round(output_scale),
-                                ).map(Into::into).into()
-                            }
-                        )*
-                        // Other elements pass through unchanged
-                        _ => Some($elem),
-                    }
-                };
+            macro_rules! reposition_offset {
+                ($elem:expr, $center:expr) => {{
+                    let elem_geo = $elem.geometry(output_scale);
+                    let elem_pos_logical: Point<f64, Logical> = Point::from((
+                        elem_geo.loc.x as f64 / output_scale.x,
+                        elem_geo.loc.y as f64 / output_scale.y,
+                    ));
+                    let offset_x = (($center.x - elem_pos_logical.x) * (1.0 - zoom_factor)) as i32;
+                    let offset_y = (($center.y - elem_pos_logical.y) * (1.0 - zoom_factor)) as i32;
+                    Point::<i32, Physical>::from((
+                        (offset_x as f64 * output_scale.x) as i32,
+                        (offset_y as f64 * output_scale.y) as i32,
+                    ))
+                }};
             }
+
+            // Common builders to reduce repetition:
+            macro_rules! build_zoomed {
+                ($elem:expr) => {{
+                    let offset = zoom_offset!(zoom_center);
+                    let scaled =
+                        RescaleRenderElement::from_element($elem, (0, 0).into(), zoom_factor);
+                    let relocated =
+                        RelocateRenderElement::from_element(scaled, offset, Relocate::Relative);
+                    CropRenderElement::from_element(
+                        relocated,
+                        output_scale,
+                        output_rect.to_physical_precise_round(output_scale),
+                    )
+                    .map(Into::into)
+                    .into()
+                }};
+            }
+
+            macro_rules! build_repositioned {
+                ($elem:expr) => {{
+                    let offset = reposition_offset!($elem, zoom_center);
+                    let relocated =
+                        RelocateRenderElement::from_element($elem, offset, Relocate::Relative);
+                    CropRenderElement::from_element(
+                        relocated,
+                        output_scale,
+                        output_rect.to_physical_precise_round(output_scale),
+                    )
+                    .map(Into::into)
+                    .into()
+                }};
+            }
+
+            // Generate match arms for each OutputRenderElement variant.
+            macro_rules! apply_zoom {
+            ($elem:expr, $($variant:ident),*) => {
+                match $elem {
+                    OutputRenderElements::Pointer(elem) => {
+                        if scale_with_zoom {
+                            build_zoomed!(elem)
+                        } else {
+                            build_repositioned!(elem)
+                        }
+                    }
+                    $(
+                        OutputRenderElements::$variant(elem) => {
+                            build_zoomed!(elem)
+                        }
+                    )*
+                    // Other elements pass through unchanged
+                    _ => Some($elem),
+                }
+            };
+        }
 
             elements
                 .into_iter()
                 .filter_map(|elem| {
-                    process_zoom!(
+                    apply_zoom!(
                         elem,
                         Monitor,
                         RescaledTile,

@@ -2153,15 +2153,19 @@ impl Tty {
                 let logical = output.map(logical_output);
 
                 // Get zoom state from the monitor if available.
-                let (zoom_factor, zoom_movement, zoom_threshold) = output
+                let (zoom_factor, zoom_movement, zoom_threshold, zoom_frozen) = output
                     .and_then(|o| niri.layout.monitor_for_output(o))
-                    .map_or((1.0, niri_ipc::ZoomMovement::default(), 0.15), |mon| {
-                        (
-                            mon.zoom_factor,
-                            mon.zoom_movement,
-                            mon.zoom_threshold,
-                        )
-                    });
+                    .map_or(
+                        (1.0, niri_ipc::ZoomMovement::default(), 0.15, false),
+                        |mon| {
+                            (
+                                mon.zoom_factor,
+                                mon.zoom_movement,
+                                mon.zoom_threshold,
+                                mon.zoom_frozen,
+                            )
+                        },
+                    );
 
                 let id = device.known_crtcs.get(&crtc).map(|info| info.id);
                 let id = id.unwrap_or_else(|| {
@@ -2184,6 +2188,7 @@ impl Tty {
                     zoom_factor,
                     zoom_movement,
                     zoom_threshold,
+                    zoom_frozen,
                 };
 
                 ipc_outputs.insert(id, ipc_output);

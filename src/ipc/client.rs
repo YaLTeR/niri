@@ -571,6 +571,7 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         zoom_factor,
         zoom_movement,
         zoom_threshold,
+        zoom_frozen,
         ..
     } = output;
 
@@ -655,14 +656,15 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         println!("  Transform: {transform}");
     }
 
-    print!("  Zoom: {zoom_factor}x");
+    println!("  Zoom:");
+    println!("    Factor: {:.2}", zoom_factor);
     let m = match zoom_movement {
         niri_ipc::ZoomMovement::Cursor => "cursor-centered",
         niri_ipc::ZoomMovement::EdgePushed => "edge-pushed",
     };
-    print!(", {m}");
-    print!(", threshold: {:.2}", zoom_threshold);
-    println!();
+    println!("    Movement: {m}");
+    println!("    Threshold: {:.2} px", zoom_threshold);
+    println!("    Frozen: {}", if zoom_frozen { "true" } else { "false" });
 
     println!("  Available modes:");
     for (idx, mode) in modes.into_iter().enumerate() {

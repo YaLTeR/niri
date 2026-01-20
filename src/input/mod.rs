@@ -2419,6 +2419,18 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::ToggleZoomFreeze { output } => {
+                let target_output = match output {
+                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
+                    None => self.niri.layout.active_output().cloned(),
+                };
+                if let Some(output) = target_output {
+                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
+                        monitor.zoom_frozen = !monitor.zoom_frozen;
+                    }
+                    self.niri.queue_redraw_all();
+                }
+            }
         }
     }
 
@@ -2671,7 +2683,23 @@ impl State {
         // When cursor exits visible zoomed area, pan by cursor delta scaled by zoom
         for monitor in self.niri.layout.monitors_mut() {
             let zoom = monitor.zoom_factor;
+
+            // Skip if zoom center is frozen
+            if monitor.zoom_frozen {
+                continue;
+            }
+
             if zoom <= 1.0 || monitor.zoom_movement != ZoomMovement::EdgePushed {
+                // No zoom or not in EdgePushed mode
+                // Just update zoom center to current cursor position
+                monitor.zoom_center = new_pos
+                    - self
+                        .niri
+                        .global_space
+                        .output_geometry(monitor.output())
+                        .unwrap()
+                        .loc
+                        .to_f64();
                 continue;
             }
 

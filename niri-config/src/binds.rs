@@ -368,10 +368,6 @@ pub enum Action {
     #[knuffel(skip)]
     UnsetWindowUrgent(u64),
     #[knuffel(skip)]
-    ToggleZoom {
-        output: Option<String>,
-    },
-    #[knuffel(skip)]
     LoadConfigFile,
     #[knuffel(skip)]
     MruAdvance {
@@ -393,6 +389,14 @@ pub enum Action {
     MruSetScope(MruScope),
     #[knuffel(skip)]
     MruCycleScope,
+    #[knuffel(skip)]
+    ToggleZoom {
+        output: Option<String>,
+    },
+    #[knuffel(skip)]
+    ToggleZoomFreeze {
+        output: Option<String>,
+    },
 }
 
 impl From<niri_ipc::Action> for Action {
@@ -704,6 +708,7 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::SetWindowUrgent { id } => Self::SetWindowUrgent(id),
             niri_ipc::Action::UnsetWindowUrgent { id } => Self::UnsetWindowUrgent(id),
             niri_ipc::Action::ToggleZoom { output } => Self::ToggleZoom { output },
+            niri_ipc::Action::ToggleZoomFreeze { output } => Self::ToggleZoomFreeze { output },
             niri_ipc::Action::LoadConfigFile {} => Self::LoadConfigFile,
         }
     }

@@ -1176,6 +1176,7 @@ mod tests {
                             },
                         ),
                         layout: None,
+                        zoom: None,
                     },
                     Output {
                         off: false,
@@ -1202,6 +1203,7 @@ mod tests {
                         backdrop_color: None,
                         hot_corners: None,
                         layout: None,
+                        zoom: None,
                     },
                     Output {
                         off: false,
@@ -1231,6 +1233,7 @@ mod tests {
                         backdrop_color: None,
                         hot_corners: None,
                         layout: None,
+                        zoom: None,
                     },
                 ],
             ),
@@ -1460,6 +1463,7 @@ mod tests {
                 hide_after_inactive_ms: Some(
                     3000,
                 ),
+                scale_with_zoom: false,
             },
             screenshot_path: ScreenshotPath(
                 Some(

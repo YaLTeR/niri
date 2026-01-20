@@ -941,6 +941,14 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg())]
         output: Option<String>,
     },
+    /// Toggle zoom freeze for a monitor.
+    ///
+    /// If no output is specified, uses the focused output.
+    ToggleZoomFreeze {
+        /// Output to toggle zoom freeze for. If not specified, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
     /// Reload the config file.
     ///
     /// Can be useful for scripts changing the config file, to avoid waiting the small duration for
@@ -1072,6 +1080,12 @@ pub enum ZoomAction {
         /// Zoom threshold to set (0.0 - 1.0).
         #[cfg_attr(feature = "clap", arg())]
         threshold: f64,
+    },
+    /// Set zoom frozen state.
+    Frozen {
+        /// Whether to freeze the zoom center.
+        #[cfg_attr(feature = "clap", arg(action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new(), value_name = "true|false"))]
+        frozen: bool,
     },
 }
 
@@ -1310,6 +1324,8 @@ pub struct Output {
     ///
     /// Default is 0.15.
     pub zoom_threshold: f64,
+    /// Whether the zoom center is frozen.
+    pub zoom_frozen: bool,
 }
 
 /// Output mode.

@@ -98,6 +98,8 @@ pub struct Monitor<W: LayoutElement> {
     pub zoom_movement: ZoomMovement,
     /// Cursor zoom threshold for edge-pushed behavior (fraction of output size, default 0.15).
     pub zoom_threshold: f64,
+    /// Whether the cursor_zoom center is currently frozen (not updated with cursor movements).
+    pub zoom_frozen: bool,
 }
 
 #[derive(Debug)]
@@ -361,6 +363,7 @@ impl<W: LayoutElement> Monitor<W> {
             zoom_center: Point::from((0., 0.)),
             zoom_movement: ZoomMovement::default(),
             zoom_threshold: 0.15,
+            zoom_frozen: false,
         }
     }
 
@@ -1400,6 +1403,9 @@ impl<W: LayoutElement> Monitor<W> {
             }
             if let Some(threshold) = zoom.threshold {
                 self.zoom_threshold = threshold.clamp(0.0, 1.0);
+            }
+            if let Some(frozen) = zoom.frozen {
+                self.zoom_frozen = frozen.0;
             }
         }
     }

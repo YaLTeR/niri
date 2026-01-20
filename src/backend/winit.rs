@@ -92,6 +92,7 @@ impl Winit {
                 zoom_factor: 1.0,
                 zoom_movement: niri_ipc::ZoomMovement::default(),
                 zoom_threshold: 0.15,
+                zoom_frozen: false,
             },
         )])));
 
@@ -281,6 +282,7 @@ impl Winit {
                 output.zoom_factor = mon.zoom_factor;
                 output.zoom_movement = mon.zoom_movement;
                 output.zoom_threshold = mon.zoom_threshold;
+                output.zoom_frozen = mon.zoom_frozen;
             }
         }
     }

@@ -8,7 +8,7 @@ use knuffel::Decode;
 use niri_ipc::{ConfiguredMode, HSyncPolarity, Transform, VSyncPolarity};
 
 use crate::gestures::HotCorners;
-use crate::utils::MergeWith;
+use crate::utils::{Flag, MergeWith};
 use crate::{Color, FloatOrInt, LayoutPart};
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -56,6 +56,8 @@ pub struct Zoom {
     pub movement: Option<niri_ipc::ZoomMovement>,
     #[knuffel(child, unwrap(argument))]
     pub threshold: Option<f64>,
+    #[knuffel(child)]
+    pub frozen: Option<Flag>,
 }
 
 impl MergeWith<Zoom> for Zoom {
@@ -68,6 +70,9 @@ impl MergeWith<Zoom> for Zoom {
         }
         if part.threshold.is_some() {
             self.threshold = part.threshold;
+        }
+        if part.frozen.is_some() {
+            self.frozen = part.frozen;
         }
     }
 }
