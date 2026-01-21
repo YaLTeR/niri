@@ -460,13 +460,16 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             ctx.event_loop.insert_idle(move |state| {
                 let result = if let Some(output) = state.niri.layout.active_output().cloned() {
                     if let Some(monitor) = state.niri.layout.monitor_for_output(&output) {
-                        Ok(ZoomState {
-                            factor: monitor.zoom_factor,
-                            enabled: monitor.zoom_enabled,
-                            movement: monitor.zoom_movement,
-                            threshold: monitor.zoom_threshold,
-                            frozen: monitor.zoom_frozen,
-                        })
+                        Ok((
+                            output.name().to_owned(),
+                            ZoomState {
+                                factor: monitor.zoom_factor,
+                                enabled: monitor.zoom_enabled,
+                                movement: monitor.zoom_movement,
+                                threshold: monitor.zoom_threshold,
+                                frozen: monitor.zoom_frozen,
+                            },
+                        ))
                     } else {
                         Err("no monitor for active output".to_owned())
                     }
@@ -476,9 +479,12 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
                 let _ = tx.send_blocking(result);
             });
             let result = rx.recv().await;
-            let zoom_state =
+            let (output, zoom_state) =
                 result.map_err(|_| String::from("error getting zoom state info"))??;
-            Response::ZoomState(zoom_state)
+            Response::ZoomStateChange {
+                output,
+                state: zoom_state,
+            }
         }
     };
 
@@ -956,6 +962,20 @@ impl State {
         let mut state = server.event_stream_state.borrow_mut();
 
         let event = Event::ScreenshotCaptured { path };
+        state.apply(event.clone());
+        server.send_event(event);
+    }
+
+    pub fn ipc_send_zoom_state_change(&mut self, output: &str, zoom_state: niri_ipc::ZoomState) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+        let mut state = server.event_stream_state.borrow_mut();
+
+        let event = Event::ZoomStateChange {
+            output: output.to_owned(),
+            state: zoom_state,
+        };
         state.apply(event.clone());
         server.send_event(event);
     }

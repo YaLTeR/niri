@@ -168,7 +168,12 @@ pub enum Response {
     /// Information about screencasts.
     Casts(Vec<Cast>),
     /// Information about the zoom state.
-    ZoomState(ZoomState),
+    ZoomStateChange {
+        /// Output the zoom state change occurred on.
+        output: String,
+        /// The new zoom state.
+        state: ZoomState,
+    },
 }
 
 /// Overview information.
@@ -1812,6 +1817,13 @@ pub enum Event {
     CastStopped {
         /// Stream ID of the stopped screencast.
         stream_id: u64,
+    },
+    /// The Zoom configuration has changed.
+    ZoomStateChange {
+        /// Output the zoom state change occurred on.
+        output: String,
+        /// The new zoom state.
+        state: ZoomState,
     },
 }
 

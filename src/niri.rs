@@ -4133,53 +4133,36 @@ impl Niri {
                 }};
             }
 
-            // Common builders to reduce repetition:
-            macro_rules! build_zoomed {
-                ($elem:expr) => {{
-                    let offset = zoom_offset!(zoom_center);
-                    let scaled =
-                        RescaleRenderElement::from_element($elem, (0, 0).into(), zoom_factor);
-                    let relocated =
-                        RelocateRenderElement::from_element(scaled, offset, Relocate::Relative);
-                    CropRenderElement::from_element(
-                        relocated,
-                        output_scale,
-                        output_rect.to_physical_precise_round(output_scale),
-                    )
-                    .map(Into::into)
-                    .into()
-                }};
-            }
-
-            macro_rules! build_repositioned {
-                ($elem:expr) => {{
-                    let offset = reposition_offset!($elem, zoom_center);
-                    let relocated =
-                        RelocateRenderElement::from_element($elem, offset, Relocate::Relative);
-                    CropRenderElement::from_element(
-                        relocated,
-                        output_scale,
-                        output_rect.to_physical_precise_round(output_scale),
-                    )
-                    .map(Into::into)
-                    .into()
-                }};
-            }
-
             // Generate match arms for each OutputRenderElement variant.
             macro_rules! apply_zoom {
             ($elem:expr, $($variant:ident),*) => {
                 match $elem {
-                    OutputRenderElements::Pointer(elem) => {
-                        if scale_with_zoom {
-                            build_zoomed!(elem)
-                        } else {
-                            build_repositioned!(elem)
-                        }
+                    OutputRenderElements::Pointer(elem) if !scale_with_zoom => {
+                        let offset = reposition_offset!(elem, zoom_center);
+                        let relocated =
+                            RelocateRenderElement::from_element(elem, offset, Relocate::Relative);
+                        CropRenderElement::from_element(
+                            relocated,
+                            output_scale,
+                            output_rect.to_physical_precise_round(output_scale),
+                        )
+                        .map(Into::into)
+                        .into()
                     }
                     $(
                         OutputRenderElements::$variant(elem) => {
-                            build_zoomed!(elem)
+                            let offset = zoom_offset!(zoom_center);
+                            let scaled =
+                                RescaleRenderElement::from_element(elem, (0, 0).into(), zoom_factor);
+                            let relocated =
+                                RelocateRenderElement::from_element(scaled, offset, Relocate::Relative);
+                            CropRenderElement::from_element(
+                                relocated,
+                                output_scale,
+                                output_rect.to_physical_precise_round(output_scale),
+                            )
+                            .map(Into::into)
+                            .into()
                         }
                     )*
                     // Other elements pass through unchanged
@@ -4196,6 +4179,7 @@ impl Niri {
                         Monitor,
                         RescaledTile,
                         LayerSurface,
+                        Pointer,
                         Wayland,
                         SolidColor,
                         ExitConfirmDialog,
