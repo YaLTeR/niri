@@ -88,10 +88,10 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) options: Rc<Options>,
     /// Layout config overrides for this monitor.
     layout_config: Option<niri_config::LayoutPart>,
-    /// Cursor zoom factor for this monitor (1.0 = no zoom).
-    pub zoom_factor: f64,
     /// Whether cursor zoom is enabled for this monitor.
     pub zoom_enabled: bool,
+    /// Cursor zoom factor for this monitor (1.0 = no zoom).
+    pub zoom_factor: f64,
     /// Cursor zoom center position for this monitor (in output-local logical coordinates).
     pub zoom_center: Point<f64, Logical>,
     /// Cursor zoom movement mode for this monitor.

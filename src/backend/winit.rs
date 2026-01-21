@@ -89,6 +89,7 @@ impl Winit {
                 vrr_supported: false,
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),
+                zoom_enabled: false,
                 zoom_factor: 1.0,
                 zoom_movement: niri_ipc::ZoomMovement::default(),
                 zoom_threshold: 0.15,

@@ -119,6 +119,8 @@ pub enum Request {
     OverviewState,
     /// Request information about screencasts.
     Casts,
+    /// Request information about the zoom state on the focused output.
+    ZoomState,
 }
 
 /// Reply from niri to client.
@@ -165,6 +167,8 @@ pub enum Response {
     OverviewState(Overview),
     /// Information about screencasts.
     Casts(Vec<Cast>),
+    /// Information about the zoom state.
+    ZoomState(ZoomState),
 }
 
 /// Overview information.
@@ -173,6 +177,22 @@ pub enum Response {
 pub struct Overview {
     /// Whether the overview is currently open.
     pub is_open: bool,
+}
+
+/// Zoom state for a monitor.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ZoomState {
+    /// Whether zoom is enabled.
+    pub enabled: bool,
+    /// Current zoom factor.
+    pub factor: f64,
+    /// Current zoom movement mode.
+    pub movement: ZoomMovement,
+    /// Current zoom threshold.
+    pub threshold: f64,
+    /// Whether the zoom center is frozen.
+    pub frozen: bool,
 }
 
 /// Color picked from the screen.
@@ -949,6 +969,33 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg())]
         output: Option<String>,
     },
+    /// Set the zoom factor for a monitor.
+    SetZoomFactor {
+        /// Zoom factor to set (absolute like "2.0" or relative like "+0.5", "-0.5").
+        #[cfg_attr(feature = "clap", arg())]
+        factor: String,
+        /// Output to set zoom factor for. If not specified, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
+    /// Set the zoom movement mode for a monitor.
+    SetZoomMovement {
+        /// Zoom movement mode to set ("cursor-follow" or "edge-pushed").
+        #[cfg_attr(feature = "clap", arg())]
+        movement: ZoomMovement,
+        /// Output to set zoom movement for. If not specified, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
+    /// Set the zoom threshold for a monitor.
+    SetZoomThreshold {
+        /// Zoom threshold to set (0.0 - 1.0).
+        #[cfg_attr(feature = "clap", arg())]
+        threshold: f64,
+        /// Output to set zoom threshold for. If not specified, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
     /// Reload the config file.
     ///
     /// Can be useful for scripts changing the config file, to avoid waiting the small duration for
@@ -1056,39 +1103,6 @@ impl std::fmt::Display for ZoomMovement {
     }
 }
 
-/// Zoom subactions for configuring zoom on an output.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[cfg_attr(feature = "clap", derive(clap::Parser))]
-#[cfg_attr(feature = "clap", command(subcommand_value_name = "ZOOM_ACTION"))]
-#[cfg_attr(feature = "clap", command(subcommand_help_heading = "Zoom Actions"))]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub enum ZoomAction {
-    /// Set the zoom factor.
-    Factor {
-        /// Zoom factor to set (absolute like "2.0" or relative like "+0.5", "-0.5").
-        #[cfg_attr(feature = "clap", arg())]
-        factor: String,
-    },
-    /// Set the zoom movement mode.
-    Movement {
-        /// Zoom movement mode to set ("cursor" or "edge-pushed").
-        #[cfg_attr(feature = "clap", arg())]
-        movement: ZoomMovement,
-    },
-    /// Set the zoom threshold as fraction of output size.
-    Threshold {
-        /// Zoom threshold to set (0.0 - 1.0).
-        #[cfg_attr(feature = "clap", arg())]
-        threshold: f64,
-    },
-    /// Set zoom frozen state.
-    Frozen {
-        /// Whether to freeze the zoom center.
-        #[cfg_attr(feature = "clap", arg(action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new(), value_name = "true|false"))]
-        frozen: bool,
-    },
-}
-
 /// Output actions that niri can perform.
 // Variants in this enum should match the spelling of the ones in niri-config. Most thigs from
 // niri-config should be present here.
@@ -1178,12 +1192,6 @@ pub enum OutputAction {
         /// Variable refresh rate mode to set.
         #[cfg_attr(feature = "clap", command(flatten))]
         vrr: VrrToSet,
-    },
-    /// Configure zoom settings.
-    Zoom {
-        /// Zoom subcommand.
-        #[cfg_attr(feature = "clap", command(subcommand))]
-        action: Option<ZoomAction>,
     },
 }
 
@@ -1316,6 +1324,8 @@ pub struct Output {
     ///
     /// `None` if the output is not mapped to any logical output (for example, if it is disabled).
     pub logical: Option<LogicalOutput>,
+    /// Whether zoom is enabled.
+    pub zoom_enabled: bool,
     /// Current zoom factor.
     pub zoom_factor: f64,
     /// Current zoom movement mode.

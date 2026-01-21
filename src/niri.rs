@@ -1916,40 +1916,6 @@ impl State {
                     None
                 }
             }
-            niri_ipc::OutputAction::Zoom { action } => {
-                if let Some(action) = action {
-                    let zoom = config.zoom.get_or_insert_with(Default::default);
-                    match action {
-                        niri_ipc::ZoomAction::Factor { factor, .. } => {
-                            let factor_str = factor.trim();
-                            let is_relative =
-                                factor_str.starts_with('+') || factor_str.starts_with('-');
-                            match factor_str.parse::<f64>() {
-                                Ok(f) if !is_relative => {
-                                    // Absolute zoom factor
-                                    zoom.factor = Some(FloatOrInt(f.max(1.0)));
-                                }
-                                Ok(delta) => {
-                                    // Relative zoom adjustment
-                                    zoom.factor = zoom
-                                        .factor
-                                        .map(|f| FloatOrInt((f.0 + delta).clamp(1.0, 100.0)));
-                                }
-                                Err(_) => {}
-                            }
-                        }
-                        niri_ipc::ZoomAction::Movement { movement, .. } => {
-                            zoom.movement = Some(movement);
-                        }
-                        niri_ipc::ZoomAction::Threshold { threshold, .. } => {
-                            zoom.threshold = Some(threshold.clamp(0.0, 1.0));
-                        }
-                        niri_ipc::ZoomAction::Frozen { frozen } => {
-                            zoom.frozen = Some(niri_config::utils::Flag(frozen));
-                        }
-                    }
-                }
-            }
         });
 
         self.reload_output_config();

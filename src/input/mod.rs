@@ -2431,6 +2431,54 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::SetZoomFactor { factor, output } => {
+                let target_output = match output {
+                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
+                    None => self.niri.layout.active_output().cloned(),
+                };
+                if let Some(output) = target_output {
+                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
+                        let factor_str = factor.trim();
+                        let is_relative =
+                            factor_str.starts_with('+') || factor_str.starts_with('-');
+                        match factor_str.parse::<f64>() {
+                            Ok(f) if !is_relative => {
+                                monitor.zoom_factor = f.max(1.0);
+                            }
+                            Ok(delta) => {
+                                monitor.zoom_factor =
+                                    (monitor.zoom_factor + delta).clamp(1.0, 100.0);
+                            }
+                            Err(_) => {}
+                        }
+                    }
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetZoomMovement { movement, output } => {
+                let target_output = match output {
+                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
+                    None => self.niri.layout.active_output().cloned(),
+                };
+                if let Some(output) = target_output {
+                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
+                        monitor.zoom_movement = movement;
+                    }
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetZoomThreshold { threshold, output } => {
+                let target_output = match output {
+                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
+                    None => self.niri.layout.active_output().cloned(),
+                };
+                if let Some(output) = target_output {
+                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
+                        monitor.zoom_threshold = threshold.clamp(0.0, 1.0);
+                    }
+                    self.niri.queue_redraw_all();
+                }
+            }
         }
     }
 

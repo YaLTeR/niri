@@ -18,7 +18,7 @@ use niri_config::OutputName;
 use niri_ipc::state::{EventStreamState, EventStreamStatePart as _};
 use niri_ipc::{
     Action, Event, KeyboardLayouts, OutputConfigChanged, Overview, Reply, Request, Response,
-    Timestamp, WindowLayout, Workspace,
+    Timestamp, WindowLayout, Workspace, ZoomState,
 };
 use smithay::desktop::layer_map_for_output;
 use smithay::input::pointer::{
@@ -454,6 +454,31 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let state = ctx.event_stream_state.borrow();
             let casts = state.casts.casts.values().cloned().collect();
             Response::Casts(casts)
+        }
+        Request::ZoomState => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let result = if let Some(output) = state.niri.layout.active_output().cloned() {
+                    if let Some(monitor) = state.niri.layout.monitor_for_output(&output) {
+                        Ok(ZoomState {
+                            factor: monitor.zoom_factor,
+                            enabled: monitor.zoom_enabled,
+                            movement: monitor.zoom_movement,
+                            threshold: monitor.zoom_threshold,
+                            frozen: monitor.zoom_frozen,
+                        })
+                    } else {
+                        Err("no monitor for active output".to_owned())
+                    }
+                } else {
+                    Err("no active output".to_owned())
+                };
+                let _ = tx.send_blocking(result);
+            });
+            let result = rx.recv().await;
+            let zoom_state =
+                result.map_err(|_| String::from("error getting zoom state info"))??;
+            Response::ZoomState(zoom_state)
         }
     };
 
