@@ -5,7 +5,7 @@ use niri_config::BlockOutFrom;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
 use smithay::backend::renderer::element::utils::{Relocate, RelocateRenderElement};
-use smithay::backend::renderer::element::{Kind, RenderElement};
+use smithay::backend::renderer::element::{Element, Kind, RenderElement};
 use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTarget, GlesTexture};
 use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::{Bind, Color32F, ExportMem, Frame, Offscreen, Renderer};
@@ -120,7 +120,7 @@ impl ToRenderElement for BakedBuffer<SolidColorBuffer> {
 
 pub fn encompassing_geo(
     scale: Scale<f64>,
-    elements: impl Iterator<Item = impl RenderElement<GlesRenderer>>,
+    elements: impl Iterator<Item = impl Element>,
 ) -> Rectangle<i32, Physical> {
     elements
         .map(|ele| ele.geometry(scale))

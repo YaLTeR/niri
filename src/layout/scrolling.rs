@@ -3494,7 +3494,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if gesture.dnd_last_event_time.is_some() && gesture.tracker.pos() == 0. {
             // DnD didn't scroll anything, so preserve the current view position (rather than
             // snapping the window).
-            self.view_offset = ViewOffset::Static(gesture.delta_from_tracker);
+
+            // If there's an ongoing animation within the gesture (e.g. from a window being removed
+            // during DnD), preserve it.
+            if let Some(mut anim) = gesture.animation.take() {
+                anim.offset(gesture.current_view_offset);
+                self.view_offset = ViewOffset::Animation(anim);
+            } else {
+                self.view_offset = ViewOffset::Static(gesture.delta_from_tracker);
+            }
 
             if !self.columns.is_empty() {
                 // Just in case, make sure the active window remains on screen.

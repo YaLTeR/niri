@@ -6,12 +6,14 @@ use niri_config::{Color, CornerRadius};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, Uniform};
 use smithay::backend::renderer::utils::{CommitCounter, DamageSet, OpaqueRegions};
+use smithay::gpu_span_location;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::renderer::NiriRenderer;
 use super::shader_element::ShaderRenderElement;
 use super::shaders::{mat3_uniform, ProgramType, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
+use crate::render_helpers::renderer::AsGlesFrame as _;
 
 /// Renders a rounded rectangle shadow.
 #[derive(Debug, Clone)]
@@ -245,7 +247,17 @@ impl RenderElement<GlesRenderer> for ShadowRenderElement {
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), GlesError> {
-        RenderElement::<GlesRenderer>::draw(&self.inner, frame, src, dst, damage, opaque_regions)
+        let _span = tracy_client::span!("ShadowRenderElement::draw");
+        frame.with_gpu_span(gpu_span_location!("ShadowRenderElement::draw"), |frame| {
+            RenderElement::<GlesRenderer>::draw(
+                &self.inner,
+                frame,
+                src,
+                dst,
+                damage,
+                opaque_regions,
+            )
+        })
     }
 
     fn underlying_storage(&self, renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
@@ -262,7 +274,9 @@ impl<'render> RenderElement<TtyRenderer<'render>> for ShadowRenderElement {
         damage: &[Rectangle<i32, Physical>],
         opaque_regions: &[Rectangle<i32, Physical>],
     ) -> Result<(), TtyRendererError<'render>> {
-        RenderElement::<TtyRenderer<'_>>::draw(&self.inner, frame, src, dst, damage, opaque_regions)
+        let frame = frame.as_gles_frame();
+        RenderElement::<GlesRenderer>::draw(self, frame, src, dst, damage, opaque_regions)?;
+        Ok(())
     }
 
     fn underlying_storage(

@@ -3409,30 +3409,32 @@ mod tests {
             hsync_polarity: HSyncPolarity::NHSync,
             vsync_polarity: VSyncPolarity::PVSync,
         };
-        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline1).unwrap(), @"Mode {
-    name: \"1920x1080@59.96\",
-    clock: 173000,
-    size: (
-        1920,
-        1080,
-    ),
-    hsync: (
-        2048,
-        2248,
-        2576,
-    ),
-    vsync: (
-        1083,
-        1088,
-        1120,
-    ),
-    hskew: 0,
-    vscan: 0,
-    vrefresh: 60,
-    mode_type: ModeTypeFlags(
-        USERDEF,
-    ),
-}");
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline1).unwrap(), @r#"
+        Mode {
+            name: "1920x1080@59.96",
+            clock: 173000,
+            size: (
+                1920,
+                1080,
+            ),
+            hsync: (
+                2048,
+                2248,
+                2576,
+            ),
+            vsync: (
+                1083,
+                1088,
+                1120,
+            ),
+            hskew: 0,
+            vscan: 0,
+            vrefresh: 60,
+            mode_type: ModeTypeFlags(
+                USERDEF,
+            ),
+        }
+        "#);
         let modeline2 = Modeline {
             clock: 452.5,
             hdisplay: 1920,
@@ -3446,82 +3448,88 @@ mod tests {
             hsync_polarity: HSyncPolarity::NHSync,
             vsync_polarity: VSyncPolarity::PVSync,
         };
-        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline2).unwrap(), @"Mode {
-    name: \"1920x1080@143.88\",
-    clock: 452500,
-    size: (
-        1920,
-        1080,
-    ),
-    hsync: (
-        2088,
-        2296,
-        2672,
-    ),
-    vsync: (
-        1083,
-        1088,
-        1177,
-    ),
-    hskew: 0,
-    vscan: 0,
-    vrefresh: 144,
-    mode_type: ModeTypeFlags(
-        USERDEF,
-    ),
-}");
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline2).unwrap(), @r#"
+        Mode {
+            name: "1920x1080@143.88",
+            clock: 452500,
+            size: (
+                1920,
+                1080,
+            ),
+            hsync: (
+                2088,
+                2296,
+                2672,
+            ),
+            vsync: (
+                1083,
+                1088,
+                1177,
+            ),
+            hskew: 0,
+            vscan: 0,
+            vrefresh: 144,
+            mode_type: ModeTypeFlags(
+                USERDEF,
+            ),
+        }
+        "#);
     }
 
     #[test]
     fn test_calc_cvt() {
         // Crosschecked with other calculators like the cvt commandline utility.
-        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 60.0), @"Mode {
-    name: \"1920x1080@59.96\",
-    clock: 173000,
-    size: (
-        1920,
-        1080,
-    ),
-    hsync: (
-        2048,
-        2248,
-        2576,
-    ),
-    vsync: (
-        1083,
-        1088,
-        1120,
-    ),
-    hskew: 0,
-    vscan: 0,
-    vrefresh: 60,
-    mode_type: ModeTypeFlags(
-        USERDEF,
-    ),
-}");
-        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 144.0), @"Mode {
-    name: \"1920x1080@143.88\",
-    clock: 452500,
-    size: (
-        1920,
-        1080,
-    ),
-    hsync: (
-        2088,
-        2296,
-        2672,
-    ),
-    vsync: (
-        1083,
-        1088,
-        1177,
-    ),
-    hskew: 0,
-    vscan: 0,
-    vrefresh: 144,
-    mode_type: ModeTypeFlags(
-        USERDEF,
-    ),
-}");
+        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 60.0), @r#"
+        Mode {
+            name: "1920x1080@59.96",
+            clock: 173000,
+            size: (
+                1920,
+                1080,
+            ),
+            hsync: (
+                2048,
+                2248,
+                2576,
+            ),
+            vsync: (
+                1083,
+                1088,
+                1120,
+            ),
+            hskew: 0,
+            vscan: 0,
+            vrefresh: 60,
+            mode_type: ModeTypeFlags(
+                USERDEF,
+            ),
+        }
+        "#);
+        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 144.0), @r#"
+        Mode {
+            name: "1920x1080@143.88",
+            clock: 452500,
+            size: (
+                1920,
+                1080,
+            ),
+            hsync: (
+                2088,
+                2296,
+                2672,
+            ),
+            vsync: (
+                1083,
+                1088,
+                1177,
+            ),
+            hskew: 0,
+            vscan: 0,
+            vrefresh: 144,
+            mode_type: ModeTypeFlags(
+                USERDEF,
+            ),
+        }
+        "#);
     }
 }
