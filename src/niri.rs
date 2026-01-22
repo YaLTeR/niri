@@ -4046,112 +4046,49 @@ impl Niri {
         elements
     }
 
-    pub fn render<R: NiriRenderer>(
+    pub fn zoom_render_elements<R: NiriRenderer>(
         &self,
-        renderer: &mut R,
+        elements: Vec<OutputRenderElements<R>>,
         output: &Output,
-        include_pointer: bool,
-        target: RenderTarget,
     ) -> Vec<OutputRenderElements<R>> {
-        let mut elements = Vec::new();
+        let output_scale = Scale::from(output.current_scale().fractional_scale());
+        let output_geo = self.global_space.output_geometry(output).unwrap();
+        let output_size = output_geo.size.to_f64();
+        let output_rect = Rectangle::new(Point::new(0., 0.), output_size);
 
         let monitor = self.layout.monitor_for_output(output).unwrap();
         let zoom_factor = monitor.zoom_factor;
-        let zoom_enabled = monitor.zoom_enabled;
+        let zoom_frozen = monitor.zoom_frozen;
+        let zoom_movement = monitor.zoom_movement;
 
-        if zoom_enabled && zoom_factor > 1.0 {
-            // Use Nearest neighbor filtering for high zoom levels (pixel-perfect),
-            // Linear for lower zoom levels (smooth).
-            let filter = if zoom_factor > 3.0 {
-                TextureFilter::Nearest
-            } else {
-                TextureFilter::Linear
-            };
-            let gles = renderer.as_gles_renderer();
-            let _ = gles.upscale_filter(filter).map_err(|err| {
-                warn!("error setting upscale filter: {err:?}");
-            });
-            let _ = gles.downscale_filter(filter).map_err(|err| {
-                warn!("error setting downscale filter: {err:?}");
-            });
-        }
-
-        self.render_inner(renderer, output, include_pointer, target, &mut |elem| {
-            elements.push(elem)
-        });
-
-        let output_scale = Scale::from(output.current_scale().fractional_scale());
-        if self.debug_draw_opaque_regions {
-            draw_opaque_regions(&mut elements, output_scale);
-        }
-
-        let elements = if zoom_enabled && zoom_factor > 1.0 {
-            let output_geo = self.global_space.output_geometry(output).unwrap();
-            let output_size = output_geo.size.to_f64();
-            let output_rect = Rectangle::new(Point::new(0., 0.), output_size);
-
-            let zoom_center = match monitor.zoom_movement {
-                niri_ipc::ZoomMovement::Cursor => {
-                    if monitor.zoom_frozen {
-                        monitor.zoom_center
-                    } else {
-                        let pointer = self.seat.get_pointer().unwrap();
-                        let cursor_pos = pointer.current_location();
-                        cursor_pos - output_geo.loc.to_f64()
-                    }
-                }
-                niri_ipc::ZoomMovement::EdgePushed => monitor.zoom_center,
-            };
-
-            let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
-
-            // Compute physical offset for zoom repositioning.
-            macro_rules! zoom_offset {
-                ($center:expr) => {{
-                    let offset_x = ($center.x * (1.0 - zoom_factor)) as i32;
-                    let offset_y = ($center.y * (1.0 - zoom_factor)) as i32;
-                    Point::<i32, Physical>::from((
-                        (offset_x as f64 * output_scale.x) as i32,
-                        (offset_y as f64 * output_scale.y) as i32,
-                    ))
-                }};
+        let zoom_center = match (zoom_frozen, zoom_movement) {
+            (true, _) | (_, niri_ipc::ZoomMovement::EdgePushed) => monitor.zoom_center,
+            (false, niri_ipc::ZoomMovement::Cursor) => {
+                let pointer = self.seat.get_pointer().unwrap();
+                let cursor_pos = pointer.current_location();
+                cursor_pos // - output_geo.loc.to_f64()
             }
+        };
 
-            macro_rules! reposition_offset {
-                ($elem:expr, $center:expr) => {{
-                    let elem_geo = $elem.geometry(output_scale);
-                    let elem_pos_logical: Point<f64, Logical> = Point::from((
-                        elem_geo.loc.x as f64 / output_scale.x,
-                        elem_geo.loc.y as f64 / output_scale.y,
-                    ));
-                    let offset_x = (($center.x - elem_pos_logical.x) * (1.0 - zoom_factor)) as i32;
-                    let offset_y = (($center.y - elem_pos_logical.y) * (1.0 - zoom_factor)) as i32;
-                    Point::<i32, Physical>::from((
-                        (offset_x as f64 * output_scale.x) as i32,
-                        (offset_y as f64 * output_scale.y) as i32,
-                    ))
-                }};
-            }
+        let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
 
-            // Generate match arms for each OutputRenderElement variant.
-            macro_rules! apply_zoom {
+        // Generate match arms for each OutputRenderElement variant.
+        macro_rules! apply_zoom {
             ($elem:expr, $($variant:ident),*) => {
                 match $elem {
-                    OutputRenderElements::Pointer(elem) if !scale_with_zoom => {
-                        let offset = reposition_offset!(elem, zoom_center);
-                        let relocated =
-                            RelocateRenderElement::from_element(elem, offset, Relocate::Relative);
-                        CropRenderElement::from_element(
-                            relocated,
-                            output_scale,
-                            output_rect.to_physical_precise_round(output_scale),
-                        )
-                        .map(Into::into)
-                        .into()
+                    OutputRenderElements::Pointer(_) if !scale_with_zoom => {
+                        // When scale_with_zoom=false, cursor should pass through unchanged
+                        // to match host compositor cursor position exactly
+                        Some($elem)
                     }
                     $(
                         OutputRenderElements::$variant(elem) => {
-                            let offset = zoom_offset!(zoom_center);
+                            let offset_x = (zoom_center.x * (1.0 - zoom_factor)) as i32;
+                            let offset_y = (zoom_center.y * (1.0 - zoom_factor)) as i32;
+                            let offset = Point::<i32, Physical>::from((
+                                (offset_x as f64 * output_scale.x) as i32,
+                                (offset_y as f64 * output_scale.y) as i32,
+                            ));
                             let scaled =
                                 RescaleRenderElement::from_element(elem, (0, 0).into(), zoom_factor);
                             let relocated =
@@ -4168,30 +4105,65 @@ impl Niri {
                     // Other elements pass through unchanged
                     _ => Some($elem),
                 }
-            };
+            }
         }
 
-            elements
-                .into_iter()
-                .filter_map(|elem| {
-                    apply_zoom!(
-                        elem,
-                        Monitor,
-                        RescaledTile,
-                        LayerSurface,
-                        Pointer,
-                        Wayland,
-                        SolidColor,
-                        ExitConfirmDialog,
-                        Texture,
-                        RelocatedColor,
-                        RelocatedLayerSurface
-                    )
-                })
-                .collect()
-        } else {
-            elements
-        };
+        elements
+            .into_iter()
+            .filter_map(|elem| {
+                apply_zoom!(
+                    elem,
+                    Monitor,
+                    RescaledTile,
+                    LayerSurface,
+                    Pointer,
+                    Wayland,
+                    SolidColor,
+                    ExitConfirmDialog,
+                    Texture,
+                    RelocatedColor,
+                    RelocatedLayerSurface
+                )
+            })
+            .collect()
+    }
+
+    pub fn render<R: NiriRenderer>(
+        &self,
+        renderer: &mut R,
+        output: &Output,
+        include_pointer: bool,
+        target: RenderTarget,
+    ) -> Vec<OutputRenderElements<R>> {
+        let mut elements = Vec::new();
+
+        let monitor = self.layout.monitor_for_output(output).unwrap();
+        let zoom_factor = monitor.zoom_factor;
+
+        // Use Nearest neighbor filtering for high zoom levels (pixel-perfect),
+        if zoom_factor > 1.5 {
+            let filter = TextureFilter::Nearest;
+            let gles = renderer.as_gles_renderer();
+            let _ = gles.upscale_filter(filter).map_err(|err| {
+                warn!("error setting upscale filter: {err:?}");
+            });
+            let _ = gles.downscale_filter(filter).map_err(|err| {
+                warn!("error setting downscale filter: {err:?}");
+            });
+        }
+
+        self.render_inner(renderer, output, include_pointer, target, &mut |elem| {
+            elements.push(elem)
+        });
+
+        if self.debug_draw_opaque_regions {
+            let output_scale = Scale::from(output.current_scale().fractional_scale());
+            draw_opaque_regions(&mut elements, output_scale);
+        }
+
+        if zoom_factor > 1.0 {
+            elements = self.zoom_render_elements(elements, output);
+        }
 
         elements
     }
