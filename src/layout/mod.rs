@@ -219,6 +219,7 @@ pub trait LayoutElement {
     fn set_activated(&mut self, active: bool);
     fn set_active_in_column(&mut self, active: bool);
     fn set_floating(&mut self, floating: bool);
+    fn set_sticky(&mut self, sticky: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
     fn is_ignoring_opacity_window_rule(&self) -> bool;
 
@@ -3349,6 +3350,102 @@ impl<W: LayoutElement> Layout<W> {
         workspace.toggle_window_floating(window);
     }
 
+    pub fn toggle_window_sticky(&mut self, window: Option<&W::Id>) {
+        if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
+            if window.is_none() || window == Some(move_.tile.window().id()) {
+                return;
+            }
+        }
+
+        let target_id = if let Some(window) = window {
+            window.clone()
+        } else {
+            let Some((win, _)) = self.focus_with_output() else {
+                return;
+            };
+            win.id().clone()
+        };
+
+        let MonitorSet::Normal {
+            monitors,
+            active_monitor_idx,
+            ..
+        } = &mut self.monitor_set
+        else {
+            return;
+        };
+
+        if let Some((mon_idx, _)) = monitors
+            .iter()
+            .enumerate()
+            .find(|(_, mon)| mon.sticky_has_window(&target_id))
+        {
+            let activate = monitors[mon_idx]
+                .active_window()
+                .is_some_and(|win| win.id() == &target_id);
+            let Some(mut removed) = monitors[mon_idx].remove_sticky_tile(&target_id) else {
+                return;
+            };
+            removed.tile.stop_move_animations();
+
+            let ws_id = monitors[mon_idx].workspaces[monitors[mon_idx].active_workspace_idx].id();
+            monitors[mon_idx].add_tile(
+                removed.tile,
+                MonitorAddWindowTarget::Workspace {
+                    id: ws_id,
+                    column_idx: None,
+                },
+                if activate {
+                    ActivateWindow::Yes
+                } else {
+                    ActivateWindow::No
+                },
+                true,
+                removed.width,
+                removed.is_full_width,
+                true,
+            );
+
+            if activate {
+                monitors[mon_idx].focus_workspace();
+                *active_monitor_idx = mon_idx;
+            }
+
+            return;
+        }
+
+        let Some((mon_idx, ws_idx)) = monitors.iter().enumerate().find_map(|(mon_idx, mon)| {
+            mon.workspaces
+                .iter()
+                .position(|ws| ws.has_window(&target_id))
+                .map(|ws_idx| (mon_idx, ws_idx))
+        }) else {
+            return;
+        };
+
+        let mon = &mut monitors[mon_idx];
+        let target_is_active = mon
+            .active_window()
+            .is_some_and(|win| win.id() == &target_id);
+
+        let ws = &mut mon.workspaces[ws_idx];
+        if !ws.is_floating(&target_id) {
+            ws.set_window_floating(Some(&target_id), true);
+        }
+
+        let mut removed = ws.remove_tile(&target_id, Transaction::new());
+        removed.tile.stop_move_animations();
+
+        mon.add_sticky_tile(
+            removed.tile,
+            target_is_active,
+        );
+
+        if target_is_active {
+            *active_monitor_idx = mon_idx;
+        }
+    }
+
     pub fn set_window_floating(&mut self, window: Option<&W::Id>, floating: bool) {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if window.is_none() || window == Some(move_.tile.window().id()) {
@@ -5252,6 +5349,7 @@ impl<W: LayoutElement> Layout<W> {
 
             win.set_active_in_column(true);
             win.set_floating(move_.is_floating);
+            win.set_sticky(move_.is_sticky);
             win.set_activated(true);
 
             win.set_interactive_resize(None);
@@ -5316,7 +5414,8 @@ impl<W: LayoutElement> Layout<W> {
                     }
 
                     let sticky_is_active = is_active && mon.sticky_is_active();
-                    mon.sticky.refresh(sticky_is_active, sticky_is_active);
+                    mon.sticky
+                        .refresh(sticky_is_active, sticky_is_active, true);
                 }
             }
             MonitorSet::NoOutputs { workspaces, .. } => {

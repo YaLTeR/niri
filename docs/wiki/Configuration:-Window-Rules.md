@@ -34,6 +34,7 @@ window-rule {
     match is-focused=false
     match is-active-in-column=true
     match is-floating=true
+    match is-sticky=true
     match is-window-cast-target=true
     match is-urgent=true
     match at-startup=true
@@ -246,6 +247,22 @@ Matches floating windows.
 ```kdl
 window-rule {
     match is-floating=true
+}
+```
+
+#### `is-sticky`
+
+<sup>Since: 25.11</sup>
+
+Can be `true` or `false`.
+Matches sticky windows.
+
+> [!NOTE]
+> This matcher will apply only after the window is already open.
+
+```kdl
+window-rule {
+    match is-sticky=true
 }
 ```
 

@@ -2146,6 +2146,20 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::ToggleWindowSticky => {
+                self.niri.layout.toggle_window_sticky(None);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::ToggleWindowStickyById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_window_sticky(Some(&window));
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::MoveWindowToFloating => {
                 self.niri.layout.set_window_floating(None, true);
                 // FIXME: granular

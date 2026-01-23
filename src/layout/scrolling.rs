@@ -3673,6 +3673,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let active_in_column = col.active_tile_idx == tile_idx;
                 win.set_active_in_column(active_in_column);
                 win.set_floating(false);
+                win.set_sticky(false);
 
                 let mut active = is_active && self.active_column_idx == col_idx;
                 if self.options.deactivate_unfocused_windows {

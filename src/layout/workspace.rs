@@ -1803,7 +1803,7 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling
             .refresh(is_active && !self.floating_is_active.get(), is_focused);
         self.floating
-            .refresh(is_active && self.floating_is_active.get(), is_focused);
+            .refresh(is_active && self.floating_is_active.get(), is_focused, false);
     }
 
     pub fn scroll_amount_to_activate(&self, window: &W::Id) -> f64 {
