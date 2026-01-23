@@ -318,28 +318,29 @@ impl<W: LayoutElement> FloatingSpace<W> {
     }
 
     pub fn resize_edges_under(&self, pos: Point<f64, Logical>) -> Option<ResizeEdge> {
-        self.tiles_with_render_positions().find_map(|(tile, tile_pos)| {
-            let pos_within_tile = pos - tile_pos;
+        self.tiles_with_render_positions()
+            .find_map(|(tile, tile_pos)| {
+                let pos_within_tile = pos - tile_pos;
 
-            if tile.hit(pos_within_tile).is_some() {
-                let size = tile.tile_size().to_f64();
+                if tile.hit(pos_within_tile).is_some() {
+                    let size = tile.tile_size().to_f64();
 
-                let mut edges = ResizeEdge::empty();
-                if pos_within_tile.x < size.w / 3. {
-                    edges |= ResizeEdge::LEFT;
-                } else if 2. * size.w / 3. < pos_within_tile.x {
-                    edges |= ResizeEdge::RIGHT;
+                    let mut edges = ResizeEdge::empty();
+                    if pos_within_tile.x < size.w / 3. {
+                        edges |= ResizeEdge::LEFT;
+                    } else if 2. * size.w / 3. < pos_within_tile.x {
+                        edges |= ResizeEdge::RIGHT;
+                    }
+                    if pos_within_tile.y < size.h / 3. {
+                        edges |= ResizeEdge::TOP;
+                    } else if 2. * size.h / 3. < pos_within_tile.y {
+                        edges |= ResizeEdge::BOTTOM;
+                    }
+                    return Some(edges);
                 }
-                if pos_within_tile.y < size.h / 3. {
-                    edges |= ResizeEdge::TOP;
-                } else if 2. * size.h / 3. < pos_within_tile.y {
-                    edges |= ResizeEdge::BOTTOM;
-                }
-                return Some(edges);
-            }
 
-            None
-        })
+                None
+            })
     }
 
     pub fn tiles_with_render_positions_mut(
@@ -539,11 +540,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.remove_tile_by_idx(idx)
     }
 
-    pub fn store_unmap_snapshot_if_empty(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        id: &W::Id,
-    ) {
+    pub fn store_unmap_snapshot_if_empty(&mut self, renderer: &mut GlesRenderer, id: &W::Id) {
         if let Some(tile) = self.tiles.iter_mut().find(|tile| tile.window().id() == id) {
             tile.store_unmap_snapshot_if_empty(renderer);
         }

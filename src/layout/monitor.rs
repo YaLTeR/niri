@@ -10,17 +10,15 @@ use smithay::backend::renderer::element::utils::{
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
-use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
 use super::floating::{FloatingSpace, FloatingSpaceRenderElement};
+use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
 use super::scrolling::{Column, ColumnWidth};
 use super::tile::Tile;
 use super::workspace::{
     compute_working_area, OutputId, Workspace, WorkspaceAddWindowTarget, WorkspaceId,
     WorkspaceRenderElement,
 };
-use super::{
-    compute_overview_zoom, ActivateWindow, HitType, LayoutElement, Options, RemovedTile,
-};
+use super::{compute_overview_zoom, ActivateWindow, HitType, LayoutElement, Options, RemovedTile};
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::niri_render_elements;
@@ -1218,8 +1216,7 @@ impl<W: LayoutElement> Monitor<W> {
 
         let sticky_active = is_active && self.active_space == ActiveSpace::Sticky;
         let view_rect = Rectangle::from_size(self.view_size);
-        self.sticky
-            .update_render_elements(sticky_active, view_rect);
+        self.sticky.update_render_elements(sticky_active, view_rect);
 
         for (ws, geo) in self.workspaces_with_render_geo_mut(true) {
             ws.update_render_elements(is_active);

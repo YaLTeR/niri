@@ -3661,12 +3661,12 @@ impl State {
                                     return None;
                                 }
 
-                                let (output, pos_within_output) =
-                                    self.niri.output_under(pos)?;
-                                let ws = self
-                                    .niri
-                                    .layout
-                                    .workspace_under(false, output, pos_within_output)?;
+                                let (output, pos_within_output) = self.niri.output_under(pos)?;
+                                let ws = self.niri.layout.workspace_under(
+                                    false,
+                                    output,
+                                    pos_within_output,
+                                )?;
                                 self.niri
                                     .layout
                                     .find_workspace_by_id(ws.id())

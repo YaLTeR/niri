@@ -841,8 +841,7 @@ impl<W: LayoutElement> Layout<W> {
                     if !sticky_tiles.is_empty() {
                         let ws = &mut workspaces[0];
                         for tile in sticky_tiles {
-                            let width =
-                                ColumnWidth::Fixed(tile.tile_expected_or_current_size().w);
+                            let width = ColumnWidth::Fixed(tile.tile_expected_or_current_size().w);
                             ws.add_tile(
                                 tile,
                                 WorkspaceAddWindowTarget::Auto,
@@ -980,8 +979,9 @@ impl<W: LayoutElement> Layout<W> {
 
                             (mon_idx, MonitorAddWindowTarget::Auto)
                         } else {
-                            if let Some(mon_idx) =
-                                monitors.iter().position(|mon| mon.sticky_has_window(next_to))
+                            if let Some(mon_idx) = monitors
+                                .iter()
+                                .position(|mon| mon.sticky_has_window(next_to))
                             {
                                 (mon_idx, MonitorAddWindowTarget::Auto)
                             } else {
@@ -3506,9 +3506,11 @@ impl<W: LayoutElement> Layout<W> {
                 .unwrap();
 
             if let Some(window) = window {
-                if let Some((mon_idx, _)) = monitors.iter().enumerate().find(|(_, mon)| {
-                    mon.sticky_has_window(window)
-                }) {
+                if let Some((mon_idx, _)) = monitors
+                    .iter()
+                    .enumerate()
+                    .find(|(_, mon)| mon.sticky_has_window(window))
+                {
                     if mon_idx == new_idx {
                         return;
                     }
@@ -3524,7 +3526,10 @@ impl<W: LayoutElement> Layout<W> {
                         return;
                     };
                     removed.tile.stop_move_animations();
-                    removed.tile.window().output_leave(&monitors[mon_idx].output);
+                    removed
+                        .tile
+                        .window()
+                        .output_leave(&monitors[mon_idx].output);
                     removed.tile.window().output_enter(output);
                     removed.tile.window().set_preferred_scale_transform(
                         output.current_scale(),
@@ -4205,7 +4210,8 @@ impl<W: LayoutElement> Layout<W> {
                     self.workspaces_mut()
                         .find(|ws| ws.has_window(&window_id))
                         .map(|ws| {
-                            let workspace_config = ws.layout_config().cloned().map(|c| (ws.id(), c));
+                            let workspace_config =
+                                ws.layout_config().cloned().map(|c| (ws.id(), c));
                             (
                                 ws.is_floating(&window_id),
                                 ws.tiles_mut()
@@ -4507,16 +4513,16 @@ impl<W: LayoutElement> Layout<W> {
                 ..
             } => {
                 if move_.is_sticky {
-                    let (mon, zoom) =
-                        if let Some(mon) = monitors.iter_mut().find(|mon| mon.output == move_.output)
-                        {
-                            let zoom = mon.overview_zoom();
-                            (mon, zoom)
-                        } else {
-                            let mon = &mut monitors[*active_monitor_idx];
-                            let zoom = mon.overview_zoom();
-                            (mon, zoom)
-                        };
+                    let (mon, zoom) = if let Some(mon) =
+                        monitors.iter_mut().find(|mon| mon.output == move_.output)
+                    {
+                        let zoom = mon.overview_zoom();
+                        (mon, zoom)
+                    } else {
+                        let mon = &mut monitors[*active_monitor_idx];
+                        let zoom = mon.overview_zoom();
+                        (mon, zoom)
+                    };
 
                     let ws_geo = mon
                         .workspace_under(move_.pointer_pos_within_output)
@@ -5394,9 +5400,11 @@ impl<W: LayoutElement> Layout<W> {
             .map(|move_| (self.monitor_for_output(&move_.output), move_.tile.window()))
             .into_iter();
 
-        let sticky = self
-            .monitors()
-            .flat_map(|mon| mon.sticky.tiles().map(move |tile| (Some(mon), tile.window())));
+        let sticky = self.monitors().flat_map(|mon| {
+            mon.sticky
+                .tiles()
+                .map(move |tile| (Some(mon), tile.window()))
+        });
 
         let rest = self
             .workspaces()
