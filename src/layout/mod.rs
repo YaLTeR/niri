@@ -3436,10 +3436,7 @@ impl<W: LayoutElement> Layout<W> {
         let mut removed = ws.remove_tile(&target_id, Transaction::new());
         removed.tile.stop_move_animations();
 
-        mon.add_sticky_tile(
-            removed.tile,
-            target_is_active,
-        );
+        mon.add_sticky_tile(removed.tile, target_is_active);
 
         if target_is_active {
             *active_monitor_idx = mon_idx;
@@ -5414,8 +5411,7 @@ impl<W: LayoutElement> Layout<W> {
                     }
 
                     let sticky_is_active = is_active && mon.sticky_is_active();
-                    mon.sticky
-                        .refresh(sticky_is_active, sticky_is_active, true);
+                    mon.sticky.refresh(sticky_is_active, sticky_is_active, true);
                 }
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
