@@ -70,6 +70,9 @@ pub struct ResolvedWindowRules {
     /// Whether the window should open floating.
     pub open_floating: Option<bool>,
 
+    /// Whether the window should open sticky.
+    pub open_sticky: Option<bool>,
+
     /// Whether the window should open focused.
     pub open_focused: Option<bool>,
 
@@ -245,6 +248,10 @@ impl ResolvedWindowRules {
 
                 if let Some(x) = rule.open_floating {
                     resolved.open_floating = Some(x);
+                }
+
+                if let Some(x) = rule.open_sticky {
+                    resolved.open_sticky = Some(x);
                 }
 
                 if let Some(x) = rule.open_focused {
