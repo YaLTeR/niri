@@ -47,6 +47,7 @@ window-rule {
     open-maximized-to-edges true
     open-fullscreen true
     open-floating true
+    open-sticky true
     open-focused false
 
     // Properties that apply continuously.
@@ -479,6 +480,22 @@ You can also set this to `false` to *prevent* a window from opening in the float
 // Open all windows in the tiling layout, overriding any auto-floating logic.
 window-rule {
     open-floating false
+}
+```
+
+#### `open-sticky`
+
+<sup>Since: 25.11</sup>
+
+Make the window sticky across all workspaces on the current output.
+Sticky windows are floating windows; `open-sticky` implies `open-floating`.
+
+```kdl
+// Keep picture-in-picture windows visible across workspace switches.
+window-rule {
+    match app-id="firefox$" title="^Picture-in-Picture$"
+
+    open-sticky true
 }
 ```
 
