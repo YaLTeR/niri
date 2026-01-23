@@ -434,6 +434,7 @@ impl Tty {
             .unwrap();
 
         let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
+        unsafe { init_libinput_plugin_system(&libinput) };
         {
             let _span = tracy_client::span!("Libinput::udev_assign_seat");
             libinput.udev_assign_seat(&seat_name)
@@ -3334,6 +3335,50 @@ fn make_output_name(
     }
 }
 
+/// Initializes the libinput plugin system.
+///
+/// # Safety
+///
+/// This function must be called before libinput iterates through the devices, i.e. before
+/// libinput_udev_assign_seat() or the first call to libinput_path_add_device().
+unsafe fn init_libinput_plugin_system(libinput: &Libinput) {
+    #[cfg(have_libinput_plugin_system)]
+    unsafe {
+        use std::ffi::{c_char, c_int, CString};
+        use std::os::unix::ffi::OsStringExt;
+
+        use directories::BaseDirs;
+        use input::ffi::libinput;
+        use input::AsRaw as _;
+
+        extern "C" {
+            fn libinput_plugin_system_append_path(libinput: *const libinput, path: *const c_char);
+            fn libinput_plugin_system_append_default_paths(libinput: *const libinput);
+            fn libinput_plugin_system_load_plugins(
+                libinput: *const libinput,
+                flags: c_int,
+            ) -> c_int;
+        }
+        const LIBINPUT_PLUGIN_SYSTEM_FLAG_NONE: c_int = 0;
+        let libinput = libinput.as_raw();
+
+        // Also load plugins from $XDG_CONFIG_HOME/libinput/plugins.
+        if let Some(dirs) = BaseDirs::new() {
+            let mut plugins_dir = dirs.config_dir().to_path_buf();
+            plugins_dir.push("libinput");
+            plugins_dir.push("plugins");
+            if let Ok(plugins_dir) = CString::new(plugins_dir.into_os_string().into_vec()) {
+                libinput_plugin_system_append_path(libinput, plugins_dir.as_ptr());
+            }
+        }
+
+        libinput_plugin_system_append_default_paths(libinput);
+        libinput_plugin_system_load_plugins(libinput, LIBINPUT_PLUGIN_SYSTEM_FLAG_NONE);
+    }
+    #[cfg(not(have_libinput_plugin_system))]
+    let _ = libinput;
+}
+
 #[cfg(test)]
 mod tests {
     use insta::assert_debug_snapshot;
@@ -3357,30 +3402,32 @@ mod tests {
             hsync_polarity: HSyncPolarity::NHSync,
             vsync_polarity: VSyncPolarity::PVSync,
         };
-        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline1).unwrap(), @"Mode {
-    name: \"1920x1080@59.96\",
-    clock: 173000,
-    size: (
-        1920,
-        1080,
-    ),
-    hsync: (
-        2048,
-        2248,
-        2576,
-    ),
-    vsync: (
-        1083,
-        1088,
-        1120,
-    ),
-    hskew: 0,
-    vscan: 0,
-    vrefresh: 60,
-    mode_type: ModeTypeFlags(
-        USERDEF,
-    ),
-}");
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline1).unwrap(), @r#"
+        Mode {
+            name: "1920x1080@59.96",
+            clock: 173000,
+            size: (
+                1920,
+                1080,
+            ),
+            hsync: (
+                2048,
+                2248,
+                2576,
+            ),
+            vsync: (
+                1083,
+                1088,
+                1120,
+            ),
+            hskew: 0,
+            vscan: 0,
+            vrefresh: 60,
+            mode_type: ModeTypeFlags(
+                USERDEF,
+            ),
+        }
+        "#);
         let modeline2 = Modeline {
             clock: 452.5,
             hdisplay: 1920,
@@ -3394,82 +3441,88 @@ mod tests {
             hsync_polarity: HSyncPolarity::NHSync,
             vsync_polarity: VSyncPolarity::PVSync,
         };
-        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline2).unwrap(), @"Mode {
-    name: \"1920x1080@143.88\",
-    clock: 452500,
-    size: (
-        1920,
-        1080,
-    ),
-    hsync: (
-        2088,
-        2296,
-        2672,
-    ),
-    vsync: (
-        1083,
-        1088,
-        1177,
-    ),
-    hskew: 0,
-    vscan: 0,
-    vrefresh: 144,
-    mode_type: ModeTypeFlags(
-        USERDEF,
-    ),
-}");
+        assert_debug_snapshot!(calculate_drm_mode_from_modeline(&modeline2).unwrap(), @r#"
+        Mode {
+            name: "1920x1080@143.88",
+            clock: 452500,
+            size: (
+                1920,
+                1080,
+            ),
+            hsync: (
+                2088,
+                2296,
+                2672,
+            ),
+            vsync: (
+                1083,
+                1088,
+                1177,
+            ),
+            hskew: 0,
+            vscan: 0,
+            vrefresh: 144,
+            mode_type: ModeTypeFlags(
+                USERDEF,
+            ),
+        }
+        "#);
     }
 
     #[test]
     fn test_calc_cvt() {
         // Crosschecked with other calculators like the cvt commandline utility.
-        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 60.0), @"Mode {
-    name: \"1920x1080@59.96\",
-    clock: 173000,
-    size: (
-        1920,
-        1080,
-    ),
-    hsync: (
-        2048,
-        2248,
-        2576,
-    ),
-    vsync: (
-        1083,
-        1088,
-        1120,
-    ),
-    hskew: 0,
-    vscan: 0,
-    vrefresh: 60,
-    mode_type: ModeTypeFlags(
-        USERDEF,
-    ),
-}");
-        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 144.0), @"Mode {
-    name: \"1920x1080@143.88\",
-    clock: 452500,
-    size: (
-        1920,
-        1080,
-    ),
-    hsync: (
-        2088,
-        2296,
-        2672,
-    ),
-    vsync: (
-        1083,
-        1088,
-        1177,
-    ),
-    hskew: 0,
-    vscan: 0,
-    vrefresh: 144,
-    mode_type: ModeTypeFlags(
-        USERDEF,
-    ),
-}");
+        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 60.0), @r#"
+        Mode {
+            name: "1920x1080@59.96",
+            clock: 173000,
+            size: (
+                1920,
+                1080,
+            ),
+            hsync: (
+                2048,
+                2248,
+                2576,
+            ),
+            vsync: (
+                1083,
+                1088,
+                1120,
+            ),
+            hskew: 0,
+            vscan: 0,
+            vrefresh: 60,
+            mode_type: ModeTypeFlags(
+                USERDEF,
+            ),
+        }
+        "#);
+        assert_debug_snapshot!(calculate_mode_cvt(1920, 1080, 144.0), @r#"
+        Mode {
+            name: "1920x1080@143.88",
+            clock: 452500,
+            size: (
+                1920,
+                1080,
+            ),
+            hsync: (
+                2088,
+                2296,
+                2672,
+            ),
+            vsync: (
+                1083,
+                1088,
+                1177,
+            ),
+            hskew: 0,
+            vscan: 0,
+            vrefresh: 144,
+            mode_type: ModeTypeFlags(
+                USERDEF,
+            ),
+        }
+        "#);
     }
 }

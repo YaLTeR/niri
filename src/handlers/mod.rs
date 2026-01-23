@@ -68,7 +68,7 @@ use smithay::{
     delegate_pointer_gestures, delegate_presentation, delegate_primary_selection,
     delegate_relative_pointer, delegate_seat, delegate_security_context, delegate_session_lock,
     delegate_single_pixel_buffer, delegate_tablet_manager, delegate_text_input_manager,
-    delegate_viewporter, delegate_virtual_keyboard_manager, delegate_xdg_activation,
+    delegate_viewporter, delegate_xdg_activation,
 };
 
 pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
@@ -279,7 +279,6 @@ impl KeyboardShortcutsInhibitHandler for State {
 
 delegate_input_method_manager!(State);
 delegate_keyboard_shortcuts_inhibit!(State);
-delegate_virtual_keyboard_manager!(State);
 
 impl SelectionHandler for State {
     type SelectionUserData = Arc<[u8]>;
@@ -624,11 +623,7 @@ impl ScreencopyHandler for State {
         // If with_damage then push it onto the queue for redraw of the output,
         // otherwise render it immediately.
         if screencopy.with_damage() {
-            let Some(queue) = self.niri.screencopy_state.get_queue_mut(manager) else {
-                trace!("screencopy manager destroyed already");
-                return;
-            };
-            queue.push(screencopy);
+            self.niri.screencopy_state.push(manager, screencopy);
         } else {
             self.backend.with_primary_renderer(|renderer| {
                 if let Err(err) = self

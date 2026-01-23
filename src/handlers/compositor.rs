@@ -62,10 +62,6 @@ impl CompositorHandler for State {
         on_commit_buffer_handler::<Self>(surface);
         self.backend.early_import(surface);
 
-        if is_sync_subsurface(surface) {
-            return;
-        }
-
         let mut root_surface = surface.clone();
         while let Some(parent) = get_parent(&root_surface) {
             root_surface = parent;
@@ -75,6 +71,10 @@ impl CompositorHandler for State {
         self.niri
             .root_surface
             .insert(surface.clone(), root_surface.clone());
+
+        if is_sync_subsurface(surface) {
+            return;
+        }
 
         if surface == &root_surface {
             // This is a root surface commit. It might have mapped a previously-unmapped toplevel.
