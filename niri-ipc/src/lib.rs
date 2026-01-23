@@ -917,31 +917,19 @@ pub enum Action {
     /// Cycle to the next zoom preset in overview.
     ///
     /// No-op if not in overview or no presets configured.
-    OverviewZoomCycle {},
-    /// Zoom in the overview (increase zoom value = less zoomed out).
-    ///
-    /// No-op if not in overview.
-    OverviewZoomIn {
-        /// Custom step amount. If not provided, uses the configured zoom-step.
-        #[cfg_attr(feature = "clap", arg(long))]
-        step: Option<f64>,
+    OverviewZoomCycle {
+        /// Cycle in reverse direction (previous preset instead of next).
+        #[cfg_attr(feature = "clap", arg(short, long))]
+        reverse: bool,
     },
-    /// Zoom out the overview (decrease zoom value = more zoomed out).
+    /// Zoom in to the next higher zoom preset in overview.
     ///
-    /// No-op if not in overview.
-    OverviewZoomOut {
-        /// Custom step amount. If not provided, uses the configured zoom-step.
-        #[cfg_attr(feature = "clap", arg(long))]
-        step: Option<f64>,
-    },
-    /// Set a specific zoom level in the overview.
+    /// No-op if not in overview, no presets configured, or already at highest zoom.
+    OverviewZoomIn {},
+    /// Zoom out to the next lower zoom preset in overview.
     ///
-    /// No-op if not in overview.
-    OverviewSetZoom {
-        /// The zoom level to set (0.0 to 1.0).
-        #[cfg_attr(feature = "clap", arg())]
-        level: f64,
-    },
+    /// No-op if not in overview, no presets configured, or already at lowest zoom.
+    OverviewZoomOut {},
     /// Toggle urgent status of a window.
     ToggleWindowUrgent {
         /// Id of the window to toggle urgent.

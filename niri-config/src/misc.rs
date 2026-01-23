@@ -125,12 +125,6 @@ pub struct Overview {
     pub workspace_shadow: WorkspaceShadow,
     /// Optional zoom presets for cycling. If None/empty, zoom cycling is disabled.
     pub zoom_presets: Option<Vec<f64>>,
-    /// Minimum zoom level for scroll adjustment (default: 0.05)
-    pub min_zoom: f64,
-    /// Maximum zoom level for scroll adjustment (default: 0.75)
-    pub max_zoom: f64,
-    /// Zoom step for scroll-based zoom adjustment (default: 0.1)
-    pub zoom_step: f64,
 }
 
 impl Default for Overview {
@@ -140,9 +134,6 @@ impl Default for Overview {
             backdrop_color: DEFAULT_BACKDROP_COLOR,
             workspace_shadow: WorkspaceShadow::default(),
             zoom_presets: None,
-            min_zoom: 0.05,
-            max_zoom: 0.75,
-            zoom_step: 0.1,
         }
     }
 }
@@ -162,17 +153,11 @@ pub struct OverviewPart {
     pub workspace_shadow: Option<WorkspaceShadowPart>,
     #[knuffel(child)]
     pub zoom_presets: Option<ZoomPresets>,
-    #[knuffel(child, unwrap(argument))]
-    pub min_zoom: Option<FloatOrInt<0, 1>>,
-    #[knuffel(child, unwrap(argument))]
-    pub max_zoom: Option<FloatOrInt<0, 1>>,
-    #[knuffel(child, unwrap(argument))]
-    pub zoom_step: Option<FloatOrInt<0, 1>>,
 }
 
 impl MergeWith<OverviewPart> for Overview {
     fn merge_with(&mut self, part: &OverviewPart) {
-        merge!((self, part), zoom, workspace_shadow, min_zoom, max_zoom, zoom_step);
+        merge!((self, part), zoom, workspace_shadow);
         merge_clone!((self, part), backdrop_color);
         if let Some(presets) = &part.zoom_presets {
             self.zoom_presets = Some(presets.0.clone());
