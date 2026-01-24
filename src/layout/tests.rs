@@ -166,17 +166,6 @@ impl LayoutElement for TestWindow {
         false
     }
 
-    fn render<R: NiriRenderer>(
-        &self,
-        _renderer: &mut R,
-        _location: Point<f64, Logical>,
-        _scale: Scale<f64>,
-        _alpha: f32,
-        _target: RenderTarget,
-    ) -> SplitElements<LayoutElementRenderElement<R>> {
-        SplitElements::default()
-    }
-
     fn request_size(
         &mut self,
         size: Size<i32, Logical>,
@@ -3680,6 +3669,34 @@ fn tabs_with_different_border() {
         ..Default::default()
     };
     check_ops_with_options(options, ops);
+}
+
+#[test]
+fn expel_pending_left_from_fullscreen_tabbed_column() {
+    let ops = [
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FullscreenWindow(1),
+        Op::Communicate(1),
+        // 1 is now fullscreen, view_offset_to_restore is set.
+        Op::ToggleColumnTabbedDisplay,
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::ConsumeOrExpelWindowLeft { id: Some(2) },
+        // 2 is consumed into a fullscreen column, fullscreen is requested but not applied.
+        //
+        // Now, get it back out while keeping it focused.
+        //
+        // Importantly, we expel it *left*, which results in adding a new column with the exact
+        // same active_column_idx.
+        Op::FocusWindow(2),
+        Op::ConsumeOrExpelWindowLeft { id: None },
+    ];
+
+    check_ops(ops);
 }
 
 fn parent_id_causes_loop(layout: &Layout<TestWindow>, id: usize, mut parent_id: usize) -> bool {

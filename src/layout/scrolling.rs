@@ -336,8 +336,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn update_shaders(&mut self) {
-        for tile in self.tiles_mut() {
-            tile.update_shaders();
+        for col in &mut self.columns {
+            col.update_shaders();
         }
     }
 
@@ -992,6 +992,23 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.data.insert(idx, ColumnData::new(&column));
         self.columns.insert(idx, column);
 
+        if !was_empty && idx <= self.active_column_idx {
+            self.active_column_idx += 1;
+        }
+
+        // Animate movement of other columns.
+        let offset = self.column_x(idx + 1) - self.column_x(idx);
+        let config = anim_config.unwrap_or(self.options.animations.window_movement.0);
+        if self.active_column_idx <= idx {
+            for col in &mut self.columns[idx + 1..] {
+                col.animate_move_from_with_config(-offset, config);
+            }
+        } else {
+            for col in &mut self.columns[..idx] {
+                col.animate_move_from_with_config(offset, config);
+            }
+        }
+
         if activate {
             // If this is the first window on an empty workspace, remove the effect of whatever
             // view_offset was left over and skip the animation.
@@ -1008,21 +1025,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 anim_config.unwrap_or(self.options.animations.horizontal_view_movement.0);
             self.activate_column_with_anim_config(idx, anim_config);
             self.activate_prev_column_on_removal = prev_offset;
-        } else if !was_empty && idx <= self.active_column_idx {
-            self.active_column_idx += 1;
-        }
-
-        // Animate movement of other columns.
-        let offset = self.column_x(idx + 1) - self.column_x(idx);
-        let config = anim_config.unwrap_or(self.options.animations.window_movement.0);
-        if self.active_column_idx <= idx {
-            for col in &mut self.columns[idx + 1..] {
-                col.animate_move_from_with_config(-offset, config);
-            }
-        } else {
-            for col in &mut self.columns[..idx] {
-                col.animate_move_from_with_config(offset, config);
-            }
         }
     }
 
@@ -1390,11 +1392,6 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             // We might need to move the view to ensure the resized window is still visible. But
             // only do it when the view isn't frozen by an interactive resize or a view gesture.
             if self.interactive_resize.is_none() && !self.view_offset.is_gesture() {
-                // Restore the view offset upon unfullscreening if needed.
-                if let Some(prev_offset) = unfullscreen_offset {
-                    self.animate_view_offset(col_idx, prev_offset);
-                }
-
                 // Synchronize the horizontal view movement with the resize so that it looks nice.
                 // This is especially important for always-centered view.
                 let config = if ongoing_resize_anim {
@@ -1402,6 +1399,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 } else {
                     self.options.animations.horizontal_view_movement.0
                 };
+
+                // Restore the view offset upon unfullscreening if needed.
+                if let Some(prev_offset) = unfullscreen_offset {
+                    self.animate_view_offset_with_config(col_idx, prev_offset, config);
+                }
 
                 // FIXME: we will want to skip the animation in some cases here to make continuously
                 // resizing windows not look janky.
@@ -1862,7 +1864,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 self.activate_prev_column_on_removal = None;
             }
 
-            if target_column_idx < self.active_column_idx {
+            if target_column_idx <= self.active_column_idx {
                 // Tiles to the left animate from the following column.
                 offset.x += self.column_x(target_column_idx + 1) - self.column_x(target_column_idx);
             }
@@ -2930,25 +2932,24 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             .is_fullscreen()
     }
 
-    pub fn render_elements<R: NiriRenderer>(
+    pub fn render<R: NiriRenderer>(
         &self,
         renderer: &mut R,
         target: RenderTarget,
         focus_ring: bool,
-    ) -> Vec<ScrollingSpaceRenderElement<R>> {
-        let mut rv = vec![];
-
+        push: &mut dyn FnMut(ScrollingSpaceRenderElement<R>),
+    ) {
         let scale = Scale::from(self.scale);
 
         // Draw the closing windows on top of the other windows.
         let view_rect = Rectangle::new(Point::from((self.view_pos(), 0.)), self.view_size);
         for closing in self.closing_windows.iter().rev() {
             let elem = closing.render(renderer.as_gles_renderer(), view_rect, scale, target);
-            rv.push(elem.into());
+            push(elem.into());
         }
 
         if self.columns.is_empty() {
-            return rv;
+            return;
         }
 
         let mut first = true;
@@ -2963,7 +2964,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             {
                 let pos = view_off + col_off + col_render_off;
                 let pos = pos.to_physical_precise_round(scale).to_logical(scale);
-                rv.extend(col.tab_indicator.render(renderer, pos).map(Into::into));
+                col.tab_indicator
+                    .render(renderer, pos, &mut |elem| push(elem.into()));
             }
 
             for (tile, tile_off, visible) in col.tiles_in_render_order() {
@@ -2988,14 +2990,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     continue;
                 }
 
-                rv.extend(
-                    tile.render(renderer, tile_pos, focus_ring, target)
-                        .map(Into::into),
-                );
+                tile.render(renderer, tile_pos, focus_ring, target, &mut |elem| {
+                    push(elem.into())
+                });
             }
         }
-
-        rv
     }
 
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
@@ -3528,7 +3527,15 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if gesture.dnd_last_event_time.is_some() && gesture.tracker.pos() == 0. {
             // DnD didn't scroll anything, so preserve the current view position (rather than
             // snapping the window).
-            self.view_offset = ViewOffset::Static(gesture.delta_from_tracker);
+
+            // If there's an ongoing animation within the gesture (e.g. from a window being removed
+            // during DnD), preserve it.
+            if let Some(mut anim) = gesture.animation.take() {
+                anim.offset(gesture.current_view_offset);
+                self.view_offset = ViewOffset::Animation(anim);
+            } else {
+                self.view_offset = ViewOffset::Static(gesture.delta_from_tracker);
+            }
 
             if !self.columns.is_empty() {
                 // Just in case, make sure the active window remains on screen.
@@ -4087,6 +4094,14 @@ impl<W: LayoutElement> Column<W> {
         if update_sizes {
             self.update_tile_sizes(false);
         }
+    }
+
+    pub fn update_shaders(&mut self) {
+        for tile in &mut self.tiles {
+            tile.update_shaders();
+        }
+
+        self.tab_indicator.update_shaders();
     }
 
     pub fn advance_animations(&mut self) {

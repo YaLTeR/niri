@@ -24,7 +24,7 @@ To do that, put files into the correct directories according to this table.
 | `resources/niri.service` (systemd) | `/usr/lib/systemd/user/` |
 | `resources/niri-shutdown.target` (systemd) | `/usr/lib/systemd/user/` |
 | `resources/dinit/niri` (dinit) | `/usr/lib/dinit.d/user/` |
-| `resources/dinit/niri-shutdown` (dinit) | `/usr/lib/dinit.d/user/` |
+| `resources/dinit/niri.target` (dinit) | `/usr/lib/dinit.d/user/` |
 
 Doing this will make niri appear in GDM and other display managers.
 

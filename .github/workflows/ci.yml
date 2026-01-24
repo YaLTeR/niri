@@ -181,7 +181,7 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y ${{ env.DEPS_APT }} libadwaita-1-dev
 
-      - uses: dtolnay/rust-toolchain@1.80.1
+      - uses: dtolnay/rust-toolchain@1.85.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -293,12 +293,8 @@ jobs:
         with:
           show-progress: false
 
-      - name: Check flake inputs
-        uses: DeterminateSystems/flake-checker-action@v4
-        continue-on-error: true
-
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v3
+        uses: cachix/install-nix-action@v31
         continue-on-error: true
 
       - run: nix flake check
