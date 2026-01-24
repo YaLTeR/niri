@@ -609,6 +609,15 @@ impl<W: LayoutElement> Monitor<W> {
     ) {
         let (mut workspace_idx, target) = self.resolve_add_window_target(target);
 
+        // If the target workspace is hidden, unhide it and mark it to be re-hidden later.
+        // This matches the behavior of switch_workspace with force_unhide.
+        if self.workspaces[workspace_idx].hidden {
+            let ws_id = self.workspaces[workspace_idx].id();
+            if let Some(idx) = self.unhide_workspace_by_id(ws_id, true) {
+                workspace_idx = idx;
+            }
+        }
+
         let first_hidden_idx = self.workspaces.iter().position(|ws| ws.hidden);
         let is_last_visible = first_hidden_idx
             .map(|hidden_idx| workspace_idx + 1 == hidden_idx)
