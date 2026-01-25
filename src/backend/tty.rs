@@ -65,7 +65,9 @@ use super::{IpcOutputMap, RenderResult};
 use crate::backend::OutputId;
 use crate::frame_clock::FrameClock;
 use crate::niri::{Niri, RedrawState, State};
+use crate::render_helpers::blur::EffectsFramebuffers;
 use crate::render_helpers::debug::draw_damage;
+use crate::render_helpers::render_data::RendererData;
 use crate::render_helpers::renderer::AsGlesRenderer;
 use crate::render_helpers::{resources, shaders, RenderTarget};
 use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
@@ -815,6 +817,7 @@ impl Tty {
             let gles_renderer = renderer.as_gles_renderer();
             resources::init(gles_renderer);
             shaders::init(gles_renderer);
+            RendererData::init(gles_renderer);
 
             let config = self.config.borrow();
             if let Some(src) = config.animations.window_resize.custom_shader.as_deref() {
@@ -1349,10 +1352,14 @@ impl Tty {
         }
 
         let render_node = device.render_node.unwrap_or(self.primary_render_node);
-        let renderer = self.gpu_manager.single_renderer(&render_node)?;
+        let mut renderer = self.gpu_manager.single_renderer(&render_node)?;
+
+        EffectsFramebuffers::init_for_output(output.clone(), renderer.as_mut());
+
         let egl_context = renderer.as_ref().egl_context();
         let render_formats = egl_context.dmabuf_render_formats();
 
+        
         // Filter out the CCS modifiers as they have increased bandwidth, causing some monitor
         // configurations to stop working.
         //

@@ -2,15 +2,16 @@ use knuffel::errors::DecodeError;
 use niri_ipc::{ColumnDisplay, SizeChange};
 
 use crate::appearance::{
-    Border, FocusRing, InsertHint, Shadow, TabIndicator, DEFAULT_BACKGROUND_COLOR,
+    Blur, Border, FocusRing, InsertHint, Shadow, TabIndicator, DEFAULT_BACKGROUND_COLOR,
 };
 use crate::utils::{expect_only_children, Flag, MergeWith};
-use crate::{BorderRule, Color, FloatOrInt, InsertHintPart, ShadowRule, TabIndicatorPart};
+use crate::{BorderRule, BlurRule, Color, FloatOrInt, InsertHintPart, ShadowRule, TabIndicatorPart};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layout {
     pub focus_ring: FocusRing,
     pub border: Border,
+    pub blur: Blur,
     pub shadow: Shadow,
     pub tab_indicator: TabIndicator,
     pub insert_hint: InsertHint,
@@ -31,6 +32,7 @@ impl Default for Layout {
         Self {
             focus_ring: FocusRing::default(),
             border: Border::default(),
+            blur: Default::default(),
             shadow: Shadow::default(),
             tab_indicator: TabIndicator::default(),
             insert_hint: InsertHint::default(),
@@ -62,6 +64,7 @@ impl MergeWith<LayoutPart> for Layout {
             (self, part),
             focus_ring,
             border,
+            blur,
             shadow,
             tab_indicator,
             insert_hint,
@@ -100,6 +103,8 @@ pub struct LayoutPart {
     pub focus_ring: Option<BorderRule>,
     #[knuffel(child)]
     pub border: Option<BorderRule>,
+    #[knuffel(child)]
+    pub blur: Option<BlurRule>,
     #[knuffel(child)]
     pub shadow: Option<ShadowRule>,
     #[knuffel(child)]

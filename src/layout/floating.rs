@@ -6,6 +6,7 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{PresetSize, RelativeTo};
 use niri_ipc::{PositionChange, SizeChange, WindowLayout};
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size};
 
 use super::closing_window::{ClosingWindow, ClosingWindowRenderElement};
@@ -1059,6 +1060,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
         view_rect: Rectangle<f64, Logical>,
         target: RenderTarget,
         focus_ring: bool,
+        output: &Output,
         push: &mut dyn FnMut(FloatingSpaceRenderElement<R>),
     ) {
         let scale = Scale::from(self.scale);
@@ -1076,7 +1078,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
             // For the active tile, draw the focus ring.
             let focus_ring = focus_ring && Some(tile.window().id()) == active.as_ref();
 
-            tile.render(renderer, tile_pos, focus_ring, target, &mut |elem| {
+            tile.render(renderer, tile_pos, focus_ring, target, Some(output), &mut |elem| {
                 push(elem.into())
             });
         }

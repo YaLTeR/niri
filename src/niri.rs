@@ -148,6 +148,7 @@ use crate::protocols::mutter_x11_interop::MutterX11InteropManagerState;
 use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
+use crate::render_helpers::blur::EffectsFramebuffers;
 use crate::render_helpers::debug::draw_opaque_regions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
@@ -1700,6 +1701,12 @@ impl State {
         // global suddenly appearing? Either way, right now it's live-reloaded in a sense that new
         // clients will use the new xdg-decoration setting.
 
+        // Queue a redraw to ensure everything is up-to-date visually.
+        self.niri
+            .global_space
+            .outputs()
+            .for_each(|o| EffectsFramebuffers::set_dirty(o));
+
         self.niri.queue_redraw_all();
     }
 
@@ -2650,7 +2657,7 @@ impl Niri {
         drop(config);
 
         for Data { output, .. } in &outputs {
-            self.global_space.unmap_output(output);
+            self.global_space.unmap_output(&output);
         }
 
         // Connectors can appear in udev in any order. If we sort by name then we get output
@@ -4261,6 +4268,26 @@ impl Niri {
         // Then the backdrop.
         push_popups_from_layer!(Layer::Background, true);
         push_normal_from_layer!(Layer::Background, true);
+
+        // In case the optimized blur layer is dirty, re-render
+        // It only has the bottom and background layer shells drawn onto with blur applied.
+        //
+        // We must do it now before we actually render the previous render elements into the final
+        // composited blur buffer
+        let mut fx_buffers = EffectsFramebuffers::get(output);
+        let blur_config = self.config.borrow().layout.blur;
+
+        if blur_config.on && blur_config.passes > 0 {
+            if let Err(err) = fx_buffers.update_optimized_blur_buffer(
+                renderer.as_gles_renderer(),
+                layer_map,
+                output,
+                output_scale,
+                blur_config,
+            ) {
+                error!(?err, "Failed to update optimized blur buffer");
+            }
+        }
 
         push(backdrop);
     }

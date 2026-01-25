@@ -1,6 +1,6 @@
 use niri_ipc::ColumnDisplay;
 
-use crate::appearance::{BlockOutFrom, BorderRule, CornerRadius, ShadowRule, TabIndicatorRule};
+use crate::appearance::{BlockOutFrom, BlurRule, BorderRule, CornerRadius, ShadowRule, TabIndicatorRule};
 use crate::layout::DefaultPresetSize;
 use crate::utils::RegexEq;
 use crate::FloatOrInt;
@@ -46,6 +46,8 @@ pub struct WindowRule {
     pub focus_ring: BorderRule,
     #[knuffel(child, default)]
     pub border: BorderRule,
+    #[knuffel(child, default)]
+    pub blur: BlurRule,
     #[knuffel(child, default)]
     pub shadow: ShadowRule,
     #[knuffel(child, default)]
