@@ -149,6 +149,7 @@ use crate::protocols::output_management::OutputManagementManagerState;
 use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManagerState};
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::render_helpers::debug::push_opaque_regions;
+use crate::render_helpers::effect_buffer::EffectBuffer;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -476,6 +477,8 @@ pub struct OutputState {
     /// Solid color buffer for the backdrop that we use instead of clearing to avoid damage
     /// tracking issues and make screenshots easier.
     pub backdrop_buffer: SolidColorBuffer,
+    /// Effect buffer for the layer-shell background that gets included into the xray blur.
+    background_effect_buffer: Rc<EffectBuffer>,
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
     pub lock_color_buffer: SolidColorBuffer,
@@ -2811,6 +2814,7 @@ impl Niri {
             vblank_throttle: VBlankThrottle::new(self.event_loop.clone(), name.connector.clone()),
             frame_callback_sequence: 0,
             backdrop_buffer: SolidColorBuffer::new(size, backdrop_color),
+            background_effect_buffer: Rc::new(EffectBuffer::new()),
             lock_render_state,
             lock_surface: None,
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
@@ -4002,6 +4006,15 @@ impl Niri {
                     transition.update_render_elements(scale, transform);
                 }
 
+                // TODO: update for interactively moved tile etc.
+                let mon = self.layout.monitor_for_output_mut(out).unwrap();
+                for (ws, _geo) in mon.workspaces_with_render_geo_mut(true) {
+                    for tile in ws.tiles_mut() {
+                        tile.background_effect
+                            .update_buffer(&state.background_effect_buffer);
+                    }
+                }
+
                 let layer_map = layer_map_for_output(out);
                 for surface in layer_map.layers() {
                     let Some(mapped) = self.mapped_layer_surfaces.get_mut(surface) else {
@@ -4012,6 +4025,10 @@ impl Niri {
                     };
 
                     mapped.update_render_elements(geo.size.to_f64());
+
+                    mapped
+                        .background_effect
+                        .update_buffer(&state.background_effect_buffer);
                 }
             }
         }
@@ -4059,6 +4076,36 @@ impl Niri {
         }
 
         let output_scale = Scale::from(output.current_scale().fractional_scale());
+
+        // Set background effect elements.
+        {
+            let state = self.output_state.get(output).unwrap();
+            let output_transform = output.current_transform();
+            let output_mode = output.current_mode().unwrap();
+            let size = output_transform.transform_size(output_mode.size);
+            let buffer = &state.background_effect_buffer;
+            // TODO: should move these two somewhere?
+            buffer.update_size(size, output_scale);
+            buffer.update_blur_config(self.config.borrow().blur);
+
+            // In case some background layer tries to use xray.
+            buffer.set_elements(Vec::new());
+
+            let renderer = renderer.as_gles_renderer();
+            let layer_map = layer_map_for_output(output);
+            let mut bg_elems = Vec::new();
+            self.render_layer_normal(
+                renderer,
+                target,
+                &layer_map,
+                Layer::Background,
+                false,
+                &mut |elem| bg_elems.push(elem.into()),
+            );
+            // TODO render workspace background
+
+            buffer.set_elements(bg_elems);
+        }
 
         let push = if self.debug_draw_opaque_regions {
             &mut move |elem| {

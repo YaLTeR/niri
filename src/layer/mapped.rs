@@ -10,6 +10,7 @@ use super::ResolvedLayerRules;
 use crate::animation::Clock;
 use crate::layout::shadow::Shadow;
 use crate::niri_render_elements;
+use crate::render_helpers::background_effect::{self, BackgroundEffect, BackgroundEffectElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -31,6 +32,9 @@ pub struct MappedLayer {
     /// The shadow around the surface.
     shadow: Shadow,
 
+    /// The background effect underneath the layer surface geometry.
+    pub background_effect: BackgroundEffect,
+
     /// The view size for the layer surface's output.
     view_size: Size<f64, Logical>,
 
@@ -46,6 +50,7 @@ niri_render_elements! {
         Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         Shadow = ShadowRenderElement,
+        BackgroundEffect = BackgroundEffectElement,
     }
 }
 
@@ -70,6 +75,7 @@ impl MappedLayer {
             view_size,
             scale,
             shadow: Shadow::new(shadow_config),
+            background_effect: BackgroundEffect::new(),
             clock,
         }
     }
@@ -103,6 +109,16 @@ impl MappedLayer {
         // FIXME: is_active based on keyboard focus?
         self.shadow
             .update_render_elements(size, true, radius, self.scale, 1.);
+
+        let effect = self.rules.background_effect;
+        self.background_effect
+            .update_params(background_effect::Parameters {
+                corner_radius: radius,
+                xray: effect.xray,
+                // TODO: ext-background-effect
+                blur: effect.blur == Some(true),
+            });
+        self.background_effect.update_size(size);
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -197,6 +213,12 @@ impl MappedLayer {
         let location = location.to_physical_precise_round(scale).to_logical(scale);
         self.shadow
             .render(renderer, location, &mut |elem| push(elem.into()));
+
+        // TODO subsurfaces peeking out of the main surface? Ext background effect subsurfaces?
+        if let Some(elem) = self.background_effect.render(renderer.as_gles_renderer()) {
+            let location = location.to_physical_precise_round(scale).to_logical(scale);
+            push(elem.with_location(location).into());
+        }
     }
 
     pub fn render_popups<R: NiriRenderer>(

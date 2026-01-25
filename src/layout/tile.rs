@@ -18,6 +18,7 @@ use super::{
 use crate::animation::{Animation, Clock};
 use crate::layout::SizingMode;
 use crate::niri_render_elements;
+use crate::render_helpers::background_effect::{self, BackgroundEffect, BackgroundEffectElement};
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
@@ -56,6 +57,9 @@ pub struct Tile<W: LayoutElement> {
 
     /// The black backdrop for fullscreen windows.
     fullscreen_backdrop: SolidColorBuffer,
+
+    /// The background effect underneath the window geometry.
+    pub background_effect: BackgroundEffect,
 
     /// Whether the tile should float upon unfullscreening.
     pub(super) restore_to_floating: bool,
@@ -130,6 +134,7 @@ niri_render_elements! {
         ClippedSurface = ClippedSurfaceRenderElement<R>,
         Offscreen = OffscreenRenderElement,
         ExtraDamage = ExtraDamage,
+        BackgroundEffect = BackgroundEffectElement,
     }
 }
 
@@ -192,6 +197,7 @@ impl<W: LayoutElement> Tile<W> {
             shadow: Shadow::new(shadow_config),
             sizing_mode,
             fullscreen_backdrop: SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.]),
+            background_effect: BackgroundEffect::new(),
             restore_to_floating: false,
             floating_window_size: None,
             floating_pos: None,
@@ -455,6 +461,7 @@ impl<W: LayoutElement> Tile<W> {
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let rules = self.window.rules();
         let animated_tile_size = self.animated_tile_size();
+        let animated_window_size = self.animated_window_size();
         let expanded_progress = self.expanded_progress();
 
         let draw_border_with_background = rules
@@ -504,6 +511,16 @@ impl<W: LayoutElement> Tile<W> {
             self.scale,
             1. - expanded_progress as f32,
         );
+
+        let effect = rules.background_effect;
+        self.background_effect
+            .update_params(background_effect::Parameters {
+                corner_radius: radius,
+                xray: effect.xray,
+                // TODO: ext-background-effect
+                blur: effect.blur == Some(true),
+            });
+        self.background_effect.update_size(animated_window_size);
 
         let draw_focus_ring_with_background = if self.border.is_off() {
             draw_border_with_background
@@ -1282,6 +1299,11 @@ impl<W: LayoutElement> Tile<W> {
         if expanded_progress < 1. {
             self.shadow
                 .render(renderer, location, &mut |elem| push(elem.into()));
+        }
+
+        // TODO subsurfaces peeking out of the main surface? Ext background effect subsurfaces?
+        if let Some(elem) = self.background_effect.render(renderer.as_gles_renderer()) {
+            push(elem.with_location(window_render_loc).into());
         }
     }
 

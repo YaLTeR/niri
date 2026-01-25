@@ -1006,6 +1006,101 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Blur {
+    pub off: bool,
+    pub passes: u8,
+    pub offset: f64,
+}
+
+impl Default for Blur {
+    fn default() -> Self {
+        Self {
+            off: false,
+            // TODO: tune, reduce passes
+            passes: 3,
+            offset: 3.,
+        }
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct BlurPart {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+    #[knuffel(child, unwrap(argument))]
+    pub passes: Option<u8>,
+    #[knuffel(child, unwrap(argument))]
+    pub offset: Option<FloatOrInt<0, 100>>,
+}
+
+impl MergeWith<BlurPart> for Blur {
+    fn merge_with(&mut self, part: &BlurPart) {
+        self.off |= part.off;
+        if part.on {
+            self.off = false;
+        }
+
+        merge_clone!((self, part), passes);
+        merge!((self, part), offset);
+    }
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct BlurRule {
+    #[knuffel(child)]
+    pub off: bool,
+    #[knuffel(child)]
+    pub on: bool,
+}
+
+#[derive(knuffel::Decode, Debug, Default, Clone, Copy, PartialEq)]
+pub struct BackgroundEffectRule {
+    #[knuffel(child, unwrap(argument))]
+    pub xray: Option<bool>,
+    #[knuffel(child, default)]
+    pub blur: BlurRule,
+}
+
+impl MergeWith<Self> for BackgroundEffectRule {
+    fn merge_with(&mut self, part: &Self) {
+        merge_clone_opt!((self, part), xray);
+        merge_on_off!((self.blur, part.blur));
+    }
+}
+
+/// Resolved background effect rule.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct BackgroundEffect {
+    /// Whether to render with xray effect (see through).
+    pub xray: bool,
+
+    /// Whether to blur the background.
+    ///
+    /// - `None`: blur when the window/layer requests it (e.g. through ext-background-effect
+    ///   protocol)
+    /// - `Some(false)`: never blur
+    /// - `Some(true)`: always blur
+    pub blur: Option<bool>,
+}
+
+impl MergeWith<BackgroundEffectRule> for BackgroundEffect {
+    fn merge_with(&mut self, part: &BackgroundEffectRule) {
+        if let Some(x) = part.xray {
+            self.xray = x;
+        }
+
+        if part.blur.on {
+            self.blur = Some(true);
+        }
+        if part.blur.off {
+            self.blur = Some(false);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use insta::{assert_debug_snapshot, assert_snapshot};

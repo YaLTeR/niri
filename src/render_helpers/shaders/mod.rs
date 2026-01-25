@@ -8,6 +8,7 @@ use smithay::backend::renderer::gles::{
 
 use super::renderer::NiriRenderer;
 use super::shader_element::ShaderProgram;
+use crate::render_helpers::blur::BlurProgram;
 
 pub struct Shaders {
     pub border: Option<ShaderProgram>,
@@ -15,6 +16,7 @@ pub struct Shaders {
     pub clipped_surface: Option<GlesTexProgram>,
     pub resize: Option<ShaderProgram>,
     pub gradient_fade: Option<GlesTexProgram>,
+    pub blur: Option<BlurProgram>,
     pub custom_resize: RefCell<Option<ShaderProgram>>,
     pub custom_close: RefCell<Option<ShaderProgram>>,
     pub custom_open: RefCell<Option<ShaderProgram>>,
@@ -107,12 +109,19 @@ impl Shaders {
             })
             .ok();
 
+        let blur = BlurProgram::compile(renderer)
+            .map_err(|err| {
+                warn!("error compiling blur shaders: {err:?}");
+            })
+            .ok();
+
         Self {
             border,
             shadow,
             clipped_surface,
             resize,
             gradient_fade,
+            blur,
             custom_resize: RefCell::new(None),
             custom_close: RefCell::new(None),
             custom_open: RefCell::new(None),
