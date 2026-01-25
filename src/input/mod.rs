@@ -9,7 +9,7 @@ use input::event::gesture::GestureEventCoordinates as _;
 use niri_config::{
     Action, Bind, Binds, Config, Key, ModKey, Modifiers, MruDirection, SwitchBinds, Trigger, Xkb,
 };
-use niri_ipc::LayoutSwitchTarget;
+use niri_ipc::{LayoutSwitchTarget, ZoomMovement};
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
@@ -2407,6 +2407,118 @@ impl State {
                     self.niri.queue_redraw_mru_output();
                 }
             }
+            Action::ToggleZoom { output } => {
+                let target_output = match output {
+                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
+                    None => self.niri.layout.active_output().cloned(),
+                };
+                if let Some(output) = target_output {
+                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
+                        monitor.zoom_enabled = !monitor.zoom_enabled;
+                        let zoom_state = niri_ipc::ZoomState {
+                            factor: monitor.zoom_factor,
+                            enabled: monitor.zoom_enabled,
+                            movement: monitor.zoom_movement,
+                            threshold: monitor.zoom_threshold,
+                            frozen: monitor.zoom_frozen,
+                        };
+                        self.ipc_send_zoom_state_change(&output.name(), zoom_state);
+                    }
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::ToggleZoomFreeze { output } => {
+                let target_output = match output {
+                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
+                    None => self.niri.layout.active_output().cloned(),
+                };
+                if let Some(output) = target_output {
+                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
+                        monitor.zoom_frozen = !monitor.zoom_frozen;
+                        let zoom_state = niri_ipc::ZoomState {
+                            factor: monitor.zoom_factor,
+                            enabled: monitor.zoom_enabled,
+                            movement: monitor.zoom_movement,
+                            threshold: monitor.zoom_threshold,
+                            frozen: monitor.zoom_frozen,
+                        };
+                        self.ipc_send_zoom_state_change(&output.name(), zoom_state);
+                    }
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetZoomFactor { factor, output } => {
+                let target_output = match output {
+                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
+                    None => self.niri.layout.active_output().cloned(),
+                };
+                if let Some(output) = target_output {
+                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
+                        let factor_str = factor.trim();
+                        let is_relative =
+                            factor_str.starts_with('+') || factor_str.starts_with('-');
+                        match factor_str.parse::<f64>() {
+                            Ok(f) if !is_relative => {
+                                monitor.zoom_factor = f.max(1.0);
+                            }
+                            Ok(delta) => {
+                                monitor.zoom_factor =
+                                    (monitor.zoom_factor + delta).clamp(1.0, 100.0);
+                            }
+                            Err(_) => {}
+                        }
+                        let zoom_state = niri_ipc::ZoomState {
+                            factor: monitor.zoom_factor,
+                            enabled: monitor.zoom_enabled,
+                            movement: monitor.zoom_movement,
+                            threshold: monitor.zoom_threshold,
+                            frozen: monitor.zoom_frozen,
+                        };
+                        self.ipc_send_zoom_state_change(&output.name(), zoom_state);
+                    }
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetZoomMovement { movement, output } => {
+                let target_output = match output {
+                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
+                    None => self.niri.layout.active_output().cloned(),
+                };
+                if let Some(output) = target_output {
+                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
+                        monitor.zoom_movement = movement;
+                        let zoom_state = niri_ipc::ZoomState {
+                            factor: monitor.zoom_factor,
+                            enabled: monitor.zoom_enabled,
+                            movement: monitor.zoom_movement,
+                            threshold: monitor.zoom_threshold,
+                            frozen: monitor.zoom_frozen,
+                        };
+                        self.ipc_send_zoom_state_change(&output.name(), zoom_state);
+                    }
+                    self.niri.queue_redraw_all();
+                }
+            }
+            Action::SetZoomThreshold { threshold, output } => {
+                let target_output = match output {
+                    Some(name) => self.niri.output_by_name_match(&name).cloned(),
+                    None => self.niri.layout.active_output().cloned(),
+                };
+                if let Some(output) = target_output {
+                    if let Some(monitor) = self.niri.layout.monitor_for_output_mut(&output) {
+                        monitor.zoom_threshold = threshold.clamp(0.0, 1.0);
+                        let zoom_state = niri_ipc::ZoomState {
+                            factor: monitor.zoom_factor,
+                            enabled: monitor.zoom_enabled,
+                            movement: monitor.zoom_movement,
+                            threshold: monitor.zoom_threshold,
+                            frozen: monitor.zoom_frozen,
+                        };
+                        self.ipc_send_zoom_state_change(&output.name(), zoom_state);
+                    }
+                    self.niri.queue_redraw_all();
+                }
+            }
         }
     }
 
@@ -2652,6 +2764,106 @@ impl State {
             if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
                 let output = output.clone();
                 self.niri.layout.dnd_update(output, pos_within_output);
+            }
+        }
+
+        // Update cursor zoom center for EdgePushed movement (like cosmic-comp's OnEdge)
+        // When cursor exits visible zoomed area, pan by cursor delta scaled by zoom
+        for monitor in self.niri.layout.monitors_mut() {
+            let zoom = monitor.zoom_factor;
+
+            // Skip if zoom center is frozen
+            if monitor.zoom_frozen {
+                continue;
+            }
+
+            if zoom <= 1.0 || monitor.zoom_movement != ZoomMovement::EdgePushed {
+                // No zoom or not in EdgePushed mode
+                // Just update zoom center to current cursor position
+                monitor.zoom_center = new_pos
+                    - self
+                        .niri
+                        .global_space
+                        .output_geometry(monitor.output())
+                        .unwrap()
+                        .loc
+                        .to_f64();
+                continue;
+            }
+
+            let output_geo = match self.niri.global_space.output_geometry(monitor.output()) {
+                Some(geo) => geo.to_f64(),
+                None => continue,
+            };
+
+            let cursor_in_monitor = new_pos - output_geo.loc.to_f64();
+            if !output_geo.contains(cursor_in_monitor.to_i32_round()) {
+                continue;
+            }
+
+            let output_w = output_geo.size.w;
+            let output_h = output_geo.size.h;
+
+            // Calculate visible area bounds matching the render formula:
+            // offset = cursor_pos * (1 - zoom)
+            // For point p, screen_pos = (p - cursor_pos) * zoom + cursor_pos
+            // visible_left: screen=0 → p = cursor_pos * (zoom-1)/zoom
+            // visible_right: screen=output_w → p = cursor_pos + (output_w - cursor_pos)/zoom
+            let focal = monitor.zoom_center;
+            let visible_left = focal.x * (zoom - 1.0) / zoom;
+            let visible_right = focal.x + (output_w - focal.x) / zoom;
+            let visible_top = focal.y * (zoom - 1.0) / zoom;
+            let visible_bottom = focal.y + (output_h - focal.y) / zoom;
+
+            // Threshold as fraction of VISIBLE area size (not output size).
+            // This ensures safe zone scales properly with zoom level.
+            let visible_w = visible_right - visible_left;
+            let visible_h = visible_bottom - visible_top;
+            let threshold_x = visible_w * monitor.zoom_threshold;
+            let threshold_y = visible_h * monitor.zoom_threshold;
+
+            // Check if cursor is outside safe zone (visible area shrunk by threshold).
+            let safe_left = visible_left + threshold_x;
+            let safe_right = visible_right - threshold_x;
+            let safe_top = visible_top + threshold_y;
+            let safe_bottom = visible_bottom - threshold_y;
+
+            let outside_left = cursor_in_monitor.x < safe_left;
+            let outside_right = cursor_in_monitor.x > safe_right;
+            let outside_top = cursor_in_monitor.y < safe_top;
+            let outside_bottom = cursor_in_monitor.y > safe_bottom;
+
+            if outside_left || outside_right || outside_top || outside_bottom {
+                // Compute focal to place cursor slightly inside safe zone edge.
+                // Add small epsilon to prevent floating-point oscillation at boundary.
+                let z = zoom;
+                let tr = monitor.zoom_threshold;
+                let zf = z / (z - 1.0);
+                let epsilon = 1.0;
+
+                let mut new_focal_x = focal.x;
+                let mut new_focal_y = focal.y;
+
+                if outside_left {
+                    let target = cursor_in_monitor.x + epsilon;
+                    new_focal_x = target * zf - output_w * tr / (z - 1.0);
+                } else if outside_right {
+                    let target = cursor_in_monitor.x - epsilon;
+                    new_focal_x = (target - output_w / z) * zf + output_w * tr / (z - 1.0);
+                }
+
+                if outside_top {
+                    let target = cursor_in_monitor.y + epsilon;
+                    new_focal_y = target * zf - output_h * tr / (z - 1.0);
+                } else if outside_bottom {
+                    let target = cursor_in_monitor.y - epsilon;
+                    new_focal_y = (target - output_h / z) * zf + output_h * tr / (z - 1.0);
+                }
+
+                new_focal_x = new_focal_x.clamp(0.0, output_w);
+                new_focal_y = new_focal_y.clamp(0.0, output_h);
+
+                monitor.zoom_center = Point::from((new_focal_x, new_focal_y));
             }
         }
 

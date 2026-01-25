@@ -119,6 +119,8 @@ pub enum Request {
     OverviewState,
     /// Request information about screencasts.
     Casts,
+    /// Request information about the zoom state on the focused output.
+    ZoomState,
 }
 
 /// Reply from niri to client.
@@ -165,6 +167,13 @@ pub enum Response {
     OverviewState(Overview),
     /// Information about screencasts.
     Casts(Vec<Cast>),
+    /// Information about the zoom state.
+    ZoomStateChange {
+        /// Output the zoom state change occurred on.
+        output: String,
+        /// The new zoom state.
+        state: ZoomState,
+    },
 }
 
 /// Overview information.
@@ -173,6 +182,22 @@ pub enum Response {
 pub struct Overview {
     /// Whether the overview is currently open.
     pub is_open: bool,
+}
+
+/// Zoom state for a monitor.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct ZoomState {
+    /// Whether zoom is enabled.
+    pub enabled: bool,
+    /// Current zoom factor.
+    pub factor: f64,
+    /// Current zoom movement mode.
+    pub movement: ZoomMovement,
+    /// Current zoom threshold.
+    pub threshold: f64,
+    /// Whether the zoom center is frozen.
+    pub frozen: bool,
 }
 
 /// Color picked from the screen.
@@ -932,6 +957,50 @@ pub enum Action {
         #[cfg_attr(feature = "clap", arg(long))]
         id: u64,
     },
+    /// Toggle cursor zoom for a monitor.
+    ///
+    /// Enables zoom with a default factor of 2.0 if disabled, or disables zoom if enabled.
+    /// If no output is specified, uses the focused output.
+    ToggleZoom {
+        /// Output to toggle zoom for. If not specified, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
+    /// Toggle zoom freeze for a monitor.
+    ///
+    /// If no output is specified, uses the focused output.
+    ToggleZoomFreeze {
+        /// Output to toggle zoom freeze for. If not specified, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
+    /// Set the zoom factor for a monitor.
+    SetZoomFactor {
+        /// Zoom factor to set (absolute like "2.0" or relative like "+0.5", "-0.5").
+        #[cfg_attr(feature = "clap", arg())]
+        factor: String,
+        /// Output to set zoom factor for. If not specified, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
+    /// Set the zoom movement mode for a monitor.
+    SetZoomMovement {
+        /// Zoom movement mode to set ("cursor-follow" or "edge-pushed").
+        #[cfg_attr(feature = "clap", arg())]
+        movement: ZoomMovement,
+        /// Output to set zoom movement for. If not specified, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
+    /// Set the zoom threshold for a monitor.
+    SetZoomThreshold {
+        /// Zoom threshold to set (0.0 - 1.0).
+        #[cfg_attr(feature = "clap", arg())]
+        threshold: f64,
+        /// Output to set zoom threshold for. If not specified, uses the focused output.
+        #[cfg_attr(feature = "clap", arg())]
+        output: Option<String>,
+    },
     /// Reload the config file.
     ///
     /// Can be useful for scripts changing the config file, to avoid waiting the small duration for
@@ -999,6 +1068,44 @@ pub enum ColumnDisplay {
     Normal,
     /// Windows are in tabs.
     Tabbed,
+}
+
+/// Cursor zoom movement mode.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ZoomMovement {
+    /// Zoom view is always centered on cursor position.
+    #[default]
+    #[cfg_attr(feature = "clap", value(name = "cursor-follow"))]
+    Cursor,
+    /// Zoom view has independent center, pushed by cursor at edges.
+    #[cfg_attr(feature = "clap", value(name = "edge-pushed"))]
+    EdgePushed,
+}
+
+impl FromStr for ZoomMovement {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "cursor-follow" => Ok(ZoomMovement::Cursor),
+            "edge-pushed" => Ok(ZoomMovement::EdgePushed),
+            _ => Err(format!(
+                "invalid zoom movement '{}', expected 'cursor-follow' or 'edge-pushed'",
+                s
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for ZoomMovement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ZoomMovement::Cursor => write!(f, "cursor-follow"),
+            ZoomMovement::EdgePushed => write!(f, "edge-pushed"),
+        }
+    }
 }
 
 /// Output actions that niri can perform.
@@ -1222,6 +1329,18 @@ pub struct Output {
     ///
     /// `None` if the output is not mapped to any logical output (for example, if it is disabled).
     pub logical: Option<LogicalOutput>,
+    /// Whether zoom is enabled.
+    pub zoom_enabled: bool,
+    /// Current zoom factor.
+    pub zoom_factor: f64,
+    /// Current zoom movement mode.
+    pub zoom_movement: ZoomMovement,
+    /// Current zoom threshold as fraction of output size.
+    ///
+    /// Default is 0.15.
+    pub zoom_threshold: f64,
+    /// Whether the zoom center is frozen.
+    pub zoom_frozen: bool,
 }
 
 /// Output mode.
@@ -1698,6 +1817,13 @@ pub enum Event {
     CastStopped {
         /// Stream ID of the stopped screencast.
         stream_id: u64,
+    },
+    /// The Zoom configuration has changed.
+    ZoomStateChange {
+        /// Output the zoom state change occurred on.
+        output: String,
+        /// The new zoom state.
+        state: ZoomState,
     },
 }
 

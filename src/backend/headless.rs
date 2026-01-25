@@ -109,6 +109,11 @@ impl Headless {
                 vrr_supported: false,
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),
+                zoom_enabled: false,
+                zoom_factor: 1.0,
+                zoom_movement: niri_ipc::ZoomMovement::default(),
+                zoom_threshold: 0.15,
+                zoom_frozen: false,
             },
         );
 
@@ -154,6 +159,22 @@ impl Headless {
 
     pub fn import_dmabuf(&mut self, _dmabuf: &Dmabuf) -> bool {
         unimplemented!()
+    }
+
+    pub fn refresh_ipc_outputs(&self, niri: &Niri) {
+        let mut ipc_outputs = self.ipc_outputs.lock().unwrap();
+        for ipc_output in ipc_outputs.values_mut() {
+            let output = niri
+                .global_space
+                .outputs()
+                .find(|o| o.name() == ipc_output.name);
+            if let Some(mon) = output.and_then(|o| niri.layout.monitor_for_output(o)) {
+                ipc_output.zoom_factor = mon.zoom_factor;
+                ipc_output.zoom_movement = mon.zoom_movement;
+                ipc_output.zoom_threshold = mon.zoom_threshold;
+                ipc_output.zoom_frozen = mon.zoom_frozen;
+            }
+        }
     }
 
     pub fn ipc_outputs(&self) -> Arc<Mutex<IpcOutputMap>> {

@@ -1851,7 +1851,8 @@ impl Tty {
         // Overlay planes are disabled by default as they cause weird performance issues on my
         // system.
         let flags = {
-            let debug = &self.config.borrow().debug;
+            let config = self.config.borrow();
+            let debug = &config.debug;
 
             let primary_scanout_flag = if debug.restrict_primary_scanout_to_matching_format {
                 FrameFlags::ALLOW_PRIMARY_PLANE_SCANOUT
@@ -1875,6 +1876,19 @@ impl Tty {
                 if output_state.frame_clock.vrr() {
                     flags.insert(FrameFlags::SKIP_CURSOR_ONLY_UPDATES);
                 }
+            }
+
+            // When pixel-perfect cursor zoom is active, disable direct scanout so that
+            // the GPU texture filter (Nearest) is used instead of hardware plane scaling
+            // which typically uses bilinear filtering.
+            let zoom_factor = niri
+                .layout
+                .monitor_for_output(output)
+                .map(|m| m.zoom_factor)
+                .unwrap_or(1.0);
+            if zoom_factor > 3.0 {
+                flags.remove(primary_scanout_flag);
+                flags.remove(FrameFlags::ALLOW_OVERLAY_PLANE_SCANOUT);
             }
 
             flags
@@ -2132,14 +2146,28 @@ impl Tty {
                     });
                 let vrr_enabled = surface.is_some_and(|surface| surface.compositor.vrr_enabled());
 
-                let logical = niri
-                    .global_space
-                    .outputs()
-                    .find(|output| {
-                        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-                        tty_state.node == *node && tty_state.crtc == crtc
-                    })
-                    .map(logical_output);
+                let output = niri.global_space.outputs().find(|output| {
+                    let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+                    tty_state.node == *node && tty_state.crtc == crtc
+                });
+                let logical = output.map(logical_output);
+
+                // Get zoom state from the monitor if available.
+                let (zoom_enabled, zoom_factor, zoom_movement, zoom_threshold, zoom_frozen) =
+                    output
+                        .and_then(|o| niri.layout.monitor_for_output(o))
+                        .map_or(
+                            (false, 1.0, niri_ipc::ZoomMovement::default(), 0.15, false),
+                            |mon| {
+                                (
+                                    mon.zoom_enabled,
+                                    mon.zoom_factor,
+                                    mon.zoom_movement,
+                                    mon.zoom_threshold,
+                                    mon.zoom_frozen,
+                                )
+                            },
+                        );
 
                 let id = device.known_crtcs.get(&crtc).map(|info| info.id);
                 let id = id.unwrap_or_else(|| {
@@ -2159,6 +2187,11 @@ impl Tty {
                     vrr_supported,
                     vrr_enabled,
                     logical,
+                    zoom_enabled,
+                    zoom_factor,
+                    zoom_movement,
+                    zoom_threshold,
+                    zoom_frozen,
                 };
 
                 ipc_outputs.insert(id, ipc_output);
