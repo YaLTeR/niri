@@ -89,8 +89,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Set the current desktop for xdg-desktop-portal.
-        env::set_var("XDG_CURRENT_DESKTOP", "niri");
+        if env::var_os("XDG_CURRENT_DESKTOP").is_none() {
+            // Set the current desktop for xdg-desktop-portal.
+            env::set_var("XDG_CURRENT_DESKTOP", "niri");
+        }
         // Ensure the session type is set to Wayland for xdg-autostart and Qt apps.
         env::set_var("XDG_SESSION_TYPE", "wayland");
     }
