@@ -229,6 +229,8 @@ impl LayoutElement for TestWindow {
 
     fn set_floating(&mut self, _floating: bool) {}
 
+    fn set_sticky(&mut self, _sticky: bool) {}
+
     fn sizing_mode(&self) -> SizingMode {
         self.0.sizing_mode.get()
     }
@@ -906,6 +908,7 @@ impl Op {
                     None,
                     false,
                     is_floating,
+                    false,
                     ActivateWindow::default(),
                 );
             }
@@ -975,6 +978,7 @@ impl Op {
                     None,
                     false,
                     is_floating,
+                    false,
                     ActivateWindow::default(),
                 );
             }
@@ -1049,6 +1053,7 @@ impl Op {
                     None,
                     false,
                     is_floating,
+                    false,
                     ActivateWindow::default(),
                 );
             }
