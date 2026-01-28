@@ -852,6 +852,7 @@ impl Op {
                 layout_config,
             } => {
                 layout.ensure_named_workspace(&WorkspaceConfig {
+                    hidden: None,
                     name: WorkspaceName(format!("ws{ws_name}")),
                     open_on_output: output_name.map(|name| format!("output{name}")),
                     layout: layout_config.map(|x| niri_config::WorkspaceLayoutPart(*x)),
@@ -1175,7 +1176,7 @@ impl Op {
             Op::CenterVisibleColumns => layout.center_visible_columns(),
             Op::FocusWorkspaceDown => layout.switch_workspace_down(),
             Op::FocusWorkspaceUp => layout.switch_workspace_up(),
-            Op::FocusWorkspace(idx) => layout.switch_workspace(idx),
+            Op::FocusWorkspace(idx) => layout.switch_workspace(idx, false),
             Op::FocusWorkspaceAutoBackAndForth(idx) => {
                 layout.switch_workspace_auto_back_and_forth(idx)
             }
