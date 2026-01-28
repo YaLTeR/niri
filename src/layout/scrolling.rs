@@ -3628,7 +3628,40 @@ impl<W: LayoutElement> ScrollingSpace<W> {
     }
 
     pub fn refresh(&mut self, is_active: bool, is_focused: bool) {
-        for (col_idx, col) in self.columns.iter_mut().enumerate() {
+        // Pre-calculate values
+        let is_solo_window = self.options.layout.opacity_transition.flash.enabled
+            && self.columns.len() == 1
+            && self.columns.first().is_some_and(|c| c.tiles.len() == 1);
+        let active_column_idx = self.active_column_idx;
+        let deactivate_unfocused_windows = self.options.deactivate_unfocused_windows;
+
+        // When focus opacity or opacity transition is enabled, we need to process all tiles
+        // (including off-screen ones) for proper animation behavior, so we don't filter
+        // columns
+        let should_process_all_tiles_for_proximity =
+            self.options.layout.opacity_transition.flash.enabled
+                || self.options.layout.opacity_transition.enabled;
+
+        let scale = self.scale;
+        let view_pos = self.view_pos();
+        let column_xs: Vec<_> = self.column_xs(self.data.iter().copied()).collect();
+
+        // Pre-calculate proximity rect to avoid borrowing self inside the loop
+        const PROXIMITY_THRESHOLD: f64 = 400.0;
+        let viewport_rect = Rectangle::new(Point::from((-view_pos, 0.)), self.view_size);
+        let expanded_viewport = Rectangle::new(
+            Point::new(
+                viewport_rect.loc.x - PROXIMITY_THRESHOLD,
+                viewport_rect.loc.y - PROXIMITY_THRESHOLD,
+            ),
+            Size::new(
+                viewport_rect.size.w + 2.0 * PROXIMITY_THRESHOLD,
+                viewport_rect.size.h + 2.0 * PROXIMITY_THRESHOLD,
+            ),
+        );
+
+        // Process all tiles (visible and proximate off-screen) together
+        for (col_idx, (col, &col_x)) in self.columns.iter_mut().zip(&column_xs).enumerate() {
             let mut col_resize_data = None;
             if let Some(resize) = &self.interactive_resize {
                 if col.contains(&resize.window) {
@@ -3665,22 +3698,59 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     })
             };
 
+            let tile_offsets: Vec<_> = col.tile_offsets().collect();
+            let col_render_off = col.render_offset();
+            let active_tile_idx = col.active_tile_idx;
+
+            // Process each tile in this column
             for (tile_idx, tile) in col.tiles.iter_mut().enumerate() {
-                let win = tile.window_mut();
-
-                let active_in_column = col.active_tile_idx == tile_idx;
-                win.set_active_in_column(active_in_column);
-                win.set_floating(false);
-
-                let mut active = is_active && self.active_column_idx == col_idx;
-                if self.options.deactivate_unfocused_windows {
-                    active &= active_in_column && is_focused;
+                let active_in_column = active_tile_idx == tile_idx;
+                let mut is_tile_active = is_active && active_column_idx == col_idx;
+                if deactivate_unfocused_windows {
+                    is_tile_active &= active_in_column && is_focused;
                 } else {
                     // In tabbed mode, all tabs have activated state to reduce unnecessary
                     // animations when switching tabs.
-                    active &= active_in_column || is_tabbed;
+                    is_tile_active &= active_in_column || is_tabbed;
                 }
-                win.set_activated(active);
+
+                let is_focused_now = is_tile_active && is_focused;
+
+                // Calculate proximity for this tile
+                let is_in_proximity = if should_process_all_tiles_for_proximity {
+                    let view_off = Point::from((-view_pos, 0.));
+                    let col_off = Point::from((col_x, 0.));
+                    let tile_off = tile_offsets[tile_idx];
+                    let pos = view_off + col_off + col_render_off + tile_off + tile.render_offset();
+                    let pos = pos.to_physical_precise_round(scale).to_logical(scale);
+
+                    let tile_rect = Rectangle::new(pos, tile.tile_size());
+                    tile_rect.intersection(expanded_viewport).is_some()
+                } else {
+                    // If focus opacity is disabled, proximity doesn't matter
+                    false
+                };
+
+                // Update opacity animation state
+                if self.options.layout.opacity_transition.flash.enabled
+                    || self.options.layout.opacity_transition.enabled
+                {
+                    let target_opacity =
+                        tile.window().rules().opacity.unwrap_or(1.0).clamp(0.0, 1.0) as f64;
+                    tile.update_opacity(
+                        &self.options.layout,
+                        target_opacity,
+                        is_focused_now,
+                        is_in_proximity,
+                        is_solo_window,
+                    );
+                }
+
+                // Continue with normal tile processing
+                let win = tile.window_mut();
+                win.set_active_in_column(active_in_column);
+                win.set_floating(false);
+                win.set_activated(is_tile_active);
 
                 win.set_interactive_resize(col_resize_data);
 

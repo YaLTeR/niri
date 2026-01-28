@@ -2,7 +2,7 @@ use core::f64;
 use std::rc::Rc;
 
 use niri_config::utils::MergeWith as _;
-use niri_config::{Color, CornerRadius, GradientInterpolation};
+use niri_config::{Color, CornerRadius, GradientInterpolation, Layout};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -32,6 +32,8 @@ use crate::utils::transaction::Transaction;
 use crate::utils::{
     baba_is_float_offset, round_logical_in_physical, round_logical_in_physical_max1,
 };
+
+const FOCUS_FLASH_EPSILON: f64 = 0.001;
 
 /// Toplevel window with decorations.
 #[derive(Debug)]
@@ -93,6 +95,15 @@ pub struct Tile<W: LayoutElement> {
 
     /// The animation of the tile's opacity.
     pub(super) alpha_animation: Option<AlphaAnimation>,
+
+    /// Whether the window was focused during the last render update.
+    pub(super) was_focused: bool,
+
+    /// Whether the tile was in proximity during the last render update.
+    pub(super) was_in_proximity: bool,
+
+    /// State machine for unified opacity animations (focus flash + smooth transitions).
+    opacity_state: OpacityState,
 
     /// Offset during the initial interactive move rubberband.
     pub(super) interactive_move_offset: Point<f64, Logical>,
@@ -171,6 +182,25 @@ pub(super) struct AlphaAnimation {
     offscreen: OffscreenBuffer,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+enum OpacityState {
+    #[default]
+    Idle,
+    /// The window is smoothly transitioning from one opacity to another.
+    Transitioning { target: f64 },
+    /// The window is performing a focus flash effect.
+    Flashing {
+        phase: FlashPhase,
+        base_opacity: f64,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum FlashPhase {
+    Rising,
+    Falling,
+}
+
 impl<W: LayoutElement> Tile<W> {
     pub fn new(
         window: W,
@@ -202,6 +232,9 @@ impl<W: LayoutElement> Tile<W> {
             move_x_animation: None,
             move_y_animation: None,
             alpha_animation: None,
+            was_focused: false,
+            was_in_proximity: false,
+            opacity_state: OpacityState::Idle,
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
             rounded_corner_damage: Default::default(),
@@ -450,6 +483,7 @@ impl<W: LayoutElement> Tile<W> {
                 .alpha_animation
                 .as_ref()
                 .is_some_and(|alpha| !alpha.anim.is_done())
+            || !matches!(self.opacity_state, OpacityState::Idle)
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
@@ -650,6 +684,139 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
+    /// Call this every refresh to update the opacity animation state.
+    /// This handles both the focus flash effect and smooth transitions between active/inactive
+    /// states.
+    pub fn update_opacity(
+        &mut self,
+        layout_config: &Layout,
+        target_opacity: f64,
+        is_focused: bool,
+        is_in_proximity: bool,
+        is_solo_window: bool,
+    ) {
+        let transition_config = &layout_config.opacity_transition;
+        let focus_config = &transition_config.flash;
+
+        self.was_in_proximity = is_in_proximity;
+
+        let current_visual = self
+            .alpha_animation
+            .as_ref()
+            .map(|alpha| alpha.anim.value())
+            .unwrap_or_else(|| self.window.rules().opacity.unwrap_or(1.0).clamp(0.0, 1.0) as f64);
+
+        // 1. Check for Focus Flash Trigger
+        // If we just gained focus and flash is enabled, we INITIALIZE the flash and return early.
+        // We do not run the state machine match this frame.
+        let flash_enabled =
+            focus_config.enabled && !(is_solo_window && focus_config.disable_on_solo);
+        if is_focused && !self.was_focused && flash_enabled {
+            let flash_alpha = focus_config.flash_opacity.clamp(0.0, 1.0) as f64;
+            let (rise_duration_ms, _) = Self::focus_flash_durations(transition_config.duration_ms);
+
+            // Start Flash
+            self.opacity_state = OpacityState::Flashing {
+                phase: FlashPhase::Rising,
+                base_opacity: target_opacity,
+            };
+            self.animate_alpha(
+                current_visual,
+                flash_alpha,
+                Self::focus_flash_animation(rise_duration_ms),
+            );
+            self.was_focused = true;
+            return;
+        }
+        self.was_focused = is_focused;
+
+        // 2. Handle Existing Animation State (The Update Loop)
+        // This runs on every frame AFTER the trigger frame. It advances the current state.
+        match self.opacity_state {
+            OpacityState::Flashing {
+                phase,
+                mut base_opacity,
+            } => {
+                // If target_opacity changes during a flash, update base_opacity
+                // so we land on the correct value.
+                if !Self::nearly_equal(base_opacity, target_opacity) {
+                    base_opacity = target_opacity;
+                    self.opacity_state = OpacityState::Flashing {
+                        phase,
+                        base_opacity,
+                    };
+                }
+
+                // Advance flash animation logic
+                if let Some(alpha) = &self.alpha_animation {
+                    if alpha.anim.is_done() {
+                        match phase {
+                            FlashPhase::Rising => {
+                                // Rising done -> Switch to Falling
+                                let (_, fall_duration_ms) =
+                                    Self::focus_flash_durations(transition_config.duration_ms);
+                                self.opacity_state = OpacityState::Flashing {
+                                    phase: FlashPhase::Falling,
+                                    base_opacity,
+                                };
+                                self.animate_alpha(
+                                    alpha.anim.value(),
+                                    base_opacity,
+                                    Self::focus_flash_animation(fall_duration_ms),
+                                );
+                            }
+                            FlashPhase::Falling => {
+                                // Falling done -> Flash complete
+                                self.opacity_state = OpacityState::Idle;
+                            }
+                        }
+                    }
+                } else {
+                    // Animation was cancelled externally? Reset state.
+                    self.opacity_state = OpacityState::Idle;
+                }
+            }
+
+            OpacityState::Transitioning { target } => {
+                // If the target changed mid-transition, retarget the animation.
+                if !Self::nearly_equal(target, target_opacity) {
+                    self.opacity_state = OpacityState::Transitioning {
+                        target: target_opacity,
+                    };
+                    self.animate_alpha(
+                        current_visual,
+                        target_opacity,
+                        Self::focus_flash_animation(transition_config.duration_ms),
+                    );
+                } else if let Some(alpha) = &self.alpha_animation {
+                    if alpha.anim.is_done() {
+                        self.opacity_state = OpacityState::Idle;
+                    }
+                } else {
+                    self.opacity_state = OpacityState::Idle;
+                }
+            }
+
+            OpacityState::Idle => {
+                // 3. Detect Need for Smooth Transition
+                if !Self::nearly_equal(current_visual, target_opacity) && transition_config.enabled
+                {
+                    // Start Smooth Transition
+                    self.opacity_state = OpacityState::Transitioning {
+                        target: target_opacity,
+                    };
+                    self.animate_alpha(
+                        current_visual,
+                        target_opacity,
+                        Self::focus_flash_animation(transition_config.duration_ms),
+                    );
+                }
+            }
+        }
+
+        self.was_focused = is_focused;
+    }
+
     pub fn window(&self) -> &W {
         &self.window
     }
@@ -676,6 +843,26 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
+    fn focus_flash_animation(duration_ms: u32) -> niri_config::Animation {
+        niri_config::Animation {
+            off: false,
+            kind: niri_config::animations::Kind::Easing(niri_config::animations::EasingParams {
+                duration_ms: duration_ms.max(1),
+                curve: niri_config::animations::Curve::EaseOutQuad,
+            }),
+        }
+    }
+
+    fn focus_flash_durations(total_ms: u32) -> (u32, u32) {
+        let total = total_ms.max(1);
+        let rise = total.div_ceil(2);
+        let fall = total.saturating_sub(rise).max(1);
+        (rise, fall)
+    }
+
+    fn nearly_equal(a: f64, b: f64) -> bool {
+        (a - b).abs() <= FOCUS_FLASH_EPSILON
+    }
     fn expanded_progress(&self) -> f64 {
         if let Some(resize) = &self.resize_animation {
             if let Some(anim) = &resize.expanded_progress {
@@ -1024,7 +1211,11 @@ impl<W: LayoutElement> Tile<W> {
         let win_alpha = if self.window.is_ignoring_opacity_window_rule() {
             1.
         } else {
-            let alpha = self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.);
+            let alpha = self
+                .alpha_animation
+                .as_ref()
+                .map(|a| a.anim.value() as f32)
+                .unwrap_or_else(|| self.window.rules().opacity.unwrap_or(1.).clamp(0., 1.));
 
             // Interpolate towards alpha = 1. at fullscreen.
             let p = fullscreen_progress as f32;
