@@ -54,8 +54,8 @@ use crate::niri::{CastTarget, PointerVisibility, State};
 use crate::ui::mru::{WindowMru, WindowMruUi};
 use crate::ui::screenshot_ui::ScreenshotUi;
 use crate::utils::spawning::{spawn, spawn_sh};
+use crate::utils::zoom::zoom_display_cursor_logical;
 use crate::utils::{center, get_monotonic_time, CastSessionId, ResizeEdge};
-use crate::zoom::zoom_display_cursor_logical;
 
 pub mod backend_ext;
 pub mod click_grab;

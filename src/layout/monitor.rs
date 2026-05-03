@@ -21,7 +21,6 @@ use super::{compute_overview_zoom, ActivateWindow, HitType, LayoutElement, Optio
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
 use crate::layout::RenderLayer;
-use crate::layout::ZoomTransition;
 use crate::niri_render_elements;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::shadow::ShadowRenderElement;
@@ -33,7 +32,6 @@ use crate::utils::transaction::Transaction;
 use crate::utils::{
     output_size, round_logical_in_physical, round_logical_in_physical_max1, ResizeEdge,
 };
-use crate::zoom::OutputZoomState;
 
 /// Amount of touchpad movement to scroll the height of one workspace.
 const WORKSPACE_GESTURE_MOVEMENT: f64 = 300.;
@@ -91,10 +89,6 @@ pub struct Monitor<W: LayoutElement> {
     pub(super) options: Rc<Options>,
     /// Layout config overrides for this monitor.
     layout_config: Option<niri_config::LayoutPart>,
-    /// In-progress zoom transition state for this monitor.
-    pub(super) zoom_transition: ZoomTransition,
-    /// Per-output zoom state (level, focal, locked, transitioning).
-    pub(super) zoom_state: OutputZoomState,
 }
 
 #[derive(Debug)]
@@ -334,8 +328,6 @@ impl<W: LayoutElement> Monitor<W> {
         let ws = Workspace::new(output.clone(), clock.clone(), options.clone());
         workspaces.push(ws);
 
-        let zoom_state = OutputZoomState::new_for_output(&output);
-
         Self {
             output_name: output.name(),
             output,
@@ -355,8 +347,6 @@ impl<W: LayoutElement> Monitor<W> {
             base_options,
             options,
             layout_config,
-            zoom_transition: ZoomTransition::default(),
-            zoom_state,
         }
     }
 
@@ -377,14 +367,6 @@ impl<W: LayoutElement> Monitor<W> {
     pub fn output_name(&self) -> &String {
         &self.output_name
     }
-    /// Canonical per-output zoomed-geometry for this monitor.
-    pub fn zoomed_geometry(
-        &self,
-        output_geometry: Rectangle<f64, Logical>,
-    ) -> Rectangle<f64, Logical> {
-        self.zoom_state.viewport_global(output_geometry)
-    }
-
     pub fn active_workspace_idx(&self) -> usize {
         self.active_workspace_idx
     }
