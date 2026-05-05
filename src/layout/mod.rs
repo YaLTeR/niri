@@ -58,7 +58,7 @@ use self::monitor::{Monitor, WorkspaceSwitch};
 use self::workspace::{OutputId, Workspace};
 pub use self::zoom::{
     OutputZoomState, ZoomFocalAnimation, ZoomLevelAnimation, ZoomLevelGesture, ZoomLevelProgress,
-    ZoomTransition,
+    ZoomSnapshot, ZoomTransition,
 };
 use crate::animation::{Animation, Clock};
 use crate::input::swipe_tracker::SwipeTracker;
@@ -74,8 +74,9 @@ use crate::render_helpers::xray::{Xray, XrayPos};
 use crate::render_helpers::{BakedBuffer, RenderCtx};
 use crate::rubber_band::RubberBand;
 use crate::utils::transaction::{Transaction, TransactionBlocker};
-pub use crate::utils::zoom::ZoomTransformInputs;
-use crate::utils::zoom::{compute_focal_for_cursor, compute_zoom_base_focal_update};
+use crate::utils::zoom::{
+    apply_zoom_viewport, compute_focal_for_cursor, compute_zoom_base_focal_update,
+};
 use crate::utils::{
     ensure_min_max_size_maybe_zero, output_matches_name, output_size,
     round_logical_in_physical_max1, ResizeEdge,
@@ -119,6 +120,8 @@ pub const ZOOM_GESTURE_RUBBER_BAND: RubberBand = RubberBand {
     stiffness: 0.5,
     limit: 0.05,
 };
+
+const ZOOM_CHANGE_EPSILON: f64 = 1e-9;
 
 /// Size-relative units.
 pub struct SizeFrac;
@@ -2803,9 +2806,10 @@ impl<W: LayoutElement> Layout<W> {
                     mon.advance_animations();
                 }
 
+                let now = self.clock.now();
                 for output in self.outputs().cloned().collect::<Vec<_>>() {
                     if let Some(state) = self.zoom_state_mut(&output) {
-                        state.apply_pending_transition();
+                        state.apply_pending_transition_at(now);
                     }
                 }
             }
@@ -2871,8 +2875,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn zoom_level_for_output(&self, output: &Output) -> f64 {
-        self.zoom_state_ref(output)
-            .map_or(1.0, OutputZoomState::current_level)
+        self.zoom_snapshot_for_output(output).level
     }
 
     pub fn zoom_max_for_output(&self, output: &Output) -> f64 {
@@ -2881,8 +2884,13 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn zoom_focal_for_output(&self, output: &Output) -> Point<f64, Logical> {
+        self.zoom_snapshot_for_output(output).focal
+    }
+
+    pub fn zoom_snapshot_for_output(&self, output: &Output) -> ZoomSnapshot {
+        let now = self.clock.now();
         self.zoom_state_ref(output)
-            .map_or(Point::from((0.0, 0.0)), OutputZoomState::current_focal)
+            .map_or_else(ZoomSnapshot::inactive, |state| state.snapshot_at(now))
     }
 
     /// Returns true if zoom level != 1.0 (zoom transform actively applied).
@@ -2905,11 +2913,13 @@ impl<W: LayoutElement> Layout<W> {
     ) -> Option<Point<f64, Logical>> {
         let state = self.zoom_state_ref(output)?;
         if state.is_active() {
-            // Use the shared seam to derive the canonical geometry for clamping.
-            // This reuses the per-output seam geometry instead of reconstructing layout geometry
-            // ad-hoc, ensuring consistency with hit-testing and other consumers.
-            let seam_geometry = self.zoomed_geometry_for_output(output, output_geometry);
-            Some(state.clamp_to_viewport(pos, seam_geometry))
+            let snapshot = state.snapshot_at(self.clock.now());
+            let focal_global = snapshot.focal + output_geometry.loc;
+            let viewport = apply_zoom_viewport(output_geometry, focal_global, snapshot.level);
+            Some(pos.constrain(Rectangle::new(
+                viewport.loc,
+                viewport.size - Size::from((f64::EPSILON, f64::EPSILON)),
+            )))
         } else {
             None
         }
@@ -2923,7 +2933,9 @@ impl<W: LayoutElement> Layout<W> {
     ) -> Rectangle<f64, Logical> {
         self.zoom_state_ref(output)
             .map_or(output_geometry, |state| {
-                state.viewport_global(output_geometry)
+                let snapshot = state.snapshot_at(self.clock.now());
+                let focal_global = snapshot.focal + output_geometry.loc;
+                apply_zoom_viewport(output_geometry, focal_global, snapshot.level)
             })
     }
 
@@ -2969,8 +2981,9 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
 
-        let current_level = state.current_level();
-        let current_focal = state.current_focal();
+        let snapshot = state.snapshot_at(context.clock.now());
+        let current_level = snapshot.level;
+        let current_focal = snapshot.focal;
 
         let target_focal = if current_level <= 1.0 {
             state.focal
@@ -2983,8 +2996,9 @@ impl<W: LayoutElement> Layout<W> {
             )
         };
 
-        let focal_changed = (current_focal.x - target_focal.x).abs() > 0.5
-            || (current_focal.y - target_focal.y).abs() > 0.5;
+        let change_in_focal = current_focal - target_focal;
+        let focal_changed = change_in_focal.x.abs() > ZOOM_CHANGE_EPSILON
+            || change_in_focal.y.abs() > ZOOM_CHANGE_EPSILON;
 
         if !focal_changed {
             return;
@@ -3009,18 +3023,17 @@ impl<W: LayoutElement> Layout<W> {
         old_pos_global: Option<Point<f64, Logical>>,
         animate: bool,
     ) {
-        let Some((level, focal, transitioning, locked)) =
-            self.zoom_state_ref(output).map(|state| {
-                (
-                    state.level,
-                    state.focal,
-                    state.transitioning(),
-                    state.locked,
-                )
-            })
+        let now = self.clock.now();
+        let Some((snapshot, transitioning)) = self
+            .zoom_state_ref(output)
+            .map(|state| (state.snapshot_at(now), state.transitioning()))
         else {
             return;
         };
+
+        let level = snapshot.level;
+        let focal = snapshot.focal;
+        let locked = snapshot.locked;
 
         let cursor_position = new_pos_global - output_geo.loc;
 
@@ -4109,9 +4122,10 @@ impl<W: LayoutElement> Layout<W> {
 
         let target_level = target_level.clamp(1.0, context.max_zoom);
 
-        let current_level = state.current_level();
+        let snapshot = state.snapshot_at(context.clock.now());
+        let current_level = snapshot.level;
 
-        let level_changed = (target_level - current_level).abs() >= 0.001;
+        let level_changed = (target_level - current_level).abs() > ZOOM_CHANGE_EPSILON;
 
         let target_focal = if locked || target_level <= 1.0 || !level_changed {
             state.focal
@@ -4119,10 +4133,11 @@ impl<W: LayoutElement> Layout<W> {
             compute_focal_for_cursor(cursor_local, target_level, context.view_size, movement_mode)
         };
 
-        let current_focal = state.current_focal();
+        let current_focal = snapshot.focal;
 
-        let focal_changed = (current_focal.x - target_focal.x).abs() > 0.5
-            || (current_focal.y - target_focal.y).abs() > 0.5;
+        let change_in_focal = current_focal - target_focal;
+        let focal_changed = change_in_focal.x.abs() > ZOOM_CHANGE_EPSILON
+            || change_in_focal.y.abs() > ZOOM_CHANGE_EPSILON;
 
         if !level_changed && !focal_changed {
             return;
@@ -4170,8 +4185,14 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
 
-        let current_level = state.current_level();
-        let current_focal = state.current_focal();
+        let now = state
+            .transition
+            .as_ref()
+            .and_then(ZoomTransition::sample_time)
+            .unwrap_or(Duration::ZERO);
+        let snapshot = state.snapshot_at(now);
+        let current_level = snapshot.level;
+        let current_focal = snapshot.focal;
 
         let gesture = ZoomLevelGesture::new(
             current_level,
@@ -4195,10 +4216,22 @@ impl<W: LayoutElement> Layout<W> {
         scale: f64,
         sensitivity: f64,
         timestamp: Duration,
+        cursor_local: Option<Point<f64, Logical>>,
+        output_size: Option<Size<f64, Logical>>,
     ) -> Option<bool> {
         let max_zoom = self.zoom_context_for_output(output)?.max_zoom;
         let state = self.zoom_state_mut(output)?;
         let gesture = state.transition.as_mut()?.level_gesture_mut()?;
+
+        if let Some(cursor_local) = cursor_local {
+            gesture.cursor_pos = Some(cursor_local);
+            // Note: on_edge_cursor_anchor is set once at gesture start and kept
+            // fixed. Recomputing it here with the old focal causes teleporting
+            // because the anchor shifts when the cursor pushes against edges.
+        }
+        if let Some(output_size) = output_size {
+            gesture.output_size = Some(output_size);
+        }
 
         let current_log_scale = scale.ln();
         let log_delta = if let Some(last) = gesture.last_log_scale {
@@ -4215,10 +4248,6 @@ impl<W: LayoutElement> Layout<W> {
         let log_pos = gesture.tracker.pos();
         let raw_level = log_pos_to_zoom_level(gesture.start_level, log_pos);
         let new_level = clamp_zoom_level_with_rubber_band(raw_level, 1.0, max_zoom);
-
-        if (gesture.current_level - new_level).abs() < 0.0001 {
-            return Some(false);
-        }
 
         gesture.current_level = new_level;
 
@@ -4275,10 +4304,11 @@ impl<W: LayoutElement> Layout<W> {
             target_level = 1.0;
         }
 
-        let level_changed = (target_level - gesture.current_level).abs() >= 0.001;
+        let level_changed = (target_level - gesture.current_level).abs() > ZOOM_CHANGE_EPSILON;
         let target_focal = gesture.compute_focal_or(target_level, gesture.current_focal);
-        let focal_changed = (gesture.current_focal.x - target_focal.x).abs() > 0.5
-            || (gesture.current_focal.y - target_focal.y).abs() > 0.5;
+        let change_in_focal = gesture.current_focal - target_focal;
+        let focal_changed = change_in_focal.x.abs() > ZOOM_CHANGE_EPSILON
+            || change_in_focal.y.abs() > ZOOM_CHANGE_EPSILON;
 
         let dynamic_focal_tracking =
             gesture.should_use_dynamic_focal_tracking(target_level, level_changed);
