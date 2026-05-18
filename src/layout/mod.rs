@@ -3039,9 +3039,7 @@ impl<W: LayoutElement> Layout<W> {
         let cursor_position = new_pos_global - output_geo.loc;
 
         if transitioning {
-            if !matches!(movement_mode, ZoomMovementMode::Centered) {
-                self.set_zoom_cursor_pos(output, cursor_position);
-            }
+            self.set_zoom_cursor_pos(output, cursor_position);
             return;
         }
 
@@ -4106,7 +4104,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     /// Set the zoom level for the given output, computing the correct focal point
-    /// and creating an animation.
+    /// and creating an animation when appropriate.
     pub fn set_zoom_level(
         &mut self,
         output: &Output,
@@ -4145,6 +4143,18 @@ impl<W: LayoutElement> Layout<W> {
             return;
         }
 
+        let skip_level_animation = level_changed
+            && !locked
+            && matches!(movement_mode, ZoomMovementMode::Centered)
+            && focal_changed;
+
+        if skip_level_animation {
+            state.level = target_level;
+            state.focal = target_focal;
+            state.transition = None;
+            return;
+        }
+
         let level_anim =
             ZoomLevelAnimation::new(context.clock.clone(), current_level, target_level)
                 .with_tracking_context(
@@ -4154,6 +4164,7 @@ impl<W: LayoutElement> Layout<W> {
                     current_level,
                     current_focal,
                 );
+
         let dynamic_focal_tracking =
             level_anim.should_use_dynamic_focal_tracking(target_level, locked, level_changed);
 
