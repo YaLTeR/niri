@@ -2181,7 +2181,6 @@ impl State {
                     target: RenderTarget::Output,
                     renderer,
                     xray: None,
-                    apply_zoom: false,
                 };
 
                 self.niri.fill_xray_elements(ctx.r(), output);
@@ -3855,6 +3854,24 @@ impl Niri {
         }
     }
 
+    /// Returns the cursor hotspot in physical coordinates for the given output,
+    /// or `None` if the cursor is hidden.
+    fn cursor_hotspot_physical(&self, output: &Output, output_scale: Scale<f64>) -> Option<Point<i32, Physical>> {
+        let cursor_scale = output.current_scale().integer_scale();
+        let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
+        match render_cursor {
+            RenderCursor::Hidden => None,
+            RenderCursor::Surface { hotspot, .. } => {
+                Some(hotspot.to_physical_precise_round(output_scale))
+            }
+            RenderCursor::Named { scale, cursor, .. } => {
+                let (_, frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
+                let hotspot = XCursor::hotspot(frame).to_logical(scale);
+                Some(hotspot.to_physical_precise_round(output_scale))
+            }
+        }
+    }
+
     pub fn render_pointer<R: NiriRenderer>(
         &self,
         ctx: RenderCtx<R>,
@@ -3862,7 +3879,7 @@ impl Niri {
         push: &mut dyn FnMut(PointerRenderElements<R>),
     ) -> Point<f64, Logical> {
         let _span = tracy_client::span!("Niri::render_pointer");
-        let output_scale = output.current_scale();
+        let output_scale_fractional = output.current_scale();
         let output_pos = self.global_space.output_geometry(output).unwrap().loc;
 
         // Check whether we need to draw the tablet cursor or the regular cursor.
@@ -3871,17 +3888,20 @@ impl Niri {
             .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
         let pointer_pos_logical = pointer_pos_logical - output_pos.to_f64();
 
+        let output_scale = Scale::from(output.current_scale().fractional_scale());
+
         // Get the render cursor to draw.
-        let cursor_scale = output_scale.integer_scale();
+        let cursor_scale = output_scale_fractional.integer_scale();
         let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
 
-        let output_scale = Scale::from(output.current_scale().fractional_scale());
         let pointer_pos = pointer_pos_logical.to_physical_precise_round(output_scale);
+
+        let cursor_hotspot = self.cursor_hotspot_physical(output, output_scale);
 
         match render_cursor {
             RenderCursor::Hidden => (),
-            RenderCursor::Surface { surface, hotspot } => {
-                let hotspot = hotspot.to_physical_precise_round(output_scale);
+            RenderCursor::Surface { surface, .. } => {
+                let hotspot = cursor_hotspot.unwrap();
                 let final_pos = pointer_pos - hotspot;
 
                 push_elements_from_surface_tree(
@@ -3900,9 +3920,7 @@ impl Niri {
                 cursor,
             } => {
                 let (idx, frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
-                let hotspot = XCursor::hotspot(frame).to_logical(scale);
-
-                let hotspot = hotspot.to_physical_precise_round(output_scale);
+                let hotspot = cursor_hotspot.unwrap();
                 let final_pos = pointer_pos - hotspot;
 
                 let texture = self.cursor_texture_cache.get(icon, scale, &cursor, idx);
@@ -3946,13 +3964,16 @@ impl Niri {
     /// `wrap_cursor_for_zoom` that rescales around the cursor hotspot rather
     /// than the zoom focal point (see `zoomed_element` for why this separation
     /// is necessary).
+    ///
+    /// Callers that do not want zoom (window casts, screenshots) should call
+    /// `render_pointer` directly instead.
     pub(crate) fn render_pointer_for_output<R: NiriRenderer>(
         &self,
         ctx: RenderCtx<R>,
         output: &Output,
         push: &mut dyn FnMut(OutputRenderElements<R>),
     ) -> Point<f64, Logical> {
-        let zoom_active = ctx.apply_zoom && self.layout.zoom_is_active_for_output(output);
+        let zoom_active = self.layout.zoom_is_active_for_output(output);
         if !zoom_active {
             return self.render_pointer(ctx, output, &mut |elem| push(elem.into()));
         }
@@ -3984,25 +4005,16 @@ impl Niri {
                 .unwrap_or(false);
 
             if !cursor_on_this_output {
-                let raw_ctx = RenderCtx {
-                    apply_zoom: false,
-                    ..ctx
-                };
-                return self.render_pointer(raw_ctx, output, &mut |elem| push(elem.into()));
+                return self.render_pointer(ctx, output, &mut |elem| push(elem.into()));
             }
 
             // Cursor is on this output but outside the zoom viewport (possible
             // in Centered or OnEdge mode where the cursor can leave the
-            // magnified region).  We render it at native size (apply_zoom: false
-            // prevents ZoomElement wrapping) but still position it at the
-            // zoom-transformed physical coordinates below, so it tracks the
-            // correct screen location without magnification.
+            // magnified region). We render it at native size (no zoom
+            // wrapping) but still position it at the zoom-transformed physical
+            // coordinates below, so it tracks the correct screen location
+            // without magnification.
         }
-
-        let raw_ctx = RenderCtx {
-            apply_zoom: false,
-            ..ctx
-        };
 
         // Pattern A: pre-compute target_rounded (does not depend on element geometry).
         let display_cursor = cursor_logical_pos.unwrap_or(pointer_local);
@@ -4015,24 +4027,16 @@ impl Niri {
         );
         let target_rounded = target.to_i32_round();
 
-        // Pre-extract cursor hotspot for Pattern A (Kind::Cursor elements),
-        // so we don't need to read elem.geometry().loc to determine it.
-        let cursor_scale = output.current_scale().integer_scale();
-        let render_cursor = self.cursor_manager.get_render_cursor(cursor_scale);
-        let cursor_hotspot: Option<Point<i32, Physical>> = match &render_cursor {
-            RenderCursor::Hidden => None,
-            RenderCursor::Surface { hotspot, .. } => {
-                Some(hotspot.to_physical_precise_round(output_scale))
-            }
-            RenderCursor::Named { scale, cursor, .. } => {
-                let (_, frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
-                let hotspot = XCursor::hotspot(frame).to_logical(*scale);
-                Some(hotspot.to_physical_precise_round(output_scale))
-            }
-        };
+        // Pre-extract cursor hotspot via shared helper (used by both
+        // render_pointer and render_pointer_for_output) so we don't need to
+        // read elem.geometry().loc to determine it.
+        let cursor_hotspot = self.cursor_hotspot_physical(output, output_scale);
         let pointer_local_phys: Point<f64, Physical> = pointer_local.to_physical(output_scale);
 
-        self.render_pointer(raw_ctx, output, &mut |elem| {
+        // Render the cursor without zoom wrapping (render_pointer pushes
+        // PointerRenderElements directly). We then manually wrap each
+        // element in a ZoomElement to rescale around the hotspot.
+        self.render_pointer(ctx, output, &mut |elem| {
             // Pattern A: determine hotspot based on element kind,
             // avoiding elem.geometry().loc for cursor elements.
             let hotspot = match (elem.kind(), cursor_hotspot) {
@@ -4519,10 +4523,11 @@ impl Niri {
         ctx: RenderCtx<R>,
         output: &Output,
         include_pointer: bool,
+        apply_zoom: bool,
     ) -> Vec<OutputRenderElements<R>> {
         let mut elements = Vec::new();
 
-        self.render(ctx, output, include_pointer, &mut |elem| {
+        self.render(ctx, output, include_pointer, apply_zoom, &mut |elem| {
             elements.push(elem)
         });
 
@@ -4534,6 +4539,7 @@ impl Niri {
         mut ctx: RenderCtx<R>,
         output: &'a Output,
         include_pointer: bool,
+        apply_zoom: bool,
         push: &'a mut dyn FnMut(OutputRenderElements<R>),
     ) {
         let _span = tracy_client::span!("Niri::render");
@@ -4554,11 +4560,8 @@ impl Niri {
         let state = self.output_state.get(output).unwrap();
         ctx.xray = Some(&state.xray);
 
-        let apply_zoom = ctx.apply_zoom;
-
-        // Texture filter is now applied per-element inside ZoomElement::draw,
-        // so no global filter override is needed here.
-
+        // Apply zoom to elements pushed from render_inner when needed, except for pointer elements
+        // which are handled separately in render_pointer_for_output.
         let push = if apply_zoom {
             &mut |elem| {
                 let elem = self.zoomed_element(elem, output);
@@ -5664,15 +5667,23 @@ impl Niri {
                         renderer,
                         target: RenderTarget::ScreenCapture,
                         xray: None,
-                        apply_zoom: true,
                     };
                     let offset = screencopy.region_loc().upscale(-1);
                     let mut elements = Vec::new();
-                    self.render(ctx, output, screencopy.overlay_cursor(), &mut |elem| {
-                        let elem =
-                            RelocateRenderElement::from_element(elem, offset, Relocate::Relative);
-                        elements.push(elem);
-                    });
+                    self.render(
+                        ctx,
+                        output,
+                        screencopy.overlay_cursor(),
+                        true,
+                        &mut |elem| {
+                            let elem = RelocateRenderElement::from_element(
+                                elem,
+                                offset,
+                                Relocate::Relative,
+                            );
+                            elements.push(elem);
+                        },
+                    );
 
                     let (damages, states) = Self::damage_screencopy_internal(
                         output,
@@ -5743,14 +5754,19 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
-            apply_zoom: true,
         };
         let offset = screencopy.region_loc().upscale(-1);
         let mut elements = Vec::new();
-        self.render(ctx, output, screencopy.overlay_cursor(), &mut |elem| {
-            let elem = RelocateRenderElement::from_element(elem, offset, Relocate::Relative);
-            elements.push(elem);
-        });
+        self.render(
+            ctx,
+            output,
+            screencopy.overlay_cursor(),
+            true,
+            &mut |elem| {
+                let elem = RelocateRenderElement::from_element(elem, offset, Relocate::Relative);
+                elements.push(elem);
+            },
+        );
 
         let Some(damage_tracker) = self.screencopy_state.damage_tracker(manager) else {
             error!("screencopy queue must not be deleted as long as frames exist");
@@ -5870,9 +5886,11 @@ impl Niri {
                     renderer,
                     target,
                     xray: None,
-                    apply_zoom: false,
                 };
-                let elements = self.render_to_vec(ctx, &output, false);
+                // Capture output contents at 1x (unzoomed). The captured texture
+                // serves as the static background for the screenshot selection UI;
+                // zoom changes after capture should not resize the preview.
+                let elements = self.render_to_vec(ctx, &output, false, false);
                 let elements = elements.iter().rev();
 
                 let res = render_to_texture(
@@ -5898,7 +5916,6 @@ impl Niri {
                     renderer,
                     target: RenderTarget::ScreenCapture,
                     xray: None,
-                    apply_zoom: false,
                 };
 
                 let pointer_pos = self.render_pointer(ctx, &output, &mut |elem| {
@@ -5969,9 +5986,8 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
-            apply_zoom: true,
         };
-        let elements = self.render_to_vec(ctx, output, include_pointer);
+        let elements = self.render_to_vec(ctx, output, include_pointer, false);
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
@@ -6018,7 +6034,6 @@ impl Niri {
                         renderer,
                         target: RenderTarget::ScreenCapture,
                         xray: None,
-                        apply_zoom: false,
                     },
                     output,
                     &mut |elem| {
@@ -6035,7 +6050,6 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
-            apply_zoom: false,
         };
         mapped.render(
             ctx,
@@ -6202,9 +6216,8 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
-            apply_zoom: true,
         };
-        let elements = self.render_to_vec(ctx, &output, include_pointer);
+        let elements = self.render_to_vec(ctx, &output, include_pointer, false);
         let elements = elements.iter().rev();
         let pixels = render_to_vec(
             renderer,
@@ -6686,9 +6699,8 @@ impl Niri {
                         renderer,
                         target,
                         xray: None,
-                        apply_zoom: false,
                     };
-                    let elements = self.render_to_vec(ctx, &output, false);
+                    let elements = self.render_to_vec(ctx, &output, false, false);
                     let elements = elements.iter().rev();
 
                     let res = render_to_texture(
@@ -6939,19 +6951,13 @@ fn apply_zoom_to_render_element<R: NiriRenderer>(
             match element {
                 OutputRenderElements::ScreenshotUi(elem) => {
                     match elem {
+                        // The screenshot buffer texture already has zoom baked
+                        // in from capture (capture_screenshots goes through
+                        // render() -> zoomed_element()).
                         ScreenshotUiRenderElement::Screenshot(tex) => {
-                            let e = ZoomElement::from_element(
-                                tex,
-                                zoom_focal.to_physical(output_scale),
-                                zoom_factor,
-                                output_geo
-                                    .loc
-                                    .to_f64()
-                                    .to_physical(Scale::from(zoom_factor)),
-                                Relocate::Relative,
+                            OutputRenderElements::ScreenshotUi(
+                                ScreenshotUiRenderElement::Screenshot(tex),
                             )
-                            .with_filter_opt(zoom_filter(zoom_factor, zoom_filter_threshold));
-                            ZoomedRenderElement::Texture(e).into()
                         }
                         ScreenshotUiRenderElement::SolidColor(elem) => {
                             // Pre-compute exact zoomed geometry from corner
