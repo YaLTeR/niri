@@ -2789,10 +2789,18 @@ impl State {
         let is_dnd_grab = pointer
             .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
             .unwrap_or(false);
+
+        // Cache output_under lookup — eager clone to release immutable borrow.
+        let new_output = self
+            .niri
+            .output_under(new_pos)
+            .map(|(out, pos)| (out.clone(), pos));
+
         if is_dnd_grab {
-            if let Some((output, pos_within_output)) = self.niri.output_under(new_pos) {
-                let output = output.clone();
-                self.niri.layout.dnd_update(output, pos_within_output);
+            if let Some((output, pos_within_output)) = &new_output {
+                self.niri
+                    .layout
+                    .dnd_update(Clone::clone(output), *pos_within_output);
             }
         }
 
@@ -2802,17 +2810,16 @@ impl State {
 
         // Handle cursor and focal center movement across outputs with different zoom levels or
         // locked zoom.
-        let redraw_output = self.niri.output_under(new_pos).map(|(out, _)| out.clone());
-        if let Some(ref new_out) = redraw_output {
+        if let Some((output, _)) = &new_output {
             self.niri
-                .update_zoom_focal(new_out, new_pos, Some(pos), false);
+                .update_zoom_focal(output, new_pos, Some(pos), false);
         }
 
         self.update_screenshot_ui_pointer(new_pos);
 
         // Redraw to update the cursor position.
-        if let Some(output) = redraw_output {
-            self.niri.queue_redraw(&output);
+        if let Some((output, _)) = &new_output {
+            self.niri.queue_redraw(output);
         }
     }
 
@@ -2890,10 +2897,18 @@ impl State {
         let is_dnd_grab = pointer
             .with_grab(|_, grab| Self::is_dnd_grab(grab.as_any()))
             .unwrap_or(false);
+
+        // Cache output_under lookup — eager clone to release immutable borrow.
+        let new_output = self
+            .niri
+            .output_under(pos)
+            .map(|(out, pos)| (out.clone(), pos));
+
         if is_dnd_grab {
-            if let Some((output, pos_within_output)) = self.niri.output_under(pos) {
-                let output = output.clone();
-                self.niri.layout.dnd_update(output, pos_within_output);
+            if let Some((output, pos_within_output)) = &new_output {
+                self.niri
+                    .layout
+                    .dnd_update(Clone::clone(output), *pos_within_output);
             }
         }
 
@@ -4536,8 +4551,12 @@ impl State {
     /// This ensures that touch events do not go outside the zoomed area.
     fn clamp_position_to_zoom(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {
         if let Some((output, _)) = self.niri.output_under(pos) {
-            if self.niri.layout.zoom_locked_for_output(output)
-                && self.niri.layout.zoom_is_active_for_output(output)
+            // Single combined lookup instead of separate locked+active checks.
+            if self
+                .niri
+                .layout
+                .zoom_state_for_output(output)
+                .is_some_and(|state| state.locked && state.is_active())
             {
                 let base_geom = self
                     .niri
@@ -4575,10 +4594,9 @@ impl State {
         }
 
         if touch_count == 2 {
-            let positions: Vec<Point<f64, Logical>> =
-                self.niri.touch_points.values().copied().collect();
-            let p1 = positions[0];
-            let p2 = positions[1];
+            let mut positions = self.niri.touch_points.values().copied();
+            let p1 = positions.next().unwrap();
+            let p2 = positions.next().unwrap();
             let dx = p1.x - p2.x;
             let dy = p1.y - p2.y;
             let distance = (dx * dx + dy * dy).sqrt();
