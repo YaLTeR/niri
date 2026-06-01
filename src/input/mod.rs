@@ -4352,9 +4352,8 @@ impl State {
             pointer.frame(self);
         }
 
-        // Always intercept 3-finger pinch for zoom
-        // This will be likely be configurable in the future with something like this:
-        // https://github.com/niri-wm/niri/pull/3771
+        // FIXME: make pinch-finger count configurable.
+        // Look to this: https://github.com/niri-wm/niri/pull/3771
         if event.fingers() == 3 {
             if let Some(output) = self.niri.output_under_cursor() {
                 if self.niri.layout.zoom_locked_for_output(&output) {
@@ -4552,11 +4551,12 @@ impl State {
     fn clamp_position_to_zoom(&self, pos: Point<f64, Logical>) -> Point<f64, Logical> {
         if let Some((output, _)) = self.niri.output_under(pos) {
             // Single combined lookup instead of separate locked+active checks.
+            let now = self.niri.clock.now();
             if self
                 .niri
                 .layout
                 .zoom_state_for_output(output)
-                .is_some_and(|state| state.locked && state.is_active())
+                .is_some_and(|state| state.locked && state.is_active(now))
             {
                 let base_geom = self
                     .niri
@@ -4644,10 +4644,6 @@ impl State {
     /// physical coords for the given output, applying inverse zoom when
     /// active.
     ///
-    /// Under zoom the rendering maps buffer position C to visual position
-    /// V = focal + (C − focal) × zoom, so to find the buffer pixel from a
-    /// visual position we invert: C = focal + (V − focal) / zoom.
-    ///
     /// Touch, tablet, and absolute pointer events report screen-space
     /// positions and should use this function.
     fn screenshot_ui_point_from_screen(
@@ -4655,6 +4651,9 @@ impl State {
         output: &Output,
         pos: Point<f64, Logical>,
     ) -> Point<i32, Physical> {
+        // Under zoom the rendering maps buffer position C to visual position
+        // V = focal + (C − focal) × zoom, so to find the buffer pixel from a
+        // visual position we invert: C = focal + (V − focal) / zoom.
         let geom = self.niri.global_space.output_geometry(output).unwrap();
         let geom_f64 = geom.to_f64();
         let point_rel = pos - geom_f64.loc;
@@ -4684,10 +4683,6 @@ impl State {
 
     /// Converts a content-space logical position to screenshot UI physical
     /// coords for the given output.
-    ///
-    /// The position is already in content (buffer) logical space — no inverse
-    /// zoom is applied.  The relative pointer tracks content-space coords
-    /// because its deltas are scaled by 1/zoom.
     fn screenshot_ui_point_from_content(
         &self,
         output: &Output,
