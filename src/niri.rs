@@ -3848,7 +3848,7 @@ impl Niri {
 
     /// Returns the cursor hotspot in physical coordinates for the given output,
     /// or `None` if the cursor is hidden.
-    fn cursor_hotspot_physical(
+    fn cursor_hotspot(
         &self,
         output: &Output,
         output_scale: Scale<f64>,
@@ -3892,9 +3892,7 @@ impl Niri {
 
         match render_cursor {
             RenderCursor::Hidden => (),
-            RenderCursor::Surface {
-                surface, hotspot, ..
-            } => {
+            RenderCursor::Surface { surface, hotspot } => {
                 let final_pos: Point<i32, Physical> = (pointer_pos_logical - hotspot.to_f64())
                     .to_physical_precise_round(output_scale);
 
@@ -3974,7 +3972,6 @@ impl Niri {
             .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
         let pointer_local = pointer_pos - output_pos.to_f64();
         let zoom_snapshot = self.layout.zoom_snapshot_for_output(output);
-        let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
 
         let cursor_logical_pos = display_cursor_local_for_output(
             pointer_pos,
@@ -4002,6 +3999,7 @@ impl Niri {
         let pointer_local_phys: Point<f64, Physical> = pointer_local.to_physical(output_scale);
 
         // Render without zoom, then wrap each element around its hotspot.
+        let cursor_hotspot = self.cursor_hotspot(output, output_scale);
         self.render_pointer(ctx, output, &mut |elem| {
             push(self.zoomed_pointer(
                 elem,
@@ -4009,7 +4007,7 @@ impl Niri {
                 target_rounded,
                 pointer_local_phys,
                 &zoom_snapshot,
-                scale_with_zoom,
+                cursor_hotspot,
             ));
         });
     }
@@ -4435,10 +4433,10 @@ impl Niri {
         target_rounded: Point<i32, Physical>,
         pointer_local_phys: Point<f64, Physical>,
         zoom_snapshot: &ZoomSnapshot,
-        scale_with_zoom: bool,
+        cursor_hotspot: Option<Point<i32, Physical>>,
     ) -> OutputRenderElements<R> {
         let output_scale = Scale::from(output.current_scale().fractional_scale());
-        let cursor_hotspot = self.cursor_hotspot_physical(output, output_scale);
+        let scale_with_zoom = self.config.borrow().cursor.scale_with_zoom;
 
         let hotspot = match (elem.kind(), cursor_hotspot) {
             (Kind::Cursor, Some(h)) => h,
@@ -5066,7 +5064,6 @@ impl Niri {
         let state = self.output_state.get_mut(output).unwrap();
 
         if res == RenderResult::Skipped {
-            // Update the redraw state on failed render.
             state.redraw_state = if let RedrawState::WaitingForEstimatedVBlank(token)
             | RedrawState::WaitingForEstimatedVBlankAndQueued(token) =
                 state.redraw_state
