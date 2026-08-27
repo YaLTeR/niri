@@ -11,6 +11,7 @@ use crate::{BorderRule, Color, FloatOrInt, InsertHintPart, ShadowRule, TabIndica
 pub struct Layout {
     pub focus_ring: FocusRing,
     pub border: Border,
+    pub outer_border: Border,
     pub shadow: Shadow,
     pub tab_indicator: TabIndicator,
     pub insert_hint: InsertHint,
@@ -31,6 +32,7 @@ impl Default for Layout {
         Self {
             focus_ring: FocusRing::default(),
             border: Border::default(),
+            outer_border: Border::default(),
             shadow: Shadow::default(),
             tab_indicator: TabIndicator::default(),
             insert_hint: InsertHint::default(),
@@ -62,6 +64,7 @@ impl MergeWith<LayoutPart> for Layout {
             (self, part),
             focus_ring,
             border,
+            outer_border,
             shadow,
             tab_indicator,
             insert_hint,
@@ -100,6 +103,8 @@ pub struct LayoutPart {
     pub focus_ring: Option<BorderRule>,
     #[knuffel(child)]
     pub border: Option<BorderRule>,
+    #[knuffel(child)]
+    pub outer_border: Option<BorderRule>,
     #[knuffel(child)]
     pub shadow: Option<ShadowRule>,
     #[knuffel(child)]

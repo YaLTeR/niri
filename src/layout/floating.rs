@@ -353,7 +353,11 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
     pub fn new_window_toplevel_bounds(&self, rules: &ResolvedWindowRules) -> Size<i32, Logical> {
         let border_config = self.options.layout.border.merged_with(&rules.border);
-        compute_toplevel_bounds(border_config, self.working_area.size)
+        compute_toplevel_bounds(
+            border_config,
+            self.options.layout.outer_border,
+            self.working_area.size,
+        )
     }
 
     /// Returns the geometry of the active window relative to and clamped to the working area.
@@ -1201,7 +1205,11 @@ impl<W: LayoutElement> FloatingSpace<W> {
             win.set_interactive_resize(resize_data);
 
             let border_config = self.options.layout.border.merged_with(&win.rules().border);
-            let bounds = compute_toplevel_bounds(border_config, self.working_area.size);
+            let bounds = compute_toplevel_bounds(
+                border_config,
+                self.options.layout.outer_border,
+                self.working_area.size,
+            );
             win.set_bounds(bounds);
 
             // If transactions are disabled, also disable combined throttling, for more
@@ -1265,16 +1273,12 @@ impl<W: LayoutElement> FloatingSpace<W> {
         rules: &ResolvedWindowRules,
     ) -> Size<i32, Logical> {
         let border = self.options.layout.border.merged_with(&rules.border);
+        let border_width = combined_border_width(border, self.options.layout.outer_border) * 2.;
 
         let resolve = |size: Option<PresetSize>, working_area_size: f64| {
             if let Some(size) = size {
                 let size = match resolve_preset_size(size, working_area_size) {
-                    ResolvedSize::Tile(mut size) => {
-                        if !border.off {
-                            size -= border.width * 2.;
-                        }
-                        size
-                    }
+                    ResolvedSize::Tile(size) => size - border_width,
                     ResolvedSize::Window(size) => size,
                 };
 
@@ -1406,14 +1410,31 @@ impl<W: LayoutElement> FloatingSpace<W> {
     }
 }
 
+fn combined_border_width(
+    border_config: niri_config::Border,
+    outer_border_config: niri_config::Border,
+) -> f64 {
+    let inner = if border_config.off {
+        0.
+    } else {
+        border_config.width
+    };
+
+    let outer = if outer_border_config.off {
+        0.
+    } else {
+        outer_border_config.width
+    };
+
+    inner + outer
+}
+
 fn compute_toplevel_bounds(
     border_config: niri_config::Border,
+    outer_border_config: niri_config::Border,
     working_area_size: Size<f64, Logical>,
 ) -> Size<i32, Logical> {
-    let mut border = 0.;
-    if !border_config.off {
-        border = border_config.width * 2.;
-    }
+    let border = combined_border_width(border_config, outer_border_config) * 2.;
 
     Size::from((
         f64::max(working_area_size.w - border, 1.),

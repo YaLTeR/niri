@@ -507,6 +507,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         compute_toplevel_bounds(
             border_config,
+            self.options.layout.outer_border,
             self.working_area.size,
             extra_size,
             self.options.layout.gaps,
@@ -520,6 +521,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         rules: &ResolvedWindowRules,
     ) -> Size<i32, Logical> {
         let border = self.options.layout.border.merged_with(&rules.border);
+
+        let border_width = combined_border_width(border, self.options.layout.outer_border) * 2.;
 
         let display_mode = rules
             .default_column_display
@@ -536,9 +539,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         let width = if let Some(size) = width {
             let size = match resolve_preset_size(size, &self.options, working_size.w, extra.w) {
                 ResolvedSize::Tile(mut size) => {
-                    if !border.off {
-                        size -= border.width * 2.;
-                    }
+                    size -= border_width;
                     size
                 }
                 ResolvedSize::Window(size) => size,
@@ -550,16 +551,12 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         };
 
         let mut full_height = self.working_area.size.h - self.options.layout.gaps * 2.;
-        if !border.off {
-            full_height -= border.width * 2.;
-        }
+        full_height -= border_width;
 
         let height = if let Some(height) = height {
             let height = match resolve_preset_size(height, &self.options, working_size.h, extra.h) {
                 ResolvedSize::Tile(mut size) => {
-                    if !border.off {
-                        size -= border.width * 2.;
-                    }
+                    size -= border_width;
                     size
                 }
                 ResolvedSize::Window(size) => size,
@@ -3731,6 +3728,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let border_config = self.options.layout.border.merged_with(&win.rules().border);
                 let bounds = compute_toplevel_bounds(
                     border_config,
+                    self.options.layout.outer_border,
                     self.working_area.size,
                     extra_size,
                     self.options.layout.gaps,
@@ -4085,6 +4083,12 @@ impl<W: LayoutElement> Column<W> {
 
         if self.options.layout.border.off != options.layout.border.off
             || self.options.layout.border.width != options.layout.border.width
+        {
+            update_sizes = true;
+        }
+
+        if self.options.layout.outer_border.off != options.layout.outer_border.off
+            || self.options.layout.outer_border.width != options.layout.outer_border.width
         {
             update_sizes = true;
         }
@@ -5649,16 +5653,33 @@ fn compute_working_area(
     working_area
 }
 
+fn combined_border_width(
+    border_config: niri_config::Border,
+    outer_border_config: niri_config::Border,
+) -> f64 {
+    let inner = if border_config.off {
+        0.
+    } else {
+        border_config.width
+    };
+
+    let outer = if outer_border_config.off {
+        0.
+    } else {
+        outer_border_config.width
+    };
+
+    inner + outer
+}
+
 fn compute_toplevel_bounds(
     border_config: niri_config::Border,
+    outer_border_config: niri_config::Border,
     working_area_size: Size<f64, Logical>,
     extra_size: Size<f64, Logical>,
     gaps: f64,
 ) -> Size<i32, Logical> {
-    let mut border = 0.;
-    if !border_config.off {
-        border = border_config.width * 2.;
-    }
+    let border = combined_border_width(border_config, outer_border_config) * 2.;
 
     Size::from((
         f64::max(working_area_size.w - gaps * 2. - extra_size.w - border, 1.),

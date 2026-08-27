@@ -44,6 +44,9 @@ pub struct Tile<W: LayoutElement> {
     /// The border around the window.
     border: FocusRing,
 
+    /// The outer border around the first border
+    outer_border: FocusRing,
+
     /// The focus ring around the window.
     focus_ring: FocusRing,
 
@@ -188,6 +191,7 @@ impl<W: LayoutElement> Tile<W> {
     ) -> Self {
         let rules = window.rules();
         let border_config = options.layout.border.merged_with(&rules.border);
+        let outer_border_config = options.layout.outer_border;
         let focus_ring_config = options.layout.focus_ring.merged_with(&rules.focus_ring);
         let shadow_config = options.layout.shadow.merged_with(&rules.shadow);
         let sizing_mode = window.sizing_mode();
@@ -195,6 +199,7 @@ impl<W: LayoutElement> Tile<W> {
         Self {
             window,
             border: FocusRing::new(border_config.into()),
+            outer_border: FocusRing::new(outer_border_config.into()),
             focus_ring: FocusRing::new(focus_ring_config),
             shadow: Shadow::new(shadow_config),
             sizing_mode,
@@ -245,6 +250,10 @@ impl<W: LayoutElement> Tile<W> {
         border_config.width = round_max1(border_config.width);
         self.border.update_config(border_config.into());
 
+        let mut outer_border_config = self.options.layout.outer_border;
+        outer_border_config.width = round_max1(outer_border_config.width);
+        self.outer_border.update_config(outer_border_config.into());
+
         let mut focus_ring_config = self
             .options
             .layout
@@ -261,6 +270,7 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn update_shaders(&mut self) {
         self.border.update_shaders();
+        self.outer_border.update_shaders();
         self.focus_ring.update_shaders();
         self.shadow.update_shaders();
     }
@@ -286,10 +296,11 @@ impl<W: LayoutElement> Tile<W> {
                 if prev_sizing_mode.is_fullscreen() {
                     tile_size.w = f64::max(tile_size.w, self.view_size.w);
                     tile_size.h = f64::max(tile_size.h, self.view_size.h);
-                } else if prev_sizing_mode.is_normal() && !self.border.is_off() {
-                    let width = self.border.width();
-                    tile_size.w += width * 2.;
-                    tile_size.h += width * 2.;
+                } else if prev_sizing_mode.is_normal() {
+                    if let Some(width) = self.combined_border_width() {
+                        tile_size.w += width * 2.;
+                        tile_size.h += width * 2.;
+                    }
                 }
 
                 tile_size.w = tile_size_from.w + (tile_size.w - tile_size_from.w) * val;
@@ -325,10 +336,11 @@ impl<W: LayoutElement> Tile<W> {
                 if prev_sizing_mode.is_fullscreen() {
                     tile_size.w = f64::max(tile_size.w, self.view_size.w);
                     tile_size.h = f64::max(tile_size.h, self.view_size.h);
-                } else if prev_sizing_mode.is_normal() && !self.border.is_off() {
-                    let width = self.border.width();
-                    tile_size.w += width * 2.;
-                    tile_size.h += width * 2.;
+                } else if prev_sizing_mode.is_normal() {
+                    if let Some(width) = self.combined_border_width() {
+                        tile_size.w += width * 2.;
+                        tile_size.h += width * 2.;
+                    }
                 }
 
                 let fullscreen_from = if prev_sizing_mode.is_fullscreen() {
@@ -394,6 +406,10 @@ impl<W: LayoutElement> Tile<W> {
         let mut border_config = self.options.layout.border.merged_with(&rules.border);
         border_config.width = round_max1(border_config.width);
         self.border.update_config(border_config.into());
+
+        let mut outer_border_config = self.options.layout.outer_border;
+        outer_border_config.width = round_max1(outer_border_config.width);
+        self.outer_border.update_config(outer_border_config.into());
 
         let mut focus_ring_config = self
             .options
@@ -478,6 +494,18 @@ impl<W: LayoutElement> Tile<W> {
         let draw_border_with_background = rules
             .draw_border_with_background
             .unwrap_or_else(|| !self.window.has_ssd());
+        let inner_border_width = if self.border.is_off() {
+            0.
+        } else {
+            self.border.width()
+        };
+
+        let outer_border_width = if self.outer_border.is_off() {
+            0.
+        } else {
+            self.outer_border.width()
+        };
+
         let border_width = self.visual_border_width().unwrap_or(0.);
 
         // Do the inverse of tile_size() in order to handle the unfullscreen animation for windows
@@ -486,6 +514,18 @@ impl<W: LayoutElement> Tile<W> {
         let mut border_window_size = animated_tile_size;
         border_window_size.w -= border_width * 2.;
         border_window_size.h -= border_width * 2.;
+
+        let outer_border_window_size =
+            border_window_size + Size::from((inner_border_width, inner_border_width)).upscale(2.);
+
+        let window_radius = self
+            .window
+            .geometry_corner_radius()
+            .scaled_by(1. - expanded_progress as f32);
+
+        let inner_radius = window_radius.expanded_by(inner_border_width as f32);
+
+        let outer_radius = inner_radius.expanded_by(outer_border_width as f32);
 
         // FIXME: this takes into account the animation from normal sizing mode to
         // maximized/fullscreen, but it doesn't take into account the corner radius animation from
@@ -499,11 +539,6 @@ impl<W: LayoutElement> Tile<W> {
         //
         // Later, when windows get the surface shape protocol with radii, this issue will happen
         // when that changes between animated commits.
-        let radius = self
-            .window
-            .geometry_corner_radius()
-            .expanded_by(border_width as f32)
-            .scaled_by(1. - expanded_progress as f32);
         self.border.update_render_elements(
             border_window_size,
             is_active,
@@ -513,17 +548,29 @@ impl<W: LayoutElement> Tile<W> {
                 view_rect.loc - Point::from((border_width, border_width)),
                 view_rect.size,
             ),
-            radius,
+            inner_radius,
+            self.scale,
+            1. - expanded_progress as f32,
+        );
+
+        self.outer_border.update_render_elements(
+            outer_border_window_size,
+            is_active,
+            !draw_border_with_background,
+            self.window.is_urgent(),
+            Rectangle::new(
+                view_rect.loc - Point::from((outer_border_width, outer_border_width)),
+                view_rect.size,
+            ),
+            outer_radius,
             self.scale,
             1. - expanded_progress as f32,
         );
 
         let radius = if self.visual_border_width().is_some() {
-            radius
+            outer_radius
         } else {
-            self.window
-                .geometry_corner_radius()
-                .scaled_by(1. - expanded_progress as f32)
+            window_radius
         };
         self.shadow.update_render_elements(
             animated_tile_size,
@@ -533,7 +580,7 @@ impl<W: LayoutElement> Tile<W> {
             1. - expanded_progress as f32,
         );
 
-        let draw_focus_ring_with_background = if self.border.is_off() {
+        let draw_focus_ring_with_background = if self.combined_border_width().is_none() {
             draw_border_with_background
         } else {
             false
@@ -748,17 +795,21 @@ impl<W: LayoutElement> Tile<W> {
             return None;
         }
 
-        if self.border.is_off() {
-            return None;
-        }
+        self.combined_border_width()
+    }
 
-        Some(self.border.width())
+    fn combined_border_width(&self) -> Option<f64> {
+        let inner = (!self.border.is_off()).then(|| self.border.width());
+        let outer = (!self.outer_border.is_off()).then(|| self.outer_border.width());
+
+        match (inner, outer) {
+            (None, None) => None,
+            (inner, outer) => Some(inner.unwrap_or(0.) + outer.unwrap_or(0.)),
+        }
     }
 
     fn visual_border_width(&self) -> Option<f64> {
-        if self.border.is_off() {
-            return None;
-        }
+        let width = self.combined_border_width()?;
 
         let expanded_progress = self.expanded_progress();
 
@@ -771,7 +822,7 @@ impl<W: LayoutElement> Tile<W> {
         // fullscreening, but the rest of the code isn't quite ready for that yet. It needs to
         // handle things like computing intermediate tile size when an animated resize starts during
         // an animated unfullscreen resize.
-        Some(self.border.width())
+        Some(width)
     }
 
     /// Returns the location of the window's visual geometry within this Tile.
@@ -942,8 +993,7 @@ impl<W: LayoutElement> Tile<W> {
         transaction: Option<Transaction>,
     ) {
         // Can't go through effective_border_width() because we might be fullscreen.
-        if !self.border.is_off() {
-            let width = self.border.width();
+        if let Some(width) = self.combined_border_width() {
             size.w = f64::max(1., size.w - width * 2.);
             size.h = f64::max(1., size.h - width * 2.);
         }
@@ -960,35 +1010,23 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn tile_width_for_window_width(&self, size: f64) -> f64 {
-        if self.border.is_off() {
-            size
-        } else {
-            size + self.border.width() * 2.
-        }
+        self.combined_border_width()
+            .map_or(size, |width| size + width * 2.)
     }
 
     pub fn tile_height_for_window_height(&self, size: f64) -> f64 {
-        if self.border.is_off() {
-            size
-        } else {
-            size + self.border.width() * 2.
-        }
+        self.combined_border_width()
+            .map_or(size, |width| size + width * 2.)
     }
 
     pub fn window_width_for_tile_width(&self, size: f64) -> f64 {
-        if self.border.is_off() {
-            size
-        } else {
-            size - self.border.width() * 2.
-        }
+        self.combined_border_width()
+            .map_or(size, |width| size - width * 2.)
     }
 
     pub fn window_height_for_tile_height(&self, size: f64) -> f64 {
-        if self.border.is_off() {
-            size
-        } else {
-            size - self.border.width() * 2.
-        }
+        self.combined_border_width()
+            .map_or(size, |width| size - width * 2.)
     }
 
     pub fn request_maximized(
@@ -1018,9 +1056,7 @@ impl<W: LayoutElement> Tile<W> {
         let mut size = self.window.min_size().to_f64();
 
         // Can't go through effective_border_width() because we might be fullscreen.
-        if !self.border.is_off() {
-            let width = self.border.width();
-
+        if let Some(width) = self.combined_border_width() {
             size.w = f64::max(1., size.w);
             size.h = f64::max(1., size.h);
 
@@ -1035,9 +1071,7 @@ impl<W: LayoutElement> Tile<W> {
         let mut size = self.window.max_size().to_f64();
 
         // Can't go through effective_border_width() because we might be fullscreen.
-        if !self.border.is_off() {
-            let width = self.border.width();
-
+        if let Some(width) = self.combined_border_width() {
             if size.w > 0. {
                 size.w += width * 2.;
             }
@@ -1318,9 +1352,21 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if let Some(width) = self.visual_border_width() {
+            let outer_border_width = if self.outer_border.is_off() {
+                0.
+            } else {
+                self.outer_border.width()
+            };
+
             self.border.render(
                 ctx.renderer,
                 location + Point::from((width, width)),
+                &mut |elem| push(elem.into()),
+            );
+
+            self.outer_border.render(
+                ctx.renderer,
+                location + Point::from((outer_border_width, outer_border_width)),
                 &mut |elem| push(elem.into()),
             );
         }

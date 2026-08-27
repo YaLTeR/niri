@@ -274,6 +274,12 @@ where
                                 border.on = true;
                             }
                         }
+
+                        if let Some(outer_border) = part.outer_border.as_mut() {
+                            if !outer_border.on && !outer_border.off {
+                                outer_border.on = true;
+                            }
+                        }
                     }
 
                     config.borrow_mut().layout.merge_with(&part);
@@ -800,6 +806,12 @@ mod tests {
                 border {
                     width 3
                     inactive-color "rgba(255, 200, 100, 0.0)"
+                }
+
+                outer-border {
+                    width 3
+                    active-color "#ff0000"
+                    inactive-color "#0000ff"
                 }
 
                 shadow {
@@ -1364,6 +1376,31 @@ mod tests {
                         g: 0.78431374,
                         b: 0.39215687,
                         a: 0.0,
+                    },
+                    urgent_color: Color {
+                        r: 0.60784316,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    active_gradient: None,
+                    inactive_gradient: None,
+                    urgent_gradient: None,
+                },
+                outer_border: Border {
+                    off: false,
+                    width: 3.0,
+                    active_color: Color {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                    inactive_color: Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
                     },
                     urgent_color: Color {
                         r: 0.60784316,
