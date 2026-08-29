@@ -1496,6 +1496,15 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn should_trigger_focus_follows_mouse_on(&self, window: &W::Id) -> bool {
+        // A dialog keeps the focus while the pointer crosses its parent. The parent is the
+        // window the dialog is about and is usually blocked by it, so moving from the dialog
+        // over the parent is on the way somewhere rather than a request to type into the
+        // parent. Taking the focus there would strand keyboard input on a window that cannot
+        // accept it until the dialog is dismissed.
+        if self.focused_window_is_descendant_of(window) {
+            return false;
+        }
+
         // During an animation, it's easy to trigger focus-follows-mouse on the previous workspace,
         // especially when clicking to switch workspace on a bar of some kind. This cancels the
         // workspace switch, which is annoying and not intended.
@@ -1528,6 +1537,32 @@ impl<W: LayoutElement> Layout<W> {
         }
 
         ws_idx == mon.active_workspace_idx
+    }
+
+    /// Returns whether the focused window is a child of `window`, directly or through other
+    /// children (a dialog of a dialog).
+    fn focused_window_is_descendant_of(&self, window: &W::Id) -> bool {
+        let Some(focus) = self.focus() else {
+            return false;
+        };
+
+        let mut child = focus;
+        // The parent chain is no longer than the window list. The bound only guards against a
+        // loop, which Smithay rejects when the parent is set.
+        for _ in 0..self.windows().count() {
+            let Some(parent) = self
+                .windows()
+                .map(|(_, win)| win)
+                .find(|win| child.is_child_of(win))
+            else {
+                return false;
+            };
+            if parent.id() == window {
+                return true;
+            }
+            child = parent;
+        }
+        false
     }
 
     pub fn activate_window(&mut self, window: &W::Id) {

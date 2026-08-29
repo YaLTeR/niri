@@ -1655,6 +1655,51 @@ fn check_ops_with_options(
 }
 
 #[test]
+fn focus_follows_mouse_keeps_focus_on_dialog() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow {
+            params: TestWindowParams {
+                parent_id: Some(1),
+                is_floating: true,
+                ..TestWindowParams::new(2)
+            },
+        },
+        Op::AddWindow {
+            params: TestWindowParams {
+                parent_id: Some(2),
+                is_floating: true,
+                ..TestWindowParams::new(3)
+            },
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(4),
+        },
+    ]);
+
+    // With a dialog focused, neither its parent nor its grandparent takes the focus from it;
+    // an unrelated window does.
+    layout.activate_window(&3);
+    assert!(!layout.should_trigger_focus_follows_mouse_on(&2));
+    assert!(!layout.should_trigger_focus_follows_mouse_on(&1));
+    assert!(layout.should_trigger_focus_follows_mouse_on(&4));
+
+    layout.activate_window(&2);
+    assert!(!layout.should_trigger_focus_follows_mouse_on(&1));
+    assert!(layout.should_trigger_focus_follows_mouse_on(&3));
+    assert!(layout.should_trigger_focus_follows_mouse_on(&4));
+
+    // With the parent focused, its dialogs take the focus as any window does.
+    layout.activate_window(&1);
+    assert!(layout.should_trigger_focus_follows_mouse_on(&2));
+    assert!(layout.should_trigger_focus_follows_mouse_on(&3));
+    assert!(layout.should_trigger_focus_follows_mouse_on(&4));
+}
+
+#[test]
 fn operations_dont_panic() {
     if std::env::var_os("RUN_SLOW_TESTS").is_none() {
         eprintln!("ignoring slow test");
