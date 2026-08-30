@@ -131,6 +131,7 @@ use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospe
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::frame_clock::FrameClock;
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
+use crate::image_copy_capture::CopyCaptureSession;
 use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
 use crate::input::scroll_tracker::ScrollTracker;
@@ -286,6 +287,7 @@ pub struct Niri {
     pub output_capture_source_state: OutputCaptureSourceState,
     pub image_copy_capture_state: ImageCopyCaptureState,
     pub toplevel_image_capture_state: ToplevelImageCaptureManagerState,
+    pub copy_capture_sessions: Vec<CopyCaptureSession>,
     pub ext_workspace_state: ExtWorkspaceManagerState,
     pub screencopy_state: ScreencopyManagerState,
     pub output_management_state: OutputManagementManagerState,
@@ -824,6 +826,7 @@ impl State {
         self.refresh_pointer_contents();
         foreign_toplevel::refresh(self);
         ext_workspace::refresh(self);
+        self.refresh_image_copy_capture();
 
         #[cfg(feature = "xdp-gnome-screencast")]
         self.niri.refresh_mapped_cast_outputs();
@@ -2343,12 +2346,12 @@ impl Niri {
         let foreign_toplevel_state =
             ForeignToplevelManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let image_capture_source_state = ImageCaptureSourceState::new();
-        let output_capture_source_state =
-            OutputCaptureSourceState::new::<State>(&display_handle);
-        let image_copy_capture_state =
-            ImageCopyCaptureState::new::<State>(&display_handle);
-        let toplevel_image_capture_state =
-            ToplevelImageCaptureManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
+        let output_capture_source_state = OutputCaptureSourceState::new::<State>(&display_handle);
+        let image_copy_capture_state = ImageCopyCaptureState::new::<State>(&display_handle);
+        let toplevel_image_capture_state = ToplevelImageCaptureManagerState::new::<State, _>(
+            &display_handle,
+            client_is_unrestricted,
+        );
         let ext_workspace_state =
             ExtWorkspaceManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
         let mut output_management_state =
@@ -2541,6 +2544,7 @@ impl Niri {
             output_capture_source_state,
             image_copy_capture_state,
             toplevel_image_capture_state,
+            copy_capture_sessions: Vec::new(),
             ext_workspace_state,
             output_management_state,
             screencopy_state,
@@ -4720,6 +4724,8 @@ impl Niri {
             }
 
             self.render_for_screencopy_with_damage(renderer, output);
+
+            self.render_for_image_copy_capture(renderer, output, target_presentation_time);
         });
     }
 

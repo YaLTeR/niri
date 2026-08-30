@@ -157,6 +157,14 @@ impl Backend {
         }
     }
 
+    pub fn primary_render_node(&self) -> Option<smithay::backend::drm::DrmNode> {
+        match self {
+            Backend::Tty(tty) => Some(tty.primary_render_node()),
+            Backend::Winit(_) => None,
+            Backend::Headless(_) => None,
+        }
+    }
+
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn gbm_device(
         &self,

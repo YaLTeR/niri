@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use smithay::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1;
 use smithay::reexports::wayland_protocols::ext::image_capture_source::v1::server::{
     ext_foreign_toplevel_image_capture_source_manager_v1::{
@@ -25,13 +23,15 @@ pub struct ToplevelImageCaptureGlobalData {
 /// allowing clients to create capture sources from foreign toplevels.
 pub struct ToplevelImageCaptureManagerState {
     global: GlobalId,
-    instances: HashSet<ExtForeignToplevelImageCaptureSourceManagerV1>,
 }
 
 impl ToplevelImageCaptureManagerState {
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
-        D: GlobalDispatch<ExtForeignToplevelImageCaptureSourceManagerV1, ToplevelImageCaptureGlobalData>,
+        D: GlobalDispatch<
+            ExtForeignToplevelImageCaptureSourceManagerV1,
+            ToplevelImageCaptureGlobalData,
+        >,
         D: Dispatch<ExtForeignToplevelImageCaptureSourceManagerV1, ()>,
         D: Dispatch<ExtImageCaptureSourceV1, ImageCaptureSourceData>,
         D: ImageCaptureSourceHandler,
@@ -46,10 +46,7 @@ impl ToplevelImageCaptureManagerState {
             },
         );
 
-        Self {
-            global,
-            instances: HashSet::new(),
-        }
+        Self { global }
     }
 
     pub fn global(&self) -> GlobalId {
@@ -57,10 +54,14 @@ impl ToplevelImageCaptureManagerState {
     }
 }
 
-impl<D> GlobalDispatch<ExtForeignToplevelImageCaptureSourceManagerV1, ToplevelImageCaptureGlobalData, D>
+impl<D>
+    GlobalDispatch<ExtForeignToplevelImageCaptureSourceManagerV1, ToplevelImageCaptureGlobalData, D>
     for ToplevelImageCaptureManagerState
 where
-    D: GlobalDispatch<ExtForeignToplevelImageCaptureSourceManagerV1, ToplevelImageCaptureGlobalData>,
+    D: GlobalDispatch<
+        ExtForeignToplevelImageCaptureSourceManagerV1,
+        ToplevelImageCaptureGlobalData,
+    >,
     D: Dispatch<ExtForeignToplevelImageCaptureSourceManagerV1, ()>,
     D: Dispatch<ExtImageCaptureSourceV1, ImageCaptureSourceData>,
     D: ImageCaptureSourceHandler,
@@ -85,7 +86,10 @@ where
 impl<D> Dispatch<ExtForeignToplevelImageCaptureSourceManagerV1, (), D>
     for ToplevelImageCaptureManagerState
 where
-    D: GlobalDispatch<ExtForeignToplevelImageCaptureSourceManagerV1, ToplevelImageCaptureGlobalData>,
+    D: GlobalDispatch<
+        ExtForeignToplevelImageCaptureSourceManagerV1,
+        ToplevelImageCaptureGlobalData,
+    >,
     D: Dispatch<ExtForeignToplevelImageCaptureSourceManagerV1, ()>,
     D: Dispatch<ExtImageCaptureSourceV1, ImageCaptureSourceData>,
     D: ImageCaptureSourceHandler,
@@ -125,16 +129,6 @@ where
             _ => unreachable!(),
         }
     }
-
-    fn destroyed(
-        state: &mut D,
-        _client: smithay::reexports::wayland_server::backend::ClientId,
-        _resource: &ExtForeignToplevelImageCaptureSourceManagerV1,
-        _data: &(),
-    ) {
-        let manager_state = state.toplevel_image_capture_manager_state();
-        manager_state.instances.clear();
-    }
 }
 
 /// Trait for looking up toplevel surfaces from foreign toplevel handles
@@ -142,10 +136,8 @@ where
 pub trait ToplevelImageCaptureHandler {
     fn toplevel_image_capture_manager_state(&mut self) -> &mut ToplevelImageCaptureManagerState;
 
-    fn lookup_toplevel_surface(
-        &mut self,
-        handle: &ExtForeignToplevelHandleV1,
-    ) -> Option<WlSurface>;
+    fn lookup_toplevel_surface(&mut self, handle: &ExtForeignToplevelHandleV1)
+        -> Option<WlSurface>;
 }
 
 #[macro_export]
