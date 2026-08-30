@@ -26,7 +26,7 @@ impl Default for RecentWindows {
             highlight: MruHighlight::default(),
             previews: MruPreviews::default(),
             binds: default_binds(),
-            enable_mouse: true
+            enable_mouse: true,
         }
     }
 }

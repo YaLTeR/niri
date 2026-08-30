@@ -1029,7 +1029,7 @@ impl WindowMruUi {
             return None;
         };
 
-        if !inner.config.borrow().recent_windows.enable_mouse{
+        if !inner.config.borrow().recent_windows.enable_mouse {
             return None;
         }
 
