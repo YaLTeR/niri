@@ -2244,6 +2244,10 @@ impl Tty {
         self.ipc_outputs.clone()
     }
 
+    pub fn primary_render_node(&self) -> DrmNode {
+        self.primary_render_node
+    }
+
     #[cfg(feature = "xdp-gnome-screencast")]
     pub fn primary_gbm_device(&self) -> Option<GbmDevice<DrmDeviceFd>> {
         // Try to find a device corresponding to the primary render node.
