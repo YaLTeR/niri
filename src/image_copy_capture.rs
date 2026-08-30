@@ -23,7 +23,8 @@ use smithay::utils::{Buffer, IsAlive, Physical, Rectangle, Scale, Size, Transfor
 use smithay::wayland::dmabuf::get_dmabuf;
 use smithay::wayland::image_capture_source::ImageCaptureSource;
 use smithay::wayland::image_copy_capture::{
-    BufferConstraints, CaptureFailureReason, DmabufConstraints, Frame, Session, SessionRef,
+    BufferConstraints, CaptureFailureReason, DmabufConstraints, Frame, FrameRef, Session,
+    SessionRef,
 };
 
 use crate::niri::{Niri, OutputRenderElements, PointerRenderElements, State};
@@ -194,10 +195,7 @@ impl State {
     }
 
     /// Drops the queued frame that the client aborted.
-    pub fn image_copy_capture_frame_aborted(
-        &mut self,
-        frame: &smithay::wayland::image_copy_capture::FrameRef,
-    ) {
+    pub fn image_copy_capture_frame_aborted(&mut self, frame: &FrameRef) {
         for entry in &mut self.niri.copy_capture_sessions {
             if entry.pending_frame.as_ref().is_some_and(|f| **f == *frame) {
                 entry.pending_frame = None;

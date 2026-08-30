@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use niri_config::{Config, ModKey};
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::drm::DrmNode;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -157,7 +158,7 @@ impl Backend {
         }
     }
 
-    pub fn primary_render_node(&self) -> Option<smithay::backend::drm::DrmNode> {
+    pub fn primary_render_node(&self) -> Option<DrmNode> {
         match self {
             Backend::Tty(tty) => Some(tty.primary_render_node()),
             Backend::Winit(_) => None,
