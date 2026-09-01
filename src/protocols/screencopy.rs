@@ -25,6 +25,7 @@ use zwlr_screencopy_frame_v1::{Flags, ZwlrScreencopyFrameV1};
 use zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 
 use crate::protocols::EmptyData;
+use crate::render_helpers::shm_buffer_range;
 use crate::utils::{get_credentials_for_client, get_monotonic_time, CastSessionId, CastStreamId};
 
 const VERSION: u32 = 3;
@@ -550,12 +551,12 @@ where
                 );
                 return;
             }
-        } else if shm::with_buffer_contents(&buffer, |_, shm_len, buffer_data| {
+        } else if shm::with_buffer_contents(&buffer, |_, pool_len, buffer_data| {
             buffer_data.format == Format::Xrgb8888
                 && buffer_data.width == size.w
                 && buffer_data.height == size.h
                 && buffer_data.stride == size.w * 4
-                && shm_len == buffer_data.stride as usize * buffer_data.height as usize
+                && shm_buffer_range(buffer_data, pool_len).is_some()
         })
         .unwrap_or(false)
         {
