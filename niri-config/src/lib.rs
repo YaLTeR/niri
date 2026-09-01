@@ -60,7 +60,7 @@ pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, 
 pub use crate::utils::FloatOrInt;
 use crate::utils::{Flag, MergeWith as _};
 pub use crate::window_rule::{
-    FloatingPosition, PopupsRule, RelativeTo, ResolvedPopupsRules, WindowRule,
+    FloatingPosition, OnXdgActivate, PopupsRule, RelativeTo, ResolvedPopupsRules, WindowRule,
 };
 pub use crate::workspace::{Workspace, WorkspaceLayoutPart};
 
@@ -656,6 +656,30 @@ mod tests {
     }
 
     #[test]
+    fn parse_on_xdg_activate() {
+        let parsed = do_parse(
+            r#"
+            window-rule { on-xdg-activate "ignore"; }
+            window-rule { on-xdg-activate "set-urgent"; }
+            window-rule { on-xdg-activate "focus"; }
+            "#,
+        );
+
+        assert_eq!(
+            parsed
+                .window_rules
+                .iter()
+                .map(|rule| rule.on_xdg_activate)
+                .collect::<Vec<_>>(),
+            vec![
+                Some(OnXdgActivate::Ignore),
+                Some(OnXdgActivate::SetUrgent),
+                Some(OnXdgActivate::Focus),
+            ]
+        );
+    }
+
+    #[test]
     fn parse() {
         let parsed = do_parse(
             r##"
@@ -720,6 +744,7 @@ mod tests {
                 tablet {
                     map-to-output "eDP-1"
                     map-to-focused-output
+                    map-to-focused-window
                     calibration-matrix 1.0 2.0 3.0 \
                                        4.0 5.0 6.0
                 }
@@ -744,6 +769,7 @@ mod tests {
                 transform "flipped-90"
                 position x=10 y=20
                 mode "1920x1080@144"
+                max-bpc 10
                 variable-refresh-rate on-demand=true
                 background-color "rgba(25, 25, 102, 1.0)"
                 hot-corners {
@@ -857,7 +883,7 @@ mod tests {
                 window-open { off; }
 
                 window-close {
-                    curve "cubic-bezier" 0.05 0.7 0.1 1  
+                    curve "cubic-bezier" 0.05 0.7 0.1 1
                 }
 
                 recent-windows-close {
@@ -890,6 +916,7 @@ mod tests {
                 default-window-height { fixed 500; }
                 default-column-display "tabbed"
                 default-floating-position x=100 y=-200 relative-to="bottom-left"
+                on-xdg-activate "ignore"
 
                 focus-ring {
                     off
@@ -1114,6 +1141,7 @@ mod tests {
                         "eDP-1",
                     ),
                     map_to_focused_output: true,
+                    map_to_focused_window: true,
                     left_handed: false,
                 },
                 touch: Touch {
@@ -1158,6 +1186,11 @@ mod tests {
                                 x: 10,
                                 y: 20,
                             },
+                        ),
+                        max_bpc: Some(
+                            MaxBpc(
+                                _10,
+                            ),
                         ),
                         mode: Some(
                             Mode {
@@ -1204,6 +1237,7 @@ mod tests {
                         scale: None,
                         transform: Normal,
                         position: None,
+                        max_bpc: None,
                         mode: Some(
                             Mode {
                                 custom: true,
@@ -1230,6 +1264,7 @@ mod tests {
                         scale: None,
                         transform: Normal,
                         position: None,
+                        max_bpc: None,
                         mode: None,
                         modeline: Some(
                             Modeline {
@@ -1792,6 +1827,9 @@ mod tests {
                     open_focused: Some(
                         true,
                     ),
+                    on_xdg_activate: Some(
+                        Ignore,
+                    ),
                     min_width: None,
                     min_height: None,
                     max_width: None,
@@ -2244,7 +2282,6 @@ mod tests {
                 enable_overlay_planes: false,
                 disable_cursor_plane: false,
                 disable_direct_scanout: false,
-                keep_max_bpc_unchanged: false,
                 restrict_primary_scanout_to_matching_format: false,
                 force_disable_connectors_on_resume: false,
                 render_drm_device: Some(
@@ -2264,6 +2301,7 @@ mod tests {
                 honor_xdg_activation_with_invalid_serial: false,
                 deactivate_unfocused_windows: false,
                 skip_cursor_only_updates_during_vrr: false,
+                disable_10bit_output: false,
             },
             workspaces: [
                 Workspace {

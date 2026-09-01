@@ -310,10 +310,17 @@ pub trait LayoutElement {
     /// are handled externally by the Tile, so the corner radius changes for those modes is also
     /// handled externally.
     fn geometry_corner_radius(&self) -> CornerRadius {
-        if self.is_windowed_fullscreen() {
+        let rules = self.rules();
+
+        // When windows think they're fullscreen, they square their corners.
+        //
+        // However, if the user is clipping the window to geometry, they are likely going for
+        // consistent corner radius, and want this radius to remain in windowed fullscreen.
+        if self.is_windowed_fullscreen() && rules.clip_to_geometry != Some(true) {
             return CornerRadius::default();
         }
-        self.rules().geometry_corner_radius.unwrap_or_default()
+
+        rules.geometry_corner_radius.unwrap_or_default()
     }
 
     fn is_child_of(&self, parent: &Self) -> bool;
@@ -558,6 +565,14 @@ struct OverviewGesture {
     value: f64,
 }
 
+/// Layer of windows to render.
+#[derive(Clone, Copy)]
+pub enum RenderLayer {
+    Normal,
+    /// Windows currently moving between workspaces.
+    MovingBetweenWorkspaces,
+}
+
 impl SizingMode {
     #[must_use]
     pub fn is_normal(&self) -> bool {
@@ -684,6 +699,16 @@ impl OverviewProgress {
 
     fn is_animation(&self) -> bool {
         matches!(self, OverviewProgress::Animation(_))
+    }
+}
+
+impl RenderLayer {
+    /// Returns `true` if the render layer is [`Normal`].
+    ///
+    /// [`Normal`]: RenderLayer::Normal
+    #[must_use]
+    pub fn is_normal(&self) -> bool {
+        matches!(self, Self::Normal)
     }
 }
 
@@ -914,7 +939,7 @@ impl<W: LayoutElement> Layout<W> {
             panic!()
         };
 
-        monitors[monitor_idx].add_column(workspace_idx, column, activate);
+        monitors[monitor_idx].add_column(workspace_idx, column, activate, None);
 
         if activate {
             *active_monitor_idx = monitor_idx;
@@ -955,10 +980,7 @@ impl<W: LayoutElement> Layout<W> {
                         (mon_idx, MonitorAddWindowTarget::Auto)
                     }
                     AddWindowTarget::Workspace(ws_id) => {
-                        let mon_idx = monitors
-                            .iter()
-                            .position(|mon| mon.workspaces.iter().any(|ws| ws.id() == ws_id))
-                            .unwrap();
+                        let mon_idx = monitors.iter().position(|mon| mon.has_ws(ws_id)).unwrap();
 
                         (
                             mon_idx,
@@ -1095,6 +1117,7 @@ impl<W: LayoutElement> Layout<W> {
                     scrolling_width,
                     is_full_width,
                     is_floating,
+                    None,
                 );
 
                 // Set the default height for scrolling windows.
@@ -1253,12 +1276,8 @@ impl<W: LayoutElement> Layout<W> {
         match &self.monitor_set {
             MonitorSet::Normal { ref monitors, .. } => {
                 for mon in monitors {
-                    if let Some((index, workspace)) = mon
-                        .workspaces
-                        .iter()
-                        .enumerate()
-                        .find(|(_, w)| w.id() == id)
-                    {
+                    if let Some(index) = mon.idx_of_ws(id) {
+                        let workspace = &mon.workspaces[index];
                         return Some((index, workspace));
                     }
                 }
@@ -2109,14 +2128,24 @@ impl<W: LayoutElement> Layout<W> {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_to_workspace_up(focus);
+        let activate = if focus {
+            ActivateWindow::Smart
+        } else {
+            ActivateWindow::No
+        };
+        monitor.move_to_workspace_up(activate);
     }
 
     pub fn move_to_workspace_down(&mut self, focus: bool) {
         let Some(monitor) = self.active_monitor() else {
             return;
         };
-        monitor.move_to_workspace_down(focus);
+        let activate = if focus {
+            ActivateWindow::Smart
+        } else {
+            ActivateWindow::No
+        };
+        monitor.move_to_workspace_down(activate);
     }
 
     pub fn move_to_workspace(
@@ -2634,12 +2663,8 @@ impl<W: LayoutElement> Layout<W> {
 
                 if is_scrolling {
                     if let Some((ws, geo)) = mon.workspace_under(pos_within_output) {
-                        let ws_id = ws.id();
-                        let ws = mon
-                            .workspaces
-                            .iter_mut()
-                            .find(|ws| ws.id() == ws_id)
-                            .unwrap();
+                        let idx = mon.idx_of_ws(ws.id()).unwrap();
+                        let ws = &mut mon.workspaces[idx];
                         // As far as the DnD scroll gesture is concerned, the workspace spans across
                         // the whole monitor horizontally.
                         let ws_pos = Point::from((0., geo.loc.y));
@@ -2697,9 +2722,7 @@ impl<W: LayoutElement> Layout<W> {
                                     .iter_mut()
                                     .position(|ws| ws.activate_window(&id))
                                     .unwrap(),
-                                DndHoldTarget::Workspace(id) => {
-                                    mon.workspaces.iter().position(|ws| ws.id() == id).unwrap()
-                                }
+                                DndHoldTarget::Workspace(id) => mon.idx_of_ws(id).unwrap(),
                             };
 
                             mon.dnd_scroll_gesture_end();
@@ -2880,11 +2903,8 @@ impl<W: LayoutElement> Layout<W> {
             let (insert_ws, geo) = mon.insert_position(move_.pointer_pos_within_output);
             match insert_ws {
                 InsertWorkspace::Existing(ws_id) => {
-                    let ws = mon
-                        .workspaces
-                        .iter_mut()
-                        .find(|ws| ws.id() == ws_id)
-                        .unwrap();
+                    let idx = mon.idx_of_ws(ws_id).unwrap();
+                    let ws = &mut mon.workspaces[idx];
                     let pos_within_workspace =
                         (move_.pointer_pos_within_output - geo.loc).downscale(zoom);
                     let position = if move_.is_floating {
@@ -3367,14 +3387,13 @@ impl<W: LayoutElement> Layout<W> {
             };
 
             let ws = &mut mon.workspaces[ws_idx];
-            let transaction = Transaction::new();
-            let mut removed = if let Some(window) = window {
-                ws.remove_tile(window, transaction)
-            } else if let Some(removed) = ws.remove_active_tile(transaction) {
-                removed
-            } else {
+            let Some(window) = window.or_else(|| ws.active_window().map(|win| win.id())) else {
                 return;
             };
+            let window = window.clone();
+
+            let transaction = Transaction::new();
+            let mut removed = ws.remove_tile(&window, transaction);
 
             removed.tile.stop_move_animations();
 
@@ -3390,6 +3409,7 @@ impl<W: LayoutElement> Layout<W> {
                 removed.width,
                 removed.is_full_width,
                 removed.is_floating,
+                None,
             );
             if activate.map_smart(|| false) {
                 *active_monitor_idx = new_idx;
@@ -4186,11 +4206,7 @@ impl<W: LayoutElement> Layout<W> {
                         let (insert_ws, geo) = mon.insert_position(move_.pointer_pos_within_output);
                         let (position, offset) = match insert_ws {
                             InsertWorkspace::Existing(ws_id) => {
-                                let ws_idx = mon
-                                    .workspaces
-                                    .iter_mut()
-                                    .position(|ws| ws.id() == ws_id)
-                                    .unwrap();
+                                let ws_idx = mon.idx_of_ws(ws_id).unwrap();
 
                                 let position = if move_.is_floating {
                                     InsertPosition::Floating
@@ -4236,11 +4252,7 @@ impl<W: LayoutElement> Layout<W> {
                 let tile_render_loc = move_.tile_render_location(zoom);
 
                 let ws_idx = match insert_ws {
-                    InsertWorkspace::Existing(ws_id) => mon
-                        .workspaces
-                        .iter()
-                        .position(|ws| ws.id() == ws_id)
-                        .unwrap(),
+                    InsertWorkspace::Existing(ws_id) => mon.idx_of_ws(ws_id).unwrap(),
                     InsertWorkspace::NewAt(ws_idx) => {
                         if mon.options.layout.empty_workspace_above_first && ws_idx == 0 {
                             // Reuse the top empty workspace.
@@ -4269,6 +4281,7 @@ impl<W: LayoutElement> Layout<W> {
                             move_.width,
                             move_.is_full_width,
                             false,
+                            None,
                         );
                     }
                     InsertPosition::InColumn(column_idx, tile_idx) => {
@@ -4282,8 +4295,6 @@ impl<W: LayoutElement> Layout<W> {
                         );
                     }
                     InsertPosition::Floating => {
-                        let tile_render_loc = move_.tile_render_location(zoom);
-
                         let mut tile = move_.tile;
                         tile.floating_pos = None;
 
@@ -4325,6 +4336,7 @@ impl<W: LayoutElement> Layout<W> {
                             move_.width,
                             move_.is_full_width,
                             true,
+                            None,
                         );
                     }
                 }
@@ -4341,6 +4353,13 @@ impl<W: LayoutElement> Layout<W> {
                 let new_tile_render_loc = ws_geo.loc + tile_offset.upscale(zoom);
 
                 tile.animate_move_from((tile_render_loc - new_tile_render_loc).downscale(zoom));
+
+                // Interactive move into floating barely animates (it doesn't really move after
+                // being dropped), so setting it as moving between workspaces would just cause it to
+                // awkwardly sit unclipped for a moment before the animation runs out.
+                if !matches!(position, InsertPosition::Floating) {
+                    tile.set_anim_y_between_workspaces();
+                }
             }
             MonitorSet::NoOutputs { workspaces, .. } => {
                 if workspaces.is_empty() {
@@ -4359,6 +4378,7 @@ impl<W: LayoutElement> Layout<W> {
                     move_.width,
                     move_.is_full_width,
                     move_.is_floating,
+                    None,
                 );
             }
         }
@@ -4791,12 +4811,8 @@ impl<W: LayoutElement> Layout<W> {
                 let Some((ws, ws_geo)) = mon.workspace_under(pointer_pos_within_output) else {
                     return;
                 };
-                let ws_id = ws.id();
-                let ws = mon
-                    .workspaces
-                    .iter_mut()
-                    .find(|ws| ws.id() == ws_id)
-                    .unwrap();
+                let idx = mon.idx_of_ws(ws.id()).unwrap();
+                let ws = &mut mon.workspaces[idx];
 
                 let tile_pos = tile_pos - ws_geo.loc;
                 ws.start_close_animation_for_tile(renderer, snapshot, tile_size, tile_pos, blocker);
@@ -4944,10 +4960,7 @@ impl<W: LayoutElement> Layout<W> {
     pub fn workspaces(
         &self,
     ) -> impl Iterator<Item = (Option<&Monitor<W>>, usize, &Workspace<W>)> + '_ {
-        let iter_normal;
-        let iter_no_outputs;
-
-        match &self.monitor_set {
+        let (iter_normal, iter_no_outputs) = match &self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 let it = monitors.iter().flat_map(|mon| {
                     mon.workspaces
@@ -4956,8 +4969,7 @@ impl<W: LayoutElement> Layout<W> {
                         .map(move |(idx, ws)| (Some(mon), idx, ws))
                 });
 
-                iter_normal = Some(it);
-                iter_no_outputs = None;
+                (Some(it), None)
             }
             MonitorSet::NoOutputs { workspaces } => {
                 let it = workspaces
@@ -4965,10 +4977,9 @@ impl<W: LayoutElement> Layout<W> {
                     .enumerate()
                     .map(|(idx, ws)| (None, idx, ws));
 
-                iter_normal = None;
-                iter_no_outputs = Some(it);
+                (None, Some(it))
             }
-        }
+        };
 
         let iter_normal = iter_normal.into_iter().flatten();
         let iter_no_outputs = iter_no_outputs.into_iter().flatten();
@@ -4976,25 +4987,20 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn workspaces_mut(&mut self) -> impl Iterator<Item = &mut Workspace<W>> + '_ {
-        let iter_normal;
-        let iter_no_outputs;
-
-        match &mut self.monitor_set {
+        let (iter_normal, iter_no_outputs) = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => {
                 let it = monitors
                     .iter_mut()
                     .flat_map(|mon| mon.workspaces.iter_mut());
 
-                iter_normal = Some(it);
-                iter_no_outputs = None;
+                (Some(it), None)
             }
             MonitorSet::NoOutputs { workspaces } => {
                 let it = workspaces.iter_mut();
 
-                iter_normal = None;
-                iter_no_outputs = Some(it);
+                (None, Some(it))
             }
-        }
+        };
 
         let iter_normal = iter_normal.into_iter().flatten();
         let iter_no_outputs = iter_no_outputs.into_iter().flatten();
