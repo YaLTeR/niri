@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::ptr;
 
 use anyhow::{ensure, Context as _};
@@ -297,6 +298,19 @@ pub fn render_to_dmabuf(
     Ok(res.sync)
 }
 
+/// Helper for [`shm::with_buffer_contents`] / [`shm::with_buffer_contents_mut`].
+/// Gets the range of the shm-buffer, relative to the whole shm-pool.
+pub fn shm_buffer_range(buffer_data: shm::BufferData, pool_len: usize) -> Option<Range<usize>> {
+    let offset = usize::try_from(buffer_data.offset).ok()?;
+    let stride = usize::try_from(buffer_data.stride).ok()?;
+    let height = usize::try_from(buffer_data.height).ok()?;
+
+    let len = stride.checked_mul(height)?;
+    let end = offset.checked_add(len)?;
+
+    (end <= pool_len).then_some(offset..end)
+}
+
 pub fn render_to_shm(
     renderer: &mut GlesRenderer,
     damage_tracker: &mut OutputDamageTracker,
@@ -305,7 +319,7 @@ pub fn render_to_shm(
     states: RenderElementStates,
 ) -> anyhow::Result<()> {
     let _span = tracy_client::span!();
-    shm::with_buffer_contents_mut(buffer, |shm_buffer, shm_len, buffer_data| {
+    shm::with_buffer_contents_mut(buffer, |pool, pool_len, buffer_data| {
         let (size, _scale, _transform) = damage_tracker.mode().try_into().unwrap();
         let fourcc = Fourcc::Xrgb8888;
 
@@ -314,10 +328,12 @@ pub fn render_to_shm(
             buffer_data.format == wl_shm::Format::Xrgb8888
                 && buffer_data.width == size.w
                 && buffer_data.height == size.h
-                && buffer_data.stride == size.w * 4
-                && shm_len == buffer_data.stride as usize * buffer_data.height as usize,
+                && buffer_data.stride == size.w * 4,
             "invalid buffer format or size"
         );
+
+        let buffer_range =
+            shm_buffer_range(buffer_data, pool_len).context("buffer exceeds shm pool")?;
 
         let mut texture =
             create_texture(renderer, size, fourcc).context("error creating texture")?;
@@ -344,7 +360,11 @@ pub fn render_to_shm(
 
         unsafe {
             let _span = tracy_client::span!("copy_nonoverlapping");
-            ptr::copy_nonoverlapping(bytes.as_ptr(), shm_buffer.cast(), shm_len);
+            ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                pool.add(buffer_range.start),
+                buffer_range.len(),
+            );
         }
 
         Ok(())
