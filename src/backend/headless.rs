@@ -283,6 +283,7 @@ impl Headless {
                 vrr_supported: false,
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),
+                max_bpc: None,
             },
         );
 
