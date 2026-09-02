@@ -4,8 +4,6 @@ use super::*;
 fn virtual_output_custom_mode_does_not_accumulate_modes() {
     let mut f = Fixture::new();
 
-    // Create a managed virtual output so it goes through the same config application path as in a
-    // real session (`niri msg create-virtual-output`, `niri msg output ... custom-mode`).
     let name = {
         let state = f.niri_state();
         state
@@ -76,11 +74,89 @@ fn virtual_output_custom_mode_does_not_accumulate_modes() {
 }
 
 #[test]
+fn removing_off_virtual_output_does_not_panic() {
+    let mut f = Fixture::new();
+
+    let name = {
+        let state = f.niri_state();
+        state
+            .backend
+            .create_virtual_output(&mut state.niri, 1920, 1080, 60, Some("virt".to_owned()))
+            .unwrap()
+    };
+
+    {
+        let state = f.niri_state();
+        state.modify_output_config(&name, |config| {
+            config.off = true;
+        });
+    }
+
+    {
+        let state = f.niri_state();
+        state
+            .backend
+            .remove_virtual_output(&mut state.niri, &name)
+            .unwrap();
+    }
+}
+
+#[test]
+fn config_remove_virtual_output_fails_while_configured() {
+    let mut f = Fixture::new();
+    let name = "virt";
+
+    {
+        let state = f.niri_state();
+        state.modify_output_config(name, |config| {
+            config.create_virtual = true;
+        });
+    }
+
+    let result = {
+        let state = f.niri_state();
+        state.backend.remove_virtual_output(&mut state.niri, name)
+    };
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("is configured"));
+}
+
+#[test]
+fn unnamed_virtual_outputs_do_not_advance_counter_for_named_outputs() {
+    let mut f = Fixture::new();
+
+    {
+        let state = f.niri_state();
+        state.modify_output_config("virt", |_| {});
+    }
+
+    let headless_1 = {
+        let state = f.niri_state();
+        state
+            .backend
+            .create_virtual_output(&mut state.niri, 1920, 1080, 60, None)
+            .unwrap()
+    };
+
+    assert_eq!(headless_1, "HEADLESS-1");
+
+    let headless_2 = {
+        let state = f.niri_state();
+        state
+            .backend
+            .create_virtual_output(&mut state.niri, 1920, 1080, 60, None)
+            .unwrap()
+    };
+
+    assert_eq!(headless_2, "HEADLESS-2");
+}
+
+#[test]
 fn touch_input_targets_virtual_output_when_focused() {
     let mut f = Fixture::new();
     f.add_output(1, (1920, 1080));
 
-    // Create a virtual output and focus it.
     let name = {
         let state = f.niri_state();
         state
@@ -99,8 +175,8 @@ fn touch_input_targets_virtual_output_when_focused() {
 
     f.niri().layout.focus_output(&virt);
 
-    // With no explicit `input.touch.map-to-output` configured, touch should follow the active
-    // output (which may be virtual).
+    // With no explicit `input.touch.map-to-output` configured,
+    // touch should follow the active output (which may be virtual).
     let touch_output = f.niri().output_for_touch().unwrap().clone();
     assert_eq!(touch_output, virt);
 }

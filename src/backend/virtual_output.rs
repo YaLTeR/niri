@@ -70,13 +70,18 @@ pub(super) fn build_headless_virtual_output(
     let refresh_millihz = refresh_millihz.clamp(1, i32::MAX as u32);
     let refresh_millihz = refresh_millihz as i32;
 
-    *counter += 1;
-    let n = *counter;
+    let is_unnamed = name.is_none();
+    let n = if is_unnamed {
+        *counter += 1;
+        *counter
+    } else {
+        *counter
+    };
 
-    let connector = name.unwrap_or_else(|| format!("HEADLESS-{n}"));
-    let make = "niri".to_string();
-    let model = "virtual".to_string();
     let serial = n.to_string();
+    let connector = name.unwrap_or_else(|| format!("HEADLESS-{n}"));
+    let model = connector.clone();
+    let make = "niri".to_string();
 
     let output = Output::new(
         connector.clone(),
@@ -146,12 +151,34 @@ pub(super) fn remove_virtual_output_from_map(
     name: &str,
     kind: &str,
 ) -> Result<(), String> {
+    let lookup_name = OutputName {
+        connector: name.to_string(),
+        make: None,
+        model: None,
+        serial: None,
+    };
+
+    if niri
+        .config
+        .borrow()
+        .outputs
+        .find(&lookup_name)
+        .is_some_and(|output| output.create_virtual)
+    {
+        return Err(format!(
+            "output '{name}' is configured; remove it from the config or disable it there instead"
+        ));
+    }
+
     let (output, output_id) = outputs
         .remove(name)
         .ok_or_else(|| format!("{kind} '{name}' not found"))?;
 
     ipc_outputs.lock().unwrap().remove(&output_id);
-    niri.remove_output(&output);
+
+    if niri.output_exists(&output) {
+        niri.remove_output(&output);
+    }
 
     Ok(())
 }
