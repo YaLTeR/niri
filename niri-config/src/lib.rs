@@ -953,8 +953,12 @@ mod tests {
                 Mod+Shift+E allow-inhibiting=false { quit skip-confirmation=true; }
                 Mod+WheelScrollDown cooldown-ms=150 { focus-workspace-down; }
                 Super+Alt+S allow-when-locked=true { spawn-sh "pkill orca || exec orca"; }
-                Mod release=true { toggle-overview; }
-                Shift+Mod release=true allow-invalidation=false { toggle-window-floating; }
+                Mod {
+                    release { toggle-overview; }
+                }
+                Shift+Mod allow-invalidation=false {
+                    release { toggle-window-floating; }
+                }
             }
 
             switch-events {
@@ -1992,9 +1996,11 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: ToggleKeyboardShortcutsInhibit,
+                        press_action: Some(
+                            ToggleKeyboardShortcutsInhibit,
+                        ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
@@ -2014,9 +2020,11 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: ToggleKeyboardShortcutsInhibit,
+                        press_action: Some(
+                            ToggleKeyboardShortcutsInhibit,
+                        ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
@@ -2032,13 +2040,15 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: Spawn(
-                            [
-                                "alacritty",
-                            ],
+                        press_action: Some(
+                            Spawn(
+                                [
+                                    "alacritty",
+                                ],
+                            ),
                         ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: true,
                         allow_inhibiting: true,
@@ -2054,9 +2064,11 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: CloseWindow,
+                        press_action: Some(
+                            CloseWindow,
+                        ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2074,9 +2086,11 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: FocusMonitorLeft,
+                        press_action: Some(
+                            FocusMonitorLeft,
+                        ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2092,11 +2106,13 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: FocusMonitor(
-                            "eDP-1",
+                        press_action: Some(
+                            FocusMonitor(
+                                "eDP-1",
+                            ),
                         ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2112,9 +2128,11 @@ mod tests {
                                 CTRL | SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: MoveWindowToMonitorRight,
+                        press_action: Some(
+                            MoveWindowToMonitorRight,
+                        ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2130,11 +2148,13 @@ mod tests {
                                 CTRL | ALT | COMPOSITOR,
                             ),
                         },
-                        action: MoveWindowToMonitor(
-                            "eDP-1",
+                        press_action: Some(
+                            MoveWindowToMonitor(
+                                "eDP-1",
+                            ),
                         ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2150,11 +2170,13 @@ mod tests {
                                 CTRL | ALT | COMPOSITOR,
                             ),
                         },
-                        action: MoveColumnToMonitor(
-                            "DP-1",
+                        press_action: Some(
+                            MoveColumnToMonitor(
+                                "DP-1",
+                            ),
                         ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2170,9 +2192,11 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: ConsumeWindowIntoColumn,
+                        press_action: Some(
+                            ConsumeWindowIntoColumn,
+                        ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2188,13 +2212,15 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: FocusWorkspace(
-                            Index(
-                                1,
+                        press_action: Some(
+                            FocusWorkspace(
+                                Index(
+                                    1,
+                                ),
                             ),
                         ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2210,13 +2236,15 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: FocusWorkspace(
-                            Name(
-                                "workspace-1",
+                        press_action: Some(
+                            FocusWorkspace(
+                                Name(
+                                    "workspace-1",
+                                ),
                             ),
                         ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2232,11 +2260,13 @@ mod tests {
                                 SHIFT | COMPOSITOR,
                             ),
                         },
-                        action: Quit(
-                            true,
+                        press_action: Some(
+                            Quit(
+                                true,
+                            ),
                         ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: false,
@@ -2250,9 +2280,11 @@ mod tests {
                                 COMPOSITOR,
                             ),
                         },
-                        action: FocusWorkspaceDown,
+                        press_action: Some(
+                            FocusWorkspaceDown,
+                        ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: Some(
                             150ms,
                         ),
@@ -2270,11 +2302,13 @@ mod tests {
                                 ALT | SUPER,
                             ),
                         },
-                        action: SpawnSh(
-                            "pkill orca || exec orca",
+                        press_action: Some(
+                            SpawnSh(
+                                "pkill orca || exec orca",
+                            ),
                         ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: true,
                         allow_inhibiting: true,
@@ -2288,9 +2322,11 @@ mod tests {
                                 0x0,
                             ),
                         },
-                        action: ToggleOverview,
-                        repeat: true,
-                        release: true,
+                        press_action: None,
+                        release_action: Some(
+                            ToggleOverview,
+                        ),
+                        repeat: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2304,9 +2340,11 @@ mod tests {
                                 SHIFT,
                             ),
                         },
-                        action: ToggleWindowFloating,
-                        repeat: true,
-                        release: true,
+                        press_action: None,
+                        release_action: Some(
+                            ToggleWindowFloating,
+                        ),
+                        repeat: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2424,15 +2462,17 @@ mod tests {
                                 ALT,
                             ),
                         },
-                        action: MruAdvance {
-                            direction: Forward,
-                            scope: None,
-                            filter: Some(
-                                All,
-                            ),
-                        },
+                        press_action: Some(
+                            MruAdvance {
+                                direction: Forward,
+                                scope: None,
+                                filter: Some(
+                                    All,
+                                ),
+                            },
+                        ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2448,15 +2488,17 @@ mod tests {
                                 ALT,
                             ),
                         },
-                        action: MruAdvance {
-                            direction: Forward,
-                            scope: None,
-                            filter: Some(
-                                AppId,
-                            ),
-                        },
+                        press_action: Some(
+                            MruAdvance {
+                                direction: Forward,
+                                scope: None,
+                                filter: Some(
+                                    AppId,
+                                ),
+                            },
+                        ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,
@@ -2472,17 +2514,19 @@ mod tests {
                                 SUPER,
                             ),
                         },
-                        action: MruAdvance {
-                            direction: Forward,
-                            scope: Some(
-                                Output,
-                            ),
-                            filter: Some(
-                                All,
-                            ),
-                        },
+                        press_action: Some(
+                            MruAdvance {
+                                direction: Forward,
+                                scope: Some(
+                                    Output,
+                                ),
+                                filter: Some(
+                                    All,
+                                ),
+                            },
+                        ),
+                        release_action: None,
                         repeat: true,
-                        release: false,
                         cooldown: None,
                         allow_when_locked: false,
                         allow_inhibiting: true,

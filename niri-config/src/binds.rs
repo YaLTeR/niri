@@ -924,14 +924,12 @@ where
 
         let mut press_action: Option<Action> = None;
         let mut release_action: Option<Action> = None;
-        let mut has_press_section = false;
-        let mut has_release_section = false;
 
         for child in node.children() {
             let child_name = &*child.node_name;
 
             if child_name.as_ref() == "press" {
-                if has_press_section {
+                if press_action.is_some() {
                     ctx.emit_error(DecodeError::unexpected(
                         &child.node_name,
                         "section",
@@ -939,7 +937,6 @@ where
                     ));
                     continue;
                 }
-                has_press_section = true;
 
                 let mut press_children = child.children();
                 if let Some(action_child) = press_children.next() {
@@ -965,7 +962,7 @@ where
                     ));
                 }
             } else if child_name.as_ref() == "release" {
-                if has_release_section {
+                if release_action.is_some() {
                     ctx.emit_error(DecodeError::unexpected(
                         &child.node_name,
                         "section",
@@ -973,7 +970,6 @@ where
                     ));
                     continue;
                 }
-                has_release_section = true;
 
                 let mut release_children = child.children();
                 if let Some(action_child) = release_children.next() {
@@ -999,7 +995,7 @@ where
                     ));
                 }
             } else {
-                if has_press_section || has_release_section {
+                if press_action.is_some() || release_action.is_some() {
                     ctx.emit_error(DecodeError::unexpected(
                         &child.node_name,
                         "node",
@@ -1029,7 +1025,12 @@ where
         }
 
         if press_action.is_none() && release_action.is_none() {
-            if !has_press_section && !has_release_section {
+            // If a press or release section was present, an error about its missing or invalid action was already emitted above.
+            let has_section = node.children().any(|child| {
+                let name = child.node_name.as_ref();
+                name == "press" || name == "release"
+            });
+            if !has_section {
                 ctx.emit_error(DecodeError::missing(
                     node,
                     "expected an action for this keybind",
@@ -1071,7 +1072,7 @@ where
 
         let repeat = match repeat {
             Some(value) => value,
-            None => !release_action.is_some(),
+            None => release_action.is_none(),
         };
 
         Ok(Self {
