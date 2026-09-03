@@ -108,30 +108,65 @@ impl Spring {
 
     /// Computes and returns the duration until the spring reaches its target position.
     pub fn clamped_duration(&self) -> Option<Duration> {
+        const SAMPLE_INTERVAL: f64 = 0.001;
+
         let beta = self.params.damping / (2. * self.params.mass);
 
         if beta.abs() <= f64::EPSILON || beta < 0. {
             return Some(Duration::MAX);
         }
 
-        if (self.to - self.from).abs() <= f64::EPSILON {
+        let distance = self.to - self.from;
+        if distance.abs() <= f64::EPSILON {
             return Some(Duration::ZERO);
         }
 
         // The first frame is not that important and we avoid finding the trivial 0 for in-place
         // animations.
         let mut i = 1u16;
-        let mut y = self.oscillate(f64::from(i) / 1000.);
+        let mut y = self.oscillate(SAMPLE_INTERVAL);
 
-        while (self.to - self.from > f64::EPSILON && self.to - y > self.params.epsilon)
-            || (self.from - self.to > f64::EPSILON && y - self.to > self.params.epsilon)
+        let omega0 = (self.params.stiffness / self.params.mass).sqrt();
+        if beta < omega0 && (beta - omega0).abs() > f64::from(f32::EPSILON) {
+            // An underdamped spring sampled at a fixed interval satisfies the recurrence
+            //
+            // x[n] = 2e^(-beta h)cos(omega h)x[n-1] - e^(-2 beta h)x[n-2].
+            //
+            // Use it here to avoid evaluating exp(), sin(), and cos() for every millisecond.
+            let omega = ((omega0 * omega0) - (beta * beta)).sqrt();
+            let decay = (-beta * SAMPLE_INTERVAL).exp();
+            let current_coefficient = 2. * decay * (omega * SAMPLE_INTERVAL).cos();
+            let previous_coefficient = -(decay * decay);
+            let mut previous_displacement = self.from - self.to;
+            let mut displacement = y - self.to;
+
+            while (distance > f64::EPSILON && -displacement > self.params.epsilon)
+                || (-distance > f64::EPSILON && displacement > self.params.epsilon)
+            {
+                if i > 3000 {
+                    return None;
+                }
+
+                i += 1;
+                (previous_displacement, displacement) = (
+                    displacement,
+                    current_coefficient * displacement
+                        + previous_coefficient * previous_displacement,
+                );
+            }
+
+            return Some(Duration::from_millis(u64::from(i)));
+        }
+
+        while (distance > f64::EPSILON && self.to - y > self.params.epsilon)
+            || (-distance > f64::EPSILON && y - self.to > self.params.epsilon)
         {
             if i > 3000 {
                 return None;
             }
 
             i += 1;
-            y = self.oscillate(f64::from(i) / 1000.);
+            y = self.oscillate(f64::from(i) * SAMPLE_INTERVAL);
         }
 
         Some(Duration::from_millis(u64::from(i)))
@@ -180,6 +215,51 @@ impl Spring {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sampled_clamped_duration(spring: &Spring) -> Option<Duration> {
+        let distance = spring.to - spring.from;
+        let mut i = 1u16;
+        let mut y = spring.oscillate(f64::from(i) / 1000.);
+
+        while (distance > f64::EPSILON && spring.to - y > spring.params.epsilon)
+            || (-distance > f64::EPSILON && y - spring.to > spring.params.epsilon)
+        {
+            if i > 3000 {
+                return None;
+            }
+
+            i += 1;
+            y = spring.oscillate(f64::from(i) / 1000.);
+        }
+
+        Some(Duration::from_millis(u64::from(i)))
+    }
+
+    #[test]
+    fn underdamped_clamped_duration_matches_direct_sampling() {
+        for damping_ratio in [0.01, 0.1, 0.5, 0.999] {
+            for stiffness in [1., 100., 1000., 10_000.] {
+                for initial_velocity in [-10_000., -10., 0., 10., 10_000.] {
+                    let spring = Spring {
+                        from: -10.,
+                        to: 20.,
+                        initial_velocity,
+                        params: SpringParams::new(damping_ratio, stiffness, 0.0001),
+                    };
+
+                    assert_eq!(spring.clamped_duration(), sampled_clamped_duration(&spring));
+
+                    let spring = Spring {
+                        from: 20.,
+                        to: -10.,
+                        ..spring
+                    };
+
+                    assert_eq!(spring.clamped_duration(), sampled_clamped_duration(&spring));
+                }
+            }
+        }
+    }
 
     #[test]
     fn overdamped_spring_equal_from_to_nan() {
