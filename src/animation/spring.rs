@@ -124,10 +124,11 @@ impl Spring {
         // The first frame is not that important and we avoid finding the trivial 0 for in-place
         // animations.
         let mut i = 1u16;
-        let mut y = self.oscillate(SAMPLE_INTERVAL);
-
         let omega0 = (self.params.stiffness / self.params.mass).sqrt();
-        if beta < omega0 && (beta - omega0).abs() > f64::from(f32::EPSILON) {
+        let x0 = self.from - self.to;
+        let critical = (beta - omega0).abs() <= f64::from(f32::EPSILON);
+
+        if beta < omega0 && !critical {
             // An underdamped spring sampled at a fixed interval satisfies the recurrence
             //
             // x[n] = 2e^(-beta h)cos(omega h)x[n-1] - e^(-2 beta h)x[n-2].
@@ -135,16 +136,21 @@ impl Spring {
             // Use it here to avoid evaluating exp(), sin(), and cos() for every millisecond.
             let omega = ((omega0 * omega0) - (beta * beta)).sqrt();
             let decay = (-beta * SAMPLE_INTERVAL).exp();
-            let current_coefficient = 2. * decay * (omega * SAMPLE_INTERVAL).cos();
+            let angle = omega * SAMPLE_INTERVAL;
+            let cos = angle.cos();
+            let sin = angle.sin();
+            let current_coefficient = 2. * decay * cos;
             let previous_coefficient = -(decay * decay);
-            let mut previous_displacement = self.from - self.to;
+            let mut previous_displacement = x0;
+            let y =
+                self.to + decay * (x0 * cos + ((beta * x0 + self.initial_velocity) / omega) * sin);
             let mut displacement = y - self.to;
 
             while (distance > f64::EPSILON && -displacement > self.params.epsilon)
                 || (-distance > f64::EPSILON && displacement > self.params.epsilon)
             {
                 if i > 3000 {
-                    return None;
+                    break;
                 }
 
                 i += 1;
@@ -155,9 +161,34 @@ impl Spring {
                 );
             }
 
-            return Some(Duration::from_millis(u64::from(i)));
+            return self.refine_clamped_duration(i, distance);
         }
 
+        if critical {
+            let decay = (-beta * SAMPLE_INTERVAL).exp();
+            let linear_step = (beta * x0 + self.initial_velocity) * SAMPLE_INTERVAL;
+            let mut envelope = decay;
+            let mut linear = x0 + linear_step;
+            let mut y = self.to + envelope * linear;
+
+            while (distance > f64::EPSILON && self.to - y > self.params.epsilon)
+                || (-distance > f64::EPSILON && y - self.to > self.params.epsilon)
+            {
+                if i > 3000 {
+                    break;
+                }
+
+                i += 1;
+                envelope *= decay;
+                linear += linear_step;
+                y = self.to + envelope * linear;
+            }
+
+            return self.refine_clamped_duration(i, distance);
+        }
+
+        // Use direct evaluation for overdamped or non-finite parameters.
+        let mut y = self.oscillate(SAMPLE_INTERVAL);
         while (distance > f64::EPSILON && self.to - y > self.params.epsilon)
             || (-distance > f64::EPSILON && y - self.to > self.params.epsilon)
         {
@@ -166,7 +197,29 @@ impl Spring {
             }
 
             i += 1;
-            y = self.oscillate(f64::from(i) * SAMPLE_INTERVAL);
+            y = self.oscillate(f64::from(i) / 1000.);
+        }
+
+        Some(Duration::from_millis(u64::from(i)))
+    }
+
+    fn refine_clamped_duration(&self, mut i: u16, distance: f64) -> Option<Duration> {
+        let target_not_reached = |i| {
+            let y = self.oscillate(f64::from(i) / 1000.);
+            (distance > f64::EPSILON && self.to - y > self.params.epsilon)
+                || (-distance > f64::EPSILON && y - self.to > self.params.epsilon)
+        };
+
+        while i > 1 && !target_not_reached(i - 1) {
+            i -= 1;
+        }
+
+        while target_not_reached(i) {
+            if i > 3000 {
+                return None;
+            }
+
+            i += 1;
         }
 
         Some(Duration::from_millis(u64::from(i)))
@@ -245,6 +298,50 @@ mod tests {
                         to: 20.,
                         initial_velocity,
                         params: SpringParams::new(damping_ratio, stiffness, 0.0001),
+                    };
+
+                    assert_eq!(spring.clamped_duration(), sampled_clamped_duration(&spring));
+
+                    let spring = Spring {
+                        from: 20.,
+                        to: -10.,
+                        ..spring
+                    };
+
+                    assert_eq!(spring.clamped_duration(), sampled_clamped_duration(&spring));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn clamped_duration_refines_recurrence_rounding() {
+        let spring = Spring {
+            from: -648_086.645_175_589_4,
+            to: -364_328.660_608_425_74,
+            initial_velocity: -64_443.800_779_584_76,
+            params: SpringParams {
+                damping: 24.216_979_350_651_293,
+                mass: 1.,
+                stiffness: 147.329_648_401_000_55,
+                epsilon: 3.754_861_783_588_041e-8,
+            },
+        };
+
+        assert_eq!(spring.clamped_duration(), Some(Duration::from_millis(2646)));
+        assert_eq!(spring.clamped_duration(), sampled_clamped_duration(&spring));
+    }
+
+    #[test]
+    fn critical_clamped_duration_matches_direct_sampling() {
+        for stiffness in [1., 100., 1000., 10_000.] {
+            for epsilon in [0., 0.000001, 0.0001, 0.01] {
+                for initial_velocity in [-10_000., -10., 0., 10., 10_000.] {
+                    let spring = Spring {
+                        from: -10.,
+                        to: 20.,
+                        initial_velocity,
+                        params: SpringParams::new(1., stiffness, epsilon),
                     };
 
                     assert_eq!(spring.clamped_duration(), sampled_clamped_duration(&spring));
