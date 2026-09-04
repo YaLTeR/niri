@@ -131,6 +131,7 @@ pub(super) fn build_headless_virtual_output(
         vrr_supported: false,
         vrr_enabled: false,
         logical: Some(logical_output(&output)),
+        max_bpc: None,
     };
 
     let refresh_interval = refresh_interval_from_millihz(u64::from(refresh_millihz as u32));
