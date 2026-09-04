@@ -33,11 +33,12 @@ impl MergeWith<GesturesPart> for Gestures {
     }
 }
 
-/// Push the pointer past a true screen edge (a hard edge with no adjacent
-/// output) to pan focus to the adjacent column (left/right) or workspace
-/// (up/down). Unlike `dnd-edge-*`, this works outside drag-and-drop, requires
-/// the pointer to reach the actual screen boundary (not a proximity band),
-/// has no timer, and performs a single discrete navigation step.
+/// Push the pointer past a true left or right screen edge (a hard edge with no
+/// adjacent output) to pan focus to the adjacent column on the same workspace.
+/// Unlike `dnd-edge-*`, this works outside drag-and-drop, requires the pointer
+/// to reach the actual screen boundary (not a proximity band), has no timer,
+/// and performs a single discrete navigation step. Vertical edges do nothing:
+/// the gesture never switches workspaces.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct EdgeOverscroll {
     /// Accumulated overscroll past the edge (logical px) required to trigger.

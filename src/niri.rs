@@ -360,9 +360,9 @@ pub struct Niri {
     pub pointer_visibility: PointerVisibility,
     pub pointer_inactivity_timer: Option<RegistrationToken>,
     /// True-screen-edge overscroll accumulator (px): grows while the pointer is
-    /// pushing past a hard screen edge with no adjacent output, resets to 0
-    /// once the pointer is back inside. Crossing the configured threshold
-    /// pans focus to the adjacent column/workspace.
+    /// pushing past a hard left/right screen edge with no adjacent output,
+    /// resets to 0 once the pointer is back inside. Crossing the configured
+    /// threshold pans focus to the adjacent column on the same workspace.
     pub edge_overscroll_accum: f64,
     /// Latched after an edge overscroll fired; blocks repeat fires until the pointer
     /// leaves the edge (accumulator resets).

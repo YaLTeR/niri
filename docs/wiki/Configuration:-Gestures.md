@@ -89,7 +89,9 @@ gestures {
 
 <sup>Since: next release</sup>
 
-Push the mouse cursor *past* a true screen edge — a hard edge with no adjacent output, so the motion is clipped — to pan focus to the adjacent column (left/right edge) or workspace (up/down edge).
+Push the mouse cursor *past* a true left or right screen edge — a hard edge with no adjacent output, so the motion is clipped — to pan focus to the adjacent column on the current workspace.
+
+The gesture is horizontal only. Pushing past the top or bottom edge does nothing; it never switches workspaces.
 
 Unlike `dnd-edge-*`, this works outside drag-and-drop, during normal pointer use. It requires the cursor to reach the *actual* screen boundary (not a proximity band) and keep pushing; the clipped over-travel accumulates and, once it crosses `resistance`, performs a single discrete navigation step. Because the pointer is pinned at a hard edge, incidental edge contact accumulates only a few pixels and cannot trigger it — there is no timer and no heuristic.
 
@@ -103,8 +105,8 @@ This is primarily useful for scrollable layouts run *without* left/right `struts
 
 ```kdl
 gestures {
-    // Shove the cursor ~200 px past a screen edge to pan focus
-    // to the adjacent column / workspace.
+    // Shove the cursor ~200 px past the left or right screen edge
+    // to pan focus to the adjacent column.
     edge-overscroll {
         resistance 200
     }
