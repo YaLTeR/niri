@@ -656,6 +656,79 @@ mod tests {
     }
 
     #[test]
+    fn parse_bind_release_sections() {
+        // Release sections are not supported for scroll binds, since scroll ticks are dispatched as press events only.
+        assert!(Config::parse_mem(
+            r#"
+            binds {
+                Mod+WheelScrollDown {
+                    release { toggle-overview; }
+                }
+            }
+            "#
+        )
+        .is_err());
+        assert!(Config::parse_mem(
+            r#"
+            binds {
+                Mod+TouchpadScrollDown {
+                    release { toggle-overview; }
+                }
+            }
+            "#
+        )
+        .is_err());
+
+        // Mouse buttons and keys do have release events, so those are fine.
+        do_parse(
+            r#"
+            binds {
+                Mod+MouseLeft {
+                    release { close-window; }
+                }
+                Mod+Q {
+                    press { close-window; }
+                    release { close-window; }
+                }
+            }
+            "#,
+        );
+    }
+
+    #[test]
+    fn parse_bind_repeat_on_release_only() {
+        // repeat=true on a release-only bind has no effect and is rejected.
+        assert!(Config::parse_mem(
+            r#"
+            binds {
+                Mod+Q repeat=true {
+                    release { close-window; }
+                }
+            }
+            "#
+        )
+        .is_err());
+
+        do_parse(
+            r#"
+            binds {
+                Mod+T repeat=true { spawn "alacritty"; }
+                Mod+Q repeat=true {
+                    press { close-window; }
+                    release { close-window; }
+                }
+                Mod+W {
+                    release { close-window; }
+                }
+                Mod+E repeat=false {
+                    release { close-window; }
+                }
+            }
+            "#,
+        );
+    }
+
+    #[test]
     fn parse_on_xdg_activate() {
         let parsed = do_parse(
             r#"

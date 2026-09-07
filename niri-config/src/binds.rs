@@ -867,6 +867,7 @@ where
             .map_err(|e| DecodeError::conversion(&node.node_name, e.wrap_err("invalid keybind")))?;
 
         let mut repeat: Option<bool> = None;
+        let mut repeat_node = None;
         let mut cooldown = None;
         let mut allow_when_locked = false;
         let mut allow_when_locked_node = None;
@@ -878,6 +879,7 @@ where
             match &***name {
                 "repeat" => {
                     repeat = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                    repeat_node = Some(name);
                 }
                 "cooldown-ms" => {
                     cooldown = Some(Duration::from_millis(
@@ -1024,6 +1026,27 @@ where
             }
         }
 
+        if release_action.is_some()
+            && matches!(
+                key.trigger,
+                Trigger::WheelScrollDown
+                    | Trigger::WheelScrollUp
+                    | Trigger::WheelScrollLeft
+                    | Trigger::WheelScrollRight
+                    | Trigger::TouchpadScrollDown
+                    | Trigger::TouchpadScrollUp
+                    | Trigger::TouchpadScrollLeft
+                    | Trigger::TouchpadScrollRight
+            )
+        {
+            ctx.emit_error(DecodeError::unexpected(
+                node,
+                "bind",
+                "release sections are not supported for scroll binds",
+            ));
+            release_action = None;
+        }
+
         if press_action.is_none() && release_action.is_none() {
             // If a press or release section was present, an error about its missing or invalid action was already emitted above.
             let has_section = node.children().any(|child| {
@@ -1037,6 +1060,16 @@ where
                 ));
             }
             return Ok(dummy);
+        }
+
+        if let Some(node) = repeat_node {
+            if repeat == Some(true) && press_action.is_none() && release_action.is_some() {
+                ctx.emit_error(DecodeError::unexpected(
+                    node,
+                    "property",
+                    "repeat has no effect on release-only binds",
+                ));
+            }
         }
 
         if let Some(ref action) = press_action {

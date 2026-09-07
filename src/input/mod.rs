@@ -441,6 +441,10 @@ impl State {
             }
         }
 
+        // Cross-invalidation: clear other release triggers.
+        self.niri.valid_mouse_release_trigger = None;
+        self.niri.valid_tablet_release_trigger = None;
+
         if pressed {
             self.hide_cursor_if_needed();
         }
@@ -4675,11 +4679,6 @@ fn should_intercept_key<'a>(
         }
 
         if use_screenshot_ui_action {
-            let _release = if let Some(bind) = &final_bind {
-                bind.has_release()
-            } else {
-                false
-            };
             if let Some(raw) = raw {
                 final_bind = screenshot_ui.action(raw, mods).map(|action| Bind {
                     key: Key {
@@ -4715,7 +4714,7 @@ fn should_intercept_key<'a>(
                 }
             } else {
                 suppressed_keys.insert(key_code);
-                if bind.has_release() && !bind.has_press() {
+                if bind.is_release_only() {
                     // If this is a release-only bind it should still be intercepted. This does mean
                     // it can be intercepted and then not end up being part of a real bind, but
                     // that's very much an edge case and better than failing to intercept a
