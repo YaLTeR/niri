@@ -4837,7 +4837,15 @@ fn find_configured_bind<'a>(
         _ => false,
     };
 
-    if trigger == Trigger::KeyCompositor {
+    // Check if the trigger is the mod key itself, either bound as `Mod` or as its own keysym (like `Super_L` when the mod key is Super).
+    // In this case its modifier is part of the trigger, not a held modifier.
+    let trigger_is_mod_key = match trigger {
+        Trigger::KeyCompositor => true,
+        Trigger::Keysym(keysym) => trigger_is_modifier && mod_key.matches_keysym(keysym),
+        _ => false,
+    };
+
+    if trigger_is_mod_key {
         modifiers.remove(mod_key.to_modifiers());
     } else {
         if trigger_is_modifier {
@@ -4862,7 +4870,7 @@ fn find_configured_bind<'a>(
         }
 
         let mut bind_modifiers = bind.key.modifiers;
-        if !trigger_is_modifier {
+        if !trigger_is_mod_key {
             if bind_modifiers.contains(Modifiers::COMPOSITOR) {
                 bind_modifiers |= mod_key.to_modifiers();
             } else if bind_modifiers.contains(mod_key.to_modifiers()) {
@@ -4879,6 +4887,7 @@ fn find_configured_bind<'a>(
 }
 
 /// Convert a modifier keysym to its corresponding Modifiers flags.
+#[allow(non_upper_case_globals)]
 fn keysym_to_modifiers(trigger: Trigger) -> Modifiers {
     match trigger {
         Trigger::Keysym(keysym) => {
@@ -5521,6 +5530,8 @@ mod tests {
     const OTHER_KEY_CODE: Keycode = Keycode::new(OTHER_KEYSYM.raw());
     const NONE_KEY_CODE: Keycode = Keycode::new(NONE_KEYSYM.raw());
     const MOD_KEY_CODE: Keycode = Keycode::new(MOD_KEYSYM.raw());
+    const CTRL_KEYSYM: Keysym = Keysym::Control_L;
+    const CTRL_KEY_CODE: Keycode = Keycode::new(CTRL_KEYSYM.raw());
     struct TestState {
         screenshot_ui: ScreenshotUi,
         disable_power_key_handling: bool,
@@ -5621,6 +5632,28 @@ mod tests {
             Some(MOD_KEYSYM),
             pressed,
             *mods,
+            &state.screenshot_ui,
+            state.disable_power_key_handling,
+            state.is_inhibiting,
+            &mut state.valid_release_trigger,
+        )
+    }
+
+    fn process_ctrl_key(
+        state: &mut TestState,
+        bindings: &Binds,
+        mods: ModifiersState,
+        pressed: bool,
+    ) -> ShouldInterceptResult {
+        should_intercept_key(
+            &mut state.suppressed_keys,
+            &bindings.0,
+            ModKey::Super,
+            CTRL_KEY_CODE,
+            CTRL_KEYSYM,
+            Some(CTRL_KEYSYM),
+            pressed,
+            mods,
             &state.screenshot_ui,
             state.disable_power_key_handling,
             state.is_inhibiting,
@@ -6366,6 +6399,130 @@ mod tests {
                 true,
             ),
             None,
+        );
+    }
+
+    #[test]
+    fn mod_plus_modifier_key_trigger() {
+        let bindings = Binds(vec![Bind {
+            key: Key {
+                trigger: Trigger::Keysym(CTRL_KEYSYM),
+                modifiers: Modifiers::COMPOSITOR,
+            },
+            press_action: Some(Action::CloseWindow),
+            release_action: Some(Action::CloseWindow),
+            repeat: false,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: true,
+            allow_invalidation: true,
+            hotkey_overlay_title: None,
+        }]);
+
+        let mut state = create_test_state();
+
+        // Press Control_L with the mod key held.
+        let mods = ModifiersState {
+            logo: true,
+            ctrl: true,
+            ..Default::default()
+        };
+        let filter = process_ctrl_key(&mut state, &bindings, mods, true);
+        assert_matches!(
+            filter,
+            ShouldInterceptResult::ForwardAndHandle(Bind {
+                press_action: Some(Action::CloseWindow),
+                ..
+            })
+        );
+
+        // Release Control_L with the mod key still held.
+        let mods = ModifiersState {
+            logo: true,
+            ..Default::default()
+        };
+        let filter = process_ctrl_key(&mut state, &bindings, mods, false);
+        assert_matches!(
+            filter,
+            ShouldInterceptResult::ForwardAndHandle(Bind {
+                release_action: Some(Action::CloseWindow),
+                ..
+            })
+        );
+    }
+
+    #[test]
+    fn mod_plus_modifier_key_trigger_no_mod() {
+        let bindings = Binds(vec![Bind {
+            key: Key {
+                trigger: Trigger::Keysym(CTRL_KEYSYM),
+                modifiers: Modifiers::COMPOSITOR,
+            },
+            press_action: Some(Action::CloseWindow),
+            release_action: Some(Action::CloseWindow),
+            repeat: false,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: true,
+            allow_invalidation: true,
+            hotkey_overlay_title: None,
+        }]);
+
+        let mut state = create_test_state();
+        let mods = ModifiersState {
+            ctrl: true,
+            ..Default::default()
+        };
+        let filter = process_ctrl_key(&mut state, &bindings, mods, true);
+        assert_matches!(filter, ShouldInterceptResult::Forward);
+    }
+
+    #[test]
+    fn alt_plus_modifier_key_trigger() {
+        let bindings = Binds(vec![Bind {
+            key: Key {
+                trigger: Trigger::Keysym(CTRL_KEYSYM),
+                modifiers: Modifiers::ALT,
+            },
+            press_action: Some(Action::CloseWindow),
+            release_action: Some(Action::CloseWindow),
+            repeat: false,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: true,
+            allow_invalidation: true,
+            hotkey_overlay_title: None,
+        }]);
+
+        let mut state = create_test_state();
+
+        // Press Control_L with Alt held.
+        let mods = ModifiersState {
+            alt: true,
+            ctrl: true,
+            ..Default::default()
+        };
+        let filter = process_ctrl_key(&mut state, &bindings, mods, true);
+        assert_matches!(
+            filter,
+            ShouldInterceptResult::ForwardAndHandle(Bind {
+                press_action: Some(Action::CloseWindow),
+                ..
+            })
+        );
+
+        // Release Control_L with Alt still held.
+        let mods = ModifiersState {
+            alt: true,
+            ..Default::default()
+        };
+        let filter = process_ctrl_key(&mut state, &bindings, mods, false);
+        assert_matches!(
+            filter,
+            ShouldInterceptResult::ForwardAndHandle(Bind {
+                release_action: Some(Action::CloseWindow),
+                ..
+            })
         );
     }
 }
