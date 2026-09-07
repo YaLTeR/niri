@@ -67,6 +67,12 @@ pub enum Msg {
     Workspaces,
     /// List open windows.
     Windows,
+    /// Query live geometry of an exactly focused, stationary window.
+    WindowGeometry {
+        /// Window ID.
+        #[arg(long)]
+        id: u64,
+    },
     /// List open layer-shell surfaces.
     Layers,
     /// Get the configured keyboard layouts.

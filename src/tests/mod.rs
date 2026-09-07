@@ -12,3 +12,4 @@ mod pointer_constraints;
 mod remove_output;
 mod transactions;
 mod window_opening;
+mod window_geometry;

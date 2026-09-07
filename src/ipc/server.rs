@@ -287,6 +287,17 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let windows = state.windows.windows.values().cloned().collect();
             Response::Windows(windows)
         }
+        Request::WindowGeometry { id } => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let _ = tx.send_blocking(window_geometry(state, id));
+            });
+            Response::WindowGeometry(
+                rx.recv()
+                    .await
+                    .map_err(|_| "error querying window geometry".to_string())??,
+            )
+        }
         Request::Layers => {
             let (tx, rx) = async_channel::bounded(1);
             ctx.event_loop.insert_idle(move |state| {
@@ -458,6 +469,76 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
     };
 
     Ok(response)
+}
+
+pub(crate) fn window_geometry(state: &State, id: u64) -> Result<niri_ipc::WindowGeometry, String> {
+    let niri = &state.niri;
+    if niri.is_locked()
+        || niri.layout.is_overview_open()
+        || niri.screenshot_ui.is_open()
+        || niri.exit_confirm_dialog.is_open()
+        || niri.window_mru_ui.is_open()
+    {
+        return Err("window geometry is unavailable while locked or an overlay is open".into());
+    }
+    let mut target = None;
+    niri.layout.with_windows(|mapped, _, workspace, _| {
+        if mapped.id().get() == id && mapped.is_focused() && workspace.is_some() {
+            target = Some(mapped.window.clone());
+        }
+    });
+    let window = target.ok_or("window geometry requires the exact focused, non-dragged window")?;
+    if !matches!(&niri.keyboard_focus, crate::niri::KeyboardFocus::Layout { surface: Some(surface) }
+        if surface == window.toplevel().unwrap().wl_surface())
+    {
+        return Err("window geometry requires actual input focus, not layer-shell focus".into());
+    }
+    let (output, buffer_origin, zoom) = niri
+        .layout
+        .window_render_location(&window)
+        .ok_or("focused window has no current render placement")?;
+    if niri
+        .output_state
+        .get(&output)
+        .is_some_and(|state| state.screen_transition.is_some())
+    {
+        return Err("window geometry is unavailable during a screen transition".into());
+    }
+    if zoom != 1.0 || niri.layout.are_animations_ongoing(Some(&output)) {
+        return Err(
+            "window geometry is unavailable during layout transitions; retry when settled".into(),
+        );
+    }
+    let output_geometry = niri
+        .global_space
+        .output_geometry(&output)
+        .ok_or("window output has no global geometry")?;
+    let geometry = window.geometry();
+    let origin = output_geometry.loc.to_f64() + buffer_origin + geometry.loc.to_f64();
+    if !origin.x.is_finite()
+        || !origin.y.is_finite()
+        || geometry.size.w <= 0
+        || geometry.size.h <= 0
+    {
+        return Err("window geometry is invalid".into());
+    }
+    let outputs = niri
+        .global_space
+        .outputs()
+        .filter_map(|output| {
+            niri.global_space
+                .output_geometry(output)
+                .map(|r| (r.loc.x, r.loc.y, r.size.w, r.size.h))
+        })
+        .collect();
+    Ok(niri_ipc::WindowGeometry {
+        id,
+        x: origin.x,
+        y: origin.y,
+        width: geometry.size.w,
+        height: geometry.size.h,
+        outputs,
+    })
 }
 
 fn validate_action(action: &Action) -> Result<(), String> {

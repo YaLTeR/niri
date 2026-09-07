@@ -43,6 +43,7 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         },
         Msg::Workspaces => Request::Workspaces,
         Msg::Windows => Request::Windows,
+        Msg::WindowGeometry { id } => Request::WindowGeometry { id: *id },
         Msg::Layers => Request::Layers,
         Msg::KeyboardLayouts => Request::KeyboardLayouts,
         Msg::EventStream => Request::EventStream,
@@ -111,6 +112,12 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
     let response = reply.map_err(|err_msg| anyhow!(err_msg).context("niri returned an error"))?;
 
     match msg {
+        Msg::WindowGeometry { .. } => {
+            let Response::WindowGeometry(geometry) = response else {
+                bail!("unexpected response: expected WindowGeometry, got {response:?}");
+            };
+            println!("{}", serde_json::to_string(&geometry)?);
+        }
         Msg::RequestError => {
             bail!("unexpected response: expected an error, got {response:?}");
         }

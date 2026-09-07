@@ -73,6 +73,11 @@ pub enum Request {
     Workspaces,
     /// Request information about open windows.
     Windows,
+    /// Query current global logical geometry of an exactly focused, stationary window.
+    WindowGeometry {
+        /// Window ID. Geometry is refused for unfocused or transitioning windows.
+        id: u64,
+    },
     /// Request information about layer-shell surfaces.
     Layers,
     /// Request information about the configured keyboard layouts.
@@ -147,6 +152,8 @@ pub enum Response {
     Workspaces(Vec<Workspace>),
     /// Information about open windows.
     Windows(Vec<Window>),
+    /// Current window geometry, queried on demand rather than streamed per frame.
+    WindowGeometry(WindowGeometry),
     /// Information about layer-shell surfaces.
     Layers(Vec<LayerSurface>),
     /// Information about the keyboard layout.
@@ -165,6 +172,24 @@ pub enum Response {
     OverviewState(Overview),
     /// Information about screencasts.
     Casts(Vec<Cast>),
+}
+
+/// Global logical window geometry for targeted desktop interaction.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct WindowGeometry {
+    /// Exact focused window ID.
+    pub id: u64,
+    /// Left coordinate in global logical desktop space.
+    pub x: f64,
+    /// Top coordinate in global logical desktop space.
+    pub y: f64,
+    /// Visual window width, excluding compositor decorations.
+    pub width: i32,
+    /// Visual window height, excluding compositor decorations.
+    pub height: i32,
+    /// Logical output rectangles from the same compositor snapshot: x, y, width, height.
+    pub outputs: Vec<(i32, i32, i32, i32)>,
 }
 
 /// Overview information.

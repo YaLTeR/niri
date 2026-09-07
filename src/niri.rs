@@ -494,7 +494,7 @@ pub struct OutputState {
     pub lock_render_state: LockRenderState,
     pub lock_surface: Option<LockSurface>,
     pub lock_color_buffer: SolidColorBuffer,
-    screen_transition: Option<ScreenTransition>,
+    pub(crate) screen_transition: Option<ScreenTransition>,
     /// Damage tracker used for the debug damage visualization.
     pub debug_damage_tracker: OutputDamageTracker,
 }
