@@ -4858,6 +4858,10 @@ fn find_configured_bind<'a>(
         }
     }
 
+    // If there is an exact match, return it.
+    // Otherwise, if allow-invalidation=false, return the first bind whose modifiers are a subset of the held modifiers.
+    let mut relaxed_match = None;
+
     for bind in bindings {
         let is_press_bind = bind.press_action.is_some();
         let is_release_bind = bind.release_action.is_some();
@@ -4881,9 +4885,17 @@ fn find_configured_bind<'a>(
         if bind_modifiers == modifiers {
             return Some(bind.clone());
         }
+
+        if !pressed
+            && !bind.allow_invalidation
+            && relaxed_match.is_none()
+            && modifiers.contains(bind_modifiers)
+        {
+            relaxed_match = Some(bind);
+        }
     }
 
-    None
+    relaxed_match.cloned()
 }
 
 /// Convert a modifier keysym to its corresponding Modifiers flags.
@@ -5532,6 +5544,8 @@ mod tests {
     const MOD_KEY_CODE: Keycode = Keycode::new(MOD_KEYSYM.raw());
     const CTRL_KEYSYM: Keysym = Keysym::Control_L;
     const CTRL_KEY_CODE: Keycode = Keycode::new(CTRL_KEYSYM.raw());
+    const SHIFT_KEYSYM: Keysym = Keysym::Shift_L;
+    const SHIFT_KEY_CODE: Keycode = Keycode::new(SHIFT_KEYSYM.raw());
     struct TestState {
         screenshot_ui: ScreenshotUi,
         disable_power_key_handling: bool,
@@ -6524,5 +6538,231 @@ mod tests {
                 ..
             })
         );
+    }
+
+    #[test]
+    fn allow_invalidation_false_with_extra_modifiers() {
+        let bindings = Binds(vec![Bind {
+            key: Key {
+                trigger: Trigger::Keysym(CTRL_KEYSYM),
+                modifiers: Modifiers::COMPOSITOR,
+            },
+            press_action: None,
+            release_action: Some(Action::CloseWindow),
+            repeat: false,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: true,
+            allow_invalidation: false,
+            hotkey_overlay_title: None,
+        }]);
+
+        let mut state = create_test_state();
+
+        // Press Control_L with the mod key held.
+        let mods = ModifiersState {
+            logo: true,
+            ctrl: true,
+            ..Default::default()
+        };
+        let filter = process_ctrl_key(&mut state, &bindings, mods, true);
+        assert_matches!(filter, ShouldInterceptResult::Forward);
+
+        // Press a second modifier key, invalidating the release.
+        let mods = ModifiersState {
+            logo: true,
+            ctrl: true,
+            shift: true,
+            ..Default::default()
+        };
+        let filter = should_intercept_key(
+            &mut state.suppressed_keys,
+            &bindings.0,
+            ModKey::Super,
+            SHIFT_KEY_CODE,
+            SHIFT_KEYSYM,
+            Some(SHIFT_KEYSYM),
+            true,
+            mods,
+            &state.screenshot_ui,
+            state.disable_power_key_handling,
+            state.is_inhibiting,
+            &mut state.valid_release_trigger,
+        );
+        assert_matches!(filter, ShouldInterceptResult::Forward);
+
+        // Release Control_L with the second modifier still held: the release action must still
+        // fire thanks to allow-invalidation=false.
+        let mods = ModifiersState {
+            logo: true,
+            shift: true,
+            ..Default::default()
+        };
+        let filter = process_ctrl_key(&mut state, &bindings, mods, false);
+        assert_matches!(
+            filter,
+            ShouldInterceptResult::ForwardAndHandle(Bind {
+                release_action: Some(Action::CloseWindow),
+                ..
+            })
+        );
+    }
+
+    #[test]
+    fn allow_invalidation_false_with_extra_modifiers_regular_trigger() {
+        let bindings = Binds(vec![Bind {
+            key: Key {
+                trigger: Trigger::Keysym(CLOSE_KEYSYM),
+                modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
+            },
+            press_action: None,
+            release_action: Some(Action::CloseWindow),
+            repeat: false,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: true,
+            allow_invalidation: false,
+            hotkey_overlay_title: None,
+        }]);
+
+        let mut state = create_test_state();
+
+        // Press Q with Mod+Ctrl held.
+        let mods = ModifiersState {
+            logo: true,
+            ctrl: true,
+            ..Default::default()
+        };
+        let filter = process_close_key(&mut state, &bindings, mods, true);
+        assert_matches!(filter, ShouldInterceptResult::InterceptOnly);
+        assert!(state.suppressed_keys.contains(&CLOSE_KEY_CODE));
+
+        // Press a second modifier key, invalidating the release.
+        let mods = ModifiersState {
+            logo: true,
+            ctrl: true,
+            shift: true,
+            ..Default::default()
+        };
+        let filter = should_intercept_key(
+            &mut state.suppressed_keys,
+            &bindings.0,
+            ModKey::Super,
+            SHIFT_KEY_CODE,
+            SHIFT_KEYSYM,
+            Some(SHIFT_KEYSYM),
+            true,
+            mods,
+            &state.screenshot_ui,
+            state.disable_power_key_handling,
+            state.is_inhibiting,
+            &mut state.valid_release_trigger,
+        );
+        assert_matches!(filter, ShouldInterceptResult::Forward);
+
+        // Release Q with the second modifier still held: the release action must still fire.
+        let mods = ModifiersState {
+            logo: true,
+            ctrl: true,
+            shift: true,
+            ..Default::default()
+        };
+        let filter = process_close_key(&mut state, &bindings, mods, false);
+        assert_matches!(
+            filter,
+            ShouldInterceptResult::InterceptAndHandle(Bind {
+                release_action: Some(Action::CloseWindow),
+                ..
+            })
+        );
+        assert!(state.suppressed_keys.is_empty());
+    }
+
+    #[test]
+    fn allow_invalidation_true_ignores_extra_modifiers() {
+        let bindings = Binds(vec![Bind {
+            key: Key {
+                trigger: Trigger::Keysym(CTRL_KEYSYM),
+                modifiers: Modifiers::COMPOSITOR,
+            },
+            press_action: None,
+            release_action: Some(Action::CloseWindow),
+            repeat: false,
+            cooldown: None,
+            allow_when_locked: false,
+            allow_inhibiting: true,
+            allow_invalidation: true,
+            hotkey_overlay_title: None,
+        }]);
+
+        let mut state = create_test_state();
+
+        // Press Control_L with the mod key held.
+        let mods = ModifiersState {
+            logo: true,
+            ctrl: true,
+            ..Default::default()
+        };
+        let filter = process_ctrl_key(&mut state, &bindings, mods, true);
+        assert_matches!(filter, ShouldInterceptResult::Forward);
+
+        // Release Control_L with an extra modifier held: no match, nothing to handle.
+        let mods = ModifiersState {
+            logo: true,
+            shift: true,
+            ..Default::default()
+        };
+        let filter = process_ctrl_key(&mut state, &bindings, mods, false);
+        assert_matches!(filter, ShouldInterceptResult::Forward);
+    }
+
+    #[test]
+    fn exact_match_beats_relaxed_fallback() {
+        let bindings = Binds(vec![
+            Bind {
+                key: Key {
+                    trigger: Trigger::Keysym(CLOSE_KEYSYM),
+                    modifiers: Modifiers::COMPOSITOR,
+                },
+                press_action: None,
+                release_action: Some(Action::CloseWindow),
+                repeat: false,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                allow_invalidation: false,
+                hotkey_overlay_title: None,
+            },
+            Bind {
+                key: Key {
+                    trigger: Trigger::Keysym(CLOSE_KEYSYM),
+                    modifiers: Modifiers::COMPOSITOR | Modifiers::CTRL,
+                },
+                press_action: None,
+                release_action: Some(Action::ToggleOverview),
+                repeat: false,
+                cooldown: None,
+                allow_when_locked: false,
+                allow_inhibiting: true,
+                allow_invalidation: true,
+                hotkey_overlay_title: None,
+            },
+        ]);
+
+        // With Mod+Ctrl held, the exact `Mod+Ctrl+Q` match must win over the relaxed
+        // `Mod+Q` fallback, even though the latter comes first in the config.
+        let matched = find_configured_bind(
+            &bindings.0,
+            ModKey::Super,
+            Trigger::Keysym(CLOSE_KEYSYM),
+            ModifiersState {
+                logo: true,
+                ctrl: true,
+                ..Default::default()
+            },
+            false,
+        )
+        .unwrap();
+        assert_eq!(matched.release_action, Some(Action::ToggleOverview));
     }
 }

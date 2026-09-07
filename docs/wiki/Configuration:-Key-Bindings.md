@@ -128,6 +128,8 @@ binds {
 }
 ```
 
+Note that the modifiers of the bind itself (e.g. `Mod` in `Mod+T`) must still be held when the key is released, both for regular and invalidated releases. Extra modifiers that are not part of the bind are only allowed when `allow-invalidation=false`.
+
 ### Scroll Bindings
 
 You can bind mouse wheel scroll ticks using the following syntax.
