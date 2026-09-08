@@ -206,6 +206,8 @@ You can find the title and the app ID of a window by running `niri msg pick-wind
 
 #### `xdg-tag`
 
+<sup>Since: next release</sup>
+
 This is a regular expression that should match anywhere in the window's XDG toplevel tag.
 This always fails if the window has not set an XDG toplevel tag.
 See above for more information on regular expressions.
