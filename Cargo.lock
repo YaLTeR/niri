@@ -2184,6 +2184,7 @@ dependencies = [
  "bitflags",
  "csscolorparser",
  "diff",
+ "input",
  "insta",
  "knuffel",
  "miette",
