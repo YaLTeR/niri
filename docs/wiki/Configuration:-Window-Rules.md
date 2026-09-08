@@ -171,19 +171,17 @@ window-rule {
 
 Let's look at the matchers in more detail.
 
-#### `title`, `app-id`, and `xdg-tag`
+#### `title` and `app-id`
 
-These are regular expressions that should match anywhere in the window title, app ID, and XDG toplevel tag respectively.
+These are regular expressions that should match anywhere in the window title and app ID respectively.
 You can read about the supported regular expression syntax [here](https://docs.rs/regex/latest/regex/#syntax).
 
 ```kdl
 // Match windows with title containing "Mozilla Firefox",
-// windows with app ID containing "Alacritty",
-// or windows with XDG toplevel tag containing "proton-game".
+// or windows with app ID containing "Alacritty".
 window-rule {
     match title="Mozilla Firefox"
     match app-id="Alacritty"
-    match xdg-tag="proton-game"
 }
 ```
 
@@ -195,7 +193,7 @@ window-rule {
 }
 ```
 
-You can find the title, the app ID, and the XDG toplevel tag (if any) of a window by running `niri msg pick-window` and clicking on the window in question.
+You can find the title and the app ID of a window by running `niri msg pick-window` and clicking on the window in question.
 
 > [!TIP]
 > Another way to find the window title and app ID is to configure the `wlr/taskbar` module in [Waybar](https://github.com/Alexays/Waybar) to include them in the tooltip:
@@ -205,6 +203,22 @@ You can find the title, the app ID, and the XDG toplevel tag (if any) of a windo
 >     "tooltip-format": "{title} | {app_id}",
 > }
 > ```
+
+#### `xdg-tag`
+
+This is a regular expression that should match anywhere in the window's XDG toplevel tag.
+This always fails if the window has not set an XDG toplevel tag.
+See above for more information on regular expressions.
+
+```kdl
+// Match windows with the XDG toplevel tag "proton-game".
+// Note that only some versions of Proton set this.
+window-rule {
+    match xdg-tag="^proton-game$"
+}
+```
+
+You can find the XDG toplevel tag of a window by running `niri msg pick-window` and clicking on the window in question.
 
 #### `is-active`
 
