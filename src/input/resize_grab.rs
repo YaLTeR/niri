@@ -1,3 +1,4 @@
+use smithay::backend::input::InputTime;
 use smithay::desktop::Window;
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, CursorImageStatus, GestureHoldBeginEvent, GestureHoldEndEvent,
@@ -116,7 +117,7 @@ impl PointerGrab<State> for ResizeGrab {
                 self,
                 data,
                 SERIAL_COUNTER.next_serial(),
-                get_monotonic_time().as_millis() as u32,
+                InputTime::from_micros(get_monotonic_time().as_micros() as u64),
                 true,
             );
         }
@@ -354,7 +355,7 @@ impl TabletToolGrab<State> for ResizeGrab {
         &mut self,
         data: &mut State,
         handle: &mut TabletToolInnerHandle<'_, State>,
-        time: u32,
+        time: InputTime,
     ) {
         handle.frame(data, time);
 
@@ -364,7 +365,7 @@ impl TabletToolGrab<State> for ResizeGrab {
                 self,
                 data,
                 SERIAL_COUNTER.next_serial(),
-                get_monotonic_time().as_millis() as u32,
+                InputTime::from_micros(get_monotonic_time().as_micros() as u64),
                 true,
             );
         }
