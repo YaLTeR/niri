@@ -4,6 +4,7 @@ mod client;
 mod fixture;
 mod server;
 
+mod activation;
 mod animations;
 mod floating;
 mod fullscreen;
