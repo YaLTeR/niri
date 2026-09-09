@@ -30,6 +30,9 @@ use smithay::wayland::dmabuf::{DmabufGlobal, DmabufHandler, DmabufState, ImportN
 use smithay::wayland::drm_lease::{
     DrmLease, DrmLeaseBuilder, DrmLeaseHandler, DrmLeaseRequest, DrmLeaseState, LeaseRejected,
 };
+use smithay::wayland::foreign_toplevel_list::{
+    ForeignToplevelListHandler, ForeignToplevelListState,
+};
 use smithay::wayland::fractional_scale::FractionalScaleHandler;
 use smithay::wayland::idle_inhibit::IdleInhibitHandler;
 use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
@@ -39,7 +42,7 @@ use smithay::wayland::keyboard_shortcuts_inhibit::{
 };
 use smithay::wayland::output::OutputHandler;
 use smithay::wayland::pointer_constraints::{
-    with_pointer_constraint, PointerConstraint, PointerConstraintsHandler,
+    with_pointer_constraint, ConstraintRemove, PointerConstraintsHandler,
 };
 use smithay::wayland::security_context::{
     SecurityContext, SecurityContextHandler, SecurityContextListenerSource,
@@ -60,6 +63,10 @@ use smithay::wayland::selection::{SelectionHandler, SelectionTarget};
 use smithay::wayland::session_lock::{
     LockSurface, SessionLockHandler, SessionLockManagerState, SessionLocker,
 };
+use smithay::wayland::virtual_keyboard::{
+    VirtualKeyboardBackend, VirtualKeyboardHandler, VirtualKeyboardSpecialEvent,
+};
+use smithay::wayland::virtual_pointer::{VirtualPointerBackend, VirtualPointerHandler};
 use smithay::wayland::xdg_activation::{
     XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
 };
@@ -77,11 +84,6 @@ use crate::protocols::gamma_control::{GammaControlHandler, GammaControlManagerSt
 use crate::protocols::mutter_x11_interop::MutterX11InteropHandler;
 use crate::protocols::output_management::{OutputManagementHandler, OutputManagementManagerState};
 use crate::protocols::screencopy::{Screencopy, ScreencopyHandler, ScreencopyManagerState};
-use crate::protocols::virtual_pointer::{
-    VirtualPointerAxisEvent, VirtualPointerButtonEvent, VirtualPointerHandler,
-    VirtualPointerInputBackend, VirtualPointerManagerState, VirtualPointerMotionAbsoluteEvent,
-    VirtualPointerMotionEvent,
-};
 use crate::utils::{output_size, send_scale_transform};
 
 pub const XDG_ACTIVATION_TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -206,7 +208,7 @@ impl PointerConstraintsHandler for State {
         &mut self,
         _surface: &WlSurface,
         pointer: &PointerHandle<Self>,
-        _constraint: Option<&PointerConstraint>,
+        reason: ConstraintRemove,
     ) {
         // Since a pointer constraint is broken when a surface loses pointer focus, and one surface
         // can only have a single pointer constraint at once, assume there can be only one
@@ -219,11 +221,7 @@ impl PointerConstraintsHandler for State {
 
         // If the constraint was broken by the pointer forcibly leaving the surface (e.g. the user
         // opened the overview), then it doesn't make much sense to warp it.
-        //
-        // Furthermore, when the constraint is removed as part of the pointer leaving the surface,
-        // this call happens with locked pointer data, and calling set_location() will try to lock
-        // it again and deadlock.
-        if pointer.last_enter().is_none() {
+        if matches!(reason, ConstraintRemove::PointerLeave(_)) {
             return;
         }
 
@@ -531,6 +529,12 @@ impl IdleInhibitHandler for State {
     }
 }
 
+impl ForeignToplevelListHandler for State {
+    fn foreign_toplevel_list_state(&mut self) -> &mut ForeignToplevelListState {
+        self.niri.foreign_toplevel_state.ext_list_state()
+    }
+}
+
 impl ForeignToplevelHandler for State {
     fn foreign_toplevel_manager_state(&mut self) -> &mut ForeignToplevelManagerState {
         &mut self.niri.foreign_toplevel_state
@@ -660,26 +664,55 @@ impl ScreencopyHandler for State {
 }
 
 impl VirtualPointerHandler for State {
-    fn virtual_pointer_manager_state(&mut self) -> &mut VirtualPointerManagerState {
-        &mut self.niri.virtual_pointer_state
+    fn process_virtual_pointer_event(&mut self, event: InputEvent<VirtualPointerBackend>) {
+        self.process_input_event(event);
     }
+}
 
-    fn on_virtual_pointer_motion(&mut self, event: VirtualPointerMotionEvent) {
-        self.process_input_event(InputEvent::<VirtualPointerInputBackend>::PointerMotion { event });
-    }
-
-    fn on_virtual_pointer_motion_absolute(&mut self, event: VirtualPointerMotionAbsoluteEvent) {
-        self.process_input_event(
-            InputEvent::<VirtualPointerInputBackend>::PointerMotionAbsolute { event },
-        );
-    }
-
-    fn on_virtual_pointer_button(&mut self, event: VirtualPointerButtonEvent) {
-        self.process_input_event(InputEvent::<VirtualPointerInputBackend>::PointerButton { event });
-    }
-
-    fn on_virtual_pointer_axis(&mut self, event: VirtualPointerAxisEvent) {
-        self.process_input_event(InputEvent::<VirtualPointerInputBackend>::PointerAxis { event });
+impl VirtualKeyboardHandler for State {
+    fn process_virtual_keyboard_event(&mut self, event: InputEvent<VirtualKeyboardBackend>) {
+        match event {
+            InputEvent::Keyboard { event } => {
+                use smithay::backend::input::Event;
+                self.activate_virtual_keyboard_keymap(&event.device());
+                self.process_input_event(InputEvent::<VirtualKeyboardBackend>::Keyboard { event });
+            }
+            InputEvent::Special(VirtualKeyboardSpecialEvent::Modifiers {
+                device,
+                mods_depressed,
+                mods_latched,
+                mods_locked,
+                group,
+            }) => {
+                self.activate_virtual_keyboard_keymap(&device);
+                let keyboard = self.niri.seat.get_keyboard().unwrap();
+                keyboard.with_xkb_state(self, |mut context| {
+                    context.set_modifier_mask(mods_depressed, mods_latched, mods_locked, group);
+                });
+            }
+            InputEvent::Special(VirtualKeyboardSpecialEvent::KeymapChanged { .. }) => {
+                // The new keymap will be activated by the next key or modifiers event.
+            }
+            InputEvent::DeviceRemoved { device } => {
+                // Restore the original keymap if this device is active. This is
+                // checked based on the device rather than on the keymap, since
+                // the client may have replaced its keymap after we activated it
+                // and not sent any key/modifier events afterwards before
+                // removing the device.
+                let active = self
+                    .niri
+                    .virtual_keyboard_keymap
+                    .as_ref()
+                    .is_some_and(|active| active.device == device);
+                if active {
+                    self.set_configured_keymap();
+                }
+                self.process_input_event(InputEvent::<VirtualKeyboardBackend>::DeviceRemoved {
+                    device,
+                });
+            }
+            event => self.process_input_event(event),
+        }
     }
 }
 

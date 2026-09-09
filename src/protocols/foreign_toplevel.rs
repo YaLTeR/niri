@@ -4,12 +4,10 @@ use std::sync::Arc;
 
 use arrayvec::ArrayVec;
 use smithay::output::Output;
-use smithay::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::{
-    ext_foreign_toplevel_handle_v1::{self, ExtForeignToplevelHandleV1}, ext_foreign_toplevel_list_v1::{self, ExtForeignToplevelListV1},
-};
+use smithay::reexports::wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_list_v1::ExtForeignToplevelListV1;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::{
-    zwlr_foreign_toplevel_handle_v1::{self, ZwlrForeignToplevelHandleV1}, zwlr_foreign_toplevel_manager_v1::{self, ZwlrForeignToplevelManagerV1},
+    zwlr_foreign_toplevel_handle_v1, zwlr_foreign_toplevel_manager_v1,
 };
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
@@ -17,22 +15,30 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
-use smithay::wayland::{Dispatch2, GlobalDispatch2};
-use smithay::wayland::shell::xdg::{
-    ToplevelState, ToplevelStateSet, XdgToplevelSurfaceRoleAttributes
+use smithay::wayland::foreign_toplevel_list::{
+    ForeignToplevelHandle, ForeignToplevelListGlobalData, ForeignToplevelListHandler,
+    ForeignToplevelListState,
 };
+use smithay::wayland::shell::xdg::{
+    ToplevelState, ToplevelStateSet, XdgToplevelSurfaceRoleAttributes,
+};
+use smithay::wayland::{Dispatch2, GlobalDispatch2};
+use zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1;
+use zwlr_foreign_toplevel_manager_v1::ZwlrForeignToplevelManagerV1;
 
 use crate::niri::State;
 use crate::protocols::EmptyData;
-use crate::window::mapped::MappedId;
 use crate::utils::with_toplevel_role_and_current;
+use crate::window::mapped::MappedId;
 
-const EXT_LIST_VERSION: u32 = 1;
 const WLR_MANAGEMENT_VERSION: u32 = 3;
 
+/// State for the wlr-foreign-toplevel-management protocol.
+///
+/// The ext-foreign-toplevel-list part is handled by Smithay.
 pub struct ForeignToplevelManagerState {
     display: DisplayHandle,
-    ext_list_instances: HashSet<ExtForeignToplevelListV1>,
+    ext_list: ForeignToplevelListState,
     wlr_management_instances: HashSet<ZwlrForeignToplevelManagerV1>,
     toplevels: HashMap<WlSurface, ToplevelData>,
 }
@@ -48,18 +54,16 @@ pub trait ForeignToplevelHandler {
 }
 
 struct ToplevelData {
-    identifier: MappedId,
+    ext_handle: ForeignToplevelHandle,
     title: Option<String>,
     app_id: Option<String>,
     states: ArrayVec<u32, 3>,
     output: Option<Output>,
 
-    ext_list_instances: HashSet<ExtForeignToplevelHandleV1>,
     wlr_management_instances: HashMap<ZwlrForeignToplevelHandleV1, Vec<WlOutput>>,
     // FIXME: parent.
 }
 
-#[derive(Clone)]
 pub struct ForeignToplevelGlobalData {
     filter: Arc<dyn for<'c> Fn(&'c Client) -> bool + Send + Sync>,
 }
@@ -68,42 +72,51 @@ impl ForeignToplevelManagerState {
     pub fn new<D, F>(display: &DisplayHandle, filter: F) -> Self
     where
         D: GlobalDispatch<ZwlrForeignToplevelManagerV1, ForeignToplevelGlobalData>,
-        D: GlobalDispatch<ExtForeignToplevelListV1, ForeignToplevelGlobalData>,
+        D: GlobalDispatch<ExtForeignToplevelListV1, ForeignToplevelListGlobalData>,
+        D: ForeignToplevelListHandler,
         D: 'static,
         F: for<'c> Fn(&'c Client) -> bool + Send + Sync + 'static,
     {
-        let global_data = ForeignToplevelGlobalData {
-            filter: Arc::new(filter),
-        };
-        display
-            .create_global::<D, ExtForeignToplevelListV1, _>(EXT_LIST_VERSION, global_data.clone());
+        let filter = Arc::new(filter);
+
+        let ext_list = ForeignToplevelListState::new_with_filter::<D>(display, {
+            let filter = filter.clone();
+            move |client| filter(client)
+        });
+
         display.create_global::<D, ZwlrForeignToplevelManagerV1, _>(
             WLR_MANAGEMENT_VERSION,
-            global_data,
+            ForeignToplevelGlobalData { filter },
         );
+
         Self {
             display: display.clone(),
-            ext_list_instances: HashSet::new(),
+            ext_list,
             wlr_management_instances: HashSet::new(),
             toplevels: HashMap::new(),
         }
+    }
+
+    pub fn ext_list_state(&mut self) -> &mut ForeignToplevelListState {
+        &mut self.ext_list
     }
 }
 
 pub fn refresh(state: &mut State) {
     let _span = tracy_client::span!("foreign_toplevel::refresh");
 
-    let protocol_state = &mut state.niri.foreign_toplevel_state;
-
     // Handle closed windows.
-    protocol_state.toplevels.retain(|surface, data| {
+    let ForeignToplevelManagerState {
+        ext_list,
+        toplevels,
+        ..
+    } = &mut state.niri.foreign_toplevel_state;
+    toplevels.retain(|surface, data| {
         if state.niri.layout.find_window_and_output(surface).is_some() {
             return true;
         }
 
-        for instance in data.ext_list_instances.iter() {
-            instance.closed();
-        }
+        ext_list.remove_toplevel(&data.ext_handle);
 
         for instance in data.wlr_management_instances.keys() {
             instance.closed();
@@ -111,6 +124,8 @@ pub fn refresh(state: &mut State) {
 
         false
     });
+
+    let protocol_state = &mut state.niri.foreign_toplevel_state;
 
     // Handle new and existing windows.
     //
@@ -243,15 +258,13 @@ fn refresh_toplevel(
                 new_title.is_some() || new_app_id.is_some() || states_changed || output_changed;
 
             if something_changed_for_ext {
-                for instance in &data.ext_list_instances {
-                    if let Some(new_title) = new_title {
-                        instance.title(new_title.to_owned());
-                    }
-                    if let Some(new_app_id) = new_app_id {
-                        instance.app_id(new_app_id.to_owned());
-                    }
-                    instance.done();
+                if let Some(new_title) = new_title {
+                    data.ext_handle.send_title(new_title);
                 }
+                if let Some(new_app_id) = new_app_id {
+                    data.ext_handle.send_app_id(new_app_id);
+                }
+                data.ext_handle.send_done();
             }
 
             if something_changed_for_wlr {
@@ -288,22 +301,24 @@ fn refresh_toplevel(
             }
         }
         Entry::Vacant(entry) => {
-            // New window, start tracking it.
+            // Smithay's handle sends title and app_id unconditionally, so unset ones become empty
+            // strings. In practice, a mapped toplevel already has them set.
+            let ext_handle = protocol_state
+                .ext_list
+                .new_toplevel_with_identifier::<State>(
+                    role.title.clone().unwrap_or_default(),
+                    role.app_id.clone().unwrap_or_default(),
+                    identifier.to_protocol_identifier(),
+                );
+
             let mut data = ToplevelData {
-                identifier,
+                ext_handle,
                 title: role.title.clone(),
                 app_id: role.app_id.clone(),
                 states,
                 output: output.cloned(),
-                ext_list_instances: HashSet::new(),
                 wlr_management_instances: HashMap::new(),
             };
-
-            for manager in &protocol_state.ext_list_instances {
-                if let Some(client) = manager.client() {
-                    data.add_ext_instance::<State>(&protocol_state.display, &client, manager);
-                }
-            }
 
             for manager in &protocol_state.wlr_management_instances {
                 if let Some(client) = manager.client() {
@@ -317,38 +332,6 @@ fn refresh_toplevel(
 }
 
 impl ToplevelData {
-    fn add_ext_instance<D>(
-        &mut self,
-        handle: &DisplayHandle,
-        client: &Client,
-        manager: &ExtForeignToplevelListV1,
-    ) where
-        D: Dispatch<ExtForeignToplevelHandleV1, EmptyData>,
-        D: 'static,
-    {
-        let toplevel = client
-            .create_resource::<ExtForeignToplevelHandleV1, _, D>(
-                handle,
-                manager.version(),
-                EmptyData,
-            )
-            .unwrap();
-        manager.toplevel(&toplevel);
-
-        toplevel.identifier(self.identifier.to_protocol_identifier());
-
-        if let Some(title) = &self.title {
-            toplevel.title(title.clone());
-        }
-        if let Some(app_id) = &self.app_id {
-            toplevel.app_id(app_id.clone());
-        }
-
-        toplevel.done();
-
-        self.ext_list_instances.insert(toplevel);
-    }
-
     fn add_wlr_instance<D>(
         &mut self,
         handle: &DisplayHandle,
@@ -387,96 +370,6 @@ impl ToplevelData {
         toplevel.done();
 
         self.wlr_management_instances.insert(toplevel, outputs);
-    }
-}
-
-impl<D> GlobalDispatch2<ExtForeignToplevelListV1, D> for ForeignToplevelGlobalData
-where
-    D: Dispatch<ExtForeignToplevelListV1, EmptyData>,
-    D: Dispatch<ExtForeignToplevelHandleV1, EmptyData>,
-    D: ForeignToplevelHandler,
-{
-    fn bind(
-        &self,
-        state: &mut D,
-        handle: &DisplayHandle,
-        client: &Client,
-        resource: New<ExtForeignToplevelListV1>,
-        data_init: &mut DataInit<'_, D>,
-    ) {
-        let manager = data_init.init(resource, EmptyData);
-
-        let state = state.foreign_toplevel_manager_state();
-
-        for data in state.toplevels.values_mut() {
-            data.add_ext_instance::<D>(handle, client, &manager);
-        }
-
-        state.ext_list_instances.insert(manager);
-    }
-
-    fn can_view(&self, client: &Client) -> bool {
-        (self.filter)(client)
-    }
-}
-
-impl<D> Dispatch2<ExtForeignToplevelListV1, D> for EmptyData
-where
-    D: ForeignToplevelHandler,
-{
-    fn request(
-        &self,
-        state: &mut D,
-        _client: &Client,
-        resource: &ExtForeignToplevelListV1,
-        request: <ExtForeignToplevelListV1 as Resource>::Request,
-        _dhandle: &DisplayHandle,
-        _data_init: &mut DataInit<'_, D>,
-    ) {
-        match request {
-            ext_foreign_toplevel_list_v1::Request::Stop => {
-                resource.finished();
-
-                // remove the instance here so we won't send any more events.
-                let state = state.foreign_toplevel_manager_state();
-                state.ext_list_instances.remove(resource);
-            }
-            ext_foreign_toplevel_list_v1::Request::Destroy => {}
-            _ => unreachable!(),
-        }
-    }
-
-    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ExtForeignToplevelListV1) {
-        // also remove the instance here, in case `stop` was never sent, e.g. sudden disconnect.
-        let state = state.foreign_toplevel_manager_state();
-        state.ext_list_instances.remove(resource);
-    }
-}
-
-impl<D> Dispatch2<ExtForeignToplevelHandleV1, D> for EmptyData
-where
-    D: ForeignToplevelHandler,
-{
-    fn request(
-        &self,
-        _state: &mut D,
-        _client: &Client,
-        _resource: &ExtForeignToplevelHandleV1,
-        request: <ExtForeignToplevelHandleV1 as Resource>::Request,
-        _dhandle: &DisplayHandle,
-        _data_init: &mut DataInit<'_, D>,
-    ) {
-        match request {
-            ext_foreign_toplevel_handle_v1::Request::Destroy => {}
-            _ => unreachable!(),
-        }
-    }
-
-    fn destroyed(&self, state: &mut D, _client: ClientId, resource: &ExtForeignToplevelHandleV1) {
-        let state = state.foreign_toplevel_manager_state();
-        for data in state.toplevels.values_mut() {
-            data.ext_list_instances.remove(resource);
-        }
     }
 }
 
