@@ -70,8 +70,8 @@ use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource};
 use smithay::utils::{
-    ClockSource, IsAlive as _, Logical, Monotonic, Physical, Point, Rectangle, Scale, Size,
-    Transform, SERIAL_COUNTER,
+    Buffer as BufferCoords, ClockSource, IsAlive as _, Logical, Monotonic, Physical, Point,
+    Rectangle, Scale, Size, Transform, SERIAL_COUNTER,
 };
 use smithay::wayland::background_effect::BackgroundEffectState;
 use smithay::wayland::compositor::{
@@ -83,6 +83,10 @@ use smithay::wayland::dmabuf::DmabufState;
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::idle_notify::IdleNotifierState;
+use smithay::wayland::image_capture_source::{
+    ImageCaptureSource, ImageCaptureSourceState, OutputCaptureSourceState,
+};
+use smithay::wayland::image_copy_capture::{CaptureFailureReason, ImageCopyCaptureState};
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
@@ -129,6 +133,9 @@ use crate::dbus::gnome_shell_introspect::{self, IntrospectToNiri, NiriToIntrospe
 #[cfg(feature = "dbus")]
 use crate::dbus::gnome_shell_screenshot::{NiriToScreenshot, ScreenshotToNiri};
 use crate::frame_clock::FrameClock;
+use crate::handlers::image_copy_capture::{
+    self as image_copy_capture_impl, CaptureBuffer, ImageCopyCursorSession, ImageCopySession,
+};
 use crate::handlers::{configure_lock_surface, XDG_ACTIVATION_TOKEN_TIMEOUT};
 use crate::input::pick_color_grab::PickColorGrab;
 use crate::input::scroll_swipe_gesture::ScrollSwipeGesture;
@@ -163,7 +170,7 @@ use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::xray::{Xray, XrayPos};
 use crate::render_helpers::{
     encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
-    render_to_texture, render_to_vec, shaders, RenderCtx, RenderTarget,
+    render_to_shm_with_format, render_to_texture, render_to_vec, shaders, RenderCtx, RenderTarget,
 };
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::screencasting::Screencasting;
@@ -272,6 +279,13 @@ pub struct Niri {
     pub tablets: HashMap<input::Device, TabletData>,
     pub touch: HashSet<input::Device>,
 
+    /// Output capture sessions. Kept out of the protocol state because each one needs a damage
+    /// tracker and is handled in the redraw loop.
+    pub image_copy_sessions: Vec<ImageCopySession>,
+
+    /// Cursor capture sessions, same as above.
+    pub image_copy_cursor_sessions: Vec<ImageCopyCursorSession>,
+
     // Smithay state.
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
@@ -282,6 +296,9 @@ pub struct Niri {
     pub foreign_toplevel_state: ForeignToplevelManagerState,
     pub ext_workspace_state: ExtWorkspaceManagerState,
     pub screencopy_state: ScreencopyManagerState,
+    pub image_capture_source_state: ImageCaptureSourceState,
+    pub output_capture_source_state: OutputCaptureSourceState,
+    pub image_copy_capture_state: ImageCopyCaptureState,
     pub output_management_state: OutputManagementManagerState,
     pub viewporter_state: ViewporterState,
     pub background_effect_state: BackgroundEffectState,
@@ -822,6 +839,8 @@ impl State {
         self.refresh_pointer_contents();
         foreign_toplevel::refresh(self);
         ext_workspace::refresh(self);
+        self.refresh_image_copy_capture();
+        self.niri.refresh_image_copy_cursor_sessions();
 
         #[cfg(feature = "xdp-gnome-screencast")]
         self.niri.refresh_mapped_cast_outputs();
@@ -839,6 +858,79 @@ impl State {
         // Needs to be called after updating the keyboard focus.
         #[cfg(feature = "dbus")]
         self.niri.refresh_a11y();
+    }
+
+    /// Stop sessions whose source is gone and sync buffer constraints. Runs as
+    /// part of every refresh so constraints are correct before redrawing and so
+    /// missing sources aren't missed.
+    pub fn refresh_image_copy_capture(&mut self) {
+        if self.niri.image_copy_sessions.is_empty()
+            && self.niri.image_copy_cursor_sessions.is_empty()
+        {
+            return;
+        }
+
+        let _span = tracy_client::span!("State::refresh_image_copy_capture");
+
+        // Dropping a session sends `stopped` and fails all of its pending frames.
+        fn live_output(niri: &Niri, source: &ImageCaptureSource) -> Option<Output> {
+            image_copy_capture_impl::source_output(source)
+                .filter(|output| niri.output_state.contains_key(output))
+        }
+
+        let mut sessions = mem::take(&mut self.niri.image_copy_sessions);
+        sessions.retain_mut(|s| {
+            let Some(output) = live_output(&self.niri, &s.session.source()) else {
+                return false;
+            };
+
+            // This runs once per event loop iteration, and building the full
+            // constraints is expensive. We only compare the size, so a change
+            // in the dmabuf formats or device alone doesn't matter to us here
+            // (and if it does, polling is not the way to check for it).
+            let Some(mode) = output.current_mode() else {
+                return false;
+            };
+            let size = Size::<i32, BufferCoords>::from((mode.size.w, mode.size.h));
+            if s.session.current_constraints().map(|c| c.size) == Some(size) {
+                return true;
+            }
+
+            let render_node = self.backend.primary_render_node();
+            let constraints = self
+                .backend
+                .with_primary_renderer(|renderer| {
+                    image_copy_capture_impl::output_capture_constraints(
+                        renderer,
+                        render_node,
+                        &output,
+                    )
+                })
+                .flatten();
+            let Some(constraints) = constraints else {
+                return false;
+            };
+
+            // Cannot capture a frame for outdated constraints, so fail it
+            // before sending the new constraints (otherwise clients which
+            // re-negotiate on failure may miss the new `done`).
+            if let Some(frame) = s.pending_frame.take() {
+                frame.fail(CaptureFailureReason::BufferConstraints);
+            }
+            s.session.update_constraints(constraints);
+
+            true
+        });
+        self.niri.image_copy_sessions = sessions;
+
+        // Cursor session constraints are refreshed in refresh_image_copy_cursor_sessions().
+        let mut cursor_sessions = mem::take(&mut self.niri.image_copy_cursor_sessions);
+        cursor_sessions.retain(|s| live_output(&self.niri, &s.session.source()).is_some());
+        self.niri.image_copy_cursor_sessions = cursor_sessions;
+
+        // Don't leak dead sessions (they take memory and smithay scans them
+        // every time).
+        self.niri.image_copy_capture_state.cleanup();
     }
 
     fn notify_blocker_cleared(&mut self) {
@@ -2372,6 +2464,15 @@ impl Niri {
         output_management_state.on_config_changed(config_.outputs.clone());
         let screencopy_state =
             ScreencopyManagerState::new::<State, _>(&display_handle, client_is_unrestricted);
+        let image_capture_source_state = ImageCaptureSourceState::new();
+        let output_capture_source_state = OutputCaptureSourceState::new_with_filter::<State, _>(
+            &display_handle,
+            client_is_unrestricted,
+        );
+        let image_copy_capture_state = ImageCopyCaptureState::new_with_filter::<State, _>(
+            &display_handle,
+            client_is_unrestricted,
+        );
         let viewporter_state = ViewporterState::new::<State>(&display_handle);
         let background_effect_state = BackgroundEffectState::new::<State>(&display_handle);
         let xdg_foreign_state = XdgForeignState::new::<State>(&display_handle);
@@ -2557,6 +2658,11 @@ impl Niri {
             ext_workspace_state,
             output_management_state,
             screencopy_state,
+            image_capture_source_state,
+            output_capture_source_state,
+            image_copy_capture_state,
+            image_copy_sessions: Vec::new(),
+            image_copy_cursor_sessions: Vec::new(),
             viewporter_state,
             background_effect_state,
             xdg_foreign_state,
@@ -4735,6 +4841,8 @@ impl Niri {
             }
 
             self.render_for_screencopy_with_damage(renderer, output);
+            self.render_for_image_copy_capture(renderer, output, target_presentation_time);
+            self.render_for_image_copy_cursor_capture(renderer, output, target_presentation_time);
         });
     }
 
@@ -5413,6 +5521,385 @@ impl Niri {
         }
 
         res
+    }
+
+    pub fn render_for_image_copy_capture(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+        target_presentation_time: Duration,
+    ) {
+        if self
+            .image_copy_sessions
+            .iter()
+            .all(|s| s.pending_frame.is_none())
+        {
+            return;
+        }
+
+        let _span = tracy_client::span!("Niri::render_for_image_copy_capture");
+
+        let Some(mode) = output.current_mode() else {
+            return;
+        };
+        let size = mode.size;
+        let scale: Scale<f64> = output.current_scale().fractional_scale().into();
+        let transform = output.current_transform();
+
+        // Sessions with a single output only differ by whether they capture the
+        // cursor, so at most two renders are needed regardless of how many
+        // clients are capturing.
+        let mut cached_elements: [Option<Vec<_>>; 2] = [None, None];
+
+        let mut sessions = mem::take(&mut self.image_copy_sessions);
+        for s in &mut sessions {
+            let Some(s_output) = image_copy_capture_impl::source_output(&s.session.source()) else {
+                continue;
+            };
+            if s_output != *output {
+                continue;
+            }
+
+            if s.pending_frame.is_none() {
+                continue;
+            }
+
+            // Recreate the damage tracker if the output changed.
+            let OutputModeSource::Static {
+                size: last_size,
+                scale: last_scale,
+                transform: last_transform,
+            } = s.damage_tracker.mode().clone()
+            else {
+                unreachable!("damage tracker must have static mode");
+            };
+            if size != last_size || scale != last_scale || transform != last_transform {
+                s.damage_tracker = OutputDamageTracker::new(size, scale, transform);
+            }
+
+            let draw_cursor = s.session.draw_cursor();
+            let cached = &mut cached_elements[usize::from(draw_cursor)];
+            let elements = cached.get_or_insert_with(|| {
+                let ctx = RenderCtx {
+                    renderer: &mut *renderer,
+                    target: RenderTarget::ScreenCapture,
+                    xray: None,
+                };
+                let mut elements = Vec::new();
+                self.render(ctx, output, draw_cursor, &mut |elem| {
+                    elements.push(elem);
+                });
+                elements
+            });
+
+            let (damage, states) = s.damage_tracker.damage_output(1, elements).unwrap();
+            let Some(damage) = damage else {
+                // No damage, capture the frame later.
+                continue;
+            };
+
+            // Convert from Physical coordinates back to Buffer coordinates.
+            let physical_size = transform.transform_size(size);
+            let damage: Vec<Rectangle<i32, BufferCoords>> = damage
+                .iter()
+                .map(|dmg| {
+                    dmg.to_logical(1)
+                        .to_buffer(1, transform.invert(), &physical_size.to_logical(1))
+                })
+                .collect();
+
+            let frame = s.pending_frame.take().unwrap();
+            let buffer = frame.buffer();
+            let buffer_size = Size::<i32, BufferCoords>::from((size.w, size.h));
+            let capture_buffer = image_copy_capture_impl::capture_buffer(
+                &buffer,
+                buffer_size,
+                wl_shm::Format::Xrgb8888,
+            );
+            let Some(capture_buffer) = capture_buffer else {
+                frame.fail(CaptureFailureReason::BufferConstraints);
+                // Report full damage next time.
+                s.damage_tracker = OutputDamageTracker::new(size, scale, transform);
+                continue;
+            };
+
+            let res = match capture_buffer {
+                CaptureBuffer::Dma(dmabuf) => {
+                    render_to_dmabuf(renderer, &mut s.damage_tracker, dmabuf, elements, states)
+                        .map(Some)
+                }
+                CaptureBuffer::Shm => {
+                    render_to_shm(renderer, &mut s.damage_tracker, &buffer, elements, states)
+                        .map(|()| None)
+                }
+            };
+
+            match res {
+                Ok(sync) => {
+                    let timestamp = target_presentation_time;
+                    match sync.and_then(|sync| sync.export()) {
+                        None => frame.success(transform, damage, timestamp),
+                        Some(sync_fd) => {
+                            // Wait for the rendering to finish before sending the frame.
+                            let mut frame = Some((frame, damage));
+                            let source = Generic::new(sync_fd, Interest::READ, Mode::OneShot);
+                            let res = self.event_loop.insert_source(source, move |_, _, _| {
+                                let (frame, damage) = frame.take().unwrap();
+                                frame.success(transform, damage, timestamp);
+                                Ok(PostAction::Remove)
+                            });
+                            if let Err(err) = res {
+                                // The client will retry (smithay sends an
+                                // Unknown error when Drop is called on the
+                                // Frame).
+                                warn!("error waiting for image copy capture sync point: {err}");
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!("error rendering for image copy capture: {err:?}");
+                    frame.fail(CaptureFailureReason::Unknown);
+                    // Report full damage next time.
+                    s.damage_tracker = OutputDamageTracker::new(size, scale, transform);
+                }
+            }
+        }
+
+        sessions.append(&mut self.image_copy_sessions);
+        self.image_copy_sessions = sessions;
+    }
+
+    pub fn render_for_image_copy_cursor_capture(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+        target_presentation_time: Duration,
+    ) {
+        if self
+            .image_copy_cursor_sessions
+            .iter()
+            .all(|s| s.pending_frame.is_none())
+        {
+            return;
+        }
+
+        let _span = tracy_client::span!("Niri::render_for_image_copy_cursor_capture");
+
+        let scale: Scale<f64> = output.current_scale().fractional_scale().into();
+
+        // The cursor render is the same for all sessions on the output.
+        let mut cached_elements = None;
+
+        let mut sessions = mem::take(&mut self.image_copy_cursor_sessions);
+        for s in &mut sessions {
+            if s.pending_frame.is_none() {
+                continue;
+            }
+            let Some(s_output) = image_copy_capture_impl::source_output(&s.session.source()) else {
+                continue;
+            };
+            if s_output != *output {
+                continue;
+            }
+
+            // The constraints are kept up to date with the cursor image size in
+            // refresh_image_copy_cursor_sessions, which also fails pending frames on change.
+            let Some(constraints) = s.session.current_constraints() else {
+                let frame = s.pending_frame.take().unwrap();
+                frame.fail(CaptureFailureReason::BufferConstraints);
+                continue;
+            };
+            let size = Size::<i32, Physical>::from((constraints.size.w, constraints.size.h));
+
+            // Recreate the damage tracker if the cursor buffer size or output scale changed.
+            let OutputModeSource::Static {
+                size: last_size,
+                scale: last_scale,
+                ..
+            } = s.damage_tracker.mode().clone()
+            else {
+                unreachable!("damage tracker must have static mode");
+            };
+            if size != last_size || scale != last_scale {
+                s.damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+            }
+
+            let elements = cached_elements
+                .get_or_insert_with(|| self.render_cursor_for_capture(renderer, output));
+
+            let (damage, states) = s.damage_tracker.damage_output(1, elements).unwrap();
+            if damage.is_none() {
+                // No change, capture the frame later.
+                continue;
+            }
+
+            let frame = s.pending_frame.take().unwrap();
+            let buffer = frame.buffer();
+            let capture_buffer = image_copy_capture_impl::capture_buffer(
+                &buffer,
+                constraints.size,
+                wl_shm::Format::Argb8888,
+            );
+            if !matches!(capture_buffer, Some(CaptureBuffer::Shm)) {
+                frame.fail(CaptureFailureReason::BufferConstraints);
+                // Report full damage next time.
+                s.damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+                continue;
+            }
+
+            let res = render_to_shm_with_format(
+                renderer,
+                &mut s.damage_tracker,
+                &buffer,
+                wl_shm::Format::Argb8888,
+                elements,
+                states,
+            );
+            match res {
+                Ok(()) => {
+                    let full_damage = vec![Rectangle::from_size(constraints.size)];
+                    frame.success(Transform::Normal, full_damage, target_presentation_time);
+                }
+                Err(err) => {
+                    warn!("error rendering for cursor capture: {err:?}");
+                    frame.fail(CaptureFailureReason::Unknown);
+                    // Report full damage next time.
+                    s.damage_tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+                }
+            }
+        }
+
+        sessions.append(&mut self.image_copy_cursor_sessions);
+        self.image_copy_cursor_sessions = sessions;
+    }
+
+    pub fn render_cursor_for_capture(
+        &self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+    ) -> Vec<PointerRenderElements<GlesRenderer>> {
+        let int_scale = output.current_scale().integer_scale();
+        let output_scale = Scale::from(output.current_scale().fractional_scale());
+
+        let mut elements = Vec::new();
+        match self.cursor_manager.get_render_cursor(int_scale) {
+            RenderCursor::Hidden => (),
+            RenderCursor::Surface { surface, .. } => {
+                // Subsurfaces can extend above or to the left of the root surface, so shift the
+                // tree to put its bounding box at the origin. The hotspot is shifted to match in
+                // cursor_capture_hotspot().
+                let bbox = smithay::desktop::utils::bbox_from_surface_tree(&surface, (0, 0));
+                let loc = Point::<i32, Logical>::from((-bbox.loc.x, -bbox.loc.y))
+                    .to_f64()
+                    .to_physical_precise_round(output_scale);
+                push_elements_from_surface_tree(
+                    renderer,
+                    &surface,
+                    loc,
+                    output_scale,
+                    1.,
+                    Kind::Cursor,
+                    &mut |elem| elements.push(elem.into()),
+                );
+            }
+            RenderCursor::Named {
+                icon,
+                scale,
+                cursor,
+            } => {
+                let (idx, _frame) = cursor.frame(self.start_time.elapsed().as_millis() as u32);
+                let texture = self.cursor_texture_cache.get(icon, scale, &cursor, idx);
+                match MemoryRenderBufferRenderElement::from_buffer(
+                    renderer,
+                    Point::<f64, _>::from((0., 0.)),
+                    &texture,
+                    None,
+                    None,
+                    None,
+                    Kind::Cursor,
+                ) {
+                    Ok(element) => elements.push(element.into()),
+                    Err(err) => {
+                        warn!("error importing a cursor texture: {err:?}");
+                    }
+                }
+            }
+        }
+
+        elements
+    }
+
+    /// Sends cursor position, hotspot and size to cursor sessions independently
+    /// of the cursor image.
+    pub fn refresh_image_copy_cursor_sessions(&mut self) {
+        if self.image_copy_cursor_sessions.is_empty() {
+            return;
+        }
+
+        let _span = tracy_client::span!("Niri::refresh_image_copy_cursor_sessions");
+
+        let pointer_pos = self
+            .tablet_cursor_location
+            .unwrap_or_else(|| self.seat.get_pointer().unwrap().current_location());
+
+        let mut sessions = mem::take(&mut self.image_copy_cursor_sessions);
+        for s in &mut sessions {
+            let Some(output) = image_copy_capture_impl::source_output(&s.session.source()) else {
+                s.session.set_cursor_pos(None);
+                continue;
+            };
+            let Some(geo) = self.global_space.output_geometry(&output) else {
+                s.session.set_cursor_pos(None);
+                continue;
+            };
+            let Some(mode) = output.current_mode() else {
+                s.session.set_cursor_pos(None);
+                continue;
+            };
+
+            let scale = Scale::from(output.current_scale().fractional_scale());
+
+            // Update the constraints if the cursor image size changed.
+            let constraints = image_copy_capture_impl::cursor_capture_constraints(self, &output);
+            let cursor_size = constraints.size;
+            let size_changed = s
+                .session
+                .current_constraints()
+                .is_none_or(|c| (c.size.w, c.size.h) != (constraints.size.w, constraints.size.h));
+            if size_changed {
+                // Cannot capture a frame for outdated constraints, so fail it
+                // before sending the new constraints (otherwise clients which
+                // re-negotiate on failure may miss the new `done`).
+                if let Some(frame) = s.pending_frame.take() {
+                    frame.fail(CaptureFailureReason::BufferConstraints);
+                }
+                s.session.update_constraints(constraints);
+            }
+
+            let hotspot = image_copy_capture_impl::cursor_capture_hotspot(self, &output);
+            s.session.set_cursor_hotspot((hotspot.x, hotspot.y));
+
+            // Unlike frame damage, the position is in transformed buffer coordinates, i.e. the
+            // displayed orientation, so the output transform is not undone here. This matches
+            // wlroots.
+            let pos: Point<i32, Physical> =
+                (pointer_pos - geo.loc.to_f64()).to_physical_precise_round(scale);
+
+            // The cursor has entered while its image intersects the output, not only while the
+            // hotspot is inside it, so the position can be negative or past the edge.
+            let hotspot = Point::<i32, Physical>::from((hotspot.x, hotspot.y));
+            let image = Rectangle::new(pos - hotspot, Size::from((cursor_size.w, cursor_size.h)));
+            let output_rect =
+                Rectangle::from_size(output.current_transform().transform_size(mode.size));
+            if self.pointer_visibility.is_visible() && image.overlaps(output_rect) {
+                s.session.set_cursor_pos(Some(Point::from((pos.x, pos.y))));
+            } else {
+                s.session.set_cursor_pos(None);
+            }
+        }
+        sessions.append(&mut self.image_copy_cursor_sessions);
+        self.image_copy_cursor_sessions = sessions;
     }
 
     fn damage_screencopy_internal<'a>(

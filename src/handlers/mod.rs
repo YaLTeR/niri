@@ -1,5 +1,6 @@
 pub mod background_effect;
 mod compositor;
+pub mod image_copy_capture;
 mod layer_shell;
 mod xdg_shell;
 
