@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Context as _;
 use niri_config::{Config, OutputName};
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::drm::DrmNode;
 use smithay::backend::egl::EGLDevice;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -222,6 +223,16 @@ impl Winit {
         f: impl FnOnce(&mut GlesRenderer) -> T,
     ) -> Option<T> {
         Some(f(self.backend.renderer()))
+    }
+
+    pub fn primary_render_node(&mut self) -> Option<DrmNode> {
+        // Winit creates a single EGL display, so querying the device from it is fine here, unlike
+        // on the TTY backend (see Tty::primary_render_node()).
+        let display = self.backend.renderer().egl_context().display();
+        EGLDevice::device_for_display(display)
+            .ok()?
+            .try_get_render_node()
+            .ok()?
     }
 
     pub fn render(&mut self, niri: &mut Niri, output: &Output) -> RenderResult {

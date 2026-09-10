@@ -1,6 +1,6 @@
 use std::ptr;
 
-use anyhow::{ensure, Context as _};
+use anyhow::{bail, ensure, Context as _};
 use niri_config::BlockOutFrom;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Buffer, Fourcc};
@@ -304,19 +304,59 @@ pub fn render_to_shm(
     elements: &[impl RenderElement<GlesRenderer>],
     states: RenderElementStates,
 ) -> anyhow::Result<()> {
+    render_to_shm_with_format(
+        renderer,
+        damage_tracker,
+        buffer,
+        wl_shm::Format::Xrgb8888,
+        elements,
+        states,
+    )
+}
+
+pub fn render_to_shm_with_format(
+    renderer: &mut GlesRenderer,
+    damage_tracker: &mut OutputDamageTracker,
+    buffer: &WlBuffer,
+    format: wl_shm::Format,
+    elements: &[impl RenderElement<GlesRenderer>],
+    states: RenderElementStates,
+) -> anyhow::Result<()> {
     let _span = tracy_client::span!();
-    shm::with_buffer_contents_mut(buffer, |shm_buffer, shm_len, buffer_data| {
+    // The pointer and length are the client's entire pool, which may hold other
+    // buffers besides this one... buffer_data is the one we want.
+    shm::with_buffer_contents_mut(buffer, |pool, pool_len, buffer_data| {
         let (size, _scale, _transform) = damage_tracker.mode().try_into().unwrap();
-        let fourcc = Fourcc::Xrgb8888;
+        let fourcc = match format {
+            wl_shm::Format::Xrgb8888 => Fourcc::Xrgb8888,
+            wl_shm::Format::Argb8888 => Fourcc::Argb8888,
+            _ => bail!("unsupported shm format: {format:?}"),
+        };
 
         ensure!(
             // The buffer prefers pixels in little endian ...
-            buffer_data.format == wl_shm::Format::Xrgb8888
+            buffer_data.format == format
                 && buffer_data.width == size.w
-                && buffer_data.height == size.h
-                && buffer_data.stride == size.w * 4
-                && shm_len == buffer_data.stride as usize * buffer_data.height as usize,
+                && buffer_data.height == size.h,
             "invalid buffer format or size"
+        );
+
+        // The client chooses the stride and may pad rows, so only the first
+        // row_len bytes can be used here.
+        let row_len = size.w as usize * 4;
+        let height = size.h as usize;
+        let offset = usize::try_from(buffer_data.offset).context("negative buffer offset")?;
+        let stride = usize::try_from(buffer_data.stride).context("negative buffer stride")?;
+
+        // This should have already been validated by wl_shm, and a pool can
+        // only grow, but check again just in case.
+        let end = stride
+            .checked_mul(height.saturating_sub(1))
+            .and_then(|len| len.checked_add(row_len))
+            .and_then(|len| len.checked_add(offset));
+        ensure!(
+            stride >= row_len && end.is_some_and(|end| end <= pool_len),
+            "buffer does not fit in its shm pool"
         );
 
         let mut texture =
@@ -342,9 +382,22 @@ pub fn render_to_shm(
             .map_texture(&mapping)
             .context("error mapping texture")?;
 
+        ensure!(bytes.len() >= row_len * height, "short texture mapping");
+
         unsafe {
             let _span = tracy_client::span!("copy_nonoverlapping");
-            ptr::copy_nonoverlapping(bytes.as_ptr(), shm_buffer.cast(), shm_len);
+            let dst = pool.add(offset);
+            if stride == row_len {
+                ptr::copy_nonoverlapping(bytes.as_ptr(), dst, row_len * height);
+            } else {
+                for y in 0..height {
+                    ptr::copy_nonoverlapping(
+                        bytes.as_ptr().add(y * row_len),
+                        dst.add(y * stride),
+                        row_len,
+                    );
+                }
+            }
         }
 
         Ok(())
